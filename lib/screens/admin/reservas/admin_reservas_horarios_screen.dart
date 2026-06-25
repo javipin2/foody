@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:reserva_canchas/screens/admin/reservas/admin_detalles_reservas.dart';
 import 'package:reserva_canchas/utils/reserva_audit_utils.dart';
 import 'package:reserva_canchas/services/plan_feature_service.dart';
+import 'package:reserva_canchas/widgets/plan_selection_dialog.dart';
 import '../../../services/lugar_helper.dart';
 import '../../../models/cancha.dart';
 import '../../../models/reserva.dart';
@@ -75,6 +76,9 @@ class AdminReservasScreenState extends State<AdminReservasScreen>
   Map<String, Map<String, dynamic>> _promocionesPorHorario = {}; // horarioNormalizado -> {precio, id, precio_promocional, ...}
   StreamSubscription<Map<String, Map<String, dynamic>>>? _promocionesSubscription;
 
+  /// Plan del lugar (para candado premium en el ícono de promociones).
+  LugarPlan? _lugarPlanReservas;
+
   // ✅ REEMPLAZAR el método initState (líneas ~80-95)
   @override
   void initState() {
@@ -91,7 +95,19 @@ class AdminReservasScreenState extends State<AdminReservasScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeData();
+      _loadPlanForPromoUi();
     });
+  }
+
+  Future<void> _loadPlanForPromoUi() async {
+    final p = await PlanFeatureService.getCurrentPlan();
+    if (mounted) setState(() => _lugarPlanReservas = p);
+  }
+
+  bool get _promocionesBloqueadasPorPlan {
+    final p = _lugarPlanReservas;
+    if (p == null) return false;
+    return !PlanFeatureService.isFeatureAllowed(p, PlanFeature.promocionesHoras);
   }
 
   Future<void> _initializeData() async {
@@ -157,9 +173,7 @@ class AdminReservasScreenState extends State<AdminReservasScreen>
     try {
       await canchaProvider.fetchCanchas(_selectedSedeId);
       
-      if (reservaRecurrenteProvider.reservasRecurrentes.isEmpty) {
-        await reservaRecurrenteProvider.fetchReservasRecurrentes(sede: _selectedSedeId);
-      }
+      await reservaRecurrenteProvider.fetchReservasRecurrentes(sede: _selectedSedeId);
       
       if (!mounted) return;
 
@@ -200,10 +214,9 @@ class AdminReservasScreenState extends State<AdminReservasScreen>
 
     try {
       final reservaRecurrenteProvider = Provider.of<ReservaRecurrenteProvider>(context, listen: false);
-      
-      if (reservaRecurrenteProvider.reservasRecurrentes.isEmpty) {
-        await reservaRecurrenteProvider.fetchReservasRecurrentes(sede: _selectedSedeId);
-      }
+      // Siempre refrescar reglas fijas: al crear una recurrente no hay doc nuevo en `reservas`,
+      // y si la lista en memoria ya tenía datos, antes no se volvía a pedir Firestore.
+      await reservaRecurrenteProvider.fetchReservasRecurrentes(sede: _selectedSedeId);
 
       // Obtener el lugarId del usuario autenticado
       final lugarId = await LugarHelper.getLugarId();
@@ -754,13 +767,18 @@ Future<void> _refrescarReservasRecurrentesYRecargar() async {
       return;
     }
 
-    // 🔐 Validar plan: promociones solo para Plan Premium o Pro
-    final allowed = await PlanFeatureService.ensureFeatureAvailable(
-      context,
-      PlanFeature.promocionesHoras,
-    );
-    if (!allowed) return;
-    
+    // 🔐 Promociones solo Premium / Pro (si no, ya se gestiona desde el botón del AppBar)
+    final plan = await PlanFeatureService.getCurrentPlan();
+    if (!PlanFeatureService.isFeatureAllowed(plan, PlanFeature.promocionesHoras)) {
+      if (mounted) {
+        await showPlanSelectionDialog(
+          context,
+          onPlanUpdated: _loadPlanForPromoUi,
+        );
+      }
+      return;
+    }
+
     // ✅ Validar que solo hay 1 horario seleccionado
     if (_selectedHours.length != 1) {
       _showErrorSnackBar('Solo puedes crear promociones para un horario a la vez');
@@ -2130,6 +2148,98 @@ Future<void> _refrescarReservasRecurrentesYRecargar() async {
   }
 }
 
+  /// Botón compacto de promociones: borde/coronita dorada si el plan no incluye la función.
+  Widget _buildPromocionesAppBarAction() {
+    final locked = _promocionesBloqueadasPorPlan;
+    final enabled = _esFechaHoraFutura();
+    final Color iconColor = !enabled
+        ? _disabledColor
+        : (locked ? const Color(0xFFB45309) : _secondaryColor);
+
+    return Tooltip(
+      message: !enabled
+          ? 'Solo se pueden crear promociones para horas futuras'
+          : (locked
+              ? 'Promociones (Plan Premium) — toca para ver planes'
+              : 'Publicar promoción'),
+      child: Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Container(
+              decoration: locked
+                  ? BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFEAB308).withValues(alpha: 0.65),
+                        width: 1,
+                      ),
+                    )
+                  : null,
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: !enabled
+                      ? null
+                      : () async {
+                          if (locked) {
+                            await showPlanSelectionDialog(
+                              context,
+                              onPlanUpdated: _loadPlanForPromoUi,
+                            );
+                            return;
+                          }
+                          await _showPublicarPromocionesDialog();
+                        },
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(Icons.local_offer, color: iconColor, size: 22),
+                  ),
+                ),
+              ),
+            ),
+            if (locked)
+              Positioned(
+                right: 2,
+                top: 2,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 13,
+                    height: 13,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFE066), Color(0xFFFBBF24)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 0.9),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 2,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.workspace_premium_rounded,
+                      size: 7.5,
+                      color: Color(0xFF78350F),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   AppBar buildAppBar() {
   return AppBar(
@@ -2162,23 +2272,7 @@ Future<void> _refrescarReservasRecurrentesYRecargar() async {
       ],
       // ✅ BOTONES NORMALES SOLO CUANDO NO ES MODO SELECTOR
       if (!widget.esModoSelector) ...[
-        // ✅ NUEVO: Publicar promociones solo cuando hay EXACTAMENTE 1 horario seleccionado Y es futuro
-        if (_selectedHours.length == 1)
-          Tooltip(
-            message: _esFechaHoraFutura() 
-                ? 'Publicar Promoción' 
-                : 'Solo se pueden crear promociones para horas futuras',
-            child: Container(
-              margin: EdgeInsets.only(right: 4),
-              child: IconButton(
-                icon: Icon(
-                  Icons.local_offer, 
-                  color: _esFechaHoraFutura() ? _secondaryColor : _disabledColor,
-                ),
-                onPressed: _esFechaHoraFutura() ? _showPublicarPromocionesDialog : null,
-              ),
-            ),
-          ),
+        if (_selectedHours.length == 1) _buildPromocionesAppBarAction(),
         Tooltip(
           message: 'Reservas Recurrentes',
           child: Container(

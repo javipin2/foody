@@ -1,0 +1,33 @@
+---
+description: Foody — evolucionar este repo in-place; nunca fork ni proyecto paralelo
+alwaysApply: true
+---
+
+# Un solo repositorio, evolución in-place
+
+Este workspace **es** Foody. No se creará otro proyecto, copia ni repo hijo a partir de este.
+
+## Obligatorio
+
+- Trabajar **siempre en este mismo proyecto**: modificar, refactorizar y eliminar lo que no sirva.
+- **Un entry point Flutter**: `lib/main.dart` (app Foody). No añadir `main_foody.dart`, `main_cliente.dart` ni duplicar apps salvo flavors documentados en `INFRAESTRUCTURA/`.
+- Código nuevo de Foody en `lib/features/`, `foody_backend/`, `foody_supabase/`.
+- Reutilizar del legacy (Tu Cancha Fácil) solo lo útil: widgets, utilidades, integraciones ya probadas — adaptándolos a NestJS y reglas Foody.
+- **Eliminar** código legacy cuando una feature Foody lo reemplace (misma ruta de usuario, mismo flujo), no dejar dos caminos vivos.
+
+## Prohibido
+
+- Proponer o crear **“Foody v2”**, carpeta gemela, monorepo nuevo o clon del repo para “empezar limpio”.
+- Duplicar pantallas/servicios (legacy + Foody) como solución permanente.
+- Mantener lectura/escritura directa a Supabase/Firebase para pedidos, caja, inventario o menú (eso va al API NestJS).
+- Sugerir `flutter create` en otro directorio para el producto principal.
+
+## Legacy (`lib/screens/`, Provider, Firebase)
+
+- Queda como **deuda temporal** hasta migrar pantalla por pantalla.
+- Referencia de emergencia única: `lib/legacy/main_reserva_canchas.dart` (no usar en producción Foody).
+- Al migrar: borrar archivos muertos, imports y providers que ya no se usen.
+
+## Despliegue
+
+Un build, un `main.dart`, un backend `foody_backend/`. La limpieza es continua durante los sprints, no un “gran borrado” en otro repo.

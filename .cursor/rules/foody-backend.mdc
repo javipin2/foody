@@ -1,0 +1,35 @@
+---
+description: NestJS Foody — módulos, transacciones, guards, respuestas
+globs: foody_backend/**/*
+alwaysApply: false
+---
+
+# Backend NestJS (foody_backend)
+
+## Estructura
+
+`src/core/` (db, auth, realtime, fcm, impresión) + `src/modulos/<dominio>/` + `src/compartido/`.
+
+Controllers delegan; **Services** tienen la lógica. DTOs con `class-validator`.
+
+## Confirmar pedido
+
+Una transacción `BEGIN`…`COMMIT`: validar sucursal/horario, precios vs BD, stock, insertar pedido e ítems (precios copiados al momento), movimientos inventario, alertas, caja, auditoría. Post-commit: Realtime, WebSocket impresión, FCM.
+
+## Respuestas
+
+```typescript
+{ exito: true, datos: {...}, mensaje: '...' }
+{ exito: false, error: 'STOCK_INSUFICIENTE', mensaje: '...' }
+```
+
+## Seguridad
+
+- Clientes consumidores: sin JWT; `device_id` en endpoints públicos.
+- Staff: JWT con `rol`, `sucursal_id`, `restaurante_id`, `permisos[]`.
+- Endpoints `/super/*`: `SuperAdminGuard` + rol `super_admin`.
+- **Multi-sucursal:** mutaciones solo en `sucursal_id` del usuario (salvo rol corporativo). Ver `.cursor/rules/foody-multi-sucursal.mdc` y `docs/MULTI_SUCURSAL.md`.
+
+## Referencia API
+
+Ver `INFRAESTRUCTURA/endpoints_api_foody.md`.

@@ -13,7 +13,10 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class Confirmar extends StatefulWidget {
-  const Confirmar({super.key});
+  /// 0 = Pendientes, 1 = Confirmadas (p. ej. al abrir desde notificación push).
+  final int initialTabIndex;
+
+  const Confirmar({super.key, this.initialTabIndex = 0});
 
   @override
   State<Confirmar> createState() => _ConfirmarState();
@@ -49,7 +52,8 @@ class _ConfirmarState extends State<Confirmar> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     initializeDateFormatting('es', null);
-    _tabController = TabController(length: 2, vsync: this);
+    final tabIndex = widget.initialTabIndex.clamp(0, 1);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: tabIndex);
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),

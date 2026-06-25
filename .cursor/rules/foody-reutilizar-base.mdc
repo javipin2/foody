@@ -1,0 +1,45 @@
+---
+description: Foody — reutilizar UI/UX de la base; cambiar solo datos y reglas de negocio
+alwaysApply: true
+---
+
+# Migración sobre la base existente (no UI desde cero)
+
+La base (Tu Cancha Fácil) ya tiene **diseño, animaciones, preferencias, FCM, splash, versiones y patrones de pantalla**. Foody debe **evolucionar encima**, no reemplazar todo por listas mínimas en `features/` si la pantalla legacy ya resuelve el mismo flujo.
+
+## Orden de trabajo por pantalla
+
+1. **Identificar** pantalla legacy equivalente (`lib/screens/…`) al flujo Foody (`INFRAESTRUCTURA/pantallas_flujo_principal_foody.md`).
+2. **Mantener** layout, animaciones (`AnimationController`, `TweenAnimationBuilder`, transiciones), estados vacío/error, `RefreshIndicator`, overlays de carga.
+3. **Sustituir solo la capa de datos:**
+   - ❌ `CiudadProvider` / `MenuCatalogService` / Supabase `.from('ciudades')` / Firestore
+   - ✅ `Repository` + Dio → NestJS (`lib/core/red/`, `RespuestaApi`)
+4. **Alinear colores** a `ColoresFoody` / `TemaFoody` (sustituir hex sueltos del legacy poco a poco).
+5. **Navegación:** `go_router` en rutas nuevas; reutilizar lógica de `CiudadPreferenceService`, deep links y FCM de `lib/services/` cuando aplique.
+6. **Borrar** el archivo legacy solo cuando la ruta Foody cubra el mismo journey y no queden imports.
+
+## Qué reutilizar tal cual o casi
+
+| Área | Rutas |
+|------|--------|
+| Tema / tipografía | `lib/core/tema/`, `colores_foody.dart` |
+| HTTP envoltura | `cliente_dio.dart`, `respuesta_api.dart`, `configuracion.dart` |
+| Preferencias ciudad | `ciudad_preference_service.dart` (adaptar a `slug` + id) |
+| Splash + versión | `splash_screen.dart`, `version_service.dart` |
+| FCM / deep links | `push_notification_service.dart`, `shared_lugar_link_service.dart` |
+| Carrito visual | `menu_cart_provider.dart` — solo estado UI; totales del API |
+| Menú (UI) | `menu_sede_screen.dart` → datos desde `GET /menu/:sucursal_id` |
+
+## Qué no portar al cliente Foody
+
+Reservas, canchas, `lugar_screen.dart` Firestore, dashboards admin en Firebase, `pedido_service.dart` / `menu_catalog_service.dart` (escritura o totales en cliente).
+
+## Estado (Provider vs Riverpod)
+
+- **No** envolver toda la app en `MultiProvider` legacy.
+- En pantallas migradas: **Riverpod** o `StatefulWidget` + repository; Provider solo mientras convivan piezas sin migrar.
+- Staff (admin/cocina): otro entry o módulo; Auth Supabase + JWT NestJS, no copiar `AuthProvider` Firebase al cliente.
+
+## Si no se puede reutilizar
+
+Crear en `lib/features/<feature>/` copiando **patrones visuales** del legacy (no el Provider). Documentar en PR/commit por qué no aplicaba reutilización directa.

@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Agency Agents (fuente; las reglas instaladas van en .cursor/rules/)
+.vendor/agency-agents/
+
+# Foody — secretos y entorno local
+.env
+foody_backend/.env
+lib/core/constantes/configuracion.dart
+**/foody_printer.db
+
+# Docker volumes locales (si se montan en el repo)
+postgres_data/

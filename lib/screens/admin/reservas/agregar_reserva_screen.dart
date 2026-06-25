@@ -16,6 +16,7 @@ import '../../../models/cliente.dart';
 import '../../../models/reserva_recurrente.dart';
 import '../../../providers/reserva_recurrente_provider.dart';
 import '../../../services/lugar_helper.dart';
+import '../../../utils/reserva_slot_ocupado_utils.dart';
 
 
 class AgregarReservaScreen extends StatefulWidget {
@@ -156,7 +157,8 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
     }
 
     // 🚀 Generar clave de cache basada en días seleccionados y fecha
-    final cacheKey = '${_diasSeleccionados.join(",")}_${widget.fecha.toIso8601String()}_${widget.cancha.id}';
+    final cacheKey =
+        '${_diasSeleccionados.join(",")}_${widget.fecha.toIso8601String()}_${widget.cancha.id}_${widget.sede}_${widget.horarios.first.horaFormateada}';
     
     // 🚀 Verificar cache primero
     if (_cacheConflictos.containsKey(cacheKey)) {
@@ -177,6 +179,10 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
 
     try {
       final horario = widget.horarios.first;
+
+      final recurrenteProvider =
+          Provider.of<ReservaRecurrenteProvider>(context, listen: false);
+      await recurrenteProvider.fetchReservasRecurrentes(sede: widget.sede);
       
       // 🚀 Obtener lugarId una sola vez (con cache)
       if (_cachedLugarId == null) {
@@ -244,7 +250,8 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
             
             for (final doc in querySnapshot.docs) {
               final data = doc.data();
-              
+              if (data['confirmada'] != true) continue;
+
               // 🚫 FILTRAR RESERVAS CON ESTADO "devolucion" - NO SON CONFLICTOS
               final estado = data['estado'] as String?;
               if (estado == 'devolucion') {
@@ -300,8 +307,46 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
           conflictosUnicos[key] = conflicto;
         }
 
+        // Conflictos por reglas recurrentes (misma sede/cancha/hora en esas fechas)
+        final horaNorm = Horario.normalizarHora(horario.horaFormateada);
+        final fechasUnicas = <DateTime>{};
+        for (final dia in _diasSeleccionados) {
+          DateTime fechaActual = widget.fecha;
+          while (DateFormat('EEEE', 'es').format(fechaActual).toLowerCase() !=
+              dia) {
+            fechaActual = fechaActual.add(const Duration(days: 1));
+          }
+          for (int i = 0; i < 8; i++) {
+            final fv = fechaActual.add(Duration(days: i * 7));
+            fechasUnicas.add(DateTime(fv.year, fv.month, fv.day));
+          }
+        }
+        for (final fd in fechasUnicas) {
+          final activas = recurrenteProvider.obtenerReservasActivasParaFecha(
+            fd,
+            sede: widget.sede,
+            canchaId: widget.cancha.id,
+          );
+          for (final rr in activas) {
+            if (Horario.normalizarHora(rr.horario) != horaNorm) continue;
+            final key =
+                '${DateFormat('dd/MM/yyyy').format(fd)}_${horario.horaFormateada}_rr_${rr.id}';
+            conflictosUnicos[key] = {
+              'fecha': fd,
+              'fechaStr': DateFormat('dd/MM/yyyy').format(fd),
+              'dia': DateFormat('EEEE', 'es').format(fd).toLowerCase(),
+              'horario': horario.horaFormateada,
+              'nombre': rr.clienteNombre,
+              'telefono': rr.clienteTelefono,
+              'precio': rr.montoTotal,
+              'reservaId': rr.id,
+              'esReglaRecurrente': true,
+            };
+          }
+        }
+
         final conflictosFinales = conflictosUnicos.values.toList();
-        
+
         // 🚀 Guardar en cache
         _cacheConflictos[cacheKey] = conflictosFinales;
         
@@ -344,6 +389,24 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
 
   Future<void> _crearReserva() async {
   if (!_formKey.currentState!.validate()) return;
+
+  if (_esReservaRecurrente && _conflictosDetectados.isNotEmpty) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'No se puede crear la reserva recurrente: hay al menos un turno ocupado en los días u horario elegidos (reserva puntual u otra regla fija). Revisa la lista de conflictos o cambia hora, cancha o días.',
+          style: GoogleFonts.montserrat(),
+        ),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(12),
+        duration: const Duration(seconds: 6),
+      ),
+    );
+    return;
+  }
 
   setState(() {
     _isProcessing = true;
@@ -402,15 +465,34 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
 
   final List<String> reservasCreadas = [];
 
+    final lugarIdInicial = await LugarHelper.getLugarId();
+    if (lugarIdInicial == null) {
+      throw Exception('No se pudo obtener el lugarId del usuario autenticado');
+    }
+    final recurrenteProvider =
+        Provider.of<ReservaRecurrenteProvider>(context, listen: false);
+    await recurrenteProvider.fetchReservasRecurrentes(sede: widget.sede);
+
+    for (final horario in widget.horarios) {
+      final ocupado = await turnoEstaOcupado(
+        firestore: FirebaseFirestore.instance,
+        recurrenteProvider: recurrenteProvider,
+        fecha: widget.fecha,
+        sede: widget.sede,
+        canchaId: widget.cancha.id,
+        lugarId: lugarIdInicial,
+        horarioFormateado: horario.horaFormateada,
+      );
+      if (ocupado) {
+        throw Exception(
+          'El turno ${horario.horaFormateada} del ${DateFormat('yyyy-MM-dd').format(widget.fecha)} ya está ocupado (reserva confirmada o regla fija).',
+        );
+      }
+    }
+
   for (final horario in widget.horarios) {
     final precioHora = distribucionPrecios[horario]!;
     final abonoHora = distribucionAbono[horario]!;
-
-    // Obtener lugarId del usuario autenticado
-    final lugarId = await LugarHelper.getLugarId();
-    if (lugarId == null) {
-      throw Exception('No se pudo obtener el lugarId del usuario autenticado');
-    }
 
     final reserva = Reserva(
       id: '',
@@ -424,7 +506,7 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
       nombre: _nombreController.text,
       telefono: _telefonoController.text,
       confirmada: true,
-      lugarId: lugarId, // ✅ Agregar lugarId
+      lugarId: lugarIdInicial,
     );
 
     final docRef = FirebaseFirestore.instance.collection('reservas').doc();
@@ -563,12 +645,8 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
     precioPersonalizado = true;
   }
 
-  // ✅ CREAR LISTA DE DÍAS EXCLUIDOS BASADA EN CONFLICTOS
+  // Sin conflictos al crear (se bloquea antes); no se usan exclusiones parciales.
   final List<String> diasExcluidos = [];
-  for (var conflicto in _conflictosDetectados) {
-    final fechaConflicto = DateFormat('yyyy-MM-dd').format(conflicto['fecha']);
-    diasExcluidos.add(fechaConflicto);
-  }
 
   // Obtener lugarId del usuario autenticado
   final lugarId = await LugarHelper.getLugarId();
@@ -668,7 +746,7 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
         'dias_semana': _diasSeleccionados.length,
         'fecha_inicio': DateFormat('yyyy-MM-dd').format(widget.fecha),
         'fecha_fin': _fechaFinRecurrencia != null ? DateFormat('yyyy-MM-dd').format(_fechaFinRecurrencia!) : null,
-        'conflictos_excluidos': _conflictosDetectados.length,
+        'conflictos_excluidos': 0,
         'es_reserva_recurrente': true,
         // 🔧 MARCAR PARA EVITAR AUDITORÍAS DUPLICADAS
         'auditoria_manual': true,
@@ -689,23 +767,17 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
       ? ' Con descuento de COP ${descuentoAplicado!.toStringAsFixed(0)} por reserva.'
       : '';
 
-  final mensajeConflictos = _conflictosDetectados.isNotEmpty
-      ? '\n\n⚠️ IMPORTANTE: Se excluyeron automáticamente ${_conflictosDetectados.length} fecha(s) con conflictos. La reserva recurrente se creó solo para los días sin conflictos.'
-      : '';
-
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(
-        '✅ Reserva recurrente creada exitosamente. Los horarios se aplicarán automáticamente según la programación.$mensajeDescuento$mensajeConflictos',
+        '✅ Reserva recurrente creada exitosamente. Los horarios se aplicarán automáticamente según la programación.$mensajeDescuento',
         style: GoogleFonts.montserrat(),
       ),
-      backgroundColor: _conflictosDetectados.isNotEmpty 
-          ? Colors.orange.shade600 
-          : _secondaryColor,
+      backgroundColor: _secondaryColor,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(12),
-      duration: Duration(seconds: _conflictosDetectados.isNotEmpty ? 7 : 5),
+      duration: const Duration(seconds: 5),
     ),
   );
 
@@ -1449,12 +1521,6 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
   }
 
   Widget _buildAvisoExclusionAutomatica() {
-    // Obtener días únicos con conflictos
-    final diasConConflictos = <String>{};
-    for (final conflicto in _conflictosDetectados) {
-      diasConConflictos.add(conflicto['dia'] as String);
-    }
-    
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1472,7 +1538,7 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '⚠️ Exclusión automática de conflictos',
+                  'Política de conflictos',
                   style: GoogleFonts.montserrat(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1481,7 +1547,7 @@ class AgregarReservaScreenState extends State<AgregarReservaScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Los días con conflictos (${_conflictosDetectados.length} fecha${_conflictosDetectados.length > 1 ? 's' : ''}) se excluirán automáticamente de la reserva recurrente. La reserva se creará solo para los días sin conflictos.',
+                  'Si aparece un conflicto en cualquiera de los días u horarios (reserva puntual u otra regla fija en la misma cancha y hora), no podrás crear esta reserva recurrente hasta resolverlo (cambiar hora, cancha o días).',
                   style: GoogleFonts.montserrat(
                     fontSize: 12,
                     color: _primaryColor,

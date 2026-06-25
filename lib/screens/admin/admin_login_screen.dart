@@ -841,10 +841,10 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                                 vertical: 12,
                                               ),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF48BB78).withValues(alpha: 0.1),
+                                                color: const Color.fromARGB(255, 0, 0, 0).withValues(alpha: 0.1),
                                                 borderRadius: BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: const Color(0xFF48BB78).withValues(alpha: 0.2),
+                                                  color: const Color.fromARGB(255, 0, 0, 0).withValues(alpha: 0.2),
                                                 ),
                                               ),
                                               child: Row(
@@ -852,14 +852,14 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                                 children: [
                                                   Icon(
                                                     Icons.security_rounded,
-                                                    color: const Color(0xFF48BB78),
+                                                    color: const Color.fromARGB(255, 0, 0, 0),
                                                     size: 16,
                                                   ),
                                                   const SizedBox(width: 8),
                                                   Text(
                                                     "Conexión segura protegida",
                                                     style: TextStyle(
-                                                      color: const Color(0xFF48BB78),
+                                                      color: const Color.fromARGB(255, 0, 0, 0),
                                                       fontSize: 13,
                                                       fontWeight: FontWeight.w600,
                                                     ),

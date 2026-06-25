@@ -1,0 +1,763 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:var(--color-background-tertiary);min-height:100vh}
+.app{display:grid;grid-template-columns:200px 1fr;grid-template-rows:48px 1fr;height:100vh;min-height:700px}
+.topbar{grid-column:1/-1;background:var(--color-background-primary);border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;padding:0 16px;gap:12px;z-index:10}
+.logo{width:28px;height:28px;background:#E8510A;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:500;font-size:13px;flex-shrink:0}
+.brand{font-size:14px;font-weight:500;color:var(--color-text-primary)}
+.sede-pill{margin-left:auto;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--color-text-secondary);display:flex;align-items:center;gap:6px;cursor:pointer}
+.topbar-actions{display:flex;gap:6px;margin-left:8px}
+.icon-btn{width:30px;height:30px;border:0.5px solid var(--color-border-tertiary);border-radius:6px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--color-text-secondary)}
+.icon-btn:hover{background:var(--color-background-secondary)}
+.sidebar{background:var(--color-background-primary);border-right:0.5px solid var(--color-border-tertiary);padding:12px 8px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nav-section{font-size:10px;color:var(--color-text-tertiary);padding:10px 8px 4px;letter-spacing:.5px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--color-text-secondary);transition:background .1s}
+.nav-item:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.nav-item.active{background:#FEF0E8;color:#C4400A}
+.nav-item i{font-size:16px;flex-shrink:0}
+.nav-badge{margin-left:auto;background:#E8510A;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;font-weight:500}
+.main{overflow:auto;background:var(--color-background-tertiary)}
+.screen{display:none;height:100%;padding:16px}
+.screen.active{display:flex;flex-direction:column}
+.page-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-shrink:0}
+.page-title{font-size:16px;font-weight:500;color:var(--color-text-primary)}
+.page-subtitle{font-size:12px;color:var(--color-text-secondary)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans);transition:background .1s}
+.btn:hover{background:var(--color-background-secondary)}
+.btn-primary{background:#E8510A;color:#fff;border-color:#E8510A}
+.btn-primary:hover{background:#C4400A;border-color:#C4400A}
+.btn-sm{padding:5px 10px;font-size:12px}
+.pill-tab{padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;border:0.5px solid transparent;color:var(--color-text-secondary);background:transparent;font-family:var(--font-sans)}
+.pill-tab.active{background:#FEF0E8;color:#C4400A;border-color:#F5C4A3}
+.pill-tab:hover:not(.active){background:var(--color-background-secondary)}
+.status-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:500}
+.chip-confirm{background:#EAF3DE;color:#3B6D11}
+.chip-kitchen{background:#FAEEDA;color:#854F0B}
+.chip-ready{background:#E6F1FB;color:#185FA5}
+.chip-paying{background:#FBEAF0;color:#993556}
+.chip-delivery{background:#EEEDFE;color:#534AB7}
+.chip-pending{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+
+/* PEDIDOS */
+.orders-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;flex-shrink:0}
+.search-box{display:flex;align-items:center;gap:6px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:6px 10px;flex:1;min-width:160px;max-width:260px}
+.search-box input{border:none;background:transparent;font-size:13px;color:var(--color-text-primary);outline:none;font-family:var(--font-sans);width:100%}
+.search-box input::placeholder{color:var(--color-text-tertiary)}
+.search-box i{color:var(--color-text-tertiary);font-size:15px;flex-shrink:0}
+.filter-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.orders-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow-y:auto;flex:1}
+.order-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px;display:flex;flex-direction:column;gap:10px;cursor:pointer}
+.order-card:hover{border-color:var(--color-border-secondary)}
+.order-card.urgent{border-left:3px solid #E24B4A}
+.order-card.warning{border-left:3px solid #EF9F27}
+.order-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.order-id{font-size:12px;font-weight:500;color:var(--color-text-primary)}
+.order-source{font-size:11px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:3px}
+.order-amount{font-size:15px;font-weight:500;color:var(--color-text-primary)}
+.order-meta{font-size:11px;color:var(--color-text-secondary);display:flex;align-items:center;gap:4px}
+.order-meta i{font-size:13px}
+.order-time{color:#E24B4A;font-weight:500}
+.order-time.ok{color:#3B6D11}
+.order-items{font-size:12px;color:var(--color-text-secondary);line-height:1.5;padding:8px;background:var(--color-background-secondary);border-radius:6px}
+.order-actions{display:flex;gap:6px}
+.domi-assign{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--color-background-secondary);border-radius:6px;border:0.5px solid var(--color-border-tertiary)}
+.domi-assign select{background:transparent;border:none;font-size:12px;color:var(--color-text-secondary);font-family:var(--font-sans);outline:none;cursor:pointer}
+.domi-assign i{font-size:14px;color:var(--color-text-tertiary)}
+.stat-bar{display:flex;gap:8px;margin-bottom:14px;flex-shrink:0}
+.stat-chip{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:6px 12px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)}
+.stat-chip span{font-weight:500;color:var(--color-text-primary)}
+
+/* NUEVO PEDIDO */
+.new-order-layout{display:grid;grid-template-columns:1fr 300px;gap:12px;flex:1;overflow:hidden}
+.menu-panel{display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+.product-search{display:flex;align-items:center;gap:6px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:8px 12px}
+.product-search input{border:none;background:transparent;font-size:14px;font-family:var(--font-sans);color:var(--color-text-primary);outline:none;flex:1}
+.product-search i{color:var(--color-text-tertiary);font-size:18px}
+.cat-strip{display:flex;gap:6px;overflow-x:auto;padding:2px 0;flex-shrink:0}
+.cat-strip::-webkit-scrollbar{display:none}
+.cat-btn{flex-shrink:0;padding:5px 12px;border-radius:16px;font-size:12px;border:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary);cursor:pointer;font-family:var(--font-sans);color:var(--color-text-secondary)}
+.cat-btn.active{background:#E8510A;color:#fff;border-color:#E8510A}
+.products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.product-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px;cursor:pointer;transition:border-color .1s,transform .1s}
+.product-card:hover{border-color:#E8510A;transform:translateY(-1px)}
+.product-card:active{transform:scale(.98)}
+.product-img{width:100%;height:56px;background:#FEF0E8;border-radius:6px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:24px}
+.product-name{font-size:12px;font-weight:500;color:var(--color-text-primary);margin-bottom:2px}
+.product-price{font-size:13px;color:#E8510A;font-weight:500}
+.product-avail{font-size:11px;color:var(--color-text-tertiary)}
+.cart-panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);display:flex;flex-direction:column;overflow:hidden}
+.cart-top{padding:12px 14px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between}
+.cart-top-title{font-size:13px;font-weight:500;color:var(--color-text-primary)}
+.cart-type-toggle{display:flex;border:0.5px solid var(--color-border-tertiary);border-radius:6px;overflow:hidden}
+.cart-type-btn{padding:4px 10px;font-size:11px;cursor:pointer;border:none;background:transparent;font-family:var(--font-sans);color:var(--color-text-secondary)}
+.cart-type-btn.active{background:#E8510A;color:#fff}
+.cart-items{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.cart-item{display:flex;align-items:center;gap:8px}
+.cart-item-name{flex:1;font-size:13px;color:var(--color-text-primary)}
+.qty-control{display:flex;align-items:center;gap:4px}
+.qty-btn{width:22px;height:22px;border:0.5px solid var(--color-border-tertiary);border-radius:4px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--color-text-secondary);font-family:var(--font-sans)}
+.qty-btn:hover{background:var(--color-background-secondary)}
+.qty-num{font-size:13px;font-weight:500;min-width:18px;text-align:center;color:var(--color-text-primary)}
+.cart-item-price{font-size:13px;color:var(--color-text-secondary);min-width:60px;text-align:right}
+.cart-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--color-text-tertiary)}
+.cart-empty i{font-size:32px}
+.cart-empty p{font-size:13px}
+.cart-bottom{padding:12px 14px;border-top:0.5px solid var(--color-border-tertiary);display:flex;flex-direction:column;gap:8px}
+.cart-row{display:flex;justify-content:space-between;font-size:13px;color:var(--color-text-secondary)}
+.cart-row.total{font-weight:500;font-size:15px;color:var(--color-text-primary)}
+.cart-note{display:flex;align-items:center;gap:6px;background:var(--color-background-secondary);border-radius:6px;padding:7px 10px}
+.cart-note input{border:none;background:transparent;font-size:12px;font-family:var(--font-sans);color:var(--color-text-secondary);outline:none;flex:1}
+.cart-note i{font-size:14px;color:var(--color-text-tertiary)}
+.mesa-selector{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)}
+.mesa-selector select{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:4px;padding:4px 8px;font-size:12px;font-family:var(--font-sans);color:var(--color-text-primary);cursor:pointer}
+.horario-warn{display:flex;align-items:center;gap:6px;background:#FAEEDA;border-radius:6px;padding:7px 10px;font-size:12px;color:#854F0B;flex-shrink:0}
+.horario-warn i{font-size:14px;flex-shrink:0}
+
+/* MESAS */
+.mesas-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-shrink:0}
+.legend{display:flex;align-items:center;gap:14px;margin-left:auto}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--color-text-secondary)}
+.dot{width:8px;height:8px;border-radius:50%}
+.dot-free{background:#639922}
+.dot-occ{background:#E8510A}
+.dot-res{background:#185FA5}
+.mesas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;overflow-y:auto;flex:1}
+.mesa-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px;cursor:pointer;transition:border-color .1s;display:flex;flex-direction:column;gap:8px;min-height:130px}
+.mesa-card:hover{border-color:var(--color-border-primary)}
+.mesa-card.occupied{border-left:3px solid #E8510A}
+.mesa-card.reserved{border-left:3px solid #185FA5}
+.mesa-card.free{border-left:3px solid #639922}
+.mesa-card-top{display:flex;align-items:center;justify-content:space-between}
+.mesa-name{font-size:14px;font-weight:500;color:var(--color-text-primary)}
+.mesa-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mesa-order-id{font-size:11px;color:#E8510A;font-weight:500}
+.mesa-waiter{font-size:11px;color:var(--color-text-tertiary);display:flex;align-items:center;gap:3px}
+.mesa-metrics{display:flex;gap:8px;flex-wrap:wrap}
+.mesa-metric{font-size:11px;color:var(--color-text-secondary);display:flex;align-items:center;gap:3px}
+.mesa-metric i{font-size:12px}
+.mesa-amount{font-size:15px;font-weight:500;color:var(--color-text-primary)}
+.mesa-action-row{display:flex;gap:6px;margin-top:auto}
+.mesa-btn{flex:1;padding:6px;text-align:center;border-radius:6px;font-size:11px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);background:transparent;font-family:var(--font-sans);color:var(--color-text-secondary)}
+.mesa-btn:hover{background:var(--color-background-secondary)}
+.mesa-btn.primary{background:#E8510A;color:#fff;border-color:#E8510A}
+.mesa-btn.primary:hover{background:#C4400A}
+.mesa-summary{display:flex;gap:8px;margin-bottom:12px;flex-shrink:0}
+.mesa-stat{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:8px 14px;flex:1;text-align:center}
+.mesa-stat-num{font-size:18px;font-weight:500;color:var(--color-text-primary)}
+.mesa-stat-label{font-size:11px;color:var(--color-text-tertiary)}
+
+/* CAJA */
+.caja-layout{display:grid;grid-template-columns:1fr 280px;gap:12px;flex:1;overflow:hidden}
+.caja-main{display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.caja-metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;flex-shrink:0}
+.metric-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px 14px}
+.metric-label{font-size:11px;color:var(--color-text-tertiary);margin-bottom:4px}
+.metric-value{font-size:20px;font-weight:500;color:var(--color-text-primary)}
+.metric-value.green{color:#3B6D11}
+.metric-value.red{color:#A32D2D}
+.metric-sub{font-size:11px;color:var(--color-text-tertiary);margin-top:2px}
+.movements-panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);flex:1;overflow:hidden;display:flex;flex-direction:column}
+.movements-header{padding:10px 14px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;gap:8px}
+.movements-header span{font-size:13px;font-weight:500;color:var(--color-text-primary);flex:1}
+.filter-select{background:transparent;border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:4px 8px;font-size:12px;font-family:var(--font-sans);color:var(--color-text-secondary);cursor:pointer}
+.movements-list{flex:1;overflow-y:auto;padding:4px 0}
+.movement-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.movement-row:last-child{border-bottom:none}
+.movement-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px}
+.mov-venta{background:#EAF3DE;color:#3B6D11}
+.mov-gasto{background:#FCEBEB;color:#A32D2D}
+.mov-fiao{background:#FAEEDA;color:#854F0B}
+.movement-info{flex:1}
+.movement-type{font-size:13px;font-weight:500;color:var(--color-text-primary)}
+.movement-detail{font-size:11px;color:var(--color-text-tertiary)}
+.movement-amount{font-size:13px;font-weight:500}
+.amount-pos{color:#3B6D11}
+.amount-neg{color:#A32D2D}
+.movement-method{font-size:10px;color:var(--color-text-tertiary);background:var(--color-background-secondary);padding:2px 6px;border-radius:4px}
+.caja-side{display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+.side-card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px;display:flex;flex-direction:column;gap:10px}
+.side-card-title{font-size:12px;font-weight:500;color:var(--color-text-secondary)}
+.payment-breakdown{display:flex;flex-direction:column;gap:6px}
+.pay-row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.pay-label{color:var(--color-text-secondary);display:flex;align-items:center;gap:5px}
+.pay-label i{font-size:14px}
+.pay-amount{font-weight:500;color:var(--color-text-primary)}
+.pay-bar-bg{background:var(--color-background-secondary);border-radius:4px;height:4px;margin-top:4px;overflow:hidden}
+.pay-bar-fill{height:100%;border-radius:4px;background:#E8510A;transition:width .3s}
+.close-shift-btn{padding:10px;text-align:center;border-radius:8px;background:#FCEBEB;color:#A32D2D;border:0.5px solid #F7C1C1;font-size:13px;cursor:pointer;font-family:var(--font-sans);font-weight:500}
+.close-shift-btn:hover{background:#F7C1C1}
+.gasto-form{display:flex;flex-direction:column;gap:8px}
+.gasto-input{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:6px;padding:7px 10px;font-size:13px;font-family:var(--font-sans);color:var(--color-text-primary);outline:none}
+.gasto-input:focus{border-color:var(--color-border-primary)}
+.turno-badge{background:#EAF3DE;color:#3B6D11;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px}
+</style>
+
+<h2 class="sr-only">Rediseño de Foody — Panel restaurante con vistas de Pedidos, Nuevo Pedido, Mesas y Caja</h2>
+
+<div class="app">
+  <div class="topbar">
+    <div class="logo">F</div>
+    <div>
+      <div class="brand">Foody</div>
+    </div>
+    <div class="sede-pill" style="font-size:12px"><i class="ti ti-building-store" style="font-size:13px" aria-hidden="true"></i> Sede Centro <i class="ti ti-chevron-down" style="font-size:11px" aria-hidden="true"></i></div>
+    <div class="turno-badge"><i class="ti ti-clock" style="font-size:13px" aria-hidden="true"></i> Turno abierto 08:00</div>
+    <div class="topbar-actions" style="margin-left:8px">
+      <button class="icon-btn" title="Notificaciones" aria-label="Notificaciones"><i class="ti ti-bell" aria-hidden="true"></i></button>
+      <button class="icon-btn" title="Configuración" aria-label="Configuración"><i class="ti ti-settings" aria-hidden="true"></i></button>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="nav-section">Operación</div>
+    <div class="nav-item active" onclick="showScreen('pedidos')">
+      <i class="ti ti-clipboard-list" aria-hidden="true"></i> Pedidos
+      <span class="nav-badge">12</span>
+    </div>
+    <div class="nav-item" onclick="showScreen('nuevo')">
+      <i class="ti ti-plus" aria-hidden="true"></i> Nuevo pedido
+    </div>
+    <div class="nav-item" onclick="showScreen('mesas')">
+      <i class="ti ti-armchair" aria-hidden="true"></i> Mesas
+    </div>
+    <div class="nav-item" onclick="showScreen('caja')">
+      <i class="ti ti-cash" aria-hidden="true"></i> Caja
+    </div>
+    <div class="nav-section">Carta</div>
+    <div class="nav-item"><i class="ti ti-menu-2" aria-hidden="true"></i> Menú</div>
+    <div class="nav-item"><i class="ti ti-package" aria-hidden="true"></i> Insumos</div>
+    <div class="nav-item"><i class="ti ti-chart-pie" aria-hidden="true"></i> Costos</div>
+    <div class="nav-item"><i class="ti ti-tag" aria-hidden="true"></i> Promociones</div>
+    <div class="nav-section">Negocio</div>
+    <div class="nav-item"><i class="ti ti-motorbike" aria-hidden="true"></i> Domicilio</div>
+    <div class="nav-item"><i class="ti ti-chart-bar" aria-hidden="true"></i> Finanzas</div>
+    <div class="nav-item"><i class="ti ti-users" aria-hidden="true"></i> Equipo</div>
+    <div style="margin-top:auto;padding:8px">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px;border:0.5px solid var(--color-border-tertiary);border-radius:8px;cursor:pointer">
+        <div style="width:28px;height:28px;border-radius:50%;background:#FEF0E8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:#C4400A;flex-shrink:0">AD</div>
+        <div>
+          <div style="font-size:12px;font-weight:500;color:var(--color-text-primary)">Admin Demo</div>
+          <div style="font-size:10px;color:var(--color-text-tertiary)">Administrador</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- PEDIDOS -->
+    <div class="screen active" id="screen-pedidos">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Pedidos</div>
+          <div class="page-subtitle">Hoy · 12 activos · Última actualización hace 1 min</div>
+        </div>
+        <button class="btn btn-sm" style="margin-left:auto" onclick="showScreen('nuevo')"><i class="ti ti-plus" aria-hidden="true"></i> Nuevo</button>
+        <button class="btn btn-sm"><i class="ti ti-refresh" aria-hidden="true"></i></button>
+      </div>
+      <div class="stat-bar">
+        <div class="stat-chip"><span class="dot" style="background:#D85A30"></span> Confirmados <span>1</span></div>
+        <div class="stat-chip"><span class="dot" style="background:#EF9F27"></span> En cocina <span>0</span></div>
+        <div class="stat-chip"><span class="dot" style="background:#639922"></span> Listos <span>8</span></div>
+        <div class="stat-chip"><span class="dot" style="background:#993556"></span> Pagando <span>1</span></div>
+        <div class="stat-chip"><span class="dot" style="background:#534AB7"></span> Domicilio <span>2</span></div>
+        <div class="stat-chip" style="margin-left:auto"><i class="ti ti-currency-dollar" style="font-size:14px;color:var(--color-text-tertiary)" aria-hidden="true"></i> Total turno <span>$547.822</span></div>
+      </div>
+      <div class="orders-toolbar">
+        <div class="search-box"><i class="ti ti-search" aria-hidden="true"></i><input type="text" placeholder="Buscar por pedido, mesa, cliente…"></div>
+        <div class="filter-tabs">
+          <button class="pill-tab active">Todos</button>
+          <button class="pill-tab">Mesa</button>
+          <button class="pill-tab">Domicilio</button>
+          <button class="pill-tab">Para llevar</button>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="btn btn-sm"><i class="ti ti-sort-descending" aria-hidden="true"></i> Más urgentes</button>
+        </div>
+      </div>
+      <div class="orders-grid">
+        <div class="order-card warning">
+          <div class="order-header">
+            <div>
+              <div class="order-id">FDY-2026-0025</div>
+              <div class="order-source"><i class="ti ti-armchair" style="font-size:12px" aria-hidden="true"></i> Mesa 2</div>
+            </div>
+            <span class="status-chip chip-confirm">Confirmado</span>
+          </div>
+          <div class="order-items">× 1 Hamburguesa clásica<br>× 2 Papas medianas<br>× 1 Jugo natural</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="order-meta"><i class="ti ti-clock" aria-hidden="true"></i><span class="order-time">1h 20m</span></div>
+            <div class="order-amount">$12.500</div>
+          </div>
+          <div class="order-actions">
+            <button class="btn btn-sm btn-primary" style="flex:1">Enviar a cocina <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+          </div>
+        </div>
+        <div class="order-card urgent">
+          <div class="order-header">
+            <div>
+              <div class="order-id">FDY-2026-0026</div>
+              <div class="order-source"><i class="ti ti-armchair" style="font-size:12px" aria-hidden="true"></i> Mesa 2</div>
+            </div>
+            <span class="status-chip chip-paying">Pagando</span>
+          </div>
+          <div class="order-items">× 1 Picada personal<br>× 1 Hígado</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="order-meta"><i class="ti ti-clock" aria-hidden="true"></i><span class="order-time">1h 22m</span></div>
+            <div class="order-amount">$20.000</div>
+          </div>
+          <div class="order-actions">
+            <button class="btn btn-sm" style="flex:1"><i class="ti ti-credit-card" aria-hidden="true"></i> Efectivo</button>
+            <button class="btn btn-sm" style="flex:1"><i class="ti ti-device-mobile" aria-hidden="true"></i> Transferencia</button>
+          </div>
+        </div>
+        <div class="order-card urgent">
+          <div class="order-header">
+            <div>
+              <div class="order-id">FDY-2026-0023</div>
+              <div class="order-source"><i class="ti ti-motorbike" style="font-size:12px" aria-hidden="true"></i> biblos · Domicilio</div>
+            </div>
+            <span class="status-chip chip-ready">Listo</span>
+          </div>
+          <div class="order-items">× 1 Carne molida<br>× 1 Rosquete sencillo</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="order-meta"><i class="ti ti-clock" aria-hidden="true"></i><span class="order-time">25h 17m ⚠️</span></div>
+            <div class="order-amount">$26.500</div>
+          </div>
+          <div class="domi-assign">
+            <i class="ti ti-motorbike" aria-hidden="true"></i>
+            <select><option>Domi Demo</option><option>Carlos R.</option><option>Sin asignar</option></select>
+            <button class="btn btn-sm btn-primary" style="margin-left:auto">Asignar</button>
+          </div>
+        </div>
+        <div class="order-card urgent">
+          <div class="order-header">
+            <div>
+              <div class="order-id">FDY-2026-0022</div>
+              <div class="order-source"><i class="ti ti-motorbike" style="font-size:12px" aria-hidden="true"></i> milagros · Domicilio</div>
+            </div>
+            <span class="status-chip chip-ready">Listo</span>
+          </div>
+          <div class="order-items">× 2 Hamburguesa clásica<br>× 1 Huevo frito</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="order-meta"><i class="ti ti-clock" aria-hidden="true"></i><span class="order-time">25h 18m ⚠️</span></div>
+            <div class="order-amount">$23.500</div>
+          </div>
+          <div class="domi-assign">
+            <i class="ti ti-motorbike" aria-hidden="true"></i>
+            <select><option>Domi Demo</option><option>Carlos R.</option><option>Sin asignar</option></select>
+            <button class="btn btn-sm btn-primary" style="margin-left:auto">Asignar</button>
+          </div>
+        </div>
+        <div class="order-card">
+          <div class="order-header">
+            <div>
+              <div class="order-id">FDY-2026-0021</div>
+              <div class="order-source"><i class="ti ti-motorbike" style="font-size:12px" aria-hidden="true"></i> milagros · Domicilio</div>
+            </div>
+            <span class="status-chip chip-ready">Listo</span>
+          </div>
+          <div class="order-items">× 1 Picada personal<br>× 1 Porcio de queso</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="order-meta"><i class="ti ti-clock" aria-hidden="true"></i><span class="order-time ok">8m</span></div>
+            <div class="order-amount">$23.500</div>
+          </div>
+          <div class="domi-assign">
+            <i class="ti ti-motorbike" aria-hidden="true"></i>
+            <select><option>Domi Demo</option><option>Carlos R.</option></select>
+            <button class="btn btn-sm btn-primary" style="margin-left:auto">Asignar</button>
+          </div>
+        </div>
+        <div class="order-card">
+          <div class="order-header">
+            <div>
+              <div class="order-id">FDY-2026-0020</div>
+              <div class="order-source"><i class="ti ti-motorbike" style="font-size:12px" aria-hidden="true"></i> milagros · Domicilio</div>
+            </div>
+            <span class="status-chip chip-delivery">En camino</span>
+          </div>
+          <div class="order-items">× 1 COMBO2<br>× 1 Papas medianas</div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="order-meta"><i class="ti ti-clock" aria-hidden="true"></i><span class="order-time ok">12m</span></div>
+            <div class="order-amount">$29.000</div>
+          </div>
+          <div class="order-actions">
+            <button class="btn btn-sm" style="flex:1"><i class="ti ti-phone" aria-hidden="true"></i> Llamar cliente</button>
+            <button class="btn btn-sm" style="flex:1;background:#EEEDFE;color:#534AB7;border-color:#AFA9EC">Entregado</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NUEVO PEDIDO -->
+    <div class="screen" id="screen-nuevo">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Nuevo pedido</div>
+        </div>
+      </div>
+      <div class="horario-warn" style="margin-bottom:10px">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <span>Sucursal fuera de horario. El servidor puede rechazar el pedido.</span>
+        <button class="btn btn-sm" style="margin-left:auto;font-size:11px;padding:3px 8px">Ignorar</button>
+      </div>
+      <div class="new-order-layout" style="flex:1;overflow:hidden">
+        <div class="menu-panel">
+          <div class="product-search"><i class="ti ti-search" aria-hidden="true"></i><input type="text" placeholder="Buscar plato, combo o ingrediente…"></div>
+          <div class="cat-strip">
+            <button class="cat-btn active">Todo</button>
+            <button class="cat-btn">🍔 Combos</button>
+            <button class="cat-btn">🥩 Carnes</button>
+            <button class="cat-btn">🍟 Acompañados</button>
+            <button class="cat-btn">🥚 Huevos</button>
+            <button class="cat-btn">🥤 Bebidas</button>
+          </div>
+          <div class="products-grid">
+            <div class="product-card">
+              <div class="product-img">🍔</div>
+              <div class="product-name">Hamburguesa clásica</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$18.000</div>
+                <div class="product-avail">↑ Stock OK</div>
+              </div>
+            </div>
+            <div class="product-card">
+              <div class="product-img">🥩</div>
+              <div class="product-name">Carne molida</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$20.000</div>
+                <div class="product-avail">↑ Stock OK</div>
+              </div>
+            </div>
+            <div class="product-card">
+              <div class="product-img">🫀</div>
+              <div class="product-name">Hígado</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$25.000</div>
+                <div class="product-avail" style="color:#854F0B">⚠ Bajo</div>
+              </div>
+            </div>
+            <div class="product-card">
+              <div class="product-img">🍟</div>
+              <div class="product-name">Papas medianas</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$8.000</div>
+                <div class="product-avail">↑ Stock OK</div>
+              </div>
+            </div>
+            <div class="product-card">
+              <div class="product-img">🥚</div>
+              <div class="product-name">Huevo frito</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$8.000</div>
+                <div class="product-avail">↑ Stock OK</div>
+              </div>
+            </div>
+            <div class="product-card">
+              <div class="product-img">🧀</div>
+              <div class="product-name">Porción de queso</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$10.500</div>
+                <div class="product-avail">↑ Stock OK</div>
+              </div>
+            </div>
+            <div class="product-card">
+              <div class="product-img">🫓</div>
+              <div class="product-name">Rosquete sencillo</div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div class="product-price">$2.500</div>
+                <div class="product-avail">↑ Stock OK</div>
+              </div>
+            </div>
+            <div class="product-card" style="border:2px dashed var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;background:transparent">
+              <div style="text-align:center;color:var(--color-text-tertiary)">
+                <i class="ti ti-plus" style="font-size:20px;display:block;margin-bottom:4px" aria-hidden="true"></i>
+                <div style="font-size:11px">COMBO2 · $25.000</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cart-panel">
+          <div class="cart-top">
+            <div class="cart-top-title">Carrito · <span style="color:#E8510A">3 items</span></div>
+            <div class="cart-type-toggle">
+              <button class="cart-type-btn active">Mesa</button>
+              <button class="cart-type-btn">Domi</button>
+              <button class="cart-type-btn">Llevar</button>
+            </div>
+          </div>
+          <div style="padding:8px 14px;border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;gap:8px">
+            <div class="mesa-selector"><i class="ti ti-armchair" style="font-size:14px;color:var(--color-text-tertiary)" aria-hidden="true"></i>
+              <select><option>Mesa 1 (libre)</option><option>Mesa 3 (libre)</option></select>
+            </div>
+            <div class="mesa-selector" style="margin-left:auto"><i class="ti ti-user" style="font-size:14px;color:var(--color-text-tertiary)" aria-hidden="true"></i>
+              <select><option>Admin Demo</option></select>
+            </div>
+          </div>
+          <div class="cart-items">
+            <div class="cart-item">
+              <div class="cart-item-name">Hamburguesa clásica</div>
+              <div class="qty-control">
+                <button class="qty-btn">−</button>
+                <span class="qty-num">1</span>
+                <button class="qty-btn">+</button>
+              </div>
+              <div class="cart-item-price">$18.000</div>
+            </div>
+            <div class="cart-item">
+              <div class="cart-item-name">Papas medianas</div>
+              <div class="qty-control">
+                <button class="qty-btn">−</button>
+                <span class="qty-num">2</span>
+                <button class="qty-btn">+</button>
+              </div>
+              <div class="cart-item-price">$16.000</div>
+            </div>
+            <div class="cart-item">
+              <div class="cart-item-name">Rosquete sencillo</div>
+              <div class="qty-control">
+                <button class="qty-btn">−</button>
+                <span class="qty-num">1</span>
+                <button class="qty-btn">+</button>
+              </div>
+              <div class="cart-item-price">$2.500</div>
+            </div>
+          </div>
+          <div class="cart-bottom">
+            <div class="cart-note"><i class="ti ti-notes" aria-hidden="true"></i><input type="text" placeholder="Nota para cocina (sin cebolla…)"></div>
+            <div class="cart-row"><span>Subtotal</span><span>$36.500</span></div>
+            <div class="cart-row total"><span>Total</span><span>$36.500</span></div>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;padding:10px">Confirmar pedido <i class="ti ti-arrow-right" aria-hidden="true"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MESAS -->
+    <div class="screen" id="screen-mesas">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Mesas</div>
+          <div class="page-subtitle">Sede Centro · 3 mesas</div>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><div class="dot dot-free"></div> Libre</div>
+          <div class="legend-item"><div class="dot dot-occ"></div> Ocupada</div>
+          <div class="legend-item"><div class="dot dot-res"></div> Reservada</div>
+        </div>
+        <button class="btn btn-sm btn-primary" style="margin-left:8px"><i class="ti ti-plus" aria-hidden="true"></i> Mesa</button>
+      </div>
+      <div class="mesa-summary">
+        <div class="mesa-stat"><div class="mesa-stat-num" style="color:#3B6D11">2</div><div class="mesa-stat-label">Libres</div></div>
+        <div class="mesa-stat"><div class="mesa-stat-num" style="color:#E8510A">1</div><div class="mesa-stat-label">Ocupadas</div></div>
+        <div class="mesa-stat"><div class="mesa-stat-num" style="color:#185FA5">0</div><div class="mesa-stat-label">Reservadas</div></div>
+        <div class="mesa-stat"><div class="mesa-stat-num">$20.000</div><div class="mesa-stat-label">En mesas activas</div></div>
+      </div>
+      <div class="mesas-grid">
+        <div class="mesa-card free">
+          <div class="mesa-card-top">
+            <div class="mesa-name">Mesa 1</div>
+            <div class="mesa-status-dot" style="background:#639922"></div>
+          </div>
+          <div style="font-size:12px;color:var(--color-text-tertiary)">Libre · 0 personas</div>
+          <div class="mesa-action-row">
+            <button class="mesa-btn primary" onclick="showScreen('nuevo')"><i class="ti ti-plus" aria-hidden="true"></i> Nuevo pedido</button>
+          </div>
+        </div>
+        <div class="mesa-card occupied">
+          <div class="mesa-card-top">
+            <div class="mesa-name">Mesa 2</div>
+            <div class="mesa-status-dot" style="background:#E8510A"></div>
+          </div>
+          <div class="mesa-order-id">FDY-2026-0026</div>
+          <div class="mesa-waiter"><i class="ti ti-user" style="font-size:12px" aria-hidden="true"></i> Admin Demo</div>
+          <div class="mesa-metrics">
+            <div class="mesa-metric"><i class="ti ti-clock" aria-hidden="true"></i> 1h 22m</div>
+            <div class="mesa-metric"><i class="ti ti-users" aria-hidden="true"></i> 2 personas</div>
+          </div>
+          <div class="mesa-amount">$20.000</div>
+          <div class="mesa-action-row">
+            <button class="mesa-btn" style="flex:none;padding:6px 10px"><i class="ti ti-eye" aria-hidden="true"></i></button>
+            <button class="mesa-btn" style="flex:none;padding:6px 10px"><i class="ti ti-plus" aria-hidden="true"></i></button>
+            <button class="mesa-btn primary">Cobrar</button>
+          </div>
+        </div>
+        <div class="mesa-card free">
+          <div class="mesa-card-top">
+            <div class="mesa-name">Mesa 3</div>
+            <div class="mesa-status-dot" style="background:#639922"></div>
+          </div>
+          <div style="font-size:12px;color:var(--color-text-tertiary)">Libre · 0 personas</div>
+          <div class="mesa-action-row">
+            <button class="mesa-btn primary" onclick="showScreen('nuevo')"><i class="ti ti-plus" aria-hidden="true"></i> Nuevo pedido</button>
+          </div>
+        </div>
+        <div class="mesa-card" style="border:1.5px dashed var(--color-border-tertiary);background:transparent;align-items:center;justify-content:center;cursor:pointer">
+          <div style="text-align:center;color:var(--color-text-tertiary)">
+            <i class="ti ti-plus" style="font-size:22px;display:block;margin-bottom:4px" aria-hidden="true"></i>
+            <div style="font-size:12px">Agregar mesa</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAJA -->
+    <div class="screen" id="screen-caja">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Caja</div>
+          <div class="page-subtitle">Turno abierto desde las 08:00</div>
+        </div>
+        <button class="btn btn-sm" style="margin-left:auto"><i class="ti ti-printer" aria-hidden="true"></i> Imprimir corte</button>
+      </div>
+      <div class="caja-layout">
+        <div class="caja-main">
+          <div class="caja-metrics">
+            <div class="metric-card">
+              <div class="metric-label">Saldo en sistema</div>
+              <div class="metric-value green">$547.822</div>
+              <div class="metric-sub">Ventas − Gastos</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Total ventas</div>
+              <div class="metric-value">$497.822</div>
+              <div class="metric-sub">14 pedidos cerrados</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Gastos del turno</div>
+              <div class="metric-value red">$0</div>
+              <div class="metric-sub">0 gastos registrados</div>
+            </div>
+          </div>
+          <div class="movements-panel">
+            <div class="movements-header">
+              <span>Movimientos</span>
+              <select class="filter-select"><option>Todos</option><option>Ventas</option><option>Gastos</option><option>Fiados</option></select>
+              <select class="filter-select"><option>Todos los métodos</option><option>Efectivo</option><option>Transferencia</option><option>Datafono</option></select>
+            </div>
+            <div class="movements-list">
+              <div class="movement-row">
+                <div class="movement-icon mov-venta"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></div>
+                <div class="movement-info">
+                  <div class="movement-type">Venta automática</div>
+                  <div class="movement-detail">FDY-2026-0026 · Mesa 2 · Admin Demo</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="movement-amount amount-pos">+$20.000</div>
+                  <div class="movement-method">Efectivo</div>
+                </div>
+              </div>
+              <div class="movement-row">
+                <div class="movement-icon mov-venta"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></div>
+                <div class="movement-info">
+                  <div class="movement-type">Venta automática</div>
+                  <div class="movement-detail">FDY-2026-0025 · Mesa 2 · Admin Demo</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="movement-amount amount-pos">+$25.000</div>
+                  <div class="movement-method">Transferencia</div>
+                </div>
+              </div>
+              <div class="movement-row">
+                <div class="movement-icon mov-venta"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></div>
+                <div class="movement-info">
+                  <div class="movement-type">Venta automática</div>
+                  <div class="movement-detail">FDY-2026-0024 · Domicilio · milagros</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="movement-amount amount-pos">+$19.500</div>
+                  <div class="movement-method">Transferencia</div>
+                </div>
+              </div>
+              <div class="movement-row">
+                <div class="movement-icon mov-venta"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></div>
+                <div class="movement-info">
+                  <div class="movement-type">Venta automática</div>
+                  <div class="movement-detail">FDY-2026-0023 · Domicilio · biblos</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="movement-amount amount-pos">+$26.500</div>
+                  <div class="movement-method">Efectivo</div>
+                </div>
+              </div>
+              <div class="movement-row">
+                <div class="movement-icon mov-venta"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></div>
+                <div class="movement-info">
+                  <div class="movement-type">Venta automática</div>
+                  <div class="movement-detail">FDY-2026-0022 · Domicilio · milagros</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="movement-amount amount-pos">+$23.500</div>
+                  <div class="movement-method">Datafono</div>
+                </div>
+              </div>
+              <div class="movement-row">
+                <div class="movement-icon mov-venta"><i class="ti ti-arrow-up-right" aria-hidden="true"></i></div>
+                <div class="movement-info">
+                  <div class="movement-type">Venta automática</div>
+                  <div class="movement-detail">FDY-2026-0021 · Domicilio · milagros</div>
+                </div>
+                <div style="text-align:right">
+                  <div class="movement-amount amount-pos">+$23.500</div>
+                  <div class="movement-method">Efectivo</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="caja-side">
+          <div class="side-card">
+            <div class="side-card-title">Ventas por método de pago</div>
+            <div class="payment-breakdown">
+              <div>
+                <div class="pay-row"><span class="pay-label"><i class="ti ti-cash" aria-hidden="true"></i> Efectivo</span><span class="pay-amount">$215.500</span></div>
+                <div class="pay-bar-bg"><div class="pay-bar-fill" style="width:43%"></div></div>
+              </div>
+              <div>
+                <div class="pay-row"><span class="pay-label"><i class="ti ti-device-mobile" aria-hidden="true"></i> Transferencia</span><span class="pay-amount">$178.322</span></div>
+                <div class="pay-bar-bg"><div class="pay-bar-fill" style="width:36%;background:#185FA5"></div></div>
+              </div>
+              <div>
+                <div class="pay-row"><span class="pay-label"><i class="ti ti-credit-card" aria-hidden="true"></i> Datafono</span><span class="pay-amount">$104.000</span></div>
+                <div class="pay-bar-bg"><div class="pay-bar-fill" style="width:21%;background:#534AB7"></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="side-card">
+            <div class="side-card-title">Cuentas por cobrar (fiados)</div>
+            <div style="font-size:12px;color:var(--color-text-tertiary);text-align:center;padding:8px">Sin fiados pendientes</div>
+            <button class="btn btn-sm" style="width:100%;justify-content:center"><i class="ti ti-plus" aria-hidden="true"></i> Registrar fiado</button>
+          </div>
+          <div class="side-card">
+            <div class="side-card-title">Registrar gasto del turno</div>
+            <div class="gasto-form">
+              <input class="gasto-input" type="text" placeholder="Descripción del gasto">
+              <input class="gasto-input" type="number" placeholder="Monto $">
+              <select class="gasto-input"><option>Efectivo</option><option>Transferencia</option></select>
+              <button class="btn btn-sm btn-primary" style="width:100%;justify-content:center">Registrar gasto</button>
+            </div>
+          </div>
+          <button class="close-shift-btn"><i class="ti ti-lock" aria-hidden="true"></i> Cerrar turno</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const s=document.getElementById('screen-'+id);
+  if(s)s.classList.add('active');
+  const map={pedidos:0,nuevo:1,mesas:2,caja:3};
+  const items=document.querySelectorAll('.nav-item');
+  if(map[id]!==undefined&&items[map[id]])items[map[id]].classList.add('active');
+}
+document.querySelectorAll('.product-card').forEach(card=>{
+  card.addEventListener('click',function(){
+    this.style.borderColor='#E8510A';
+    setTimeout(()=>this.style.borderColor='',500);
+  });
+});
+</script>

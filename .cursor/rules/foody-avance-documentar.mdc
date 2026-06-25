@@ -1,0 +1,53 @@
+---
+description: Documentar avance del proyecto en docs/AVANCE_PROYECTO.md (leer antes de codificar, actualizar al terminar)
+alwaysApply: true
+---
+
+# Avance del proyecto — documentación obligatoria
+
+## Fuente de verdad del estado
+
+- **Leer primero** (cada sesión con trabajo sustantivo): `docs/AVANCE_PROYECTO.md` — sección **«Resumen de 1 minuto»** antes de las tablas largas
+- **Mapa por módulo (hecho/falta):** `docs/MODULOS_ESTADO.md` — consultar para priorizar; actualizar al cerrar tarea que cambie el estado de un módulo
+- **Actualizar siempre** al cerrar una tarea, PR o bloque de implementación en la misma sesión
+- No duplicar detalle técnico en `MEMORIA.md` — solo enlaces a `AVANCE_PROYECTO.md` y `MODULOS_ESTADO.md`
+
+## Cuándo actualizar
+
+Actualiza `docs/AVANCE_PROYECTO.md` si cambias cualquiera de estos:
+
+- Backend (`foody_backend/`), migraciones (`foody_supabase/`), Flutter (`lib/features/` o migración desde `lib/screens/`)
+- Rutas (`app_router.dart`), flujos de usuario, integraciones (Supabase Realtime, FCM, impresión)
+- Decisiones que posponen trabajo (por qué no está hecho aún y en qué sprint va)
+
+Si el cambio mueve ítems de *Falta* → *Hecho* en un módulo, actualiza también la sección correspondiente en **`docs/MODULOS_ESTADO.md`** (estado, hecho, falta, changelog al pie).
+
+## Qué escribir (evitar redundancia)
+
+Por cada ítem usa **una fila** en la tabla del sprint/módulo correspondiente:
+
+| Campo | Contenido |
+|-------|-----------|
+| Estado | `✅ Avanzado` · `🟡 Parcial` · `⏳ Pendiente` · `🚫 Bloqueado` · `📅 Planificado` |
+| Hecho | Qué existe ya (archivos, endpoints, pantallas) — concreto |
+| Falta | Qué falta respecto a la guía / MEMORIA |
+| Por qué falta | Dependencia, sprint posterior, legacy, infra, etc. |
+| Cuándo | Sprint N de `GUIA_DESARROLLO_FOODY_CURSOR.md` o condición (“cuando exista módulo caja”) |
+
+Además, en cada actualización:
+
+1. **Última actualización** (fecha ISO + resumen de 1 línea) al inicio del doc
+2. **Changelog** (3–8 viñetas, más reciente arriba) en la sección «Últimos cambios»
+3. **Próximo paso recomendado** (una sola prioridad clara)
+4. **No repetir** — si algo ya está ✅, no volver a implementarlo; enlazar al código
+5. **Referencias persistentes** (más abajo en el mismo archivo): si cambias esquema BD, endpoints, variables de entorno, UUIDs seed o reglas de negocio → actualizar esas secciones en la misma sesión (no dejar solo el changelog)
+
+## Antes de implementar
+
+1. Lee `docs/AVANCE_PROYECTO.md` + `docs/MODULOS_ESTADO.md` + `MEMORIA.md`
+2. Comprueba si el ítem ya está `✅` o `🟡` y extiende en lugar de crear en paralelo
+3. Respeta el orden de sprints salvo que el usuario pida otra prioridad explícita
+
+## Formato breve en commits (opcional)
+
+Si el usuario pide commit: el mensaje puede referenciar el módulo tocado y el sprint; el detalle vive en `AVANCE_PROYECTO.md`, no en el commit largo.

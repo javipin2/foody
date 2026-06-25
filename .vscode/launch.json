@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Foody (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": ["-d", "chrome"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Foody",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Legacy Cancha Fácil",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/legacy/main_reserva_canchas.dart",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

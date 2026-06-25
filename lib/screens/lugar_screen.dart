@@ -1,11 +1,20 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'dart:collection';
+import 'dart:math' as math;
+
 import '../providers/lugar_provider.dart';
+import '../services/push_notification_service.dart';
+import '../services/lugar_ambient_music_service.dart';
+import '../services/shared_lugar_link_service.dart';
+import '../services/index_error_service.dart';
 import '../models/ciudad.dart';
 import '../models/lugar.dart';
 import '../models/cancha.dart';
@@ -13,12 +22,87 @@ import '../models/horario.dart';
 import 'sede_screen.dart';
 import 'ciudad_screen.dart';
 import 'detalles_screen.dart';
+import 'admin/admin_login_screen.dart';
 import 'package:intl/intl.dart';
+
+/// Máx. valores en `whereIn` (Firestore). Una búsqueda de disponibilidad usa ~4 consultas por lote de lugares.
+const int _kDisponibilidadWhereInMax = 30;
+
+List<List<T>> _chunkDisponibilidad<T>(List<T> list, int size) {
+  if (list.isEmpty) return [];
+  final out = <List<T>>[];
+  for (var i = 0; i < list.length; i += size) {
+    final end = math.min(i + size, list.length);
+    out.add(list.sublist(i, end));
+  }
+  return out;
+}
+
+/// Una fila de disponibilidad por cancha en el modal de búsqueda (fecha/hora).
+class _CanchaSlotDisponibilidad {
+  final String canchaId;
+  final String nombre;
+  final String sedeId;
+  final String sedeNombre;
+  /// disponible | apartada | procesando
+  final String estado;
+  final double? precio;
+  final bool tienePromo;
+
+  const _CanchaSlotDisponibilidad({
+    required this.canchaId,
+    required this.nombre,
+    required this.sedeId,
+    required this.sedeNombre,
+    required this.estado,
+    this.precio,
+    this.tienePromo = false,
+  });
+}
+
+/// Nombre y ubicación de sede para el modal de disponibilidad.
+class _SedeDatosUbicacion {
+  final String nombre;
+  final double? latitud;
+  final double? longitud;
+  final String? direccion;
+
+  const _SedeDatosUbicacion({
+    required this.nombre,
+    this.latitud,
+    this.longitud,
+    this.direccion,
+  });
+
+  bool get tieneCoordenadas =>
+      latitud != null && longitud != null;
+  bool get tieneDireccion =>
+      (direccion != null && direccion!.trim().isNotEmpty);
+  bool get puedeMostrarEnMapa => tieneCoordenadas || tieneDireccion;
+}
+
+class _SedeUbicacionInfo {
+  final List<Map<String, dynamic>> sedes;
+
+  const _SedeUbicacionInfo({required this.sedes});
+
+  bool get tieneSedes => sedes.isNotEmpty;
+  bool get tieneUbicacionDisponible =>
+      sedes.any((s) => (s['latitud'] as double?) != null && (s['longitud'] as double?) != null);
+}
 
 class LugarScreen extends StatefulWidget {
   final Ciudad ciudad;
 
-  const LugarScreen({super.key, required this.ciudad});
+  /// `true` al venir de la sesión **Ciudades** (o splash): reinicia la música desde el inicio.
+  /// `false` al volver desde sede/canchas/etc.: la música sigue sin repetirse desde cero.
+  final bool restartAmbientMusic;
+
+  const LugarScreen({
+    super.key,
+    required this.ciudad,
+    this.restartAmbientMusic = false,
+  });
 
   @override
   State<LugarScreen> createState() => _LugarScreenState();
@@ -61,8 +145,9 @@ class _LugarScreenState extends State<LugarScreen>
   static const _textPrimary = Color(0xFF1F2937);
   static const _textSecondary = Color(0xFF6B7280);
   static const _tagBg = Color(0xFFF3F4F6);
-  static const _ratingStar = Color(0xFFFBBF24);
   static const _primaryGreen = Color(0xFF2E7D60);
+  bool _resolviendoLugarCompartido = false;
+  final Map<String, Future<_SedeUbicacionInfo>> _sedeUbicacionFutures = {};
 
   @override
   void initState() {
@@ -117,10 +202,18 @@ class _LugarScreenState extends State<LugarScreen>
     _animationController.forward();
     
     // Cargar lugares al inicializar
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (LugarAmbientMusicService.ambientMusicEnabled) {
+        LugarAmbientMusicService.instance.ensurePlayingFromLugaresEntry(
+          fromCiudadFlow: widget.restartAmbientMusic,
+        );
+      }
       final lugarProvider = Provider.of<LugarProvider>(context, listen: false);
-      lugarProvider.fetchLugaresPorCiudad(widget.ciudad.id);
+      await lugarProvider.fetchLugaresPorCiudad(widget.ciudad.id);
       _loadFavorites();
+      // Asegurar que el token FCM quede registrado con la ciudad actual en caché.
+      PushNotificationService().registerTokenWithCurrentCiudad();
+      await _intentarAbrirLugarCompartidoPendiente();
     });
   }
   
@@ -153,12 +246,294 @@ class _LugarScreenState extends State<LugarScreen>
     _saveFavorites();
   }
 
+  Future<void> _compartirLugar(Lugar lugar) async {
+    try {
+      final uri = SharedLugarLinkService.buildShareUri(
+        lugarId: lugar.id,
+        ciudadId: widget.ciudad.id,
+      );
+      final texto =
+          'Te comparto este lugar en TuCanchaFacil:\n${lugar.nombre}\n${lugar.direccion}\n\n$uri';
+      await SharePlus.instance.share(
+        ShareParams(
+          text: texto,
+          subject: 'Lugar recomendado: ${lugar.nombre}',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo compartir el lugar: $e'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
+
+  Future<_SedeUbicacionInfo> _getSedeUbicacionInfo(String lugarId) {
+    return _sedeUbicacionFutures.putIfAbsent(lugarId, () async {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('sede')
+          .where('lugarId', isEqualTo: lugarId)
+          .where('activa', isEqualTo: true)
+          .orderBy('nombre')
+          .get();
+
+      final sedes = snapshot.docs.map((doc) {
+        final d = doc.data();
+        final lat = (d['latitud'] as num?)?.toDouble();
+        final lon = (d['longitud'] as num?)?.toDouble();
+        return <String, dynamic>{
+          'id': doc.id,
+          'nombre': (d['nombre'] as String? ?? '').trim(),
+          'latitud': lat,
+          'longitud': lon,
+          'tieneUbicacion': lat != null && lon != null,
+        };
+      }).toList();
+
+      return _SedeUbicacionInfo(sedes: sedes);
+    });
+  }
+
+  Future<void> _abrirUbicacionLugar(Lugar lugar, _SedeUbicacionInfo info) async {
+    if (!info.tieneUbicacionDisponible) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Este lugar no tiene ubicaciones configuradas'),
+          backgroundColor: Colors.orange.shade700,
+        ),
+      );
+      return;
+    }
+
+    if (info.sedes.length <= 1) {
+      final sede = info.sedes.firstWhere(
+        (s) => s['tieneUbicacion'] == true,
+        orElse: () => <String, dynamic>{},
+      );
+      final lat = sede['latitud'] as double?;
+      final lon = sede['longitud'] as double?;
+      if (lat != null && lon != null) {
+        await _abrirCoordenadasEnMapa(lat, lon);
+      }
+      return;
+    }
+
+    await _mostrarModalSelectorSedeUbicacion(lugar, info);
+  }
+
+  Future<void> _abrirCoordenadasEnMapa(double latitud, double longitud) async {
+    final urls = [
+      Uri.parse('google.navigation:q=$latitud,$longitud'),
+      Uri.parse('geo:0,0?q=$latitud,$longitud'),
+      Uri.parse(
+          'https://www.google.com/maps/search/?api=1&query=$latitud,$longitud'),
+    ];
+
+    for (final url in urls) {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('No se pudo abrir la ubicación'),
+        backgroundColor: Colors.red.shade700,
+      ),
+    );
+  }
+
+  Future<void> _mostrarModalSelectorSedeUbicacion(
+    Lugar lugar,
+    _SedeUbicacionInfo info,
+  ) async {
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Ubicaciones de ${lugar.nombre}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...info.sedes.map((sede) {
+                    final nombre = (sede['nombre'] as String?) ?? 'Sede';
+                    final disponible = sede['tieneUbicacion'] == true;
+                    final lat = sede['latitud'] as double?;
+                    final lon = sede['longitud'] as double?;
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.location_on_rounded,
+                        color: disponible ? const Color(0xFF2DD4BF) : Colors.grey,
+                      ),
+                      title: Text(nombre),
+                      subtitle: Text(
+                        disponible ? 'Ubicación disponible' : 'Ubicación no configurada',
+                        style: TextStyle(
+                          color: disponible ? Colors.black54 : Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                      enabled: disponible,
+                      trailing: Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 14,
+                        color: disponible ? Colors.black54 : Colors.grey,
+                      ),
+                      onTap: !disponible
+                          ? null
+                          : () async {
+                              Navigator.pop(context);
+                              if (lat != null && lon != null) {
+                                await _abrirCoordenadasEnMapa(lat, lon);
+                              }
+                            },
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _intentarAbrirLugarCompartidoPendiente() async {
+    if (_resolviendoLugarCompartido || !mounted) return;
+    _resolviendoLugarCompartido = true;
+    try {
+      final payload =
+          await SharedLugarLinkService.consumeIfMatchesCity(widget.ciudad.id);
+      if (payload == null || !mounted) return;
+
+      final lugarProvider = Provider.of<LugarProvider>(context, listen: false);
+      Lugar? destino;
+      for (final l in lugarProvider.lugares) {
+        if (l.id == payload.lugarId) {
+          destino = l;
+          break;
+        }
+      }
+
+      if (destino == null) {
+        final doc = await FirebaseFirestore.instance
+            .collection('lugares')
+            .doc(payload.lugarId)
+            .get();
+        final data = doc.data();
+        if (doc.exists &&
+            data != null &&
+            data['ciudadId'] == widget.ciudad.id) {
+          destino = Lugar.fromFirestore(data, doc.id);
+        }
+      }
+
+      if (destino == null || !mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              SedeScreen(ciudad: widget.ciudad, lugar: destino!),
+        ),
+      );
+    } finally {
+      _resolviendoLugarCompartido = false;
+    }
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
     _scrollAnimationController.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  Widget _buildLugarMusicControl({required bool floating}) {
+    if (!LugarAmbientMusicService.ambientMusicEnabled) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: LugarAmbientMusicService.instance,
+      builder: (context, _) {
+        final muted = LugarAmbientMusicService.instance.isMuted;
+        final button = Tooltip(
+          message: muted ? 'Activar música' : 'Silenciar música',
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => LugarAmbientMusicService.instance.toggleMuted(),
+              customBorder: const CircleBorder(),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: _buttonBackground,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+            ),
+          ),
+        );
+        if (floating) {
+          return Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12, right: 16),
+                child: button,
+              ),
+            ),
+          );
+        }
+        return button;
+      },
+    );
   }
 
   @override
@@ -181,79 +556,97 @@ class _LugarScreenState extends State<LugarScreen>
           child: Consumer<LugarProvider>(
             builder: (context, lugarProvider, child) {
               if (lugarProvider.isLoading) {
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2E7D60)),
+                return Stack(
+                  children: [
+                    const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2E7D60)),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'Cargando lugares...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 16),
-                      Text(
-                        'Cargando lugares...',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    _buildLugarMusicControl(floating: true),
+                  ],
                 );
               }
 
               if (lugarProvider.errorMessage != null) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: Colors.red[300],
+                return Stack(
+                  children: [
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red[300],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            lugarProvider.errorMessage!,
+                            style: const TextStyle(fontSize: 16),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => lugarProvider.fetchLugaresPorCiudad(widget.ciudad.id),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color.fromARGB(255, 0, 0, 0),
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        lugarProvider.errorMessage!,
-                        style: const TextStyle(fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => lugarProvider.fetchLugaresPorCiudad(widget.ciudad.id),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7D60),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Reintentar'),
-                      ),
-                    ],
-                  ),
+                    ),
+                    _buildLugarMusicControl(floating: true),
+                  ],
                 );
               }
 
               if (lugarProvider.lugares.isEmpty) {
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.location_on,
-                        size: 64,
-                        color: Colors.grey,
+                return Stack(
+                  children: [
+                    const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'No hay lugares disponibles',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 16),
-                      Text(
-                        'No hay lugares disponibles',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    _buildLugarMusicControl(floating: true),
+                  ],
                 );
               }
 
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _intentarAbrirLugarCompartidoPendiente();
+              });
               return _buildCustomScrollView(lugarProvider.lugares);
             },
           ),
@@ -269,23 +662,23 @@ class _LugarScreenState extends State<LugarScreen>
         child: NavigationBar(
           selectedIndex: _currentPageIndex,
           height: 68,
-          indicatorColor: const Color(0xFF2E7D60).withOpacity(0.12),
+          indicatorColor: const Color.fromARGB(255, 0, 0, 0).withOpacity(0.12),
           surfaceTintColor: Colors.white,
           overlayColor: WidgetStateProperty.resolveWith((_) => Colors.transparent),
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.location_on_outlined),
-              selectedIcon: Icon(Icons.location_on, color: Color(0xFF2E7D60)),
+              selectedIcon: Icon(Icons.location_on, color: Color.fromARGB(255, 0, 0, 0)),
               label: 'Disponible',
             ),
             NavigationDestination(
               icon: Icon(Icons.favorite_border),
-              selectedIcon: Icon(Icons.favorite, color: Color(0xFF2E7D60)),
+              selectedIcon: Icon(Icons.favorite, color: Color.fromARGB(255, 0, 0, 0)),
               label: 'Favoritos',
             ),
             NavigationDestination(
               icon: Icon(Icons.local_offer_outlined),
-              selectedIcon: Icon(Icons.local_offer, color: Color(0xFF2E7D60)),
+              selectedIcon: Icon(Icons.local_offer, color: Color.fromARGB(255, 0, 0, 0)),
               label: 'Promociones',
             ),
           ],
@@ -350,12 +743,14 @@ class _LugarScreenState extends State<LugarScreen>
                                 'Descubre',
                                 style: TextStyle(
                                   fontSize: 22,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w900,
                                   color: Colors.white,
                                   letterSpacing: 0.2,
                                 ),
                               ),
                             ),
+                            _buildLugarMusicControl(floating: false),
+                            const SizedBox(width: 8),
                             GestureDetector(
                               onTap: _showSearchFilter,
                               child: Container(
@@ -364,7 +759,7 @@ class _LugarScreenState extends State<LugarScreen>
                                   color: _buttonBackground,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.tune, color: Colors.white, size: 22),
+                                child: const Icon(Icons.search, color: Colors.white, size: 22),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -380,9 +775,21 @@ class _LugarScreenState extends State<LugarScreen>
                                 child: const Icon(Icons.more_vert, color: Colors.white, size: 22),
                               ),
                               tooltip: 'Opciones',
-                              onSelected: (value) {
+                              onSelected: (value) async {
                                 if (value == 'change_city') {
                                   _showChangeCityDialog();
+                                } else if (value == 'admin_access') {
+                                  if (LugarAmbientMusicService.ambientMusicEnabled) {
+                                    await LugarAmbientMusicService.instance
+                                        .stopForAdministrativeSession();
+                                  }
+                                  if (!context.mounted) return;
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const LoginScreen(),
+                                    ),
+                                  );
                                 }
                               },
                               itemBuilder: (context) => [
@@ -390,9 +797,19 @@ class _LugarScreenState extends State<LugarScreen>
                                   value: 'change_city',
                                   child: Row(
                                     children: [
-                                      Icon(Icons.location_city, color: _accentTeal),
+                                      Icon(Icons.location_city, color: Color.fromARGB(255, 0, 0, 0)),
                                       SizedBox(width: 8),
                                       Text('Cambiar Ciudad'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'admin_access',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.admin_panel_settings, color: Color.fromARGB(255, 0, 0, 0)),
+                                      SizedBox(width: 8),
+                                      Text('Acceso administrativo'),
                                     ],
                                   ),
                                 ),
@@ -560,55 +977,121 @@ class _LugarScreenState extends State<LugarScreen>
     );
   }
 
-  Widget _buildAvailableContent(List<Lugar> lugares) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  static const double _kLugarGridBreakpoint = 880.0;
+
+  int _crossAxisCountForLugares(double maxWidth) {
+    if (maxWidth >= 1500) return 4;
+    if (maxWidth >= 1180) return 3;
+    if (maxWidth >= _kLugarGridBreakpoint) return 2;
+    return 1;
+  }
+
+  /// `width / height` por celda del grid (tarjeta más alta que ancha → ratio > 1).
+  double _lugarGridChildAspectRatio(int crossAxisCount) {
+    switch (crossAxisCount) {
+      case 4:
+        return 1.10;
+      case 3:
+        return 1.22;
+      case 2:
+        return 1.42;
+      default:
+        return 1.45;
+    }
+  }
+
+  Widget _buildLugaresSectionHeader({
+    required IconData icon,
+    required List<Color> iconGradient,
+    required Color iconColor,
+    required String title,
+    double iconPadding = 5,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
         children: [
-          // Header para lista vertical
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2E7D60), Color(0xFF4CAF50)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                        color: const Color(0xFF2E7D60).withOpacity(0.2),
-                            blurRadius: 8,
-                        offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                  child: const Icon(
-                    Icons.location_city,
-                          color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'Todos los Lugares',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                    letterSpacing: 0.3,
-                  ),
+          Container(
+            padding: EdgeInsets.all(iconPadding),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: iconGradient),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: iconGradient.last.withOpacity(0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
+            child: Icon(icon, color: iconColor, size: 20),
           ),
-          // Lista vertical de todos los lugares
-          ...lugares.map((lugar) => _buildEnhancedFavoriteCard(lugar)),
+          const SizedBox(width: 12),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+              letterSpacing: 0.3,
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAvailableContent(List<Lugar> lugares) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final cross = _crossAxisCountForLugares(maxW);
+        final header = _buildLugaresSectionHeader(
+          icon: Icons.location_city,
+          iconGradient: const [
+            Color.fromARGB(255, 255, 255, 255),
+            Color.fromARGB(255, 255, 255, 255),
+          ],
+          iconColor: const Color.fromARGB(255, 0, 0, 0),
+          title: 'Todos los Lugares',
+        );
+
+        if (cross == 1) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                header,
+                ...lugares.map((lugar) => _buildEnhancedFavoriteCard(lugar)),
+              ],
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header,
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cross,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 20,
+                  childAspectRatio: _lugarGridChildAspectRatio(cross),
+                ),
+                itemCount: lugares.length,
+                itemBuilder: (context, i) =>
+                    _buildEnhancedFavoriteCard(lugares[i], gridTile: true),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -648,53 +1131,80 @@ class _LugarScreenState extends State<LugarScreen>
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header de favoritos
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              children: [
-                    Container(
-                  padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2E7D60), Color(0xFF4CAF50)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF2E7D60).withOpacity(0.2),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cross = _crossAxisCountForLugares(constraints.maxWidth);
+        final favHeader = Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2E7D60), Color(0xFF4CAF50)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF2E7D60).withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                  child: const Icon(
-                    Icons.favorite,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+                child: const Icon(Icons.favorite, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Mis Favoritos',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                  letterSpacing: 0.3,
                 ),
-                const SizedBox(width: 12),
-                const Text(
-                  'Mis Favoritos',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                    letterSpacing: 0.3,
-                  ),
-                ),
+              ),
+            ],
+          ),
+        );
+
+        if (cross == 1) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                favHeader,
+                ...favoriteLugares.map((lugar) => _buildEnhancedFavoriteCard(lugar)),
               ],
             ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              favHeader,
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: cross,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 20,
+                  childAspectRatio: _lugarGridChildAspectRatio(cross),
+                ),
+                itemCount: favoriteLugares.length,
+                itemBuilder: (context, i) =>
+                    _buildEnhancedFavoriteCard(favoriteLugares[i], gridTile: true),
+              ),
+            ],
           ),
-          ...favoriteLugares.map((lugar) => _buildEnhancedFavoriteCard(lugar)),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1078,9 +1588,22 @@ class _LugarScreenState extends State<LugarScreen>
       debugPrint('❌ Error seleccionando promoción: $e');
     }
   }
-  Widget _buildEnhancedFavoriteCard(Lugar lugar) {
+  Widget _buildEnhancedFavoriteCard(Lugar lugar, {bool gridTile = false}) {
     final isFavorite = _favoriteLugares.contains(lugar.id);
-    const imageHeight = 180.0;
+    final imageHeight = gridTile ? 148.0 : 180.0;
+    final cardMargin =
+        gridTile ? EdgeInsets.zero : const EdgeInsets.only(bottom: 20);
+    final iconPad = gridTile ? 8.0 : 10.0;
+    final iconSize = gridTile ? 18.0 : 20.0;
+    final stackTop = gridTile ? 8.0 : 12.0;
+    final stackRight = gridTile ? 8.0 : 12.0;
+    final stackBottom = gridTile ? 8.0 : 12.0;
+    final stackLeft = gridTile ? 8.0 : 12.0;
+    final chipMaxW = gridTile ? 96.0 : 140.0;
+    final titleSize = gridTile ? 16.0 : 18.0;
+    final addressSize = gridTile ? 13.0 : 14.0;
+    final bodyPadding =
+        gridTile ? const EdgeInsets.fromLTRB(12, 10, 12, 12) : const EdgeInsets.fromLTRB(16, 14, 16, 16);
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 500),
@@ -1091,7 +1614,7 @@ class _LugarScreenState extends State<LugarScreen>
           child: Opacity(
             opacity: value,
             child: Container(
-              margin: const EdgeInsets.only(bottom: 20),
+              margin: cardMargin,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -1165,38 +1688,15 @@ class _LugarScreenState extends State<LugarScreen>
                                   : _buildPlaceholderImage(),
                             ),
                             Positioned(
-                              top: 12,
-                              right: 12,
-                              child: Row(
+                              top: stackTop,
+                              right: stackRight,
+                              child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: _cardOverlayBg,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.star_rounded, color: _ratingStar, size: 16),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          '5.0',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
                                   GestureDetector(
                                     onTap: () => _toggleFavorite(lugar.id),
                                     child: Container(
-                                      padding: const EdgeInsets.all(10),
+                                      padding: EdgeInsets.all(iconPad),
                                       decoration: BoxDecoration(
                                         color: _cardOverlayBg,
                                         shape: BoxShape.circle,
@@ -1205,19 +1705,64 @@ class _LugarScreenState extends State<LugarScreen>
                                         isFavorite
                                             ? Icons.favorite_rounded
                                             : Icons.favorite_border_rounded,
-                                        size: 20,
+                                        size: iconSize,
                                         color: isFavorite ? const Color(0xFFE53E3E) : Colors.white,
                                       ),
                                     ),
+                                  ),
+                                  SizedBox(height: gridTile ? 6 : 8),
+                                  GestureDetector(
+                                    onTap: () => _compartirLugar(lugar),
+                                    child: Container(
+                                      padding: EdgeInsets.all(iconPad),
+                                      decoration: BoxDecoration(
+                                        color: _cardOverlayBg,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.share_rounded,
+                                        size: iconSize,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: gridTile ? 6 : 8),
+                                  FutureBuilder<_SedeUbicacionInfo>(
+                                    future: _getSedeUbicacionInfo(lugar.id),
+                                    builder: (context, snap) {
+                                      final info = snap.data;
+                                      final disponible = info?.tieneUbicacionDisponible ?? false;
+
+                                      return GestureDetector(
+                                        onTap: (info == null || !disponible)
+                                            ? null
+                                            : () => _abrirUbicacionLugar(lugar, info),
+                                        child: Container(
+                                          padding: EdgeInsets.all(iconPad),
+                                          decoration: BoxDecoration(
+                                            color: _cardOverlayBg,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.location_on_rounded,
+                                            size: iconSize,
+                                            color: disponible ? _accentTeal : Colors.grey,
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
                             ),
                             Positioned(
-                              bottom: 12,
-                              left: 12,
+                              bottom: stackBottom,
+                              left: stackLeft,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: gridTile ? 6 : 8,
+                                  vertical: gridTile ? 4 : 6,
+                                ),
                                 decoration: BoxDecoration(
                                   color: _cardOverlayBg,
                                   borderRadius: BorderRadius.circular(20),
@@ -1225,16 +1770,19 @@ class _LugarScreenState extends State<LugarScreen>
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.location_on_rounded,
-                                        color: _accentTeal, size: 16),
+                                    Icon(
+                                      Icons.location_on_rounded,
+                                      color: _accentTeal,
+                                      size: gridTile ? 14 : 16,
+                                    ),
                                     const SizedBox(width: 4),
                                     ConstrainedBox(
-                                      constraints: const BoxConstraints(maxWidth: 140),
+                                      constraints: BoxConstraints(maxWidth: chipMaxW),
                                       child: Text(
                                         lugar.direccion,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: Colors.white,
-                                          fontSize: 12,
+                                          fontSize: gridTile ? 11 : 12,
                                           fontWeight: FontWeight.w500,
                                         ),
                                         maxLines: 1,
@@ -1248,65 +1796,70 @@ class _LugarScreenState extends State<LugarScreen>
                           ],
                         ),
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                          padding: bodyPadding,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 lugar.nombre,
-                                style: const TextStyle(
-                                  fontSize: 18,
+                                style: TextStyle(
+                                  fontSize: titleSize,
                                   fontWeight: FontWeight.w700,
                                   color: _textPrimary,
                                   letterSpacing: -0.2,
                                 ),
-                                maxLines: 1,
+                                maxLines: gridTile ? 2 : 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 6),
+                              SizedBox(height: gridTile ? 4 : 6),
                               Text(
                                 lugar.direccion,
-                                style: const TextStyle(
-                                  fontSize: 14,
+                                style: TextStyle(
+                                  fontSize: addressSize,
                                   fontWeight: FontWeight.w400,
                                   color: _textSecondary,
                                   height: 1.35,
                                 ),
-                                maxLines: 2,
+                                maxLines: gridTile ? 2 : 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 10),
+                              SizedBox(height: gridTile ? 8 : 10),
                               Row(
                                 children: [
                                   Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 5),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: gridTile ? 8 : 10,
+                                      vertical: gridTile ? 4 : 5,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: _tagBg,
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       'LUGAR',
                                       style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: gridTile ? 10 : 11,
                                         fontWeight: FontWeight.w600,
                                         color: _textSecondary,
                                         letterSpacing: 0.5,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
+                                  SizedBox(width: gridTile ? 6 : 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 5),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: gridTile ? 8 : 10,
+                                      vertical: gridTile ? 4 : 5,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: _tagBg,
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       'FÚTBOL',
                                       style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: gridTile ? 10 : 11,
                                         fontWeight: FontWeight.w600,
                                         color: _textSecondary,
                                         letterSpacing: 0.5,
@@ -1316,7 +1869,7 @@ class _LugarScreenState extends State<LugarScreen>
                                   const Spacer(),
                                   Icon(
                                     Icons.arrow_forward_ios_rounded,
-                                    size: 14,
+                                    size: gridTile ? 12 : 14,
                                     color: Colors.grey[400],
                                   ),
                                 ],
@@ -1518,12 +2071,12 @@ class _LugarScreenState extends State<LugarScreen>
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2E7D60).withOpacity(0.1),
+                        color: const Color.fromARGB(255, 0, 0, 0).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
-                        Icons.tune,
-                        color: Color(0xFF2E7D60),
+                        Icons.search_rounded,
+                        color: Color.fromARGB(255, 0, 0, 0),
                         size: 20,
                       ),
                     ),
@@ -1538,7 +2091,7 @@ class _LugarScreenState extends State<LugarScreen>
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF2E7D60),
+                              color: Color.fromARGB(255, 0, 0, 0),
                             ),
                           ),
                           SizedBox(height: 2),
@@ -1691,7 +2244,7 @@ class _LugarScreenState extends State<LugarScreen>
                         }
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2E7D60),
+                        backgroundColor: const Color.fromARGB(255, 0, 0, 0),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -1838,7 +2391,7 @@ class _LugarScreenState extends State<LugarScreen>
       builder: (context) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.location_city, color: Color(0xFF2E7D60)),
+            Icon(Icons.location_city, color: Color.fromARGB(255, 0, 0, 0)),
             SizedBox(width: 8),
             Text('Cambiar Ciudad'),
           ],
@@ -1862,7 +2415,7 @@ class _LugarScreenState extends State<LugarScreen>
                           );
                         },
                               style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2E7D60),
+              backgroundColor: const Color.fromARGB(255, 0, 0, 0),
                                 foregroundColor: Colors.white,
             ),
             child: const Text('Cambiar'),
@@ -1872,157 +2425,285 @@ class _LugarScreenState extends State<LugarScreen>
     );
   }
 
-  // Funciones de filtros y disponibilidad
-  Future<Map<String, dynamic>> _getCanchaAvailability(Lugar lugar) async {
+  // Disponibilidad: consultas agregadas (≈3–4 por lote de hasta 30 lugares; ver _kDisponibilidadWhereInMax).
+
+  Future<Map<String, Map<String, dynamic>>> _cargarDisponibilidadTodosLugares(
+    List<Lugar> lugares,
+  ) async {
+    final out = <String, Map<String, dynamic>>{};
+    final vacio = {
+      'total': 0,
+      'disponibles': 0,
+      'apartadas': 0,
+      'procesando': 0,
+      'sedeDatosPorId': <String, _SedeDatosUbicacion>{},
+    };
+    if (lugares.isEmpty) return out;
+    if (_selectedDate == null || _selectedTime == null) {
+      for (final l in lugares) {
+        out[l.id] = Map<String, dynamic>.from(vacio);
+      }
+      return out;
+    }
+
+    final fechaStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+    final horaStr =
+        '${_selectedTime!.hour.toString().padLeft(2, '0')}:00';
+    final incluirPromos = fechaStr.compareTo(_todayStr) >= 0;
+
+    final lugarIds =
+        lugares.map((e) => e.id).where((id) => id.isNotEmpty).toList();
+    final chunks = _chunkDisponibilidad(lugarIds, _kDisponibilidadWhereInMax);
+
+    final canchasPorLugar = <String, List<Cancha>>{};
+    final sedesPorLugar =
+        <String, Map<String, _SedeDatosUbicacion>>{};
+    final precioPromoGlobal = <String, double>{};
+    final reservasPorCancha =
+        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+
+    var consultasFirestore = 0;
+    final fs = FirebaseFirestore.instance;
+
     try {
-      if (_selectedDate == null || _selectedTime == null) {
-        return {
-          'total': 0,
-          'disponibles': 0,
-          'apartadas': 0,
-          'procesando': 0,
-        };
+      for (final chunk in chunks) {
+        if (chunk.isEmpty) continue;
+
+        final canchasQ =
+            fs.collection('canchas').where('lugarId', whereIn: chunk);
+        final sedesQ = fs.collection('sede').where('lugarId', whereIn: chunk);
+        final reservasQ = fs
+            .collection('reservas')
+            .where('lugarId', whereIn: chunk)
+            .where('fecha', isEqualTo: fechaStr);
+
+        if (incluirPromos) {
+          final promosQ = fs
+              .collection('promociones')
+              .where('lugarId', whereIn: chunk)
+              .where('fecha', isEqualTo: fechaStr)
+              .where('activo', isEqualTo: true);
+          final r = await Future.wait([
+            canchasQ.get(),
+            sedesQ.get(),
+            reservasQ.get(),
+            promosQ.get(),
+          ]);
+          consultasFirestore += 4;
+          _fusionarDatosDisponibilidad(
+            canchasSnap: r[0],
+            sedesSnap: r[1],
+            reservasSnap: r[2],
+            promosSnap: r[3],
+            canchasPorLugar: canchasPorLugar,
+            sedesPorLugar: sedesPorLugar,
+            precioPromoGlobal: precioPromoGlobal,
+            reservasPorCancha: reservasPorCancha,
+          );
+        } else {
+          final r = await Future.wait([
+            canchasQ.get(),
+            sedesQ.get(),
+            reservasQ.get(),
+          ]);
+          consultasFirestore += 3;
+          _fusionarDatosDisponibilidad(
+            canchasSnap: r[0],
+            sedesSnap: r[1],
+            reservasSnap: r[2],
+            promosSnap: null,
+            canchasPorLugar: canchasPorLugar,
+            sedesPorLugar: sedesPorLugar,
+            precioPromoGlobal: precioPromoGlobal,
+            reservasPorCancha: reservasPorCancha,
+          );
+        }
       }
-      
-      final fechaStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
-      final horaStr = '${_selectedTime!.hour.toString().padLeft(2, '0')}:00';
-      
-      // Buscar canchas directamente por lugarId
-      final canchasSnapshot = await FirebaseFirestore.instance
-          .collection('canchas')
-          .where('lugarId', isEqualTo: lugar.id)
-          .get();
-      
-      if (canchasSnapshot.docs.isEmpty) {
-        return {
-          'total': 0,
-          'disponibles': 0,
-          'apartadas': 0,
-          'procesando': 0,
-        };
-      }
-      
-      final canchas = canchasSnapshot.docs.map((doc) => Cancha.fromFirestore(doc)).toList();
-      return await _procesarCanchas(canchas, fechaStr, horaStr, lugar.id);
-      
-    } catch (e) {
-      return {
+    } catch (e, st) {
+      debugPrint('⚠️ Disponibilidad agregada (Firestore): $e\n$st');
+      IndexErrorService.handleFirestoreError(e, 'disponibilidadAgregada');
+      final err = {
         'total': 0,
         'disponibles': 0,
         'apartadas': 0,
         'procesando': 0,
+        'sedeDatosPorId': <String, _SedeDatosUbicacion>{},
         'error': e.toString(),
       };
+      for (final l in lugares) {
+        out[l.id] = Map<String, dynamic>.from(err);
+      }
+      return out;
     }
+
+    if (kDebugMode) {
+      debugPrint(
+        '📊 Disponibilidad agregada: $consultasFirestore consultas Firestore '
+        '(${chunks.length} lote(s), hasta $_kDisponibilidadWhereInMax lugares/lote)',
+      );
+    }
+
+    for (final lugar in lugares) {
+      out[lugar.id] = _computarDisponibilidadUnLugar(
+        canchas: canchasPorLugar[lugar.id] ?? const [],
+        sedeDatosPorId: sedesPorLugar[lugar.id] ?? const {},
+        precioPromoPorCanchaHorario: precioPromoGlobal,
+        reservasPorCancha: reservasPorCancha,
+        fechaStr: fechaStr,
+        horaStr: horaStr,
+      );
+    }
+
+    return out;
   }
 
-  Future<Map<String, dynamic>> _procesarCanchas(List<Cancha> canchas, String fechaStr, String horaStr, String lugarId) async {
-    print('🔍 DEBUG: Procesando ${canchas.length} canchas para $fechaStr a las $horaStr');
-    
-    int totalCanchas = 0;
-    int canchasDisponibles = 0;
-    int canchasApartadas = 0;
-    int canchasProcesando = 0;
-    final List<double> preciosDisponibles = [];
-    bool tieneAlMenosUnaPromo = false;
+  void _fusionarDatosDisponibilidad({
+    required QuerySnapshot<Map<String, dynamic>> canchasSnap,
+    required QuerySnapshot<Map<String, dynamic>> sedesSnap,
+    required QuerySnapshot<Map<String, dynamic>> reservasSnap,
+    QuerySnapshot<Map<String, dynamic>>? promosSnap,
+    required Map<String, List<Cancha>> canchasPorLugar,
+    required Map<String, Map<String, _SedeDatosUbicacion>> sedesPorLugar,
+    required Map<String, double> precioPromoGlobal,
+    required Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+        reservasPorCancha,
+  }) {
+    for (final doc in canchasSnap.docs) {
+      final c = Cancha.fromFirestore(doc);
+      final lid = c.lugarId;
+      if (lid == null || lid.isEmpty) continue;
+      canchasPorLugar.putIfAbsent(lid, () => []).add(c);
+    }
 
-    // Cargar promociones activas para este lugar y fecha (precio promocional por cancha+horario)
-    final Map<String, double> precioPromoPorCanchaHorario = {};
-    if (lugarId.isNotEmpty && fechaStr.compareTo(_todayStr) >= 0) {
-      try {
-        final promosSnapshot = await FirebaseFirestore.instance
-            .collection('promociones')
-            .where('lugarId', isEqualTo: lugarId)
-            .where('fecha', isEqualTo: fechaStr)
-            .where('activo', isEqualTo: true)
-            .get();
-        for (var doc in promosSnapshot.docs) {
-          final d = doc.data();
-          final canchaId = (d['cancha_id'] as String? ?? '').trim();
-          final horario = (d['horario'] as String? ?? '').trim();
-          final precioPromo = (d['precio_promocional'] as num?)?.toDouble();
-          if (canchaId.isNotEmpty && horario.isNotEmpty && precioPromo != null && precioPromo > 0) {
-            final key = '${canchaId}_${Horario.normalizarHora(horario)}';
-            precioPromoPorCanchaHorario[key] = precioPromo;
-          }
+    for (final d in sedesSnap.docs) {
+      final data = d.data();
+      final lid = data['lugarId'] as String? ?? '';
+      if (lid.isEmpty) continue;
+      if (data['activa'] == false) continue;
+      final n = (data['nombre'] as String?)?.trim();
+      final nombre = (n == null || n.isEmpty) ? 'Sede' : n;
+      final lat = (data['latitud'] as num?)?.toDouble();
+      final lon = (data['longitud'] as num?)?.toDouble();
+      final ubi = (data['ubicacion'] as String?)?.trim();
+      sedesPorLugar.putIfAbsent(lid, () => {})[d.id] = _SedeDatosUbicacion(
+        nombre: nombre,
+        latitud: lat,
+        longitud: lon,
+        direccion: (ubi == null || ubi.isEmpty) ? null : ubi,
+      );
+    }
+
+    if (promosSnap != null) {
+      for (final doc in promosSnap.docs) {
+        final d = doc.data();
+        final canchaId = (d['cancha_id'] as String? ?? '').trim();
+        final horario = (d['horario'] as String? ?? '').trim();
+        final precioPromo = (d['precio_promocional'] as num?)?.toDouble();
+        if (canchaId.isNotEmpty &&
+            horario.isNotEmpty &&
+            precioPromo != null &&
+            precioPromo > 0) {
+          final key =
+              '${canchaId}_${Horario.normalizarHora(horario)}';
+          precioPromoGlobal[key] = precioPromo;
         }
-      } catch (e) {
-        debugPrint('⚠️ Error cargando promociones para filtro: $e');
       }
     }
 
-    for (var cancha in canchas) {
-      print('🏟️ DEBUG: Procesando cancha: ${cancha.nombre}');
-      
-      final day = DateFormat('EEEE', 'es').format(_selectedDate!).toLowerCase();
+    for (final doc in reservasSnap.docs) {
+      final data = doc.data();
+      final cid = data['cancha_id'] as String? ?? '';
+      if (cid.isEmpty) continue;
+      reservasPorCancha.putIfAbsent(cid, () => []).add(doc);
+    }
+  }
+
+  Map<String, dynamic> _computarDisponibilidadUnLugar({
+    required List<Cancha> canchas,
+    required Map<String, _SedeDatosUbicacion> sedeDatosPorId,
+    required Map<String, double> precioPromoPorCanchaHorario,
+    required Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+        reservasPorCancha,
+    required String fechaStr,
+    required String horaStr,
+  }) {
+    var totalCanchas = 0;
+    var canchasDisponibles = 0;
+    var canchasApartadas = 0;
+    var canchasProcesando = 0;
+    final preciosDisponibles = <double>[];
+    final detalleCanchas = <_CanchaSlotDisponibilidad>[];
+    var tieneAlMenosUnaPromo = false;
+
+    (String nombre, String idKey) metaSede(Cancha cancha) {
+      final sid = cancha.sedeId.trim();
+      if (sid.isNotEmpty && sedeDatosPorId.containsKey(sid)) {
+        return (sedeDatosPorId[sid]!.nombre, sid);
+      }
+      if (sid.isNotEmpty) {
+        return ('Sede', sid);
+      }
+      if (sedeDatosPorId.length == 1) {
+        final e = sedeDatosPorId.entries.first;
+        return (e.value.nombre, e.key);
+      }
+      return ('Sin sede asignada', '__sin_sede__');
+    }
+
+    for (final cancha in canchas) {
+      final day =
+          DateFormat('EEEE', 'es').format(_selectedDate!).toLowerCase();
       final preciosPorDia = cancha.preciosPorHorario[day] ?? {};
-      
       final hora24 = _selectedTime!.hour;
       final hora12 = _convertirHora24A12(hora24);
       final horaStr12 = '${hora12['hora']}:00 ${hora12['periodo']}';
-      
-      print('   📅 Día: $day, Hora 24h: $hora24, Hora 12h: $horaStr12');
-      print('   📋 Horarios disponibles: ${preciosPorDia.keys.toList()}');
-      
       final horaConfig = preciosPorDia[horaStr12];
-      print('   ⚙️ Configuración para $horaStr12: $horaConfig');
-      
       if (horaConfig == null || horaConfig['habilitada'] != true) {
-        print('   ❌ Cancha no disponible en este horario');
         continue;
       }
 
       totalCanchas++;
-      print('   ✅ Cancha disponible en horario, verificando reservas...');
 
-      // Verificar reservas existentes para esta cancha, fecha y hora
-      final reservasSnapshot = await FirebaseFirestore.instance
-          .collection('reservas')
-          .where('fecha', isEqualTo: fechaStr)
-          .where('cancha_id', isEqualTo: cancha.id)
-          .get();
-
-      print('   📋 Reservas encontradas: ${reservasSnapshot.docs.length}');
-
-      bool tieneReservaConfirmada = false;
-      bool tieneReservaPendiente = false;
-
-      // Verificar reservas
-      for (var reservaDoc in reservasSnapshot.docs) {
+      var tieneReservaConfirmada = false;
+      var tieneReservaPendiente = false;
+      final docsRes = reservasPorCancha[cancha.id] ?? const [];
+      for (final reservaDoc in docsRes) {
         final reservaData = reservaDoc.data();
         final horarioReserva = reservaData['horario'] as String? ?? '';
         final confirmada = reservaData['confirmada'] as bool? ?? false;
-        
-        print('     Reserva: horario=$horarioReserva, confirmada=$confirmada');
-        
-        // Convertir la hora de la reserva a formato 24h para comparar
         final horaReserva24h = _convertirHora12A24(horarioReserva);
-        final horaSeleccionada24h = _selectedTime!.hour;
-        
-        print('     Hora reserva (24h): $horaReserva24h, Hora seleccionada (24h): $horaSeleccionada24h');
-        
-        // Verificar si el horario coincide
-        if (horaReserva24h == horaSeleccionada24h) {
+        if (horaReserva24h == hora24) {
           if (confirmada) {
             tieneReservaConfirmada = true;
-            print('     ✅ Reserva confirmada encontrada');
           } else {
             tieneReservaPendiente = true;
-            print('     ⏳ Reserva pendiente encontrada');
           }
         }
       }
 
-      // Determinar estado final
+      final sm = metaSede(cancha);
       if (tieneReservaConfirmada) {
         canchasApartadas++;
-        print('   🔴 Cancha apartada (reserva confirmada)');
+        detalleCanchas.add(_CanchaSlotDisponibilidad(
+          canchaId: cancha.id,
+          nombre: cancha.nombre,
+          sedeId: sm.$2,
+          sedeNombre: sm.$1,
+          estado: 'apartada',
+        ));
       } else if (tieneReservaPendiente) {
         canchasProcesando++;
-        print('   🟠 Cancha procesando pago');
+        detalleCanchas.add(_CanchaSlotDisponibilidad(
+          canchaId: cancha.id,
+          nombre: cancha.nombre,
+          sedeId: sm.$2,
+          sedeNombre: sm.$1,
+          estado: 'procesando',
+        ));
       } else {
         canchasDisponibles++;
-        final promoKey = '${cancha.id}_${Horario.normalizarHora(horaStr12)}';
+        final promoKey =
+            '${cancha.id}_${Horario.normalizarHora(horaStr12)}';
         final precioPromo = precioPromoPorCanchaHorario[promoKey];
         if (precioPromo != null) tieneAlMenosUnaPromo = true;
         final precio = precioPromo ??
@@ -2030,11 +2711,17 @@ class _LugarScreenState extends State<LugarScreen>
                 ? (horaConfig['precio'] as num).toDouble()
                 : cancha.precio);
         preciosDisponibles.add(precio);
-        print('   🟢 Cancha disponible');
+        detalleCanchas.add(_CanchaSlotDisponibilidad(
+          canchaId: cancha.id,
+          nombre: cancha.nombre,
+          sedeId: sm.$2,
+          sedeNombre: sm.$1,
+          estado: 'disponible',
+          precio: precio,
+          tienePromo: precioPromo != null,
+        ));
       }
     }
-
-    print('📊 DEBUG: Resultados finales - Total: $totalCanchas, Disponibles: $canchasDisponibles, Apartadas: $canchasApartadas, Procesando: $canchasProcesando');
 
     double? precioDesde;
     if (preciosDisponibles.isNotEmpty) {
@@ -2044,6 +2731,21 @@ class _LugarScreenState extends State<LugarScreen>
 
     final tienePromo = tieneAlMenosUnaPromo;
 
+    detalleCanchas.sort((a, b) {
+      final bySede =
+          a.sedeNombre.toLowerCase().compareTo(b.sedeNombre.toLowerCase());
+      if (bySede != 0) return bySede;
+      int rank(String e) {
+        if (e == 'disponible') return 0;
+        if (e == 'procesando') return 1;
+        return 2;
+      }
+
+      final c = rank(a.estado).compareTo(rank(b.estado));
+      if (c != 0) return c;
+      return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+    });
+
     return {
       'total': totalCanchas,
       'disponibles': canchasDisponibles,
@@ -2052,7 +2754,154 @@ class _LugarScreenState extends State<LugarScreen>
       'precioDesde': precioDesde,
       'precios': preciosDisponibles,
       'tienePromo': tienePromo,
+      'detalleCanchas': detalleCanchas,
+      'sedeDatosPorId': sedeDatosPorId,
     };
+  }
+
+  String _soloDigitosTelefono(String raw) =>
+      raw.replaceAll(RegExp(r'\D'), '');
+
+  Future<void> _mostrarOpcionesTelefonoLugar(Lugar lugar) async {
+    final raw = lugar.telefono.trim();
+    if (raw.isEmpty) return;
+    final digitos = _soloDigitosTelefono(raw);
+    if (digitos.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo leer el número de teléfono.')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).padding.bottom + 12,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  lugar.telefono,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(Icons.chat_rounded, color: Colors.green.shade700),
+              title: const Text('Enviar mensaje por WhatsApp'),
+              subtitle: const Text('Se abrirá WhatsApp con este número'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final uri = Uri.parse('https://wa.me/+57$digitos');
+                try {
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('No se pudo abrir WhatsApp: $e')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.contact_page_outlined, color: Color(0xFF2E7D60)),
+              title: const Text('Guardar contacto'),
+              subtitle: const Text('Compartir tarjeta para añadir a contactos'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final vcf = 'BEGIN:VCARD\n'
+                    'VERSION:3.0\n'
+                    'FN:${lugar.nombre}\n'
+                    'ORG:${lugar.nombre}\n'
+                    'TEL;TYPE=CELL:$digitos\n'
+                    'END:VCARD';
+                try {
+                  await Share.share(
+                    vcf,
+                    subject: 'Contacto: ${lugar.nombre}',
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('No se pudo compartir: $e')),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 4),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _abrirUbicacionSede(_SedeDatosUbicacion datos) async {
+    Uri? uri;
+    if (datos.tieneCoordenadas) {
+      uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=${datos.latitud},${datos.longitud}',
+      );
+    } else if (datos.tieneDireccion) {
+      uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(datos.direccion!.trim())}',
+      );
+    }
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay ubicación registrada para esta sede.'),
+        ),
+      );
+      return;
+    }
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir el mapa.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al abrir mapa: $e')),
+      );
+    }
   }
 
   String _normalizarHora(String hora) {
@@ -2313,7 +3162,7 @@ class _LugarScreenState extends State<LugarScreen>
     );
   }
 
-  void _irADetalles(Cancha cancha, Lugar lugar) {
+  void _irADetalles(Cancha cancha, Lugar lugar, {String? nombreSedeMostrar}) {
     final hora24 = _selectedTime!.hour;
     
     final horario = Horario(
@@ -2342,7 +3191,7 @@ class _LugarScreenState extends State<LugarScreen>
           cancha: cancha,
           fecha: _selectedDate!,
           horario: horario,
-          sede: lugar.nombre,
+          sede: nombreSedeMostrar ?? lugar.nombre,
           precioPromocional: promocionParaEstaCancha?['precio_promocional'] as double?,
           promocionId: promocionParaEstaCancha?['promoId'] as String?,
         ),
@@ -2358,73 +3207,150 @@ class _LugarScreenState extends State<LugarScreen>
   }
 
   void _showAvailabilityResults() {
+    final lugares =
+        Provider.of<LugarProvider>(context, listen: false).lugares;
+    final future = _cargarDisponibilidadTodosLugares(lugares);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _buildAvailabilityModal(),
+      builder: (context) => _buildAvailabilityModal(
+        lugares: lugares,
+        futureDisponibilidad: future,
+      ),
     );
   }
 
-  Widget _buildAvailabilityModal() {
+  Widget _buildAvailabilityModal({
+    required List<Lugar> lugares,
+    required Future<Map<String, Map<String, dynamic>>> futureDisponibilidad,
+  }) {
+    const headerInk = Color(0xFF111827);
+    const headerMuted = Color(0xFF6B7280);
     return Container(
       height: MediaQuery.of(context).size.height * 0.8,
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: Color(0xFFF3F4F6),
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // Header
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(20, 14, 10, 14),
             decoration: BoxDecoration(
-              color: const Color(0xFF2E7D60),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Row(
               children: [
-                const Icon(Icons.sports_soccer, color: Colors.white, size: 24),
-                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Disponibilidad de Canchas',
+                        'Disponibilidad',
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: headerInk,
+                          letterSpacing: -0.4,
+                          height: 1.15,
                         ),
                       ),
-                      Text(
-                        '${DateFormat('EEE d MMM yyyy', 'es').format(_selectedDate!)} · ${_formatHora12h(_selectedTime!.hour)}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.event_available_outlined,
+                            size: 16,
+                            color: headerMuted.withValues(alpha: 0.9),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${DateFormat('EEE d MMM yyyy', 'es').format(_selectedDate!)} · ${_formatHora12h(_selectedTime!.hour)}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: headerMuted,
+                                fontWeight: FontWeight.w500,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  style: IconButton.styleFrom(
+                    backgroundColor: const Color(0xFFF3F4F6),
+                    foregroundColor: headerInk,
+                    padding: const EdgeInsets.all(10),
+                  ),
+                  icon: const Icon(Icons.close_rounded, size: 20),
                 ),
               ],
             ),
           ),
-          // Content
           Expanded(
-            child: Consumer<LugarProvider>(
-              builder: (context, lugarProvider, child) {
+            child: FutureBuilder<Map<String, Map<String, dynamic>>>(
+              future: futureDisponibilidad,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            color: Color(0xFF2E7D60),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'Consultando disponibilidad…',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF6B7280),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Error: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.redAccent),
+                      ),
+                    ),
+                  );
+                }
+                final porLugar = snapshot.data ?? {};
                 return ListView.builder(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: lugarProvider.lugares.length,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                  itemCount: lugares.length,
                   itemBuilder: (context, index) {
-                    final lugar = lugarProvider.lugares[index];
-                    return _buildAvailabilityCard(lugar);
+                    final lugar = lugares[index];
+                    return _buildAvailabilityCard(
+                      lugar,
+                      porLugar[lugar.id],
+                    );
                   },
                 );
               },
@@ -2435,357 +3361,625 @@ class _LugarScreenState extends State<LugarScreen>
     );
   }
 
-  Widget _buildAvailabilityCard(Lugar lugar) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _getCanchaAvailability(lugar),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+  Widget _buildAvailabilityCard(
+    Lugar lugar,
+    Map<String, dynamic>? availabilityPrecomputada,
+  ) {
+    const borderColor = Color(0xFFE8EAED);
+    const ink = Color(0xFF111827);
+    const muted = Color(0xFF6B7280);
+
+    if (availabilityPrecomputada == null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2E7D60)),
-                    strokeWidth: 2,
-                  ),
-                  SizedBox(width: 16),
-                  Text('Verificando disponibilidad...'),
-                ],
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.help_outline, color: Colors.grey.shade500, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Sin datos de disponibilidad para ${lugar.nombre}.',
+                style: TextStyle(fontSize: 14, color: Colors.grey[700]),
               ),
             ),
-          );
-        }
+          ],
+        ),
+      );
+    }
 
-        if (snapshot.hasError) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+    final availability = availabilityPrecomputada;
+    if (availability['error'] != null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    lugar.nombre,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: ink,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Text(
+                    'Error',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red.shade800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${availability['error']}',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final canchasDisponibles = availability['disponibles'] ?? 0;
+    final canchasProcesando = availability['procesando'] ?? 0;
+    final totalCanchas = availability['total'] ?? 0;
+    final detalleRaw = availability['detalleCanchas'];
+    final List<_CanchaSlotDisponibilidad> detalleCanchas = detalleRaw is List
+        ? List<_CanchaSlotDisponibilidad>.from(detalleRaw)
+        : const [];
+    final Map<String, _SedeDatosUbicacion> sedeDatosPorId = {};
+    final rawSedes = availability['sedeDatosPorId'];
+    if (rawSedes is Map) {
+      for (final e in rawSedes.entries) {
+        if (e.key is String && e.value is _SedeDatosUbicacion) {
+          sedeDatosPorId[e.key as String] = e.value as _SedeDatosUbicacion;
+        }
+      }
+    }
+
+    Color statusColor;
+    String statusText;
+
+    if (totalCanchas == 0) {
+      statusColor = Colors.grey;
+      statusText = 'Sin canchas en este horario';
+    } else if (canchasDisponibles > 0) {
+      statusColor = Colors.green.shade700;
+      statusText =
+          '$canchasDisponibles disponible${canchasDisponibles > 1 ? 's' : ''}';
+    } else if (canchasProcesando > 0) {
+      statusColor = Colors.orange.shade800;
+      statusText = '$canchasProcesando en proceso de pago';
+    } else {
+      statusColor = Colors.red.shade700;
+      statusText = 'Todas apartadas';
+    }
+
+    return Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Lugar',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.6,
+                            color: muted.withValues(alpha: 0.95),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          lugar.nombre,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: ink,
+                            letterSpacing: -0.3,
+                            height: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      statusText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: statusColor,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (lugar.direccion.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.place_outlined,
+                          size: 16,
+                          color: muted.withValues(alpha: 0.85),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          lugar.nombre,
+                          lugar.direccion,
                           style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF2E7D60),
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red[100],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'Error',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
+                            fontSize: 13,
+                            color: muted,
+                            height: 1.4,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Error al verificar disponibilidad',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        final availability = snapshot.data ?? {};
-        final canchasDisponibles = availability['disponibles'] ?? 0;
-        final canchasApartadas = availability['apartadas'] ?? 0;
-        final canchasProcesando = availability['procesando'] ?? 0;
-        final totalCanchas = availability['total'] ?? 0;
-        final precioDesde = availability['precioDesde'] as double?;
-        final precios = (availability['precios'] as List<dynamic>?)?.cast<double>() ?? [];
-        final hayVariosPrecios = precios.length > 1 && precios.toSet().length > 1;
-        final tienePromo = availability['tienePromo'] as bool? ?? false;
-
-        Color statusColor;
-        String statusText;
-        IconData statusIcon;
-
-        if (totalCanchas == 0) {
-          statusColor = Colors.grey;
-          statusText = 'Sin canchas';
-          statusIcon = Icons.sports_soccer;
-        } else if (canchasDisponibles > 0) {
-          statusColor = Colors.green;
-          statusText = '$canchasDisponibles disponible${canchasDisponibles > 1 ? 's' : ''}';
-          statusIcon = Icons.check_circle;
-        } else if (canchasProcesando > 0) {
-          statusColor = Colors.orange;
-          statusText = '$canchasProcesando procesando pago';
-          statusIcon = Icons.payment;
-        } else {
-          statusColor = Colors.red;
-          statusText = 'Todas apartadas';
-          statusIcon = Icons.block;
-        }
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        lugar.nombre,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF2E7D60),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                ),
+              if (lugar.telefono.trim().isNotEmpty)
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _mostrarOpcionesTelefonoLugar(lugar),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(statusIcon, size: 14, color: statusColor),
-                          const SizedBox(width: 4),
-                          Text(
-                            statusText,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: statusColor,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Icon(
+                              Icons.phone_outlined,
+                              size: 16,
+                              color: const Color(0xFF2E7D60).withValues(alpha: 0.9),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Dirección: ${lugar.direccion}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Teléfono: ${lugar.telefono}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                if (precioDesde != null && canchasDisponibles > 0) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2E7D60).withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: const Color(0xFF2E7D60).withOpacity(0.2),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.payments_outlined,
-                          size: 18,
-                          color: const Color(0xFF2E7D60),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          hayVariosPrecios
-                              ? 'Desde \$${precioDesde.toStringAsFixed(0)} / hora'
-                              : '\$${precioDesde.toStringAsFixed(0)} / hora',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF2E7D60),
-                          ),
-                        ),
-                        if (hayVariosPrecios) ...[
-                          const SizedBox(width: 4),
-                          Text(
-                            '(${canchasDisponibles} canchas)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                        if (tienePromo) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.local_offer, size: 12, color: Colors.orange.shade800),
-                                const SizedBox(width: 4),
                                 Text(
-                                  'Promo',
+                                  lugar.telefono,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF2563EB),
+                                    height: 1.35,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                    decorationColor: Color(0x662563EB),
+                                  ),
+                                ),
+                                Text(
+                                  'WhatsApp o guardar en contactos',
                                   style: TextStyle(
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.orange.shade800,
+                                    color: muted.withValues(alpha: 0.75),
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
                             ),
                           ),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: muted.withValues(alpha: 0.35),
+                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ],
-                if (totalCanchas > 0) ...[
-                  const SizedBox(height: 8),
-                  Row(
+                ),
+              if (totalCanchas > 0) ...[
+                const SizedBox(height: 18),
+                Divider(height: 1, thickness: 1, color: borderColor.withValues(alpha: 0.85)),
+                const SizedBox(height: 14),
+                _buildDisponibilidadPorSede(
+                  lugar,
+                  detalleCanchas,
+                  ink,
+                  muted,
+                  sedeDatosPorId,
+                ),
+              ],
+            ],
+          ),
+        );
+  }
+
+  Widget _buildDisponibilidadPorSede(
+    Lugar lugar,
+    List<_CanchaSlotDisponibilidad> detalleCanchas,
+    Color ink,
+    Color muted,
+    Map<String, _SedeDatosUbicacion> sedeDatosPorId,
+  ) {
+    const accent = Color(0xFF2E7D60);
+    final porSede = <String, List<_CanchaSlotDisponibilidad>>{};
+    for (final c in detalleCanchas) {
+      porSede.putIfAbsent(c.sedeId, () => []).add(c);
+    }
+    final orden = porSede.keys.toList()
+      ..sort(
+        (a, b) => porSede[a]!
+            .first
+            .sedeNombre
+            .toLowerCase()
+            .compareTo(porSede[b]!.first.sedeNombre.toLowerCase()),
+      );
+    final horaLabel = _formatHora12h(_selectedTime!.hour);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < orden.length; i++) ...[
+          if (i > 0) const SizedBox(height: 18),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 3,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (canchasDisponibles > 0) ...[
-                        _buildStatusChip('Disponibles', canchasDisponibles, Colors.green),
-                        const SizedBox(width: 8),
-                      ],
-                      if (canchasApartadas > 0) ...[
-                        _buildStatusChip('Apartadas', canchasApartadas, Colors.red),
-                        const SizedBox(width: 8),
-                      ],
-                      if (canchasProcesando > 0) ...[
-                        _buildStatusChip('Procesando', canchasProcesando, Colors.orange),
-                      ],
+                      Text(
+                        'Sede',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.7,
+                          color: muted.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        porSede[orden[i]]!.first.sedeNombre,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: ink,
+                          letterSpacing: -0.2,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.schedule_rounded,
+                                  size: 15,
+                                  color: muted.withValues(alpha: 0.85),
+                                ),
+                                const SizedBox(width: 5),
+                                Flexible(
+                                  child: Text(
+                                    'Canchas a las $horaLabel',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: muted.withValues(alpha: 0.95),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _buildBotonUbicacionSede(
+                            sedeDatosPorId[orden[i]],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ..._listaCanchasPorSede(lugar, porSede[orden[i]]!),
                     ],
                   ),
-                ],
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context); // Cerrar modal
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => SedeScreen(ciudad: widget.ciudad, lugar: lugar),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.visibility, size: 16),
-                        label: const Text('Ver Canchas'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF2E7D60),
-                          side: const BorderSide(color: Color(0xFF2E7D60)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: canchasDisponibles > 0 ? () {
-                          Navigator.pop(context); // Cerrar modal
-                          _navegarAReserva(lugar);
-                        } : null,
-                        icon: const Icon(Icons.sports_soccer, size: 16),
-                        label: const Text('Reservar'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: canchasDisponibles > 0 
-                              ? const Color(0xFF2E7D60) 
-                              : Colors.grey,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
           ),
-        );
-      },
+        ],
+      ],
     );
   }
 
-  Widget _buildStatusChip(String label, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+  Widget _buildBotonUbicacionSede(_SedeDatosUbicacion? datos) {
+    final ok = datos != null && datos.puedeMostrarEnMapa;
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        foregroundColor: ok ? const Color(0xFF2E7D60) : const Color(0xFF9CA3AF),
+        padding: const EdgeInsets.only(left: 6, right: 4, top: 4, bottom: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      child: Text(
-        '$label: $count',
+      onPressed: () {
+        if (!ok) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No hay ubicación registrada para esta sede (coordenadas o dirección).',
+              ),
+            ),
+          );
+          return;
+        }
+        _abrirUbicacionSede(datos);
+      },
+      icon: Icon(
+        Icons.map_rounded,
+        size: 17,
+        color: ok ? const Color(0xFF2E7D60) : const Color(0xFF9CA3AF),
+      ),
+      label: Text(
+        'Ubicación',
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: color,
+          color: ok ? const Color(0xFF2E7D60) : const Color(0xFF9CA3AF),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _listaCanchasPorSede(
+    Lugar lugar,
+    List<_CanchaSlotDisponibilidad> slots,
+  ) {
+    final out = <Widget>[];
+    for (var i = 0; i < slots.length; i++) {
+      if (i > 0) {
+        out.add(const SizedBox(height: 8));
+      }
+      out.add(_buildCanchaDetalleFila(lugar, slots[i]));
+    }
+    return out;
+  }
+
+  Widget _buildCanchaDetalleFila(Lugar lugar, _CanchaSlotDisponibilidad c) {
+    const ink = Color(0xFF111827);
+    const muted = Color(0xFF6B7280);
+    Color estadoColor;
+    String estadoLabel;
+    switch (c.estado) {
+      case 'disponible':
+        estadoColor = const Color(0xFF15803D);
+        estadoLabel = 'Disponible';
+        break;
+      case 'procesando':
+        estadoColor = const Color(0xFFC2410C);
+        estadoLabel = 'Pago pendiente';
+        break;
+      default:
+        estadoColor = const Color(0xFFB91C1C);
+        estadoLabel = 'Apartada';
+    }
+
+    final disponible = c.estado == 'disponible';
+
+    Future<void> onTapDisponible() async {
+      if (!disponible) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('canchas')
+          .doc(c.canchaId)
+          .get();
+      if (!doc.exists || !mounted) return;
+      final cancha = Cancha.fromFirestore(doc);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _irADetalles(cancha, lugar, nombreSedeMostrar: c.sedeNombre);
+    }
+
+    final fila = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                c.nombre,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: ink,
+                  letterSpacing: -0.2,
+                  height: 1.2,
+                ),
+              ),
+              if (c.estado == 'disponible' && c.precio != null) ...[
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    Text(
+                      '\$${c.precio!.toStringAsFixed(0)} / h',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: muted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (c.tienePromo) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Promo',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.orange.shade900,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: estadoColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            estadoLabel,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: estadoColor,
+              height: 1.1,
+            ),
+          ),
+        ),
+        if (disponible) ...[
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 22,
+            color: muted.withValues(alpha: 0.4),
+          ),
+        ],
+      ],
+    );
+
+    final bgDisponible = const Color(0xFFF8FAFC);
+    final bgOtro = const Color(0xFFF3F4F6);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: disponible ? () => onTapDisponible() : null,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: disponible
+            ? const Color(0xFF2E7D60).withValues(alpha: 0.08)
+            : null,
+        highlightColor: disponible
+            ? const Color(0xFF2E7D60).withValues(alpha: 0.05)
+            : null,
+        child: Ink(
+          decoration: BoxDecoration(
+            color: disponible ? bgDisponible : bgOtro,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: disponible
+                  ? const Color(0xFFE2E8F0)
+                  : const Color(0xFFE5E7EB),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Opacity(
+            opacity: disponible ? 1 : 0.9,
+            child: fila,
+          ),
         ),
       ),
     );

@@ -45,5 +45,34 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!--
+	  Deep links (SCHEME):
+	  Mantener este valor sincronizado con:
+	  lib/config/app_link_config.dart -> AppLinkConfig.customScheme
+	-->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tucanchafacil</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>foody</string>
+			</array>
+		</dict>
+	</array>
+	<!--
+	  Si luego agregas Universal Links, también sincroniza:
+	  lib/config/app_link_config.dart -> AppLinkConfig.shareHost
+	  (en Associated Domains + apple-app-site-association).
+	-->
 </dict>
 </plist>

@@ -807,6 +807,14 @@ Future<void> _editarReservaDiaEspecifico(Reserva reserva) async {
   if (result == true && mounted) {
     try {
       debugPrint('✅ Usuario confirmó la edición del día específico');
+
+      final lugarIdAct = reserva.lugarId ?? await LugarHelper.getLugarId();
+      if (lugarIdAct == null || lugarIdAct.isEmpty) {
+        if (mounted) {
+          _showErrorSnackBar('No se pudo determinar el lugar. No se guardaron los cambios.');
+        }
+        return;
+      }
       
       final nuevoPrecio = double.parse(precioController.text.trim());
       // Precio de referencia = con el que se creó la reserva (para % y guardado)
@@ -888,6 +896,7 @@ Future<void> _editarReservaDiaEspecifico(Reserva reserva) async {
             'descuento_aplicado': esPrecioPersonalizado && descuento > 0 ? descuento : null,
             'fecha_edicion_individual': Timestamp.now(),
             'precio_independiente_de_recurrencia': true,
+            'lugarId': lugarIdAct,
           };
           
           await docReserva.reference.update(updateData);
@@ -938,6 +947,7 @@ Future<void> _editarReservaDiaEspecifico(Reserva reserva) async {
             'valor': nuevoPrecio,       // 🔥 Campo de compatibilidad
             'montoPagado': nuevoMontoPagado,
             'estado': nuevoMontoPagado >= nuevoPrecio ? 'completo' : 'parcial',
+            'lugarId': lugarIdAct,
             'confirmada': true,
             'created_at': Timestamp.now(),
             'precioPersonalizado': esPrecioPersonalizado,

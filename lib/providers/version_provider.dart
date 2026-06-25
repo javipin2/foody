@@ -54,38 +54,29 @@ class VersionProvider with ChangeNotifier {
     try {
       developer.log('Verificando actualizaciones...', name: 'VersionProvider');
       
-      // Obtener configuración de versión
       _versionConfig = await _versionService.getVersionConfig();
-      
-      if (_versionConfig == null) {
-        _updateStatus = UpdateStatus.error;
-        _errorMessage = 'No se pudo obtener la configuración de versión';
-        developer.log('Error: No se pudo obtener configuración de versión', name: 'VersionProvider');
-      } else {
-        // Verificar estado de actualización
-        _updateStatus = await _versionService.checkForUpdates();
-        _hasCheckedToday = true;
-        
-        developer.log('Estado de actualización: $_updateStatus', name: 'VersionProvider');
-        
-        // Log detallado según el estado
-        switch (_updateStatus) {
-          case UpdateStatus.forceUpdate:
-            developer.log('🚨 ACTUALIZACIÓN OBLIGATORIA requerida', name: 'VersionProvider');
-            break;
-          case UpdateStatus.optionalUpdate:
-            developer.log('✨ Actualización opcional disponible', name: 'VersionProvider');
-            break;
-          case UpdateStatus.maintenance:
-            developer.log('🔧 Aplicación en modo mantenimiento', name: 'VersionProvider');
-            break;
-          case UpdateStatus.upToDate:
-            developer.log('✅ Aplicación actualizada', name: 'VersionProvider');
-            break;
-          case UpdateStatus.error:
-            developer.log('❌ Error verificando actualizaciones', name: 'VersionProvider');
-            break;
-        }
+
+      _updateStatus = await _versionService.checkForUpdates();
+      _hasCheckedToday = true;
+
+      developer.log('Estado de actualización: $_updateStatus', name: 'VersionProvider');
+
+      switch (_updateStatus) {
+        case UpdateStatus.forceUpdate:
+          developer.log('🚨 ACTUALIZACIÓN OBLIGATORIA requerida', name: 'VersionProvider');
+          break;
+        case UpdateStatus.optionalUpdate:
+          developer.log('✨ Actualización opcional disponible', name: 'VersionProvider');
+          break;
+        case UpdateStatus.maintenance:
+          developer.log('🔧 Aplicación en modo mantenimiento', name: 'VersionProvider');
+          break;
+        case UpdateStatus.upToDate:
+          developer.log('✅ Aplicación actualizada', name: 'VersionProvider');
+          break;
+        case UpdateStatus.error:
+          developer.log('❌ Error verificando actualizaciones', name: 'VersionProvider');
+          break;
       }
     } catch (e) {
       _updateStatus = UpdateStatus.error;

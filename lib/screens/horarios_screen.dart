@@ -17,6 +17,19 @@ import 'detalles_screen.dart';
 import 'reserva_detalles_screen.dart';
 import '../main.dart';
 import 'dart:async';
+import 'package:google_fonts/google_fonts.dart';
+
+/// Paleta alineada con el panel admin (teal / slate).
+final class _HorariosUi {
+  const _HorariosUi._();
+  static const Color ink = Color(0xFF0F172A);
+  static const Color muted = Color(0xFF64748B);
+  static const Color accent = Color.fromARGB(78, 13, 148, 137);
+  static const Color accentDark = Color(0xFF0F766E);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color border = Color(0xFFE2E8F0);
+  static const Color bgTop = Color(0xFFF1F5F9);
+}
 
 class HorariosScreen extends StatefulWidget {
   final Cancha cancha;
@@ -47,9 +60,16 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
   StreamSubscription<Map<String, Map<String, dynamic>>>? _promocionesSubscription;
   late AnimationController _goldShimmerController;
   
+  /// Animación de pulso sutil para la tarjeta seleccionada.
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+  
   // ✅ NUEVO: Streams en tiempo real para reservas
   StreamSubscription<QuerySnapshot>? _reservasSubscription;
   StreamSubscription<QuerySnapshot>? _reservasTemporalesSubscription;
+
+  /// Horario seleccionado por el usuario para continuar a reserva (al pulsar Confirmar Reserva).
+  Horario? _selectedHorario;
 
   /// Configuración del lugar (horarios de actividad). Si el día está cerrado o fuera de horario, no se puede reservar.
   ConfigLugar? _configLugar;
@@ -84,6 +104,14 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..repeat();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _pulseAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
 
     final canchaProvider = Provider.of<CanchaProvider>(context, listen: false);
     final sedeProvider = Provider.of<SedeProvider>(context, listen: false);
@@ -164,6 +192,7 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
     _fadeController.dispose();
     _slideController.dispose();
     _goldShimmerController.dispose(); // ✅ NUEVO
+    _pulseController.dispose();
     _promocionesSubscription?.cancel(); // ✅ NUEVO
     _reservasSubscription?.cancel(); // ✅ NUEVO: Cancelar stream de reservas
     _reservasTemporalesSubscription?.cancel(); // ✅ NUEVO: Cancelar stream de reservas temporales
@@ -581,34 +610,6 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
     }
   }
 
-  // ✅ NUEVO: Actualizar estado local inmediatamente cuando se crea una reserva
-  Future<void> _actualizarEstadoLocalReservaCreada(Horario horario) async {
-    try {
-      final horaNormalizada = Horario.normalizarHora(horario.horaFormateada);
-      
-      // Buscar el horario en la lista y actualizar su estado
-      final indice = horarios.indexWhere((h) => 
-        Horario.normalizarHora(h.horaFormateada) == horaNormalizada
-      );
-      
-      if (indice != -1 && mounted) {
-        setState(() {
-          // Actualizar el estado a "procesando pago"
-          horarios[indice] = Horario(
-            hora: horarios[indice].hora,
-            estado: EstadoHorario.procesandoPago,
-            esReservaRecurrente: false,
-            clienteNombre: 'Procesando pago',
-          );
-        });
-        
-        debugPrint('✅ Estado local actualizado: $horaNormalizada -> PROCESANDO PAGO');
-      }
-    } catch (e) {
-      debugPrint('⚠️ Error actualizando estado local: $e');
-    }
-  }
-
   // ✅ MÉTODO DE NORMALIZACIÓN MEJORADO
   String _normalizarHorarioMejorado(String horaStr) {
     // Limpiar espacios y convertir a mayúsculas
@@ -713,65 +714,62 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF5F5F5), Colors.white],
+            colors: [_HorariosUi.bgTop, _HorariosUi.surface],
           ),
         ),
         child: Scaffold(
           backgroundColor: Colors.transparent,
           appBar: AppBar(
-            backgroundColor: Colors.white,
+            backgroundColor: _HorariosUi.surface,
             scrolledUnderElevation: 0,
             elevation: 0,
-            leading: Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: Center(
-                child: Material(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(24),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(24),
-                    onTap: () {
-                      if (mounted) Navigator.pop(context);
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF424242), size: 20),
-                    ),
-                  ),
-                ),
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(1),
+              child: Container(height: 1, color: _HorariosUi.border),
+            ),
+            leading: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _HorariosUi.border.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.arrow_back_ios_new_rounded, color: _HorariosUi.ink, size: 18),
+                onPressed: () {
+                  if (mounted) Navigator.pop(context);
+                },
               ),
             ),
             title: FadeTransition(
               opacity: _fadeAnimation,
-              child: const Text(
-                'Reserva de Cancha',
-                style: TextStyle(
-                  fontSize: 18,
+              child: Text(
+                'Reserva de cancha',
+                style: GoogleFonts.montserrat(
+                  fontSize: 17,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF1F2937),
+                  color: _HorariosUi.ink,
+                  letterSpacing: -0.3,
                 ),
               ),
             ),
             centerTitle: true,
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Center(
-                  child: Material(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(24),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(24),
-                      onTap: () {
-                        _reservasSnapshots.clear();
-                        _loadHorarios();
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.all(10),
-                        child: Icon(Icons.refresh_rounded, color: Color(0xFF424242), size: 22),
-                      ),
-                    ),
-                  ),
+              Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _HorariosUi.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _HorariosUi.accent.withValues(alpha: 0.25)),
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.refresh_rounded, color: _HorariosUi.accentDark, size: 22),
+                  onPressed: () {
+                    _reservasSnapshots.clear();
+                    _loadHorarios();
+                  },
+                  tooltip: 'Actualizar horarios',
                 ),
               ),
             ],
@@ -784,30 +782,28 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      padding: const EdgeInsets.all(16.0),
+                      physics: const ClampingScrollPhysics(),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
                         children: [
                           _buildCanchaInfo(),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 24),
                           _buildDateSelector(),
                           const SizedBox(height: 8),
                           if (_calendarExpanded) _buildCalendar(),
-                          const SizedBox(height: 20),
-                          _buildWarningOficina(),
+                          const SizedBox(height: 16),
+                          _buildHorariosHeader(),
                           const SizedBox(height: 16),
                           if (_mostrarAvisoCerrado()) _buildAvisoCerrado(),
                           if (_mostrarAvisoCerrado()) const SizedBox(height: 16),
-                          _buildHorariosHeader(),
-                          const SizedBox(height: 16),
                           _buildHorariosGridContent(),
                           const SizedBox(height: 24),
                         ],
                       ),
                     ),
                   ),
-                  _buildBottomButton(),
+                  _buildConfirmarReservaButton(),
                 ],
               ),
             ),
@@ -819,90 +815,86 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
 
   Widget _buildCanchaInfo() {
     final cancha = _updatedCancha ?? widget.cancha;
-    final sedeNombre = Provider.of<SedeProvider>(context).selectedSede;
-    final techada = cancha.techada;
+    final sedeNombre = Provider.of<SedeProvider>(context).selectedSede.isNotEmpty
+        ? Provider.of<SedeProvider>(context).selectedSede
+        : Provider.of<SedeProvider>(context).sedeNames.isNotEmpty
+            ? Provider.of<SedeProvider>(context).sedeNames.first
+            : cancha.ubicacion;
+    final esTechada = cancha.techada;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: _HorariosUi.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _HorariosUi.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: _HorariosUi.ink.withValues(alpha: 0.05),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Row(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 72,
-              height: 72,
-              child: cancha.imagen.startsWith('http')
-                  ? Image.network(
-                      cancha.imagen,
-                      fit: BoxFit.cover,
-                      cacheWidth: 144,
-                      errorBuilder: (_, __, ___) => _canchaPlaceholder(),
-                    )
-                  : Image.asset(
-                      cancha.imagen.isNotEmpty ? cancha.imagen : 'assets/demo.png',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _canchaPlaceholder(),
-                    ),
+            borderRadius: BorderRadius.circular(14),
+            child: Image.network(
+              (cancha.imagen).startsWith('http') ? cancha.imagen : 'assets/demo.png',
+              width: 76,
+              height: 76,
+              fit: BoxFit.cover,
+              cacheWidth: 152,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: 76,
+                  height: 76,
+                  color: Colors.grey.shade200,
+                  child: Icon(Icons.sports_soccer_outlined, color: Colors.grey.shade400, size: 32),
+                );
+              },
             ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  (cancha.nombre).toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1F2937),
-                    letterSpacing: 0.3,
+                  cancha.nombre.toUpperCase(),
+                  style: GoogleFonts.montserrat(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _HorariosUi.ink,
+                    letterSpacing: 0.2,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.location_on_outlined, size: 16, color: Colors.grey.shade600),
+                    Icon(Icons.location_on_outlined, size: 16, color: _HorariosUi.muted),
                     const SizedBox(width: 4),
-                    Expanded(
+                    Flexible(
                       child: Text(
-                        'Sede $sedeNombre',
-                        style: TextStyle(
+                        sedeNombre,
+                        style: GoogleFonts.montserrat(
                           fontSize: 13,
-                          color: Colors.grey.shade600,
+                          color: _HorariosUi.muted,
                           fontWeight: FontWeight.w500,
                         ),
-                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
-                if ((!cancha.disponible) && cancha.motivoNoDisponible != null) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Text(
-                      cancha.motivoNoDisponible!,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Colors.red.shade700),
-                    ),
+                if (!cancha.disponible && cancha.motivoNoDisponible != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    cancha.motivoNoDisponible!,
+                    style: TextStyle(fontSize: 11, color: Colors.red.shade700, fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ],
@@ -911,17 +903,20 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF2DD4BF).withOpacity(0.15),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF2DD4BF).withOpacity(0.4)),
+              color: esTechada ? Colors.blue.shade50 : _HorariosUi.accent.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: esTechada ? Colors.blue.shade200 : _HorariosUi.accent.withValues(alpha: 0.35),
+                width: 1,
+              ),
             ),
             child: Text(
-              techada ? 'TECHADA' : 'AL AIRE LIBRE',
-              style: const TextStyle(
-                fontSize: 11,
+              esTechada ? 'TECHADA' : 'AL AIRE LIBRE',
+              style: GoogleFonts.montserrat(
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF0D9488),
-                letterSpacing: 0.3,
+                color: esTechada ? Colors.blue.shade700 : _HorariosUi.accentDark,
+                letterSpacing: 0.4,
               ),
             ),
           ),
@@ -930,71 +925,69 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
     );
   }
 
-  Widget _canchaPlaceholder() {
-    return Container(
-      color: Colors.grey.shade200,
-      child: const Icon(Icons.sports_soccer_rounded, color: Colors.grey, size: 36),
-    );
-  }
-
   Widget _buildDateSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            'FECHA SELECCIONADA',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade500,
-              letterSpacing: 0.6,
+    final canReservar = _updatedCancha?.disponible ?? widget.cancha.disponible;
+    return GestureDetector(
+      onTap: canReservar ? _toggleCalendar : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: _HorariosUi.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _HorariosUi.border),
+          boxShadow: [
+            BoxShadow(
+              color: _HorariosUi.ink.withValues(alpha: 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
             ),
-          ),
+          ],
         ),
-        GestureDetector(
-          onTap: (_updatedCancha?.disponible ?? widget.cancha.disponible) ? _toggleCalendar : null,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _HorariosUi.accent.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.event_rounded, color: _HorariosUi.accentDark, size: 22),
             ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today_outlined, color: Colors.grey.shade600, size: 22),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    DateFormat('EEEE, d MMMM yyyy', 'es').format(_selectedDate),
-                    style: const TextStyle(
-                      fontSize: 15,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'FECHA',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1F2937),
+                      color: _HorariosUi.muted,
+                      letterSpacing: 0.8,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Icon(
-                  _calendarExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.grey.shade600,
-                  size: 24,
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    DateFormat('EEEE, d MMMM yyyy', 'es').format(_selectedDate),
+                    style: GoogleFonts.montserrat(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _HorariosUi.ink,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            Icon(
+              _calendarExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+              color: _HorariosUi.muted,
+              size: 26,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1002,13 +995,14 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
     return Container(
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: _HorariosUi.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _HorariosUi.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(13),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: _HorariosUi.ink.withValues(alpha: 0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -1025,11 +1019,11 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
             onDaySelected: _onDaySelected,
             calendarStyle: CalendarStyle(
               todayDecoration: BoxDecoration(
-                color: Colors.green.withAlpha(128),
+                color: _HorariosUi.accent.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               selectedDecoration: const BoxDecoration(
-                color: Colors.green,
+                color: _HorariosUi.accent,
                 shape: BoxShape.circle,
               ),
               outsideDaysVisible: false,
@@ -1037,10 +1031,10 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,
-              titleTextStyle: TextStyle(
+              titleTextStyle: GoogleFonts.montserrat(
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
+                fontWeight: FontWeight.w700,
+                color: _HorariosUi.ink,
               ),
             ),
             availableCalendarFormats: const {CalendarFormat.month: 'Mes'},
@@ -1052,29 +1046,46 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
 
   Widget _buildHorariosHeader() {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Icon(Icons.schedule_rounded, color: const Color(0xFF2DD4BF), size: 22),
-        const SizedBox(width: 8),
-        Text(
-          'Horarios Disponibles',
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF1F2937),
-            letterSpacing: 0.2,
+        Expanded(
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.only(top: 5, bottom: 5, left: 9, right: 2),
+                decoration: BoxDecoration(
+                  color: const Color.fromARGB(255, 255, 255, 255).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.schedule_rounded, color: const Color.fromARGB(255, 0, 0, 0), size: 25),
+              ),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  'Horarios',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: _HorariosUi.ink,
+                    letterSpacing: -0.2,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ),
-        const Spacer(),
+        const SizedBox(width: 8),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A2033),
-            borderRadius: BorderRadius.circular(8),
+            color: _HorariosUi.ink,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             DateFormat('d MMM', 'es').format(_selectedDate).toUpperCase(),
-            style: const TextStyle(
-              fontSize: 12,
+            style: GoogleFonts.montserrat(
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               color: Colors.white,
               letterSpacing: 0.4,
@@ -1085,39 +1096,289 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
     );
   }
 
-  /// True si el día está cerrado o (si es hoy) fuera del rango de horario de actividad.
+  /// True si ahora mismo el lugar no está en horario de servicio (día de hoy cerrado o hora actual fuera de ventana).
+  bool _fueraDeHorarioServicioActual() {
+    if (_configLugar == null) return false;
+    final now = DateTime.now();
+    final w = now.weekday;
+    if (_configLugar!.estaCerradoDia(w)) return true;
+    return !_configLugar!.estaDentroDeHorario(w, now.hour, now.minute);
+  }
+
+  /// True si no se debe permitir reservar: día del calendario cerrado, o fuera de servicio en este momento (aunque el día elegido sea futuro).
   bool _noReservarPorHorario() {
     if (_configLugar == null) return false;
-    final weekday = _selectedDate.weekday;
-    if (_configLugar!.estaCerradoDia(weekday)) return true;
-    final now = DateTime.now();
-    if (!isSameDay(_selectedDate, now)) return false;
-    return !_configLugar!.estaDentroDeHorario(weekday, now.hour, now.minute);
+    if (_configLugar!.estaCerradoDia(_selectedDate.weekday)) return true;
+    return _fueraDeHorarioServicioActual();
   }
 
   bool _mostrarAvisoCerrado() => _noReservarPorHorario();
 
-  /// Aviso: reservas fuera de horario de oficina pueden tardar en confirmarse.
-  Widget _buildWarningOficina() {
+  /// Obtiene precio base, precio promocional y promocionId para un horario (para navegar a reserva).
+  ({double precio, double? precioPromocional, String? promocionId}) _getPrecioYPromocionParaHorario(Horario horario) {
+    final String day = DateFormat('EEEE', 'es').format(_selectedDate).toLowerCase();
+    final String horaStr = horario.horaFormateada;
+    final horaNormalizada = Horario.normalizarHora(horaStr);
+    final dayPrices = (_updatedCancha?.preciosPorHorario ?? widget.cancha.preciosPorHorario)[day];
+    double precio = dayPrices != null && dayPrices.containsKey(horaStr)
+        ? (dayPrices[horaStr] is Map<String, dynamic>
+            ? (dayPrices[horaStr]!['precio'] as num?)?.toDouble() ?? (_updatedCancha?.precio ?? widget.cancha.precio)
+            : (dayPrices[horaStr] as num?)?.toDouble() ?? (_updatedCancha?.precio ?? widget.cancha.precio))
+        : (_updatedCancha?.precio ?? widget.cancha.precio);
+    final tienePromocion = _promocionesPorHorario.containsKey(horaNormalizada);
+    final promocion = tienePromocion ? _promocionesPorHorario[horaNormalizada] : null;
+    final precioPromocional = (tienePromocion && promocion != null) ? (promocion['precio_promocional'] as num?)?.toDouble() : null;
+    final promocionId = (tienePromocion && promocion != null) ? promocion['id'] as String? : null;
+    if (precioPromocional != null && precioPromocional > 0) precio = precioPromocional;
+    return (precio: precio, precioPromocional: precioPromocional, promocionId: promocionId);
+  }
+
+  /// Botón fijo abajo: "Confirmar Reserva". Navega a reserva si hay horario seleccionado.
+  Widget _buildConfirmarReservaButton() {
+    final hasSelection = _selectedHorario != null;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(16, 14, 16, 14 + MediaQuery.of(context).padding.bottom),
       decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.amber.shade200),
+        color: _HorariosUi.surface,
+        border: Border(top: BorderSide(color: _HorariosUi.border)),
+        boxShadow: [
+          BoxShadow(
+            color: _HorariosUi.ink.withValues(alpha: 0.06),
+            blurRadius: 24,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasSelection)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle_rounded, color: _HorariosUi.accentDark, size: 18),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        _selectedHorario!.horaFormateada,
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: _HorariosUi.ink,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            SizedBox(
+              height: 52,
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+              // Bloquear si no hay WhatsApp ni cuentas (globales o de esta sede).
+              final cfg = _configLugar;
+              final cancha = _updatedCancha ?? widget.cancha;
+              final canchaSedeId = cancha.sedeId;
+              final whatsapp = cfg?.whatsappEfectivoParaSede(canchaSedeId).trim() ?? '';
+              final cuentas = cfg?.textoCuentasEfectivoParaSede(canchaSedeId).trim() ?? '';
+              if (whatsapp.isEmpty || cuentas.isEmpty) {
+                showDialog<void>(
+                  context: context,
+                  barrierColor: _HorariosUi.ink.withValues(alpha: 0.45),
+                  builder: (dialogContext) {
+                    return Dialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(18),
+                              decoration: BoxDecoration(
+                                color: _HorariosUi.accent.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.payments_outlined, color: _HorariosUi.accentDark, size: 36),
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              'Configuración pendiente',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.montserrat(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: _HorariosUi.ink,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Este lugar aún no tiene configurado el WhatsApp ni las cuentas de pago para esta sede. '
+                              'Pide al administrador que complete la sección Configuración antes de confirmar reservas.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.montserrat(
+                                fontSize: 14,
+                                height: 1.45,
+                                color: _HorariosUi.muted,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: () => Navigator.of(dialogContext).pop(),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color.fromARGB(255, 0, 0, 0),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                  elevation: 0,
+                                ),
+                                child: Text(
+                                  'Entendido',
+                                  style: GoogleFonts.montserrat(fontWeight: FontWeight.w700, fontSize: 15),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+                return;
+              }
+
+              if (_noReservarPorHorario()) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text(
+                      'Cerrado o fuera del horario de atención en este momento. No se pueden realizar reservas.',
+                    ),
+                    backgroundColor: Colors.orange.shade800,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    margin: const EdgeInsets.all(12),
+                  ),
+                );
+                return;
+              }
+
+              if (_selectedHorario == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Selecciona un horario disponible en la lista para continuar con tu reserva.'),
+                    backgroundColor: Color(0xFF1A2033),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    margin: const EdgeInsets.all(12),
+                  ),
+                );
+                return;
+              }
+              final horario = _selectedHorario!;
+              final sedeProvider = Provider.of<SedeProvider>(context, listen: false);
+              final sedeNombre = sedeProvider.selectedSede.isNotEmpty ? sedeProvider.selectedSede : sedeProvider.sedeNames.isNotEmpty ? sedeProvider.sedeNames.first : '';
+              final sede = sedeProvider.sedes.firstWhere(
+                (s) => s['id'] == sedeProvider.selectedSede || s['nombre'] == sedeProvider.selectedSede || s['nombre'] == sedeNombre,
+                orElse: () => {'id': widget.cancha.sedeId, 'nombre': sedeNombre},
+              );
+              final sedeId = sede['id'] as String;
+              final precios = _getPrecioYPromocionParaHorario(horario);
+              if (mounted) {
+                Navigator.push<bool>(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (_, animation, __) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: DetallesScreen(
+                          cancha: widget.cancha,
+                          fecha: _selectedDate,
+                          horario: horario,
+                          sede: sedeId,
+                          precioPromocional: precios.precioPromocional,
+                          promocionId: precios.promocionId,
+                        ),
+                      );
+                    },
+                    transitionDuration: const Duration(milliseconds: 300),
+                  ),
+                ).then((reservaRealizada) {
+                  if (mounted) {
+                    _pulseController.stop();
+                    _pulseController.reset();
+                    setState(() => _selectedHorario = null);
+                  }
+                  if (reservaRealizada == true) {
+                    _reservasSnapshots.clear();
+                    _loadHorarios();
+                  }
+                });
+              }
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: _HorariosUi.ink,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text(
+                  'Confirmar reserva',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvisoCerrado() {
+    final bool cerradoDiaElegido = _configLugar!.estaCerradoDia(_selectedDate.weekday);
+    final String mensaje = cerradoDiaElegido
+        ? 'Cerrado este día. No se pueden realizar reservas.'
+        : 'Fuera del horario de atención en este momento. No se pueden realizar reservas hasta el próximo horario de servicio.';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFDBA74)),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline_rounded, color: Colors.amber.shade700, size: 22),
-          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade100,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.schedule_send_rounded, color: Colors.orange.shade800, size: 22),
+          ),
+          const SizedBox(width: 14),
           Expanded(
             child: Text(
-              'Recuerda que las reservas fuera de horario de oficina podrían tardar unos minutos en confirmarse.',
-              style: TextStyle(
+              mensaje,
+              style: GoogleFonts.montserrat(
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade800,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF9A3412),
                 height: 1.35,
               ),
             ),
@@ -1127,93 +1388,11 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
     );
   }
 
-  Widget _buildBottomButton() {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.of(context).padding.bottom),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Material(
-          color: const Color(0xFF1A2033),
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Selecciona un horario disponible de la lista para continuar'),
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  margin: const EdgeInsets.all(12),
-                ),
-              );
-            },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: Text(
-                  'CONFIRMAR RESERVA',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAvisoCerrado() {
-    final weekday = _selectedDate.weekday;
-    final bool cerrado = _configLugar!.estaCerradoDia(weekday);
-    final String mensaje = cerrado
-        ? 'Cerrado este día. No se pueden realizar reservas.'
-        : 'Fuera del horario de atención. No se pueden realizar reservas.';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.orange.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline_rounded, color: Colors.orange.shade700, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              mensaje,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.orange.shade900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Contenido del área de horarios (sin Expanded, para usar dentro de Expanded del body).
   Widget _buildHorariosGridContent() {
     if (!(_updatedCancha?.disponible ?? widget.cancha.disponible)) {
-      return Center(
+      return SizedBox(
+        height: 220,
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1230,10 +1409,7 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
               const SizedBox(height: 8),
               Text(
                 _updatedCancha?.motivoNoDisponible ?? widget.cancha.motivoNoDisponible ?? 'No especificado',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -1256,11 +1432,14 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
               ),
             ],
           ),
+        ),
       );
     }
 
     if (_isLoading) {
-      return Center(
+      return SizedBox(
+        height: 200,
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1283,11 +1462,14 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
               ),
             ],
           ),
+        ),
       );
     }
 
     if (horarios.isEmpty) {
-      return Center(
+      return SizedBox(
+        height: 220,
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1304,10 +1486,7 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
               const SizedBox(height: 8),
               Text(
                 'Intenta seleccionar otra fecha',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -1330,60 +1509,53 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
               ),
             ],
           ),
+        ),
       );
     }
 
-    // Responsividad mejorada
-    return LayoutBuilder(
-        builder: (context, constraints) {
-          // Calcular crossAxisCount basado en el ancho disponible
-          int crossAxisCount;
-          double childAspectRatio;
-          
-          if (constraints.maxWidth < 500) {
-            // Pantallas pequeñas: 3 columnas (más anchas)
-            crossAxisCount = 3;
-            childAspectRatio = 1.1;
-          } else if (constraints.maxWidth < 700) {
-            // Pantallas medianas: 3 columnas
-            crossAxisCount = 3;
-            childAspectRatio = 1.1;
-          } else if (constraints.maxWidth < 900) {
-            // Pantallas medianas-grandes: 4 columnas
-            crossAxisCount = 4;
-            childAspectRatio = 1.1;
-          } else {
-            // Pantallas grandes: 5 columnas
-            crossAxisCount = 5;
-            childAspectRatio = 1.1;
-          }
+    final width = MediaQuery.of(context).size.width - 32;
+    int crossAxisCount;
+    const double childAspectRatio = 1.1;
+    if (width < 500) {
+      crossAxisCount = 3;
+    } else if (width < 700) {
+      crossAxisCount = 3;
+    } else if (width < 900) {
+      crossAxisCount = 4;
+    } else {
+      crossAxisCount = 5;
+    }
 
-          return GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: childAspectRatio,
-            ),
-            padding: EdgeInsets.zero,
-            itemCount: horarios.length,
-            itemBuilder: (context, index) {
-              final horario = horarios[index];
-              return _buildHorarioCard(horario, Provider.of<SedeProvider>(context, listen: false).selectedSede);
-            },
-          );
-        },
+    final sedeNombre = Provider.of<SedeProvider>(context, listen: false).selectedSede;
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: childAspectRatio,
+      ),
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: horarios.length,
+      itemBuilder: (context, index) {
+        final horario = horarios[index];
+        return _CardEntrance(
+          delay: index * 35,
+          child: _buildHorarioCard(horario, sedeNombre, index),
+        );
+      },
     );
   }
 
-  Widget _buildHorarioCard(Horario horario, String sedeNombre) {
+  Widget _buildHorarioCard(Horario horario, String sedeNombre, int index) {
     final String day = DateFormat('EEEE', 'es').format(_selectedDate).toLowerCase();
     final String horaStr = horario.horaFormateada;
     final horaNormalizada = Horario.normalizarHora(horaStr);
+    final bool isSelected = horario.estado == EstadoHorario.disponible &&
+        _selectedHorario != null &&
+        Horario.normalizarHora(_selectedHorario!.horaFormateada) == horaNormalizada;
     
-    // ✅ OPTIMIZADO: Verificar promoción usando solo la clave normalizada
     final tienePromocion = _promocionesPorHorario.containsKey(horaNormalizada);
     final promocion = tienePromocion ? _promocionesPorHorario[horaNormalizada] : null;
     
@@ -1430,7 +1602,15 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
           double statusFontSize = constraints.maxWidth < 90 ? 9 : 10;
           double iconSize = constraints.maxWidth < 90 ? 11 : 13;
           
-          return InkWell(
+          return AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, _) {
+              final pulse = isSelected ? _pulseAnimation.value : 0.0;
+              return AnimatedScale(
+            scale: (horario.estado == EstadoHorario.disponible || isSelected) ? (isSelected ? 1.0 : 1.0) : 1.0,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutBack,
+            child: InkWell(
             onTap: () {
               if (horario.estado == EstadoHorario.vencido) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1471,6 +1651,15 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                     margin: const EdgeInsets.all(12),
                   ),
                 );
+                return;
+              }
+
+              // Disponible: marcar como seleccionado (luego Confirmar Reserva navega)
+              if (horario.estado == EstadoHorario.disponible) {
+                if (mounted) {
+                  setState(() => _selectedHorario = horario);
+                  _pulseController.repeat(reverse: true);
+                }
                 return;
               }
 
@@ -1531,164 +1720,155 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                 return;
               }
 
-              if (mounted) {
-                Navigator.push<bool>(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (_, animation, __) {
-                      return FadeTransition(
-                        opacity: animation,
-                        child: DetallesScreen(
-                          cancha: widget.cancha,
-                          fecha: _selectedDate,
-                          horario: horario,
-                          sede: sedeId,
-                          precioPromocional: tienePromocion && promocion != null ? promocion['precio_promocional'] as double? : null,
-                          promocionId: tienePromocion && promocion != null ? promocion['id'] as String? : null,
-                        ),
-                      );
-                    },
-                    transitionDuration: const Duration(milliseconds: 300),
-                  ),
-                ).then((reservaRealizada) async {
-                  if (reservaRealizada == true) {
-                    // ✅ ACTUALIZAR ESTADO LOCAL INMEDIATAMENTE
-                    await _actualizarEstadoLocalReservaCreada(horario);
-                    // También recargar para sincronizar con Firestore
-                    _reservasSnapshots.clear();
-                    _loadHorarios();
-                  }
-                });
-              }
+              // Reservado: no acción adicional (el tap ya manejó navegación a detalles si aplicaba)
             },
-            borderRadius: BorderRadius.circular(12),
-            splashColor: horario.estado == EstadoHorario.reservado
-                ? Colors.green.shade100.withOpacity(0.3)
-                : horario.estado == EstadoHorario.procesandoPago
-                    ? Colors.red.shade100.withOpacity(0.3) // ✅ NUEVO
-                    : Colors.green.shade100.withOpacity(0.5),
-            highlightColor: horario.estado == EstadoHorario.reservado
-                ? Colors.green.shade200.withOpacity(0.2)
-                : horario.estado == EstadoHorario.procesandoPago
-                    ? Colors.red.shade200.withOpacity(0.2) // ✅ NUEVO
-                    : Colors.green.shade200.withOpacity(0.3),
-            child: Container(
+            borderRadius: BorderRadius.circular(14),
+            splashColor: isSelected
+                ? Colors.white.withValues(alpha: 0.4)
+                : horario.estado == EstadoHorario.reservado
+                    ? Colors.green.shade100.withValues(alpha: 0.3)
+                    : horario.estado == EstadoHorario.procesandoPago
+                        ? Colors.red.shade100.withValues(alpha: 0.3)
+                        : Colors.green.shade100.withValues(alpha: 0.5),
+            highlightColor: isSelected
+                ? Colors.white.withValues(alpha: 0.2)
+                : horario.estado == EstadoHorario.reservado
+                    ? Colors.green.shade200.withValues(alpha: 0.2)
+                    : horario.estado == EstadoHorario.procesandoPago
+                        ? Colors.red.shade200.withValues(alpha: 0.2)
+                        : Colors.green.shade200.withValues(alpha: 0.3),
+            child: AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, _) => Transform.scale(
+                scale: isSelected ? 1.0 + 0.01 * _pulseAnimation.value : 1.0,
+                child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: tienePromocion && horario.estado == EstadoHorario.disponible
-                      ? Colors.amber.shade600 // ✅ NUEVO: Borde dorado para promociones
-                      : horario.estado == EstadoHorario.disponible
-                          ? const Color(0xFF4CAF50)
-                          : horario.estado == EstadoHorario.reservado
-                              ? const Color(0xFF1B5E20)
-                          : horario.estado == EstadoHorario.procesandoPago
-                              ? Colors.red.shade600
-                          : Colors.grey.shade400,
-                  width: tienePromocion && horario.estado == EstadoHorario.disponible ? 2.5 : 1.5, // ✅ NUEVO: Borde más grueso para promociones
+                  color: isSelected
+                      ? _HorariosUi.accentDark
+                      : tienePromocion && horario.estado == EstadoHorario.disponible
+                          ? Colors.amber.shade600
+                          : horario.estado == EstadoHorario.disponible
+                              ? const Color.fromARGB(255, 118, 199, 121) // borde verdoso para combinar con el tema
+                              : horario.estado == EstadoHorario.reservado
+                                  ? const Color(0xFF1B5E20)
+                                  : horario.estado == EstadoHorario.procesandoPago
+                                      ? Colors.red.shade600
+                                      : Colors.grey.shade400,
+                  width: isSelected ? 2.5 : (tienePromocion && horario.estado == EstadoHorario.disponible && !isSelected ? 2 : 1.5),
                 ),
-                boxShadow: [
-                  // ✅ NUEVO: Sombra dorada para promociones
-                  if (tienePromocion && horario.estado == EstadoHorario.disponible) ...[
-                    BoxShadow(
-                      color: Colors.amber.withOpacity(0.5),
-                      blurRadius: 12,
-                      spreadRadius: 2,
-                      offset: const Offset(0, 4),
-                    ),
-                    BoxShadow(
-                      color: Colors.orange.withOpacity(0.3),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                  if (horario.estado == EstadoHorario.disponible && !tienePromocion) ...[
-                    BoxShadow(
-                      color: const Color(0xFF4CAF50).withOpacity(0.15),
-                      blurRadius: 6,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                  if (horario.estado == EstadoHorario.reservado) ...[
-                    BoxShadow(
-                      color: const Color(0xFF1B5E20).withOpacity(0.25),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                  // ✅ SOMBRA PARA PROCESANDO PAGO
-                  if (horario.estado == EstadoHorario.procesandoPago) ...[
-                    BoxShadow(
-                      color: Colors.red.withOpacity(0.25),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                  if (horario.estado == EstadoHorario.vencido)
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.15),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(11),
-                child: Stack(
-                  children: [
-                    // Fondo base mejorado
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: tienePromocion && horario.estado == EstadoHorario.disponible
-                            ? LinearGradient( // ✅ NUEVO: Gradiente dorado para promociones
+                color: isSelected
+                    ? _HorariosUi.accent
+                    : (horario.estado == EstadoHorario.disponible ? Colors.white : null),
+                gradient: isSelected
+                    ? null
+                    : (horario.estado == EstadoHorario.disponible && tienePromocion
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Colors.amber.shade50, Colors.orange.shade50],
+                          )
+                        : horario.estado == EstadoHorario.reservado
+                            ? const LinearGradient(
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
-                                colors: [
-                                  Colors.amber.shade50,
-                                  Colors.orange.shade50,
-                                  Colors.yellow.shade50,
-                                ],
+                                colors: [Color(0xFF1B5E20), Color(0xFF2E7D32)],
                               )
-                            : horario.estado == EstadoHorario.disponible
-                                ? LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      Colors.white,
-                                      const Color(0xFFF1F8E9),
-                                      const Color(0xFFE8F5E8),
-                                    ],
-                                  )
-                            : horario.estado == EstadoHorario.reservado
-                                ? LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      const Color(0xFF1B5E20),
-                                      const Color(0xFF2E7D32),
-                                      const Color(0xFF388E3C),
-                                    ],
-                                  )
-                            // ✅ GRADIENTE PARA PROCESANDO PAGO
                             : horario.estado == EstadoHorario.procesandoPago
                                 ? LinearGradient(
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
-                                    colors: [
-                                      Colors.red.shade600,
-                                      Colors.red.shade500,
-                                      Colors.red.shade400,
-                                    ],
+                                    colors: [Colors.red.shade600, Colors.red.shade400],
                                   )
-                                : LinearGradient(
+                                : horario.estado == EstadoHorario.vencido
+                                    ? LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [Colors.grey.shade200, Colors.grey.shade100],
+                                      )
+                                    : null),
+                boxShadow: [
+                  if (isSelected)
+                    BoxShadow(
+                      color: _HorariosUi.accent.withValues(alpha: 0.35 + 0.2 * pulse),
+                      blurRadius: 14 + 6 * pulse,
+                      spreadRadius: 1 + 2 * pulse,
+                      offset: const Offset(0, 4),
+                    )
+                  else if (horario.estado == EstadoHorario.disponible && tienePromocion)
+                    BoxShadow(
+                      color: Colors.amber.withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    )
+                  else if (horario.estado == EstadoHorario.disponible)
+                    BoxShadow(
+                      color: _HorariosUi.accent.withValues(alpha: 0.14),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(13),
+                child: Stack(
+                  children: [
+                    // Fondo base (no pintar gradiente cuando está seleccionado; el contenedor exterior ya es verde)
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: isSelected
+                            ? null
+                            : (tienePromocion && horario.estado == EstadoHorario.disponible
+                                ? LinearGradient(
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                     colors: [
-                                      Colors.grey.shade200,
-                                      Colors.grey.shade100,
+                                      Colors.amber.shade50,
+                                      Colors.orange.shade50,
+                                      Colors.yellow.shade50,
                                     ],
-                                  ),
+                                  )
+                                : horario.estado == EstadoHorario.disponible
+                                    ? LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Colors.white,
+                                          const Color(0xFFF1F8E9),
+                                          const Color(0xFFE8F5E8),
+                                        ],
+                                      )
+                                    : horario.estado == EstadoHorario.reservado
+                                        ? LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              const Color(0xFF1B5E20),
+                                              const Color(0xFF2E7D32),
+                                              const Color(0xFF388E3C),
+                                            ],
+                                          )
+                                        : horario.estado == EstadoHorario.procesandoPago
+                                            ? LinearGradient(
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                                colors: [
+                                                  Colors.red.shade600,
+                                                  Colors.red.shade500,
+                                                  Colors.red.shade400,
+                                                ],
+                                              )
+                                            : LinearGradient(
+                                                begin: Alignment.topLeft,
+                                                end: Alignment.bottomRight,
+                                                colors: [
+                                                  Colors.grey.shade200,
+                                                  Colors.grey.shade100,
+                                                ],
+                                              )),
                       ),
                     ),
                     
@@ -1710,11 +1890,10 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                     // Contenido principal
                     Positioned.fill(
                       child: Padding(
-                        padding: const EdgeInsets.all(6),
+                        padding: const EdgeInsets.all(8),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // Hora - Ajustada responsivamente
                             Flexible(
                               child: FittedBox(
                                 fit: BoxFit.scaleDown,
@@ -1723,20 +1902,23 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                                   style: TextStyle(
                                     fontSize: fontSize,
                                     fontWeight: FontWeight.bold,
-                                    color: horario.estado == EstadoHorario.disponible
-                                        ? const Color(0xFF1B5E20)
-                                        : horario.estado == EstadoHorario.reservado
-                                            ? Colors.white
-                                        : horario.estado == EstadoHorario.procesandoPago  // ✅ COLOR PARA PROCESANDO
-                                            ? Colors.white
-                                        : Colors.black54,
+                                    color: (horario.estado == EstadoHorario.disponible && isSelected)
+                                        ? Colors.white
+                                        : horario.estado == EstadoHorario.disponible
+                                            ? const Color(0xFF1B5E20)
+                                            : horario.estado == EstadoHorario.reservado ||
+                                                horario.estado == EstadoHorario.procesandoPago
+                                                ? Colors.white
+                                                : Colors.black54,
                                     letterSpacing: 0.3,
-                                    shadows: (horario.estado == EstadoHorario.reservado || horario.estado == EstadoHorario.procesandoPago)
+                                    shadows: (horario.estado == EstadoHorario.reservado ||
+                                            horario.estado == EstadoHorario.procesandoPago ||
+                                            isSelected)
                                         ? [
                                             Shadow(
-                                              color: Colors.black.withOpacity(0.5),
+                                              color: Colors.black.withValues(alpha: 0.3),
                                               offset: const Offset(1, 1),
-                                              blurRadius: 3,
+                                              blurRadius: 2,
                                             ),
                                           ]
                                         : null,
@@ -1746,126 +1928,77 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                                 ),
                               ),
                             ),
-                            
-                            SizedBox(height: constraints.maxHeight * 0.05),
-                            
-                            // Precio solo para disponibles
-                            if (horario.estado == EstadoHorario.disponible) ...[
+                            SizedBox(height: constraints.maxHeight * 0.06),
+                            if (horario.estado == EstadoHorario.disponible || isSelected) ...[
                               Flexible(
-                                child: tienePromocion
+                                child: tienePromocion && !isSelected
                                     ? _buildPrecioPromocional(precio, priceFontSize, constraints)
-                                    : Container(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: constraints.maxWidth * 0.08,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF4CAF50).withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: const Color(0xFF4CAF50).withOpacity(0.3),
-                                            width: 1,
+                                    : FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(precio),
+                                          style: TextStyle(
+                                            fontSize: priceFontSize + 1,
+                                            fontWeight: FontWeight.bold,
+                                            color: isSelected
+                                                ? Colors.white
+                                                : const Color(0xFF1B5E20),
                                           ),
-                                        ),
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            NumberFormat.currency(symbol: '\$', decimalDigits: 0).format(precio),
-                                            style: TextStyle(
-                                              fontSize: priceFontSize,
-                                              fontWeight: FontWeight.bold,
-                                              color: const Color(0xFF1B5E20),
-                                            ),
-                                            maxLines: 1,
-                                          ),
+                                          maxLines: 1,
                                         ),
                                       ),
                               ),
                               SizedBox(height: constraints.maxHeight * 0.05),
                             ] else
                               SizedBox(height: constraints.maxHeight * 0.05),
-                            
-                            // Estado
                             Flexible(
-                              child: Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: constraints.maxWidth * 0.08,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: horario.estado == EstadoHorario.disponible
-                                      ? const Color(0xFF4CAF50).withOpacity(0.15)
-                                      : horario.estado == EstadoHorario.reservado
-                                          ? Colors.white.withOpacity(0.95)
-                                      : horario.estado == EstadoHorario.procesandoPago  // ✅ FONDO PARA PROCESANDO
-                                          ? Colors.white.withOpacity(0.95)
-                                      : Colors.black.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: horario.estado == EstadoHorario.disponible
-                                        ? const Color(0xFF4CAF50).withOpacity(0.4)
-                                        : horario.estado == EstadoHorario.reservado
-                                            ? Colors.white.withOpacity(0.8)
-                                        : horario.estado == EstadoHorario.procesandoPago  // ✅ BORDE PARA PROCESANDO
-                                            ? Colors.white.withOpacity(0.8)
-                                        : Colors.grey.withOpacity(0.4),
-                                    width: 1,
-                                  ),
-                                  boxShadow: (horario.estado == EstadoHorario.reservado || horario.estado == EstadoHorario.procesandoPago)
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.15),
-                                            blurRadius: 3,
-                                            offset: const Offset(0, 1),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        horario.estado == EstadoHorario.disponible
-                                            ? Icons.check_circle_outline
-                                            : horario.estado == EstadoHorario.reservado
-                                                ? Icons.sports_soccer
-                                            : horario.estado == EstadoHorario.procesandoPago  // ✅ ICONO PARA PROCESANDO
-                                                ? Icons.hourglass_empty
-                                            : Icons.access_time,
-                                        size: iconSize,
-                                        color: horario.estado == EstadoHorario.disponible
-                                            ? const Color(0xFF1B5E20)
-                                            : horario.estado == EstadoHorario.reservado
-                                                ? const Color(0xFF1B5E20)
-                                            : horario.estado == EstadoHorario.procesandoPago  // ✅ COLOR ICONO PROCESANDO
-                                                ? Colors.red.shade700
-                                            : Colors.black54,
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        horario.estado == EstadoHorario.disponible
-                                            ? 'LIBRE'
-                                            : horario.estado == EstadoHorario.reservado
-                                                ? 'Reservado'
-                                            : horario.estado == EstadoHorario.procesandoPago  // ✅ TEXTO PARA PROCESANDO
-                                                ? 'Procesando'
-                                            : 'Vencido',
-                                        style: TextStyle(
-                                          fontSize: statusFontSize,
-                                          fontWeight: FontWeight.bold,
-                                          color: horario.estado == EstadoHorario.disponible
-                                              ? const Color(0xFF1B5E20)
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      horario.estado == EstadoHorario.disponible || isSelected
+                                          ? Icons.check_circle_rounded
+                                          : horario.estado == EstadoHorario.reservado
+                                              ? Icons.sports_soccer
+                                              : horario.estado == EstadoHorario.procesandoPago
+                                                  ? Icons.hourglass_empty
+                                                  : Icons.access_time,
+                                      size: iconSize + 1,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : horario.estado == EstadoHorario.disponible
+                                              ? _HorariosUi.accent
                                               : horario.estado == EstadoHorario.reservado
-                                                  ? const Color(0xFF1B5E20)
-                                              : horario.estado == EstadoHorario.procesandoPago  // ✅ COLOR TEXTO PROCESANDO
-                                                  ? Colors.red.shade700
-                                              : Colors.black54,
-                                        ),
+                                                  ? Colors.white
+                                                  : horario.estado == EstadoHorario.procesandoPago
+                                                      ? Colors.white
+                                                      : Colors.black54,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      horario.estado == EstadoHorario.disponible || isSelected
+                                          ? 'LIBRE'
+                                          : horario.estado == EstadoHorario.reservado
+                                              ? 'Reservado'
+                                              : horario.estado == EstadoHorario.procesandoPago
+                                                  ? 'Procesando'
+                                                  : 'Vencido',
+                                      style: TextStyle(
+                                        fontSize: statusFontSize,
+                                        fontWeight: FontWeight.bold,
+                                        color: isSelected
+                                            ? Colors.white
+                                            : horario.estado == EstadoHorario.disponible
+                                                ? _HorariosUi.accent
+                                                : horario.estado == EstadoHorario.reservado ||
+                                                    horario.estado == EstadoHorario.procesandoPago
+                                                    ? Colors.white
+                                                    : Colors.black54,
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1874,8 +2007,8 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                       ),
                     ),
                     
-                    // ✅ NUEVO: Efecto dorado animado para promociones
-                    if (tienePromocion && horario.estado == EstadoHorario.disponible)
+                    // ✅ Efecto dorado animado para promociones (solo si no está seleccionado)
+                    if (tienePromocion && horario.estado == EstadoHorario.disponible && !isSelected)
                       Positioned.fill(
                         child: IgnorePointer(
                           child: AnimatedBuilder(
@@ -1905,7 +2038,7 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.white.withOpacity(0.2),
+                                Colors.white.withValues(alpha: 0.2),
                                 Colors.transparent,
                               ],
                             ),
@@ -1916,6 +2049,11 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                 ),
               ),
             ),
+          ),
+          ),
+          ),
+        );
+            },
           );
         },
       ),
@@ -1949,7 +2087,7 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.amber.withOpacity(0.5),
+                color: Colors.amber.withValues(alpha: 0.5),
                 blurRadius: 6,
                 spreadRadius: 1,
               ),
@@ -1987,7 +2125,7 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
                       color: Colors.white,
                       shadows: [
                         Shadow(
-                          color: Colors.black.withOpacity(0.3),
+                          color: Colors.black.withValues(alpha: 0.3),
                           blurRadius: 2,
                           offset: const Offset(0, 1),
                         ),
@@ -2001,6 +2139,58 @@ class _HorariosScreenState extends State<HorariosScreen> with RouteAware, Ticker
           ),
         );
       },
+    );
+  }
+}
+
+/// Animación de entrada escalonada para cada tarjeta del grid (fade + slide).
+class _CardEntrance extends StatefulWidget {
+  final int delay;
+  final Widget child;
+
+  const _CardEntrance({required this.delay, required this.child});
+
+  @override
+  State<_CardEntrance> createState() => _CardEntranceState();
+}
+
+class _CardEntranceState extends State<_CardEntrance> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacity;
+  late Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 320),
+      vsync: this,
+    );
+    _opacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+    _slide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    Future.delayed(Duration(milliseconds: widget.delay), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: widget.child,
+      ),
     );
   }
 }
@@ -2023,9 +2213,9 @@ class GoldShimmerPainter extends CustomPainter {
       end: Alignment(1.0 + (animationValue * 2), 0),
       colors: [
         Colors.transparent,
-        Colors.amber.withOpacity(0.3),
-        Colors.yellow.withOpacity(0.4),
-        Colors.amber.withOpacity(0.3),
+        Colors.amber.withValues(alpha: 0.3),
+        Colors.yellow.withValues(alpha: 0.4),
+        Colors.amber.withValues(alpha: 0.3),
         Colors.transparent,
       ],
       stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
@@ -2056,7 +2246,7 @@ class GoldShimmerPainter extends CustomPainter {
       
       paint
         ..style = PaintingStyle.fill
-        ..color = Colors.amber.withOpacity(opacity)
+        ..color = Colors.amber.withValues(alpha: opacity)
         ..shader = null;
       
       canvas.drawCircle(

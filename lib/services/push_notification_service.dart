@@ -1,22 +1,24 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'dart:convert';
 
 import 'ciudad_preference_service.dart';
+import 'notification_helper.dart';
 
 /// ID del canal de notificaciones Android para promociones.
 const String androidChannelIdPromociones = 'promociones';
 
-/// Clave VAPID para FCM en web (Cloud Messaging key pair). Necesaria para que getToken en web devuelva un token válido para push.
-const String _webVapidKey =
-    'BLvpYxLqgXyrlHcfAtaWjXYP7SJn4ws5K3h6e7Mh3X4hJVdbHzYal5SW3jB2jcd8GTgQUKnT9mgjQzaF5cbZrmk';
+/// Canal Android para reservas pendientes (staff del lugar).
+const String androidChannelIdStaffReservas = 'reservas_staff_pendientes';
 
-/// Clave para persistir un ID estable por instalación (evita crear un doc nuevo por cada refresh del token).
-const String _fcmDeviceIdKey = 'fcm_device_id';
+/// VAPID key para FCM web (desde Firebase Console → Cloud Messaging → Web Push certificates).
+const String _vapidKeyWeb = 'BLvpYxLqgXyrlHcfAtaWjXYP7SJn4ws5K3h6e7Mh3X4hJVdbHzYal5SW3jB2jcd8GTgQUKnT9mgjQzaF5cbZrmk';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -43,55 +45,87 @@ class PushNotificationService {
     onPermissionDenied?.call(message);
   }
 
+  /// Si se asigna, se llama cuando falla el registro del token en el backend.
+  static void Function(String message)? onRegistrationError;
+
+  /// Mensajes de error de registro pendientes (antes de tener un context disponible).
+  static final List<String> pendingRegistrationErrorMessages = [];
+
+  static void _notifyRegistrationError(String message) {
+    pendingRegistrationErrorMessages.add(message);
+    onRegistrationError?.call(message);
+  }
+
+  /// Registrado desde [main]: limpia ciudad y navega a [CiudadScreen] (solo visitantes).
+  static Future<void> Function()? guestRepickCiudadForPushCallback;
+
+  /// Registrado desde [main]: abre la pantalla de reservas pendientes al tocar la notificación.
+  static void Function()? onNavigateToReservasPendientes;
+
+  static bool _repickCiudadHintAfterPushFailure = false;
+
+  static void markRepickCiudadHintAfterPushFailure() {
+    _repickCiudadHintAfterPushFailure = true;
+  }
+
+  /// Para mostrar un SnackBar al llegar a ciudades tras un fallo FCM.
+  static bool consumeRepickCiudadHintAfterPushFailure() {
+    final v = _repickCiudadHintAfterPushFailure;
+    _repickCiudadHintAfterPushFailure = false;
+    return v;
+  }
+
+  Future<void> _onGuestFcmRegistrationFailed() async {
+    try {
+      if (FirebaseAuth.instance.currentUser != null) {
+        const msg =
+            'No se pudieron sincronizar las notificaciones. Revisa conexión y permisos.';
+        debugPrint('PushNotificationService: fallo FCM con sesión iniciada → aviso');
+        _notifyRegistrationError(msg);
+        return;
+      }
+    } catch (e) {
+      debugPrint('PushNotificationService: comprobación auth en fallo FCM: $e');
+    }
+
+    // En web (incognito, Brave, bloqueo de notificaciones) FCM suele fallar sin token.
+    // No forzar re-elegir ciudad: el visitante puede seguir usando la app sin push de promos.
+    if (kIsWeb) {
+      debugPrint(
+          'PushNotificationService: web — fallo FCM visitante; se mantiene ciudad guardada '
+          '(no redirigir a selección de ciudad).');
+      return;
+    }
+
+    debugPrint(
+        'PushNotificationService: fallo registro promociones (visitante) → re-elegir ciudad');
+    try {
+      await guestRepickCiudadForPushCallback?.call();
+    } catch (e) {
+      debugPrint('PushNotificationService: callback recuperación ciudad error: $e');
+    }
+  }
+
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
-  String? _deviceId;
-
-  /// Identificador estable por instalación de la app. El backend lo usa para actualizar
-  /// el mismo documento cuando el token FCM cambia, en lugar de crear uno nuevo.
-  Future<String> _getOrCreateDeviceId() async {
-    if (_deviceId != null) return _deviceId!;
-    final prefs = await SharedPreferences.getInstance();
-    String? id = prefs.getString(_fcmDeviceIdKey);
-    if (id == null || id.isEmpty) {
-      id = _generateDeviceId();
-      await prefs.setString(_fcmDeviceIdKey, id);
-    }
-    _deviceId = id;
-    return id;
-  }
-
-  static String _generateDeviceId() {
-    final r = DateTime.now().microsecondsSinceEpoch;
-    final values = List<int>.generate(16, (i) => ((r + i * 31) * (i + 7)) & 0xff);
-    return values.map((e) => e.toRadixString(16).padLeft(2, '0')).join();
-  }
 
   /// Inicializa FCM y registra el token con la ciudad en caché (si hay).
-  /// Escucha el refresh del token para actualizar el mismo registro en backend.
   Future<void> initialize() async {
     if (_initialized) return;
 
-    if (!kIsWeb) {
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-    }
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     await _requestPermissionIfNeeded();
     await _initLocalNotifications();
     _setupMessageHandlers();
-    _setupTokenRefreshListener();
+    _messaging.onTokenRefresh.listen((_) async {
+      await registerTokenWithCurrentCiudad();
+    });
     _initialized = true;
     await registerTokenWithCurrentCiudad();
     debugPrint('PushNotificationService: initialized (notificaciones por ciudad)');
-  }
-
-  void _setupTokenRefreshListener() {
-    _messaging.onTokenRefresh.listen((String newToken) {
-      debugPrint('PushNotificationService: token refreshed, re-registering');
-      registerTokenWithCurrentCiudad();
-    });
   }
 
   Future<void> _requestPermissionIfNeeded() async {
@@ -139,25 +173,38 @@ class PushNotificationService {
     );
 
     if (defaultTargetPlatform == TargetPlatform.android) {
-      const channel = AndroidNotificationChannel(
+      const channelPromos = AndroidNotificationChannel(
         androidChannelIdPromociones,
         'Promociones TuCanchaFácil',
         description: 'Nuevas promociones de canchas',
         importance: Importance.high,
         playSound: true,
       );
-      await _localNotifications
+      const channelStaff = AndroidNotificationChannel(
+        androidChannelIdStaffReservas,
+        'Reservas pendientes (staff)',
+        description: 'Nuevas reservas por confirmar en tu lugar',
+        importance: Importance.high,
+        playSound: true,
+      );
+      final androidPlugin = _localNotifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+              AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(channelPromos);
+      await androidPlugin?.createNotificationChannel(channelStaff);
     }
   }
 
   void _onLocalNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
-    if (payload != null && payload.isNotEmpty) {
-      debugPrint('PushNotificationService: local notification tapped $payload');
-    }
+    if (payload == null || payload.isEmpty) return;
+    debugPrint('PushNotificationService: local notification tapped $payload');
+    try {
+      final map = jsonDecode(payload);
+      if (map is Map<String, dynamic> && map['type'] == 'reserva_pendiente') {
+        onNavigateToReservasPendientes?.call();
+      }
+    } catch (_) {}
   }
 
   /// Plataforma actual para el backend.
@@ -191,7 +238,8 @@ class PushNotificationService {
     }
     try {
       if (kIsWeb) {
-        return await _messaging.getToken(vapidKey: _webVapidKey);
+        final vapid = _vapidKeyWeb.isEmpty ? null : _vapidKeyWeb;
+        return await _messaging.getToken(vapidKey: vapid);
       }
       return await _messaging.getToken();
     } on FirebaseException catch (e) {
@@ -229,36 +277,110 @@ class PushNotificationService {
   }
 
   /// Actualiza el registro para que las notificaciones lleguen solo de [ciudadId].
-  /// Si [lugarId] se proporciona (admins), las notificaciones de auditoría se filtran por lugar.
-  /// Usa un deviceId estable para que el backend actualice el mismo documento en vez de crear otro.
-  Future<void> updateCiudadForNotifications(String? ciudadId, {String? lugarId}) async {
-    final effectiveCiudadId = ciudadId?.trim();
-    if (effectiveCiudadId == null || effectiveCiudadId.isEmpty) return;
-    String? token = await _getToken();
-    if (token == null) {
-      await Future.delayed(const Duration(milliseconds: 800));
+  /// Llamar cuando el usuario selecciona o cambia de ciudad.
+  Future<void> updateCiudadForNotifications(String ciudadId) async {
+    if (ciudadId.isEmpty) return;
+
+    String? token;
+    const maxRetries = 3;
+
+    for (var attempt = 0; attempt < maxRetries && token == null; attempt++) {
       token = await _getToken();
+      if (token == null && attempt < maxRetries - 1) {
+        await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+      }
     }
+
     if (token == null) {
-      debugPrint('PushNotificationService: no token, no se puede registrar ciudad');
+      debugPrint(
+          'PushNotificationService: no token tras reintentos, no se puede registrar ciudad');
+      await _onGuestFcmRegistrationFailed();
       return;
     }
     try {
-      final deviceId = await _getOrCreateDeviceId();
-      final data = <String, dynamic>{
-        'token': token,
-        'deviceId': deviceId,
-        'ciudadId': effectiveCiudadId,
-        'platform': _platform,
-      };
-      if (lugarId != null && lugarId.isNotEmpty) {
-        data['lugarId'] = lugarId;
-      }
       final callable = FirebaseFunctions.instance.httpsCallable('registerFcmToken');
-      await callable.call(data);
-      debugPrint('PushNotificationService: registrado para ciudad $effectiveCiudadId${lugarId != null ? ', lugar $lugarId' : ''}');
+      await callable.call({
+        'token': token,
+        'ciudadId': ciudadId,
+        'platform': _platform,
+      }).timeout(const Duration(seconds: 10));
+      debugPrint('PushNotificationService: registrado para ciudad $ciudadId');
+    } on TimeoutException {
+      debugPrint('PushNotificationService: registerFcmToken timeout');
+      await _onGuestFcmRegistrationFailed();
     } catch (e) {
       debugPrint('PushNotificationService: registerFcmToken error $e');
+      await _onGuestFcmRegistrationFailed();
+    }
+  }
+
+  /// Registra el token para recibir notificaciones de auditorías de riesgo alto/crítico del [lugarId].
+  /// Solo el superadmin recibe estas notificaciones, y solo del lugar donde inició sesión. El backend valida el rol.
+  /// Registra el dispositivo para push de **reservas pendientes** del [lugarId] (mismo que la sesión).
+  /// Solo tiene efecto si el usuario es admin, encargado o superadmin (valida el backend).
+  Future<void> registerTokenForStaffPendingReservas(String lugarId) async {
+    if (lugarId.isEmpty) return;
+    await initialize();
+    String? token = await _getToken();
+    if (token == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      token = await _getToken();
+    }
+    if (token == null) {
+      debugPrint('PushNotificationService: no token, no se registra reservas pendientes');
+      return;
+    }
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('registerFcmTokenStaffPendingReservas');
+      await callable.call({
+        'token': token,
+        'lugarId': lugarId,
+        'platform': _platform,
+      });
+      debugPrint('PushNotificationService: registrado reservas pendientes, lugar $lugarId');
+    } catch (e) {
+      debugPrint('PushNotificationService: registerFcmTokenStaffPendingReservas error $e');
+    }
+  }
+
+  /// Quita el registro de push de reservas pendientes (p. ej. al cerrar sesión).
+  Future<void> unregisterTokenStaffPendingReservas() async {
+    String? token = await _getToken();
+    token ??= await _messaging.getToken();
+    if (token == null || token.isEmpty) return;
+    try {
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('unregisterFcmTokenStaffPendingReservas');
+      await callable.call({'token': token});
+      debugPrint('PushNotificationService: desregistrado reservas pendientes');
+    } catch (e) {
+      debugPrint('PushNotificationService: unregister staff pending error $e');
+    }
+  }
+
+  Future<void> registerTokenForAuditAlerts(String lugarId) async {
+    if (lugarId.isEmpty) return;
+    await initialize();
+    String? token = await _getToken();
+    if (token == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      token = await _getToken();
+    }
+    if (token == null) {
+      debugPrint('PushNotificationService: no token, no se registra alertas de auditoría');
+      return;
+    }
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('registerFcmTokenAudit');
+      await callable.call({
+        'token': token,
+        'lugarId': lugarId,
+        'platform': _platform,
+      });
+      debugPrint('PushNotificationService: registrado para alertas de auditoría, lugar $lugarId');
+    } catch (e) {
+      debugPrint('PushNotificationService: registerFcmTokenAudit error $e');
     }
   }
 
@@ -267,12 +389,26 @@ class PushNotificationService {
       debugPrint('PushNotificationService: foreground message ${message.messageId}');
       final notification = message.notification;
       if (notification != null) {
-        _showLocalNotification(
-          id: message.hashCode,
-          title: notification.title ?? 'TuCanchaFácil',
-          body: notification.body ?? '',
-          payload: message.data['promocionId'] ?? message.data['lugarId'] ?? '',
-        );
+        final data = message.data;
+        final payloadJson = jsonEncode(data);
+        final isReservaPendiente = data['type'] == 'reserva_pendiente';
+        if (kIsWeb) {
+          showWebNotification(
+            notification.title ?? 'TuCanchaFacil',
+            notification.body ?? '',
+            'https://img.icons8.com/color/512/soccer-ball.png',
+          );
+        } else {
+          _showLocalNotification(
+            id: message.hashCode,
+            title: notification.title ?? 'TuCanchaFácil',
+            body: notification.body ?? '',
+            payload: payloadJson,
+            androidChannelId: isReservaPendiente
+                ? androidChannelIdStaffReservas
+                : androidChannelIdPromociones,
+          );
+        }
       }
     });
 
@@ -292,7 +428,10 @@ class PushNotificationService {
     if (type == 'promocion') {
       debugPrint('PushNotificationService: open promocion ${data['promocionId']}');
     } else if (type == 'auditoria') {
-      debugPrint('PushNotificationService: open auditoria ${data['auditId']}');
+      debugPrint('PushNotificationService: open auditoría ${data['auditId']} lugar ${data['lugarId']}');
+    } else if (type == 'reserva_pendiente') {
+      debugPrint('PushNotificationService: open reservas pendientes ${data['reservaId']}');
+      onNavigateToReservasPendientes?.call();
     }
   }
 
@@ -301,12 +440,17 @@ class PushNotificationService {
     required String title,
     required String body,
     String payload = '',
+    String androidChannelId = androidChannelIdPromociones,
   }) async {
     if (kIsWeb) return;
-    const androidDetails = AndroidNotificationDetails(
-      androidChannelIdPromociones,
-      'Promociones TuCanchaFácil',
-      channelDescription: 'Nuevas promociones de canchas',
+    final androidDetails = AndroidNotificationDetails(
+      androidChannelId,
+      androidChannelId == androidChannelIdStaffReservas
+          ? 'Reservas pendientes (staff)'
+          : 'Promociones TuCanchaFácil',
+      channelDescription: androidChannelId == androidChannelIdStaffReservas
+          ? 'Nuevas reservas por confirmar'
+          : 'Nuevas promociones de canchas',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
@@ -316,7 +460,7 @@ class PushNotificationService {
       presentBadge: true,
       presentSound: true,
     );
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: darwinDetails,
       macOS: darwinDetails,

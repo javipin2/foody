@@ -1,18 +1,16 @@
 // lib/services/version_service.dart
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:developer' as developer;
 import '../models/app_version.dart';
+import 'app_backend.dart';
 
 class VersionService {
-  static const String _collectionName = 'app_config';
-  static const String _documentId = 'version_control';
-  
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const String _configKey = 'version_control';
 
   /// Obtiene la información de versión actual de la app
   Future<String> getCurrentAppVersion() async {
@@ -36,66 +34,62 @@ class VersionService {
     }
   }
 
-  /// Obtiene la configuración de versión desde Firestore
-  Future<AppVersion?> getVersionConfig() async {
+  /// Fuente: Supabase (`app_config`/`version_control`).
+  /// Respaldo: valores locales para que el splash nunca se quede bloqueado.
+  Future<AppVersion> getVersionConfig() async {
     try {
       developer.log('Consultando configuración de versión...', name: 'VersionService');
-      
-      final doc = await _firestore
-          .collection(_collectionName)
-          .doc(_documentId)
-          .get();
 
-      if (!doc.exists) {
-        developer.log('Documento de configuración no existe, creando configuración por defecto', name: 'VersionService');
-        await _createDefaultVersionConfig();
-        return await getVersionConfig(); // Recursión para obtener la configuración recién creada
+      if (AppBackend.supabaseReady) {
+        try {
+          final row = await Supabase.instance.client
+              .from('app_config')
+              .select()
+              .eq('key', _configKey)
+              .maybeSingle();
+
+          if (row != null) {
+            final value = row['value'];
+            if (value is Map) {
+              final version =
+                  AppVersion.fromRemoteJson(Map<String, dynamic>.from(value));
+              developer.log(
+                'Versión desde Supabase: ${version.currentVersion}',
+                name: 'VersionService',
+              );
+              return version;
+            }
+          }
+        } catch (e) {
+          developer.log('Supabase (versión): $e',
+              name: 'VersionService', error: e);
+        }
       }
 
-      final data = doc.data() as Map<String, dynamic>;
-      final version = AppVersion.fromFirestore(data);
-      
-      developer.log('Configuración obtenida - Versión actual: ${version.currentVersion}, Mínima requerida: ${version.minimumRequiredVersion}, Fuerza actualización: ${version.forceUpdate}', name: 'VersionService');
-      
-      return version;
+      developer.log('Versión: usando valores locales', name: 'VersionService');
+      return await _buildLocalDefaultVersionConfig();
     } catch (e) {
-      developer.log('Error consultando configuración de versión: $e', name: 'VersionService', error: e);
-      return null;
+      developer.log('Error getVersionConfig: $e', name: 'VersionService', error: e);
+      return await _buildLocalDefaultVersionConfig();
     }
   }
 
-  /// Crea una configuración por defecto si no existe
-  Future<void> _createDefaultVersionConfig() async {
-    try {
-      final currentVersion = await getCurrentAppVersion();
-      
-      final defaultConfig = AppVersion(
-        currentVersion: currentVersion,
-        minimumRequiredVersion: currentVersion,
-        forceUpdate: false,
-        updateMessage: 'Nueva versión disponible con mejoras importantes',
-        downloadUrl: 'https://tu-servidor.com/app-release.apk', // Cambia por tu URL real
-        isPlayStoreAvailable: false,
-        playStoreUrl: 'https://play.google.com/store/apps/details?id=com.tuempresa.reserva_canchas',
-        lastUpdated: DateTime.now(),
-        newFeatures: [
-          'Mejoras en la interfaz de usuario',
-          'Corrección de errores menores',
-          'Optimización de rendimiento'
-        ],
-        maintenanceMode: false,
-        maintenanceMessage: 'La aplicación está temporalmente en mantenimiento. Intenta más tarde.',
-      );
-
-      await _firestore
-          .collection(_collectionName)
-          .doc(_documentId)
-          .set(defaultConfig.toFirestore());
-
-      developer.log('Configuración por defecto creada exitosamente', name: 'VersionService');
-    } catch (e) {
-      developer.log('Error creando configuración por defecto: $e', name: 'VersionService', error: e);
-    }
+  Future<AppVersion> _buildLocalDefaultVersionConfig() async {
+    final currentVersion = await getCurrentAppVersion();
+    return AppVersion(
+      currentVersion: currentVersion,
+      minimumRequiredVersion: currentVersion,
+      forceUpdate: false,
+      updateMessage: 'Nueva versión disponible',
+      downloadUrl: '',
+      isPlayStoreAvailable: false,
+      playStoreUrl: '',
+      lastUpdated: DateTime.now(),
+      newFeatures: const [],
+      maintenanceMode: false,
+      maintenanceMessage:
+          'La aplicación está temporalmente en mantenimiento. Intenta más tarde.',
+    );
   }
 
   /// Verifica si la app necesita actualización
@@ -103,10 +97,6 @@ class VersionService {
     try {
       final currentVersion = await getCurrentAppVersion();
       final versionConfig = await getVersionConfig();
-
-      if (versionConfig == null) {
-        return UpdateStatus.error;
-      }
 
       // Verificar modo mantenimiento
       if (versionConfig.maintenanceMode) {
@@ -131,13 +121,15 @@ class VersionService {
     }
   }
 
-  /// Actualiza la configuración de versión en Firestore
+  /// Actualiza la configuración de versión en Supabase
   Future<bool> updateVersionConfig(AppVersion newConfig) async {
     try {
-      await _firestore
-          .collection(_collectionName)
-          .doc(_documentId)
-          .set(newConfig.toFirestore());
+      if (!AppBackend.supabaseReady) return false;
+      await Supabase.instance.client.from('app_config').upsert({
+        'key': _configKey,
+        'value': newConfig.toRemoteJson(),
+        'updated_at': DateTime.now().toIso8601String(),
+      });
 
       developer.log('Configuración de versión actualizada exitosamente', name: 'VersionService');
       return true;

@@ -542,6 +542,17 @@ class ReservaAuditUtils {
     } else if (cantidadAlertas >= 1) {
       puntuacionRiesgo += 5;
     }
+
+    // ✅ Forzar nivel ALTO cuando el cambio de precio es extremo (≥70%) o crítico (≥50%)
+    if (analisisPrecios['es_cambio_critico'] == true) {
+      final porcentaje = (analisisPrecios['porcentaje_cambio'] ?? 0.0) as double;
+      if (porcentaje >= 70) {
+        return 'alto';  // Descuento/aumento extremo → siempre alto
+      }
+      if (porcentaje >= 50) {
+        if (puntuacionRiesgo < UmbralesRiesgo.alto) return 'alto';  // Crítico → al menos alto
+      }
+    }
     
     // ✅ CLASIFICACIÓN FINAL CON UMBRALES UNIFICADOS
     if (puntuacionRiesgo >= UmbralesRiesgo.critico) return 'critico';

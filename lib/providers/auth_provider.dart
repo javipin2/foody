@@ -2,8 +2,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import '../services/storage_service.dart';
+import '../services/push_notification_service.dart';
+import '../services/app_backend.dart';
+import '../services/lugar_helper.dart';
 
 class AuthProvider with ChangeNotifier {
   User? _user;
@@ -40,8 +43,7 @@ class AuthProvider with ChangeNotifier {
       _user = FirebaseAuth.instance.currentUser;
       
       if (_user != null) {
-        // Si hay usuario, cargar datos desde Firestore
-        await _loadUserDataFromFirestore();
+        await _loadUserDataFromSupabase();
       } else {
         // Si no hay usuario, intentar cargar desde SharedPreferences
         await _loadUserFromStorage();
@@ -59,31 +61,51 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Cargar datos del usuario desde Firestore
-  Future<void> _loadUserDataFromFirestore() async {
+  /// Perfil de staff en Supabase (`staff_profiles.id` = Firebase Auth UID).
+  Future<void> _loadUserDataFromSupabase() async {
     if (_user == null) return;
 
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(_user!.uid)
-          .get();
+    if (!AppBackend.supabaseReady) {
+      debugPrint('Supabase no inicializado: no se cargan datos de staff');
+      return;
+    }
 
-      if (doc.exists) {
-        _userData = doc.data();
-        
-        // Establecer lugar y ciudad actuales del usuario
-        _currentLugarId = _userData?['lugarId'];
-        _currentCiudadId = _userData?['ciudadId'];
-        
-        debugPrint('Usuario cargado - Lugar: $_currentLugarId, Ciudad: $_currentCiudadId');
-        
-        // Guardar en almacenamiento local
-        await _saveUserToStorage();
-      } else {
-        debugPrint('Usuario no encontrado en Firestore');
+    try {
+      final row = await Supabase.instance.client
+          .from('staff_profiles')
+          .select()
+          .eq('id', _user!.uid)
+          .maybeSingle();
+
+      if (row == null) {
+        debugPrint('Usuario no encontrado en staff_profiles');
         await signOut();
+        return;
       }
+
+      if (row['activo'] == false) {
+        await signOut();
+        return;
+      }
+
+      _userData = {
+        'id': row['id'],
+        'email': row['email'],
+        'nombre': row['nombre'],
+        'rol': row['rol'],
+        'lugarId': row['lugar_id'],
+        'ciudadId': row['ciudad_id'],
+        'activo': row['activo'],
+      };
+
+      _currentLugarId = _userData!['lugarId'] as String?;
+      _currentCiudadId = _userData!['ciudadId'] as String?;
+
+      debugPrint(
+          'Usuario cargado - Lugar: $_currentLugarId, Ciudad: $_currentCiudadId');
+
+      await _saveUserToStorage();
+      _registerStaffPendingPushIfNeeded();
     } catch (e) {
       debugPrint('Error cargando datos del usuario: $e');
       await signOut();
@@ -172,7 +194,7 @@ class AuthProvider with ChangeNotifier {
         // Guardar preferencia de recordar
         await StorageService.saveRememberMe(rememberMe);
         
-        await _loadUserDataFromFirestore();
+        await _loadUserDataFromSupabase();
         return true;
       }
       
@@ -211,13 +233,26 @@ class AuthProvider with ChangeNotifier {
     return _currentCiudadId == ciudadId;
   }
 
+  void _registerStaffPendingPushIfNeeded() {
+    if (_user == null || _userData == null) return;
+    final rol = userRole;
+    if (rol != 'admin' && rol != 'encargado' && rol != 'superadmin') return;
+    final lid = _currentLugarId;
+    if (lid == null || lid.isEmpty) return;
+    PushNotificationService()
+        .registerTokenForStaffPendingReservas(lid)
+        .catchError((Object _) {});
+  }
+
   /// Cerrar sesión
   Future<void> signOut() async {
     _isLoading = true;
     notifyListeners();
 
     try {
+      await PushNotificationService().unregisterTokenStaffPendingReservas();
       await FirebaseAuth.instance.signOut();
+      LugarHelper.clearCache();
       _clearUserData();
       await _clearStorage();
     } catch (e) {
@@ -279,7 +314,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  /// Actualizar el nombre del usuario actual (Firestore + displayName)
+  /// Actualizar el nombre del usuario actual (Supabase + displayName Firebase)
   Future<bool> updateUserName(String newName) async {
     if (_user == null) return false;
     final trimmed = newName.trim();
@@ -287,10 +322,12 @@ class AuthProvider with ChangeNotifier {
 
     try {
       final uid = _user!.uid;
-      await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(uid)
-          .update({'nombre': trimmed});
+      if (AppBackend.supabaseReady) {
+        await Supabase.instance.client.from('staff_profiles').update({
+          'nombre': trimmed,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('id', uid);
+      }
 
       _userData = {
         ...?_userData,
@@ -352,7 +389,7 @@ class AuthProvider with ChangeNotifier {
           _user = user;
           if (user != null) {
             // Usuario autenticado - cargar datos
-            await _loadUserDataFromFirestore();
+            await _loadUserDataFromSupabase();
           } else {
             // Usuario no autenticado - limpiar datos
             _clearUserData();

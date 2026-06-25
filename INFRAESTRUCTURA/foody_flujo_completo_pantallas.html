@@ -1,0 +1,728 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+.app { padding: 1rem 0; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.tab-btn {
+  padding: 7px 14px; border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font-size: 13px; cursor: pointer; font-family: var(--font-sans);
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 6px;
+}
+.tab-btn:hover { background: var(--color-background-primary); color: var(--color-text-primary); }
+.tab-btn.active {
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-primary);
+  font-weight: 500;
+}
+.tab-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+.flow-title {
+  font-size: 13px; font-weight: 500; color: var(--color-text-secondary);
+  margin-bottom: 1rem; padding-bottom: 0.5rem;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+
+.screens-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 10px;
+  margin-bottom: 1rem;
+}
+
+.screen-card {
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  padding: 12px;
+  background: var(--color-background-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  position: relative;
+}
+.screen-card:hover { border-color: var(--color-border-primary); }
+.screen-card.selected {
+  border-color: var(--color-border-info);
+  background: var(--color-background-info);
+}
+
+.screen-id {
+  font-size: 11px; font-weight: 500;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+}
+.screen-name {
+  font-size: 13px; font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+.screen-desc {
+  font-size: 11px; color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+.screen-badge {
+  display: inline-block;
+  font-size: 10px; padding: 2px 6px;
+  border-radius: 99px;
+  margin-top: 6px;
+  font-weight: 500;
+}
+.badge-public { background: var(--color-background-success); color: var(--color-text-success); }
+.badge-auth { background: var(--color-background-warning); color: var(--color-text-warning); }
+.badge-realtime { background: var(--color-background-info); color: var(--color-text-info); }
+
+.detail-panel {
+  background: var(--color-background-secondary);
+  border-radius: var(--border-radius-lg);
+  border: 0.5px solid var(--color-border-tertiary);
+  padding: 1rem 1.25rem;
+  margin-top: 0.5rem;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.detail-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.detail-title { font-size: 15px; font-weight: 500; color: var(--color-text-primary); }
+.detail-sub { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+.close-btn {
+  background: none; border: none; cursor: pointer; font-size: 18px;
+  color: var(--color-text-tertiary); flex-shrink: 0; line-height: 1;
+  padding: 0;
+}
+.detail-section { margin-top: 0.75rem; }
+.detail-section-title {
+  font-size: 11px; font-weight: 500;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.detail-items { list-style: none; }
+.detail-items li {
+  font-size: 13px; color: var(--color-text-secondary);
+  padding: 3px 0;
+  display: flex; align-items: flex-start; gap: 6px;
+}
+.detail-items li::before {
+  content: '→'; color: var(--color-text-tertiary);
+  flex-shrink: 0; margin-top: 0px;
+}
+.endpoint-tag {
+  font-family: var(--font-mono); font-size: 11px;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  padding: 1px 5px;
+  color: var(--color-text-info);
+  display: inline-block; margin-top: 4px;
+}
+.flow-arrows {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap; margin-top: 6px;
+}
+.flow-step {
+  font-size: 12px; padding: 3px 8px;
+  border-radius: 99px;
+  background: var(--color-background-primary);
+  border: 0.5px solid var(--color-border-tertiary);
+  color: var(--color-text-secondary);
+}
+.flow-arrow { font-size: 11px; color: var(--color-text-tertiary); }
+
+.legend {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--color-text-secondary);
+}
+</style>
+
+<div class="app">
+<div class="tabs" id="main-tabs">
+  <button class="tab-btn active" data-tab="cliente" onclick="switchTab('cliente')">
+    <span class="tab-dot" style="background:#1D9E75"></span> App cliente
+  </button>
+  <button class="tab-btn" data-tab="cajero" onclick="switchTab('cajero')">
+    <span class="tab-dot" style="background:#BA7517"></span> Cajero / POS
+  </button>
+  <button class="tab-btn" data-tab="mesero" onclick="switchTab('mesero')">
+    <span class="tab-dot" style="background:#D85A30"></span> Mesero
+  </button>
+  <button class="tab-btn" data-tab="cocina" onclick="switchTab('cocina')">
+    <span class="tab-dot" style="background:#D4537E"></span> Cocina / KDS
+  </button>
+  <button class="tab-btn" data-tab="admin" onclick="switchTab('admin')">
+    <span class="tab-dot" style="background:#378ADD"></span> Admin
+  </button>
+  <button class="tab-btn" data-tab="domiciliario" onclick="switchTab('domiciliario')">
+    <span class="tab-dot" style="background:#534AB7"></span> Domiciliario
+  </button>
+  <button class="tab-btn" data-tab="superadmin" onclick="switchTab('superadmin')">
+    <span class="tab-dot" style="background:#888780"></span> Super Admin
+  </button>
+</div>
+
+<div id="detail-container"></div>
+
+<div class="panel active" id="panel-cliente">
+  <div class="flow-title">App cliente — sin login · flujo completo de pedido</div>
+  <div class="legend">
+    <span class="legend-item"><span class="screen-badge badge-public">público</span> Sin autenticación</span>
+    <span class="legend-item"><span class="screen-badge badge-realtime">tiempo real</span> Supabase Realtime</span>
+  </div>
+  <div class="screens-grid" id="grid-cliente"></div>
+</div>
+
+<div class="panel" id="panel-cajero">
+  <div class="flow-title">Cajero / POS — gestión de caja y pedidos presenciales</div>
+  <div class="screens-grid" id="grid-cajero"></div>
+</div>
+
+<div class="panel" id="panel-mesero">
+  <div class="flow-title">Mesero — control de mesas y aprobación de pedidos QR</div>
+  <div class="screens-grid" id="grid-mesero"></div>
+</div>
+
+<div class="panel" id="panel-cocina">
+  <div class="flow-title">Cocina / KDS — pantalla de tickets por estación</div>
+  <div class="screens-grid" id="grid-cocina"></div>
+</div>
+
+<div class="panel" id="panel-admin">
+  <div class="flow-title">Panel admin / gerente — gestión completa del restaurante</div>
+  <div class="screens-grid" id="grid-admin"></div>
+</div>
+
+<div class="panel" id="panel-domiciliario">
+  <div class="flow-title">Domiciliario — planta e independiente</div>
+  <div class="screens-grid" id="grid-domiciliario"></div>
+</div>
+
+<div class="panel" id="panel-superadmin">
+  <div class="flow-title">Super Admin — Panel Foody · control de la plataforma</div>
+  <div class="screens-grid" id="grid-superadmin"></div>
+</div>
+</div>
+
+<script>
+const DATA = {
+  cliente: [
+    {
+      id: 'P01', name: 'Splash / Ciudad',
+      desc: 'Logo animado + selección de ciudad',
+      badge: 'público',
+      qué: ['Logo Foody con animación de entrada', 'Lista de ciudades activas como cards horizontales', 'Si ya eligió ciudad → saltar directo a P02', 'Skeleton loader mientras carga', 'Mensaje "Próximamente" si no hay ciudades'],
+      acciones: ['Tocar ciudad → guardar en SharedPreferences → P02'],
+      endpoint: 'GET /ciudades',
+      flujo: ['Splash', 'Ciudad seleccionada', 'P02 Restaurantes']
+    },
+    {
+      id: 'P02', name: 'Restaurantes de la ciudad',
+      desc: 'Lista + historias / promociones',
+      badge: 'público',
+      qué: ['Header con nombre de ciudad + botón cambiar', 'Barra de búsqueda para filtrar', 'Stories circulares horizontales por restaurante (estilo WhatsApp)', 'Cards de restaurantes con banner, logo, estado abierto/cerrado', 'Cerrados al fondo con overlay'],
+      acciones: ['Tocar story → P_Historia fullscreen con temporizador', 'Tocar restaurante → P03'],
+      endpoint: 'GET /ciudades/:slug/restaurantes · GET /promociones/:sucursal_id',
+      flujo: ['P01', 'Lista restaurantes', 'Tocar story o restaurante', 'P03']
+    },
+    {
+      id: 'P03', name: 'Menú del restaurante',
+      desc: 'Categorías sticky + grid de productos',
+      badge: 'público',
+      qué: ['Banner grande + logo superpuesto', 'Tabs de categorías en scroll horizontal sticky', 'Grid o lista de productos por categoría', 'Tab "Encargos 📦" si aplica', 'Botón flotante del carrito (aparece al agregar algo)', 'Overlay gris en productos no disponibles'],
+      acciones: ['Tocar tab → scroll a sección', 'Tocar producto → P04 (modal inferior)', 'Tocar carrito → P05'],
+      endpoint: 'GET /menu/:sucursal_id · GET /menu/mesa/:qr_token',
+      flujo: ['P02', 'Ver menú', 'Elegir producto', 'P04']
+    },
+    {
+      id: 'P04', name: 'Detalle producto',
+      desc: 'Modal inferior con extras y cantidad',
+      badge: 'público',
+      qué: ['Imagen grande del producto', 'Nombre, precio, descripción completa', 'Sección toppings con chips seleccionables y precio', 'Sección bebidas (selección única)', 'Campo observaciones ("Sin cebolla")', 'Contador de cantidad (−, número, +)', 'Botón "Agregar al carrito" con total del ítem'],
+      acciones: ['Seleccionar toppings (multi)', 'Seleccionar bebida (única)', 'Ajustar cantidad', 'Escribir observaciones', 'Agregar → snackbar confirmación → P03'],
+      endpoint: 'Datos ya en memoria desde P03',
+      flujo: ['P03', 'Modal producto', 'Configurar extras', 'Agregar al carrito']
+    },
+    {
+      id: 'P05', name: 'Carrito',
+      desc: 'Resumen + tipo de pedido',
+      badge: 'público',
+      qué: ['Lista de ítems con foto, nombre, toppings, precio', 'Botones editar cantidad / eliminar por ítem', 'Subtotal, costo domicilio, total', 'Selector de tipo: Mesa / Para llevar / Domicilio', 'Botón "Confirmar pedido"', 'Estado vacío con ilustración + botón volver'],
+      acciones: ['Cambiar cantidades o eliminar', 'Seleccionar tipo de pedido', 'Confirmar → P06A, P06B o P06C según tipo'],
+      endpoint: 'Estado local — aún no llama al backend',
+      flujo: ['Desde P03', 'Revisar carrito', 'Elegir tipo', 'P06A / P06B']
+    },
+    {
+      id: 'P06A', name: 'Checkout para llevar',
+      desc: 'Nombre + método de pago',
+      badge: 'público',
+      qué: ['Resumen del pedido colapsable', 'Campo nombre (opcional, precargado)', 'Selector método pago: Efectivo / Tarjeta / Transferencia', 'Total final destacado', 'Botón "Hacer pedido"'],
+      acciones: ['Ingresar nombre y método de pago', 'Hacer pedido → POST /pedidos → P07'],
+      endpoint: 'POST /pedidos (tipo: para_llevar)',
+      flujo: ['P05', 'Checkout', 'POST pedido', 'P07 Seguimiento']
+    },
+    {
+      id: 'P06B', name: 'Checkout domicilio',
+      desc: 'Datos entrega + factura opcional',
+      badge: 'público',
+      qué: ['Nombre obligatorio', 'Teléfono con validación', 'Dirección de entrega', 'Botón "Usar mi ubicación" → GPS + mapa', 'Datos precargados si ya los dio antes', 'Toggle "¿Necesito factura?" → NIT/cédula, razón social, email', 'Selector método de pago', 'Total con costo domicilio', 'GET /zonas/cotizar-domicilio para calcular costo'],
+      acciones: ['Completar datos entrega', 'Opcional: solicitar factura', 'Hacer pedido → POST /pedidos → P07'],
+      endpoint: 'GET /zonas/cotizar-domicilio · POST /pedidos (tipo: domicilio)',
+      flujo: ['P05', 'Datos domicilio', 'Cotizar zona', 'POST pedido', 'P07']
+    },
+    {
+      id: 'P07', name: 'Seguimiento del pedido',
+      desc: 'Tiempo real · línea de tiempo animada',
+      badge: 'realtime',
+      qué: ['Animación de éxito (check verde)', 'Número de pedido grande', 'Línea de tiempo: Pendiente → Confirmado → En cocina → Listo → En camino → Entregado', 'Estado actual resaltado, anteriores marcados ✓', 'Si domicilio: nombre, foto, rating del repartidor + mapa GPS en tiempo real', 'Botón "Ver menú" para pedidos adicionales (mesa)'],
+      acciones: ['Escuchar cambios de estado vía Supabase Realtime', 'La línea de tiempo se actualiza sin recargar'],
+      endpoint: 'GET /pedidos/:id/estado · Supabase Realtime canal pedido',
+      flujo: ['POST pedido OK', 'Pantalla seguimiento', 'Tiempo real hasta entrega']
+    }
+  ],
+
+  cajero: [
+    {
+      id: 'A-CAJ-1', name: 'Apertura de caja',
+      desc: 'Iniciar turno con monto inicial',
+      badge: 'auth',
+      qué: ['Si no hay caja abierta → pantalla obligatoria antes de operar', 'Campo monto inicial en efectivo', 'Confirmar apertura → crea turno en BD', 'Muestra hora de apertura y usuario que abre'],
+      acciones: ['Ingresar monto inicial → POST /caja/abrir → panel cajero'],
+      endpoint: 'POST /caja/abrir',
+      flujo: ['Login cajero', 'No hay caja → apertura obligatoria', 'Panel POS']
+    },
+    {
+      id: 'A-CAJ-2', name: 'Panel POS / Constructor de pedido',
+      desc: 'Dos paneles: menú + carrito activo',
+      badge: 'auth',
+      qué: ['Panel izquierdo / Tab 1: categorías en tabs, productos en lista compacta (sin fotos grandes)', 'Toque para agregar al carrito activo', 'Panel derecho / Tab 2: carrito activo', 'Banner con monto acumulado del turno', 'Botón ver movimientos'],
+      acciones: ['Seleccionar categoría → ver productos', 'Tocar producto → agregar al carrito', 'Ajustar cantidad en carrito', 'Continuar a checkout'],
+      endpoint: 'GET /menu/:sucursal_id (backend obtiene menú)',
+      flujo: ['Menú → carrito → checkout → POST /pedidos']
+    },
+    {
+      id: 'A-CAJ-3', name: 'Checkout cajero',
+      desc: 'Nombre + tipo + método de pago',
+      badge: 'auth',
+      qué: ['Nombre del cliente (obligatorio para llevar/domicilio)', 'Tipo: Para llevar / Domicilio / Mesa', 'Método de pago: Efectivo / Tarjeta / Transferencia / Nequi', 'Total final', 'Aplicar descuento (si tiene permiso aplicar_descuento)', 'Campo de descuento % o monto + motivo obligatorio'],
+      acciones: ['Aplicar descuento opcional (genera alerta >30%)', 'Confirmar pedido → POST /pedidos'],
+      endpoint: 'POST /pedidos · POST /pedidos/:id/descuento',
+      flujo: ['Carrito → checkout → confirmar → impresión automática']
+    },
+    {
+      id: 'A-CAJ-4', name: 'Movimientos de caja',
+      desc: 'Ingresos, gastos, retiros del turno',
+      badge: 'auth',
+      qué: ['Lista cronológica de movimientos del turno activo', 'Registro de gastos operativos (POST /caja/gastos)', 'Retiro parcial (solo admin/gerente: POST /caja/retiro-parcial)', 'Registro de cuentas por cobrar (fiados)', 'Marcar fiado como pagado'],
+      acciones: ['Agregar gasto', 'Solicitar retiro (requiere permiso)', 'Ver totales por categoría'],
+      endpoint: 'GET /caja/:id/movimientos · POST /caja/gastos · POST /caja/retiro-parcial',
+      flujo: ['Panel cajero → movimientos → cierre']
+    },
+    {
+      id: 'A-CAJ-5', name: 'Cierre de caja',
+      desc: 'Arqueo y diferencia calculada',
+      badge: 'auth',
+      qué: ['Monto en sistema (calculado automático)', 'Campo monto contado físicamente', 'Diferencia calculada automáticamente', 'Si diferencia > $5.000 → alerta de riesgo nivel Alto', 'Resumen del turno: ventas, gastos, retiros', 'Botón "Cerrar turno"'],
+      acciones: ['Ingresar monto físico → calcular diferencia → cerrar turno'],
+      endpoint: 'POST /caja/cerrar',
+      flujo: ['Movimientos → arqueo → POST /caja/cerrar → resumen']
+    }
+  ],
+
+  mesero: [
+    {
+      id: 'A-MES-1', name: 'Vista de mesas',
+      desc: 'Grid con estado visual por color',
+      badge: 'auth',
+      qué: ['Grid de todas las mesas de la sucursal', 'Verde: libre · Amarillo: ocupada · Naranja parpadeante: pedido QR pendiente · Rojo: pagando', 'Actualización en tiempo real de estados', 'Número de mesa y nombre visible en cada card'],
+      acciones: ['Tocar mesa libre → crear pedido manual', 'Tocar mesa con pedido QR → modal de aprobación', 'Tocar mesa ocupada → ver pedidos activos'],
+      endpoint: 'GET /mesas/:sucursal_id · Supabase Realtime',
+      flujo: ['Login → vista mesas → seleccionar mesa → acción']
+    },
+    {
+      id: 'A-MES-2', name: 'Aprobación de pedido QR',
+      desc: 'Revisar y aprobar o rechazar',
+      badge: 'auth',
+      qué: ['Detalle completo del pedido: ítems, toppings, cantidades, observaciones, total', 'Timer: 3 min para aprobar → notificación recordatorio', '5 min sin respuesta → notifica al admin', 'Botón "Aprobar" (confirmación)', 'Botón "Rechazar" → motivo obligatorio de lista: "Mesa ya fue atendida", "Producto no disponible", "Mesa no disponible", "Otro"'],
+      acciones: ['Revisar ítems → aprobar o rechazar con motivo → estado actualizado en tiempo real'],
+      endpoint: 'PATCH /pedidos/:id/aprobar · PATCH /pedidos/:id/rechazar',
+      flujo: ['Alerta mesa naranja → ver pedido → aprobar/rechazar → cocina recibe']
+    },
+    {
+      id: 'A-MES-3', name: 'Pedidos activos de la mesa',
+      desc: 'Estado por ítem en tiempo real',
+      badge: 'auth',
+      qué: ['Lista de todos los pedidos abiertos de esa mesa', 'Estado de cocina por ítem: pendiente / preparando / listo', 'Ver si el ítem está listo para entregar', 'Botón eliminar ítem (genera alerta si está en cocina: nivel Alto)', 'Total acumulado de la mesa'],
+      acciones: ['Ver estado de cada ítem', 'Eliminar ítem si cliente cancela (requiere motivo)', 'Marcar mesa como pagando'],
+      endpoint: 'GET /pedidos?mesa_id=X · DELETE /pedidos/:id/items/:item_id',
+      flujo: ['Mesa ocupada → ver pedidos → seguir estado → entregar']
+    },
+    {
+      id: 'A-MES-4', name: 'Transferencia de mesa',
+      desc: 'Mover pedido de una mesa a otra',
+      badge: 'auth',
+      qué: ['Selector: mesa origen (actual)', 'Selector: mesa destino (debe estar libre o con misma cuenta)', 'Campo motivo obligatorio', 'Más de 2 transferencias del mismo pedido → alerta nivel Bajo', 'Confirmación antes de ejecutar'],
+      acciones: ['Seleccionar destino → ingresar motivo → confirmar transferencia'],
+      endpoint: 'POST /mesas/transferir',
+      flujo: ['Vista mesas → botón transferir → seleccionar destino → confirmar']
+    }
+  ],
+
+  cocina: [
+    {
+      id: 'C01', name: 'Login cocina',
+      desc: 'Email + contraseña',
+      badge: 'auth',
+      qué: ['Email y contraseña', 'Sin registro público (admin crea la cuenta)', 'Redirige directo a la pantalla KDS de su cocina asignada'],
+      acciones: ['Ingresar credenciales → POST /auth/login → C02'],
+      endpoint: 'POST /auth/login',
+      flujo: ['Login → dashboard cocina asignada']
+    },
+    {
+      id: 'C02', name: 'KDS — Pantalla principal',
+      desc: 'Tickets en tiempo real por estación',
+      badge: 'realtime',
+      qué: ['Header: nombre de la cocina + estado activa/inactiva', 'Lista de tickets en tiempo real, ordenados por hora (más antiguo arriba)', 'Cada ticket: número de pedido, mesa o tipo, hora de llegada, ítems con cantidades y observaciones', 'Cada ítem tiene botones: "Preparando" y "Listo"', 'Sonido + vibración cuando llega ticket nuevo', 'Ticket completo se resalta en verde'],
+      acciones: ['Marcar ítem "Preparando" → cambia a amarillo → notifica admin y mesero', 'Marcar ítem "Listo" → cambia a verde y se tacha', 'Todos los ítems listos → ticket completo verde → notifica mesero'],
+      endpoint: 'PATCH /pedidos/items/:item_id/cocina-estado · Supabase Realtime',
+      flujo: ['Ticket llega → preparando → listo → todo listo → notifica mesero']
+    },
+    {
+      id: 'C03', name: 'Detalle del ticket',
+      desc: 'Ítems expandidos con observaciones',
+      badge: 'realtime',
+      qué: ['Vista expandida de un ticket específico', 'Todos los ítems con observaciones completas ("Sin cebolla", "Bien cocido")', 'Toppings incluidos por ítem', 'Tiempo transcurrido desde que llegó el ticket', 'Prioridad si hay demora (>20 min muestra alerta visual)'],
+      acciones: ['Marcar ítems individualmente', 'Colapsar ticket ya listo'],
+      endpoint: 'PATCH /pedidos/items/:item_id/cocina-estado',
+      flujo: ['Lista KDS → expandir ticket → marcar ítems → ticket completo']
+    }
+  ],
+
+  admin: [
+    {
+      id: 'A02', name: 'Dashboard admin',
+      desc: 'Resumen + pedidos activos',
+      badge: 'auth',
+      qué: ['4 tarjetas: ventas hoy, pedidos activos, completados hoy, alertas pendientes', 'Gráfica ventas 7 días', 'Lista pedidos activos en tiempo real', 'Alertas de riesgo no revisadas con nivel y descripción', 'Accesos rápidos a módulos'],
+      acciones: ['Ir a cualquier módulo del panel', 'Revisar alertas'],
+      endpoint: 'GET /reportes/financiero · GET /alertas/:sucursal_id · Supabase Realtime',
+      flujo: ['Login admin → dashboard → cualquier módulo']
+    },
+    {
+      id: 'A-KAN', name: 'Kanban de pedidos',
+      desc: 'Columnas por estado del pedido',
+      badge: 'realtime',
+      qué: ['Columnas: Pendiente / En cocina / Listo / En camino / Entregado', 'Cards de pedidos con número, tipo, ítems, total', 'Arrastrar o usar botones para mover entre columnas', 'Filtros por tipo de pedido', 'Aplicar descuento desde aquí (diálogo monto/% + motivo)', 'Tiempo transcurrido en cada pedido'],
+      acciones: ['Cambiar estado de pedido', 'Aplicar descuento', 'Ver detalle del pedido', 'Rechazar o cancelar con motivo'],
+      endpoint: 'PATCH /pedidos/:id/estado · POST /pedidos/:id/descuento',
+      flujo: ['Dashboard → kanban → gestionar pedidos en tiempo real']
+    },
+    {
+      id: 'A-MEN', name: 'Gestión de menú',
+      desc: 'Categorías, productos, toppings, combos',
+      badge: 'auth',
+      qué: ['CRUD de categorías con orden', 'CRUD de productos: nombre, precio, descripción, imagen, categoría, cocina asignada', 'Disponibilidad manual (activar/desactivar)', 'Configurar toppings por producto', 'Configurar bebidas por producto', 'Crear combos con ítems incluidos', 'Calculadora de precio sugerido con margen deseado'],
+      acciones: ['Crear/editar/eliminar ítems del menú', 'Cambiar disponibilidad', 'Ver precio sugerido → aceptar o ignorar'],
+      endpoint: 'POST/PATCH/DELETE /productos · GET /productos/:id/precio-sugerido',
+      flujo: ['Menú → categorías → productos → configurar extras']
+    },
+    {
+      id: 'A-INV', name: 'Inventario',
+      desc: 'Stock, compras, movimientos',
+      badge: 'auth',
+      qué: ['Lista de ingredientes con stock actual vs mínimo', 'Alerta visual si stock ≤ stock_mínimo configurado', 'CRUD de ingredientes con unidad y factor de corrección', 'Registrar compras de mercancía', 'Historial de movimientos con filtros', 'Configurar qué ingredientes usa cada producto (recetas)', 'Ver costos calculados de todos los productos'],
+      acciones: ['Ajustar stock manualmente (motivo obligatorio)', 'Registrar compra', 'Configurar recetas por producto'],
+      endpoint: 'GET/POST/PATCH /inventario · POST /inventario/compras · GET /inventario/costos',
+      flujo: ['Inventario → ingredientes → compras → movimientos → costos']
+    },
+    {
+      id: 'A-DOM', name: 'Gestión domiciliarios',
+      desc: 'Planta + dispatch de independientes',
+      badge: 'auth',
+      qué: ['Lista de domiciliarios de planta asignados a la sucursal', 'Estado actual (disponible / en pedido)', 'Ver pedidos asignados por domiciliario', 'Asignación manual si dispatch automático falla', 'Alerta crítica cuando 3 intentos de búsqueda fallan'],
+      acciones: ['Asignar pedido manualmente', 'Ver historial de entregas del repartidor'],
+      endpoint: 'GET /domiciliarios · POST /ofertas-pedido (dispatch)',
+      flujo: ['Pedido domicilio → dispatch auto → si falla → asignación manual aquí']
+    },
+    {
+      id: 'A-REP', name: 'Reportes financieros',
+      desc: 'Ventas, costos, margen, productos',
+      badge: 'auth',
+      qué: ['Reporte financiero: ventas, costos, ganancia bruta/neta por período', 'Ranking de productos por margen y volumen de ventas', 'Pedidos por período con filtros (tipo, estado, usuario)', 'Estado del inventario y alertas activas', 'Métricas de domiciliarios del período', 'Filtros por fecha: desde/hasta · por sucursal'],
+      acciones: ['Seleccionar rango de fechas', 'Exportar reporte', 'Comparar con período anterior'],
+      endpoint: 'GET /reportes/financiero · /reportes/productos · /reportes/pedidos',
+      flujo: ['Reportes → filtrar período → analizar → exportar']
+    },
+    {
+      id: 'A-USU', name: 'Usuarios de la sucursal',
+      desc: 'Crear y gestionar staff',
+      badge: 'auth',
+      qué: ['Lista de usuarios de la sucursal con rol y estado', 'Crear usuario: nombre, email, contraseña, rol, sucursal', 'Editar nombre, email, foto de perfil', 'Activar / desactivar usuario', 'Cambiar contraseña (sin ver la actual)', 'Roles: admin, gerente, cajero, mesero, cocina_X, inventario'],
+      acciones: ['Crear usuario nuevo', 'Editar datos', 'Desactivar usuario que ya no trabaja'],
+      endpoint: 'POST/PATCH /super/usuarios (desde admin solo su restaurante)',
+      flujo: ['Usuarios → crear → asignar rol → el usuario puede hacer login']
+    },
+    {
+      id: 'A-COC', name: 'Gestión de cocinas',
+      desc: 'CRUD cocinas + asignación a productos',
+      badge: 'auth',
+      qué: ['Lista de cocinas de la sucursal (nombre, estado)', 'Crear cocina: nombre (p.ej. "Parrilla", "Frío")', 'Asignar cocina a cada producto al editar el menú', 'Gestión de impresoras térmicas (nombre, IP/red)', 'Un producto → una cocina → un ticket al confirmar pedido'],
+      acciones: ['Crear cocina', 'Asignar cocina a producto', 'Registrar impresora'],
+      endpoint: 'POST/PATCH /cocinas · POST /impresoras',
+      flujo: ['Cocinas → productos asignados → ticket va a la cocina correcta']
+    },
+    {
+      id: 'A-ALE', name: 'Alertas de riesgo',
+      desc: 'Detección de anomalías operativas',
+      badge: 'realtime',
+      qué: ['Lista de alertas pendientes por nivel: Crítico / Alto / Medio / Bajo', 'Tipos: descuento >30%, ítems eliminados en cocina, diferencia en caja, transferencias múltiples, sin domiciliario, caída de ventas 40%', 'Descripción de la alerta y quién la generó', 'Botón "Marcar como revisada"'],
+      acciones: ['Revisar alerta → investigar → marcar revisada'],
+      endpoint: 'GET /alertas/:sucursal_id · PATCH /alertas/:id/revisar',
+      flujo: ['Sistema detecta anomalía → crea alerta → admin la ve → revisa']
+    },
+    {
+      id: 'A-SUC', name: 'Sucursales del restaurante',
+      desc: 'Crear y gestionar sucursales',
+      badge: 'auth',
+      qué: ['Lista de sucursales del restaurante', 'Crear sucursal: nombre, dirección, ciudad, teléfono, horarios', 'Configurar zonas de cobertura para domicilios', 'Selector de sucursal activa en AppBar del panel', 'Radio de búsqueda de domiciliarios'],
+      acciones: ['Crear sucursal', 'Configurar horarios y zonas', 'Cambiar entre sucursales desde AppBar'],
+      endpoint: 'POST /sucursales · POST /zonas',
+      flujo: ['Admin crea sucursal → configura → staff puede operar desde ella']
+    }
+  ],
+
+  domiciliario: [
+    {
+      id: 'D-REG', name: 'Registro (independiente)',
+      desc: 'Formulario + documentos + verificación',
+      badge: 'público',
+      qué: ['Formulario: datos personales, tipo de vehículo', 'Subir documentos: cédula frente y reverso, foto vehículo', 'Pantalla de espera: "Tu cuenta está siendo verificada"', 'Super admin aprueba o rechaza con motivo', 'FCM notifica cuando se aprueba'],
+      acciones: ['Registrarse → subir docs → esperar aprobación → login'],
+      endpoint: 'POST /domiciliarios/registrar · POST /domiciliarios/documentos',
+      flujo: ['Registro → docs → super admin aprueba → login habilitado']
+    },
+    {
+      id: 'D02', name: 'Inicio de turno',
+      desc: 'Toggle disponibilidad + GPS activo',
+      badge: 'auth',
+      qué: ['Toggle grande "Estoy disponible" / "No disponible"', 'Al activar: GPS empieza a reportar cada 30s', 'Ciudad donde está operando', 'Contador de entregas del día', 'Ganancias acumuladas del día'],
+      acciones: ['Activar disponibilidad → sistema lo incluye en búsquedas', 'Desactivar → no recibe más ofertas'],
+      endpoint: 'POST /domiciliarios/sesion/iniciar · POST /domiciliarios/sesion/ubicacion',
+      flujo: ['Login → toggle ON → recibir ofertas → toggle OFF → cerrar turno']
+    },
+    {
+      id: 'D03', name: 'Oferta de pedido',
+      desc: 'Pantalla emergente con timer 60s',
+      badge: 'realtime',
+      qué: ['Aparece sobre cualquier pantalla (FCM push)', 'Mapa con pin del restaurante y pin del cliente', 'Distancia al restaurante + distancia estimada al cliente', 'Valor que ganará por la entrega', 'Temporizador regresivo 60 segundos', 'Botón grande "Aceptar" + botón pequeño "Rechazar"', 'Si expira sin respuesta → "no_vio" automático'],
+      acciones: ['Aceptar → pedido asignado → D04', 'Rechazar → sistema busca siguiente repartidor', 'Sin respuesta → marca no_vio → siguiente'],
+      endpoint: 'POST /domiciliarios/ofertas/:id/responder · FCM push',
+      flujo: ['Dispatch backend → push FCM → oferta 60s → aceptar/rechazar → D04']
+    },
+    {
+      id: 'D04', name: 'Pedido activo',
+      desc: 'Navegación + estados del recorrido',
+      badge: 'realtime',
+      qué: ['Datos restaurante: nombre, dirección, teléfono (botón llamar)', 'Datos cliente: nombre, teléfono, dirección, mapa con pin GPS', 'Botón "Llegué al restaurante" → cambia estado', 'Botón "En camino" → activa tracking visible para cliente en P07', 'Botón "Entregué" → cierra pedido + activa calificación cliente + registra ganancia', '15% comisión Foody, 85% para el repartidor independiente'],
+      acciones: ['Llegar al restaurante → recoger pedido → en camino → entregar → confirmar'],
+      endpoint: 'PATCH /domiciliarios/pedidos/:id/estado',
+      flujo: ['Aceptar oferta → recoger → en camino → entregar → ganancia registrada']
+    },
+    {
+      id: 'D-PL-1', name: 'Pedidos asignados (planta)',
+      desc: 'Lista de entregas del turno',
+      badge: 'auth',
+      qué: ['Lista de pedidos asignados con estado "asignado"', 'Por pedido: número, hora, nombre cliente, teléfono (botón llamar), dirección, mapa pequeño', 'Total y método de pago', 'Botón grande "Confirmar entrega"', 'Si método pago pendiente → selector antes de confirmar'],
+      acciones: ['Confirmar entrega → pedido pasa a entregado → va al historial'],
+      endpoint: 'GET /domiciliario/pedidos-asignados · PATCH /domiciliario/pedidos/:id/confirmar-entrega',
+      flujo: ['Admin asigna → domiciliario ve en lista → confirma entrega']
+    },
+    {
+      id: 'D-PL-2', name: 'Historial y estadísticas (planta)',
+      desc: 'Entregas del día + métricas personales',
+      badge: 'auth',
+      qué: ['Historial de entregas: número pedido, hora, dirección, total, estado', 'Filtro por fecha', 'Contadores: entregas hoy / semana / mes', 'Tiempo promedio de entrega', 'Sin gráficas complejas, solo números claros'],
+      acciones: ['Filtrar por fecha', 'Ver detalle de entrega'],
+      endpoint: 'GET /domiciliario/historial · GET /domiciliario/estadisticas',
+      flujo: ['Historial → filtrar → ver métricas del período']
+    }
+  ],
+
+  superadmin: [
+    {
+      id: 'F01', name: 'Dashboard Foody Control',
+      desc: '4 métricas globales de la plataforma',
+      badge: 'auth',
+      qué: ['Restaurantes activos en la plataforma', 'Pedidos hoy (toda la plataforma)', 'Domiciliarios activos', 'Ingresos Foody del mes (comisiones)', 'Menú lateral con todas las secciones: Ciudades, Restaurantes, Suscripciones, Usuarios, Domiciliarios, Estadísticas, Configuración'],
+      acciones: ['Navegar a cualquier sección del panel Foody'],
+      endpoint: 'GET /super/estadisticas',
+      flujo: ['Login super_admin → panel Foody → cualquier sección']
+    },
+    {
+      id: 'F02', name: 'Ciudades',
+      desc: 'CRUD de ciudades activas en la plataforma',
+      badge: 'auth',
+      qué: ['Lista de ciudades con nombre, slug, estado, cantidad restaurantes', 'Crear ciudad: nombre, slug (auto-generado), activa', 'Toggle activar/desactivar ciudad', 'Solo el super_admin puede crear ciudades'],
+      acciones: ['Crear ciudad → aparece disponible para clientes y restaurantes'],
+      endpoint: 'GET/POST /super/ciudades · PATCH /super/ciudades/:id/estado',
+      flujo: ['Crear ciudad → el admin del restaurante puede seleccionarla']
+    },
+    {
+      id: 'F03', name: 'Restaurantes',
+      desc: 'Onboarding completo + bloqueo',
+      badge: 'auth',
+      qué: ['Lista con nombre, ciudad, sucursales activas, estado suscripción (badge color)', 'Filtros: por ciudad, por estado suscripción', 'FAB "Nuevo restaurante" → formulario onboarding', 'Onboarding crea: restaurante + sucursal + usuario admin + suscripción prueba 14 días', 'Ver detalle de restaurante: sucursales, usuarios, estadísticas', 'Bloquear con motivo obligatorio / desbloquear'],
+      acciones: ['Crear restaurante (1 sola acción crea todo)', 'Bloquear → todos los requests devuelven RESTAURANTE_BLOQUEADO'],
+      endpoint: 'POST /super/restaurantes · POST /super/restaurantes/:id/bloquear',
+      flujo: ['Nuevo restaurante → onboarding → admin recibe credenciales → prueba 14 días']
+    },
+    {
+      id: 'F04', name: 'Suscripciones',
+      desc: 'Estado y plan por restaurante',
+      badge: 'auth',
+      qué: ['Lista con badge de color: verde=activa, amarillo=prueba, naranja=vencida, rojo=bloqueada', 'Fecha de vencimiento y días restantes', 'Cambiar plan: básico / pro / enterprise', 'Extender fecha de vencimiento', 'Estado actual bloquea o permite acceso (no el plan en sí)', 'Bloquear / desbloquear'],
+      acciones: ['Cambiar plan (metadata por ahora)', 'Extender fecha', 'Bloquear si no paga'],
+      endpoint: 'GET /super/suscripciones · PATCH /super/suscripciones/:id',
+      flujo: ['Restaurante vence → super_admin actualiza → activa/bloquea']
+    },
+    {
+      id: 'F05', name: 'Usuarios globales',
+      desc: 'Todos los usuarios de la plataforma',
+      badge: 'auth',
+      qué: ['Lista con nombre, email, rol, restaurante, sucursal, estado, último acceso', 'Filtros: por restaurante, por rol, por estado', 'Crear usuario: selecciona restaurante, sucursal, rol', 'Editar nombre, email, foto', 'Cambiar contraseña sin ver la actual (reemplazo directo)', 'Activar / desactivar usuario'],
+      acciones: ['Crear usuario para cualquier restaurante', 'Desactivar usuario comprometido', 'Reset de contraseña'],
+      endpoint: 'GET/POST/PATCH /super/usuarios · POST /super/usuarios/:id/cambiar-contrasena',
+      flujo: ['Crear usuario → asignar a restaurante/sucursal/rol → puede hacer login']
+    },
+    {
+      id: 'F06', name: 'Configuración global',
+      desc: 'Parámetros de la plataforma editables',
+      badge: 'auth',
+      qué: ['Lista de parámetros de configuracion_global_foody', 'Nombre, descripción, valor actual, quién editó y cuándo', 'Campo editable por parámetro con botón guardar individual', 'Parámetros: radio búsqueda domiciliario, tiempo expiración oferta, comisión Foody %, etc.'],
+      acciones: ['Editar valor → guardar → aplica inmediatamente'],
+      endpoint: 'GET /super/configuracion · PATCH /super/configuracion/:clave',
+      flujo: ['Ver parámetro → editar valor → guardar → afecta toda la plataforma']
+    },
+    {
+      id: 'F07', name: 'Domiciliarios independientes',
+      desc: 'Verificación de documentos',
+      badge: 'auth',
+      qué: ['Lista de todos los domiciliarios independientes de la plataforma', 'Estado: pendiente, activo, suspendido, bloqueado', 'Tab "Documentos pendientes" para aprobar nuevos', 'Ver cada documento: cédula frente/reverso, foto vehículo', 'Botón aprobar documento / rechazar con motivo', 'Calificación promedio y entregas totales'],
+      acciones: ['Aprobar documento → domiciliario activo', 'Rechazar con motivo → notifica al domiciliario'],
+      endpoint: 'GET /super/domiciliarios · POST /super/domiciliarios/:id/aprobar-documento',
+      flujo: ['Domiciliario se registra → sube docs → super admin aprueba → puede recibir ofertas']
+    }
+  ]
+};
+
+let selectedCard = null;
+
+function switchTab(tab) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  document.getElementById('detail-container').innerHTML = '';
+  selectedCard = null;
+}
+
+function selectScreen(tab, id) {
+  const screens = DATA[tab];
+  const screen = screens.find(s => s.id === id);
+  if (!screen) return;
+
+  if (selectedCard === id) {
+    document.getElementById('detail-container').innerHTML = '';
+    selectedCard = null;
+    document.querySelectorAll('.screen-card').forEach(c => c.classList.remove('selected'));
+    return;
+  }
+  selectedCard = id;
+  document.querySelectorAll('.screen-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`[data-id="${id}"]`);
+  if (card) card.classList.add('selected');
+
+  const badgeClass = screen.badge === 'público' ? 'badge-public' : screen.badge === 'realtime' ? 'badge-realtime' : 'badge-auth';
+  const badgeLabel = screen.badge === 'público' ? 'Público' : screen.badge === 'realtime' ? 'Tiempo real' : 'Requiere login';
+
+  const flujoHtml = screen.flujo ? `
+    <div class="detail-section">
+      <div class="detail-section-title">Flujo</div>
+      <div class="flow-arrows">
+        ${screen.flujo.map((step, i) => `
+          <span class="flow-step">${step}</span>
+          ${i < screen.flujo.length - 1 ? '<span class="flow-arrow">→</span>' : ''}
+        `).join('')}
+      </div>
+    </div>` : '';
+
+  const html = `
+    <div class="detail-panel">
+      <div class="detail-header">
+        <div>
+          <div class="detail-title">${screen.name} <span class="screen-badge ${badgeClass}">${badgeLabel}</span></div>
+          <div class="detail-sub">${screen.desc}</div>
+        </div>
+        <button class="close-btn" onclick="closeDetail()">×</button>
+      </div>
+      <div class="detail-section">
+        <div class="detail-section-title">Qué ve el usuario</div>
+        <ul class="detail-items">
+          ${screen.qué.map(item => `<li>${item}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="detail-section">
+        <div class="detail-section-title">Acciones disponibles</div>
+        <ul class="detail-items">
+          ${screen.acciones.map(item => `<li>${item}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="detail-section">
+        <div class="detail-section-title">Endpoint(s) involucrados</div>
+        <span class="endpoint-tag">${screen.endpoint}</span>
+      </div>
+      ${flujoHtml}
+    </div>`;
+
+  const container = document.getElementById('detail-container');
+  container.innerHTML = html;
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeDetail() {
+  document.getElementById('detail-container').innerHTML = '';
+  selectedCard = null;
+  document.querySelectorAll('.screen-card').forEach(c => c.classList.remove('selected'));
+}
+
+function buildGrid(tab) {
+  const grid = document.getElementById('grid-' + tab);
+  const screens = DATA[tab];
+  grid.innerHTML = screens.map(s => {
+    const badgeClass = s.badge === 'público' ? 'badge-public' : s.badge === 'realtime' ? 'badge-realtime' : 'badge-auth';
+    const badgeLabel = s.badge === 'público' ? 'Público' : s.badge === 'realtime' ? 'Tiempo real' : 'Requiere login';
+    return `
+      <div class="screen-card" data-id="${s.id}" onclick="selectScreen('${tab}', '${s.id}')">
+        <div class="screen-id">${s.id}</div>
+        <div class="screen-name">${s.name}</div>
+        <div class="screen-desc">${s.desc}</div>
+        <span class="screen-badge ${badgeClass}">${badgeLabel}</span>
+      </div>`;
+  }).join('');
+}
+
+Object.keys(DATA).forEach(tab => buildGrid(tab));
+</script>

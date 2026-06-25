@@ -930,6 +930,14 @@ Future<void> _aplicarCambiosDirectosDiaEspecifico(
       ? (precioOriginal - nuevoPrecio) : 0.0;
   
   try {
+    final lugarId = reserva.lugarId ?? await LugarHelper.getLugarId();
+    if (lugarId == null || lugarId.isEmpty) {
+      if (mounted) {
+        _showErrorSnackBar('No se pudo determinar el lugar. No se guardaron los cambios.');
+      }
+      return;
+    }
+
     // 🔥 PASO 1: VERIFICAR SI EXISTE UNA RESERVA INDIVIDUAL PARA ESTE DÍA
     final fechaString = DateFormat('yyyy-MM-dd').format(reserva.fecha);
     
@@ -970,7 +978,10 @@ Future<void> _aplicarCambiosDirectosDiaEspecifico(
       'cancha_nombre': reserva.cancha.nombre,
       'horario': reserva.horario.horaFormateada,
       'sede': reserva.sede,
+      'lugarId': lugarId,
       'reservaRecurrenteId': reserva.reservaRecurrenteId,
+      if (reserva.reservaRecurrenteId != null)
+        'reserva_recurrente_id': reserva.reservaRecurrenteId,
       'precio_independiente_de_recurrencia': true,
       'fechaActualizacion': Timestamp.now(),
       'usuario_modificacion': FirebaseAuth.instance.currentUser?.uid,
@@ -2940,6 +2951,12 @@ Future<void> _completarPagoReservaRecurrente(Reserva reserva) async {
 
   if (result == true && mounted) {
     try {
+      final lugarIdPago = reserva.lugarId ?? await LugarHelper.getLugarId();
+      if (lugarIdPago == null || lugarIdPago.isEmpty) {
+        _showErrorSnackBar('No se pudo determinar el lugar.');
+        return;
+      }
+
       // 🔥 NUEVA LÓGICA: Crear/actualizar solo la reserva individual de este día
       final fechaStr = DateFormat('yyyy-MM-dd').format(reserva.fecha);
       
@@ -2962,6 +2979,7 @@ Future<void> _completarPagoReservaRecurrente(Reserva reserva) async {
           'estado': 'completo',
           'precio_independiente_de_recurrencia': true, // Marcar como precio independiente
           'fecha_actualizacion_pago': Timestamp.now(),
+          'lugarId': lugarIdPago,
         });
         
         debugPrint('✅ Reserva individual actualizada: ${docExistente.id}');
@@ -2977,8 +2995,11 @@ Future<void> _completarPagoReservaRecurrente(Reserva reserva) async {
           'valor': montoTotalIndividual, // Valor del día específico
           'montoPagado': montoTotalIndividual, // Pago completo
           'sede': reserva.sede,
+          'lugarId': lugarIdPago,
           'confirmada': true,
           'reservaRecurrenteId': reserva.reservaRecurrenteId, // Referencia a la recurrente
+          if (reserva.reservaRecurrenteId != null)
+            'reserva_recurrente_id': reserva.reservaRecurrenteId,
           'esReservaRecurrente': true,
           'precio_independiente_de_recurrencia': true, // 🔥 CLAVE: Marca que este precio es independiente
           'created_at': Timestamp.now(),

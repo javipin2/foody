@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/sede_provider.dart';
 import '../models/ciudad.dart';
 import '../models/lugar.dart';
-import 'canchas_screen.dart';
+import 'menu_sede_screen.dart';
 import 'lugar_screen.dart';
-import 'admin/admin_login_screen.dart';
 
 class SedeScreen extends StatefulWidget {
   final Ciudad ciudad;
@@ -23,13 +23,52 @@ class SedeScreen extends StatefulWidget {
 }
 
 class _SedeScreenState extends State<SedeScreen> {
+  bool _isLoadingSedes = true;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final sedeProvider = Provider.of<SedeProvider>(context, listen: false);
       sedeProvider.setLugar(widget.lugar.id);
-      sedeProvider.fetchSedes();
+      await sedeProvider.fetchSedes();
+
+      if (!mounted) return;
+
+      // Si el lugar tiene una única sede, evitamos mostrar el selector.
+      final sedes = sedeProvider.sedes;
+      if (sedes.length == 1) {
+        final sedeNombre = (sedes.first['nombre'] as String? ?? '').trim();
+        if (sedeNombre.isNotEmpty) {
+          sedeProvider.setSede(sedeNombre);
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  MenuSedeScreen(
+                ciudad: widget.ciudad,
+                lugar: widget.lugar,
+              ),
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                final curvedAnimation = CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                );
+                return FadeTransition(
+                  opacity: curvedAnimation,
+                  child: child,
+                );
+              },
+              transitionDuration: const Duration(milliseconds: 450),
+            ),
+          );
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() => _isLoadingSedes = false);
     });
   }
 
@@ -46,10 +85,14 @@ class _SedeScreenState extends State<SedeScreen> {
         return false;
       },
       child: Scaffold(
-        body: SedeScreenContent(
-          ciudad: widget.ciudad,
-          lugar: widget.lugar,
-        ),
+        body: _isLoadingSedes
+            ? const Center(
+                child: CircularProgressIndicator(),
+              )
+            : SedeScreenContent(
+                ciudad: widget.ciudad,
+                lugar: widget.lugar,
+              ),
       ),
     );
   }
@@ -81,9 +124,6 @@ class _SedeScreenContentState extends State<SedeScreenContent>
   late Animation<double> _fadeAnimation;
 
   final ScrollController _listScrollController = ScrollController();
-
-  int _logoTapCount = 0;
-  DateTime? _lastTapTime;
 
   static const _primaryColor = Color(0xFF2E7D60);
 
@@ -122,7 +162,6 @@ class _SedeScreenContentState extends State<SedeScreenContent>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<SedeProvider>(context, listen: false).fetchSedes();
       _controller.forward();
     });
   }
@@ -166,7 +205,7 @@ class _SedeScreenContentState extends State<SedeScreenContent>
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            CanchasScreen(
+            MenuSedeScreen(
               ciudad: ciudad,
               lugar: lugar,
             ),
@@ -197,53 +236,61 @@ class _SedeScreenContentState extends State<SedeScreenContent>
     );
   }
 
-  void _handleLogoTap() {
-    final now = DateTime.now();
-
-    if (_lastTapTime != null &&
-        now.difference(_lastTapTime!).inMilliseconds < 500) {
-      _logoTapCount++;
-
-      if (_logoTapCount > 1) {
-        HapticFeedback.lightImpact();
-      }
-
-      if (_logoTapCount >= 3) {
-        _logoTapCount = 0;
-        HapticFeedback.mediumImpact();
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const LoginScreen(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              final curvedAnimation = CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeInOutCubic,
-              );
-              return FadeTransition(
-                opacity: curvedAnimation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.2),
-                    end: Offset.zero,
-                  ).animate(curvedAnimation),
-                  child: child,
-                ),
-              );
-            },
-            transitionDuration: const Duration(milliseconds: 800),
-          ),
-        );
-      }
-    } else {
-      _logoTapCount = 1;
-    }
-
-    _lastTapTime = now;
+  bool _sedePuedeAbrirMapa(Map<String, dynamic> sede) {
+    final lat = (sede['latitud'] as num?)?.toDouble();
+    final lon = (sede['longitud'] as num?)?.toDouble();
+    final u = (sede['ubicacion'] as String?)?.trim() ?? '';
+    return (lat != null && lon != null) || u.isNotEmpty;
   }
 
+  String? _textoPieUbicacion(Map<String, dynamic> sede) {
+    final u = (sede['ubicacion'] as String?)?.trim() ?? '';
+    if (u.isNotEmpty) return u;
+    final lat = (sede['latitud'] as num?)?.toDouble();
+    final lon = (sede['longitud'] as num?)?.toDouble();
+    if (lat != null && lon != null) return 'Ubicación';
+    return null;
+  }
+
+  Future<void> _abrirUbicacionSedeEnMapa(
+      BuildContext context, Map<String, dynamic> sede) async {
+    final lat = (sede['latitud'] as num?)?.toDouble();
+    final lon = (sede['longitud'] as num?)?.toDouble();
+    final dir = (sede['ubicacion'] as String?)?.trim() ?? '';
+    Uri? uri;
+    if (lat != null && lon != null) {
+      uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lon',
+      );
+    } else if (dir.isNotEmpty) {
+      uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(dir)}',
+      );
+    }
+    if (uri == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay ubicación registrada para esta sede.'),
+        ),
+      );
+      return;
+    }
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir el mapa.')),
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al abrir mapa: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -313,7 +360,6 @@ class _SedeScreenContentState extends State<SedeScreenContent>
   static const _textPrimary = Color(0xFF1F2937);
   static const _textSecondary = Color(0xFF6B7280);
   static const _tagBg = Color(0xFFF3F4F6);
-  static const _ratingStar = Color(0xFFFBBF24);
 
   Widget _buildBlackHeader(BuildContext context) {
     return AnimatedBuilder(
@@ -323,9 +369,8 @@ class _SedeScreenContentState extends State<SedeScreenContent>
         final headerHeight = 80.0 + (120.0 * (1.0 - progress));
         final opacity = 1.0 - progress;
         return ClipPath(
-          clipper: _HeaderCurveClipper(),
           child: Container(
-            height: headerHeight.clamp(80.0, 200.0),
+            height: headerHeight.clamp(80.0, 170.0),
             decoration: const BoxDecoration(
               color: _headerBackground,
             ),
@@ -337,7 +382,7 @@ class _SedeScreenContentState extends State<SedeScreenContent>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Barra superior: atrás | Descubre (centrado) | imagen
+                  // Barra superior: atrás | Sedes (centrado) | hueco simétrico
                   Row(
                     children: [
                       GestureDetector(
@@ -367,30 +412,17 @@ class _SedeScreenContentState extends State<SedeScreenContent>
                       const Expanded(
                         child: Center(
                           child: Text(
-                            'Descubre',
+                            'Sedes',
                             style: TextStyle(
                               fontSize: 22,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w900,
                               color: Colors.white,
                               letterSpacing: 0.2,
                             ),
                           ),
                         ),
                       ),
-                      GestureDetector(
-                        onTap: _handleLogoTap,
-                        child: Image.asset(
-                          'assets/logg.png',
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.sports_soccer,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                      ),
+                      const SizedBox(width: 44),
                     ],
                   ),
                   if (progress < 0.95) ...[
@@ -517,15 +549,15 @@ class _SedeScreenContentState extends State<SedeScreenContent>
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF2E7D60), Color(0xFF4CAF50)],
+                      colors: [Color.fromARGB(255, 255, 255, 255), Color.fromARGB(255, 255, 255, 255)],
                     ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF2E7D60).withOpacity(0.2),
+                        color: const Color.fromARGB(255, 255, 255, 255).withOpacity(0.2),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -533,15 +565,15 @@ class _SedeScreenContentState extends State<SedeScreenContent>
                   ),
                   child: const Icon(
                     Icons.business_rounded,
-                    color: Colors.white,
-                    size: 20,
+                    color: Color.fromARGB(255, 0, 0, 0),
+                    size: 15,
                   ),
                 ),
                 const SizedBox(width: 12),
                 const Text(
                   'Todas las sedes',
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: Colors.black87,
                     letterSpacing: 0.3,
@@ -566,7 +598,6 @@ class _SedeScreenContentState extends State<SedeScreenContent>
       SedeProvider sedeProvider, int index, BuildContext context) {
     final sede = sedeProvider.sedes[index];
     final nombreSede = sede['nombre'] as String;
-    final imagenSede = sede['imagen'] as String;
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.0, end: 1.0),
@@ -591,13 +622,7 @@ class _SedeScreenContentState extends State<SedeScreenContent>
             ),
             child: Hero(
               tag: 'sede_$nombreSede',
-              child: _buildSedeCard(
-                context,
-                title: nombreSede,
-                imageUrl: imagenSede,
-                sede: nombreSede,
-                descripcion: sede['descripcion'] as String? ?? '',
-              ),
+              child: _buildSedeCard(context, sede),
             ),
           ),
         );
@@ -605,13 +630,14 @@ class _SedeScreenContentState extends State<SedeScreenContent>
     );
   }
 
-  Widget _buildSedeCard(
-    BuildContext context, {
-    required String title,
-    required String imageUrl,
-    required String sede,
-    String? descripcion,
-  }) {
+  Widget _buildSedeCard(BuildContext context, Map<String, dynamic> sedeData) {
+    final title = sedeData['nombre'] as String;
+    final imageUrl = sedeData['imagen'] as String;
+    final sede = title;
+    final descripcion = sedeData['descripcion'] as String? ?? '';
+    final mapaOk = _sedePuedeAbrirMapa(sedeData);
+    final pieUbicacion = _textoPieUbicacion(sedeData);
+
     const imageHeight = 180.0;
     return Container(
       decoration: BoxDecoration(
@@ -683,55 +709,68 @@ class _SedeScreenContentState extends State<SedeScreenContent>
                     Positioned(
                       top: 12,
                       right: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _cardOverlayBg,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star_rounded, color: _ratingStar, size: 16),
-                            SizedBox(width: 4),
-                            Text(
-                              '4.5',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                      child: GestureDetector(
+                        onTap: () {
+                          if (!mapaOk) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'No hay ubicación registrada para esta sede (coordenadas o dirección).',
+                                ),
                               ),
-                            ),
-                          ],
+                            );
+                            return;
+                          }
+                          HapticFeedback.lightImpact();
+                          _abrirUbicacionSedeEnMapa(context, sedeData);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: const BoxDecoration(
+                            color: _cardOverlayBg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.location_on_rounded,
+                            size: 20,
+                            color: mapaOk ? _accentTeal : Colors.grey,
+                          ),
                         ),
                       ),
                     ),
-                    Positioned(
-                      bottom: 12,
-                      left: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _cardOverlayBg,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.location_on_rounded, color: _accentTeal, size: 16),
-                            SizedBox(width: 4),
-                            Text(
-                              'Sede',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                    if (pieUbicacion != null)
+                      Positioned(
+                        bottom: 12,
+                        left: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _cardOverlayBg,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.location_on_rounded,
+                                  color: _accentTeal, size: 16),
+                              const SizedBox(width: 4),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 200),
+                                child: Text(
+                                  pieUbicacion,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 Padding(
@@ -750,7 +789,7 @@ class _SedeScreenContentState extends State<SedeScreenContent>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (descripcion != null && descripcion.isNotEmpty) ...[
+                      if (descripcion.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
                           descripcion,
@@ -820,28 +859,3 @@ class _SedeScreenContentState extends State<SedeScreenContent>
   }
 }
 
-/// Clipper que recorta el header con una curva en forma de sonrisa en la parte inferior.
-/// Sonrisa = centro hacia abajo (dip), esquinas hacia arriba. La curva “abre” hacia arriba.
-class _HeaderCurveClipper extends CustomClipper<Path> {
-  /// Cuántos píxeles baja el centro del borde inferior (forma de sonrisa).
-  static const double curveDepth = 56.0;
-
-  @override
-  Path getClip(Size size) {
-    final w = size.width;
-    final h = size.height;
-    // Esquinas del borde inferior en y = h - curveDepth; centro del dip en y = h.
-    final cornerY = h - curveDepth;
-    final path = Path();
-    path.moveTo(0, 0);
-    path.lineTo(w, 0);
-    path.lineTo(w, cornerY);
-    // Curva tipo sonrisa: de (w, cornerY) a (0, cornerY) pasando por el centro abajo en (w/2, h).
-    path.quadraticBezierTo(w * 0.5, h, 0, cornerY);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}

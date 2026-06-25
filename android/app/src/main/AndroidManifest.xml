@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
     <application
-        android:label="TuCanchaFacil"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
@@ -42,11 +42,42 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             
+            <!--
+              Deep links (WEB): mantener este host sincronizado con:
+              lib/config/app_link_config.dart -> AppLinkConfig.shareHost
+            -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" />
+                <data android:scheme="https" android:host="proyecto-20bae.web.app" />
+            </intent-filter>
+
+            <!--
+              Deep links (SCHEME): mantener scheme/host sincronizados con:
+              lib/config/app_link_config.dart -> AppLinkConfig.customScheme / customHost
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tucanchafacil" android:host="lugar" />
+            </intent-filter>
+
+            <!-- Deep link login programador: sincronizar host con AppLinkConfig.programadorPathSegment -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tucanchafacil" android:host="programador" />
+            </intent-filter>
+
+            <!-- OAuth Google staff: AppLinkConfig.oauthScheme / oauthHostLogin -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="foody" android:host="login" />
             </intent-filter>
             
         </activity>

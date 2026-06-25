@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:reserva_canchas/utils/supabase_parse.dart';
+
 class Lugar {
   final String id;
   final String nombre;
@@ -46,6 +48,54 @@ class Lugar {
     this.maxSedes,
     this.maxCanchas,
   });
+
+  factory Lugar.fromSupabase(Map<String, dynamic> row) {
+    return Lugar(
+      id: row['id'] as String,
+      nombre: (row['nombre'] as String?) ?? '',
+      ciudadId: (row['ciudad_id'] as String?) ?? '',
+      direccion: (row['direccion'] as String?) ?? '',
+      telefono: (row['telefono'] as String?) ?? '',
+      activo: (row['activo'] as bool?) ?? true,
+      fotoUrl: row['foto_url'] as String?,
+      createdAt: parseSupabaseDate(row['created_at']),
+      updatedAt: parseSupabaseDate(row['updated_at']),
+      plan: row['plan'] as String?,
+      planInicio: row['plan_inicio'] != null
+          ? parseSupabaseDate(row['plan_inicio'])
+          : null,
+      planValorMensual: row['plan_valor_mensual'] is num
+          ? (row['plan_valor_mensual'] as num).toDouble()
+          : null,
+      planUltimoPago: row['plan_ultimo_pago'] != null
+          ? parseSupabaseDate(row['plan_ultimo_pago'])
+          : null,
+      maxSedes: row['max_sedes'] is num ? (row['max_sedes'] as num).toInt() : null,
+      maxCanchas:
+          row['max_canchas'] is num ? (row['max_canchas'] as num).toInt() : null,
+    );
+  }
+
+  Map<String, dynamic> toSupabaseInsert() {
+    final now = DateTime.now().toIso8601String();
+    return {
+      'ciudad_id': ciudadId,
+      'nombre': nombre,
+      'direccion': direccion,
+      'telefono': telefono,
+      'activo': activo,
+      if (fotoUrl != null) 'foto_url': fotoUrl,
+      'created_at': now,
+      'updated_at': now,
+      if (plan != null) 'plan': plan,
+      if (planInicio != null) 'plan_inicio': planInicio!.toIso8601String(),
+      if (planValorMensual != null) 'plan_valor_mensual': planValorMensual,
+      if (planUltimoPago != null)
+        'plan_ultimo_pago': planUltimoPago!.toIso8601String(),
+      if (maxSedes != null) 'max_sedes': maxSedes,
+      if (maxCanchas != null) 'max_canchas': maxCanchas,
+    };
+  }
 
   factory Lugar.fromFirestore(Map<String, dynamic> data, String id) {
     return Lugar(

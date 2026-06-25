@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:reserva_canchas/models/audit_log.dart';
+import '../services/app_backend.dart';
 import '../services/lugar_helper.dart';
+import '../services/push_notification_service.dart';
 import '../utils/reserva_audit_utils.dart'; // Para acceder a UmbralesRiesgo
 
 class AuditProvider with ChangeNotifier {
@@ -140,6 +143,12 @@ class AuditProvider with ChangeNotifier {
         _cargaCompleter = null;
         notifyListeners();
         return;
+      }
+
+      // Registrar token para notificaciones de auditoría (solo superadmin, de su lugar) — sin bloquear la carga
+      final rol = await LugarHelper.getUserRole();
+      if (rol == 'superadmin') {
+        PushNotificationService().registerTokenForAuditAlerts(lugarId).catchError((_) {});
       }
 
       // Construir consulta base optimizada
@@ -459,6 +468,49 @@ class AuditProvider with ChangeNotifier {
       // Obtener información de contexto
       final contextoAdicional = await _obtenerContextoAdicional(accion, entidad, entidadId);
 
+      final metadatosFinales = {
+        ...metadatos ?? {},
+        ...contextoAdicional,
+        'version_sistema': '2.0',
+        'fuente_analisis':
+            esDesdeReservaUtils ? 'ReservaAuditUtils' : 'AuditProvider',
+        'analisis_duplicado': false,
+      };
+
+      final dispositivoJson = await _obtenerInfoDispositivo();
+
+      if (!AppBackend.supabaseReady) {
+        debugPrint('Auditoría omitida: Supabase no configurado');
+        return;
+      }
+
+      final res = await Supabase.instance.client
+          .from('auditoria')
+          .insert({
+            'accion': accion,
+            'entidad': entidad,
+            'entidad_id': entidadId,
+            'usuario_id': user.uid,
+            'usuario_nombre': userData['nombre'],
+            'usuario_rol': userData['rol'],
+            'lugar_id': lugarId,
+            'datos_antiguos': datosAntiguos ?? {},
+            'datos_nuevos': datosNuevos ?? {},
+            'metadatos': metadatosFinales,
+            'descripcion': descripcionFinal,
+            'nivel_riesgo': nivelRiesgoFinal,
+            'alertas': analisisRiesgo['alertas'] ?? [],
+            'cambios_detectados': analisisRiesgo['cambios'] ?? [],
+            'puntuacion_riesgo': analisisRiesgo['puntuacion_riesgo'] ?? 0,
+            'ip_address': await _obtenerIP(),
+            'user_agent': 'Flutter App v2.0',
+            'dispositivo_info': dispositivoJson,
+          })
+          .select('id')
+          .single();
+
+      final auditRowId = res['id'] as String;
+
       final auditEntry = {
         'accion': accion,
         'entidad': entidad,
@@ -466,35 +518,16 @@ class AuditProvider with ChangeNotifier {
         'usuario_id': user.uid,
         'usuario_nombre': userData['nombre'],
         'usuario_rol': userData['rol'],
-        'timestamp': Timestamp.now(),
+        'timestamp': DateTime.now().toIso8601String(),
         'lugarId': lugarId,
-        'datos_antiguos': datosAntiguos ?? {},
-        'datos_nuevos': datosNuevos ?? {},
-        'metadatos': {
-          ...metadatos ?? {},
-          ...contextoAdicional,
-          'version_sistema': '2.0',
-          'fuente_analisis': esDesdeReservaUtils ? 'ReservaAuditUtils' : 'AuditProvider',
-          'analisis_duplicado': false, // Marcador para confirmar que no hay duplicación
-        },
         'descripcion': descripcionFinal,
-        'nivel_riesgo': nivelRiesgoFinal,
         'alertas': analisisRiesgo['alertas'] ?? [],
-        'cambios_detectados': analisisRiesgo['cambios'] ?? [],
         'puntuacion_riesgo': analisisRiesgo['puntuacion_riesgo'] ?? 0,
-        'ip_address': await _obtenerIP(),
-        'user_agent': 'Flutter App v2.0',
-        'dispositivo_info': await _obtenerInfoDispositivo(),
+        'metadatos': metadatosFinales,
       };
 
-      // Guardar en Firestore
-      final docRef = await FirebaseFirestore.instance
-          .collection('auditoria')
-          .add(auditEntry);
-
-      // Procesar alertas críticas
       if (nivelRiesgoFinal == 'critico') {
-        await _procesarAlertaCritica(auditEntry, docRef.id);
+        await _procesarAlertaCritica(auditEntry, auditRowId);
       }
 
       debugPrint('✅ Auditoría registrada exitosamente: $accion');
@@ -884,17 +917,24 @@ static Map<String, dynamic> _extraerAnalisisDeReservaUtils(Map<String, dynamic> 
     }
     
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('usuarios')
-          .doc(userId)
-          .get();
+      if (!AppBackend.supabaseReady) {
+        return {'nombre': 'Usuario desconocido', 'rol': 'usuario'};
+      }
+      final row = await Supabase.instance.client
+          .from('staff_profiles')
+          .select('nombre,rol')
+          .eq('id', userId)
+          .maybeSingle();
 
-      final userData = userDoc.data() ?? {};
+      if (row == null) {
+        return {'nombre': 'Usuario desconocido', 'rol': 'usuario'};
+      }
+
       final resultado = {
-        'nombre': userData['nombre'] ?? userData['name'] ?? 'Usuario desconocido',
-        'rol': userData['rol'] ?? 'usuario',
+        'nombre': row['nombre'] ?? 'Usuario desconocido',
+        'rol': row['rol'] ?? 'usuario',
       };
-      
+
       _cacheUsuarios[userId] = resultado;
       return resultado;
     } catch (e) {
@@ -961,10 +1001,9 @@ static Map<String, dynamic> _extraerAnalisisDeReservaUtils(Map<String, dynamic> 
     String auditEntryId,
   ) async {
     try {
-      // Crear alerta crítica mejorada
-      await FirebaseFirestore.instance
-          .collection('alertas_criticas')
-          .add({
+      if (!AppBackend.supabaseReady) return;
+
+      await Supabase.instance.client.from('alertas_criticas').insert({
         'audit_entry_id': auditEntryId,
         'titulo': _generarTituloAlerta(auditEntry),
         'descripcion': auditEntry['descripcion'],
@@ -973,7 +1012,7 @@ static Map<String, dynamic> _extraerAnalisisDeReservaUtils(Map<String, dynamic> 
         'accion': auditEntry['accion'],
         'entidad': auditEntry['entidad'],
         'entidad_id': auditEntry['entidad_id'],
-        'timestamp': auditEntry['timestamp'],
+        'timestamp': auditEntry['timestamp'] ?? DateTime.now().toIso8601String(),
         'alertas': auditEntry['alertas'],
         'puntuacion_riesgo': auditEntry['puntuacion_riesgo'],
         'metadatos': auditEntry['metadatos'],
@@ -981,9 +1020,8 @@ static Map<String, dynamic> _extraerAnalisisDeReservaUtils(Map<String, dynamic> 
         'nivel': 'critico',
         'prioridad': _calcularPrioridadAlerta(auditEntry),
         'requiere_accion': true,
-        'fecha_expiracion': Timestamp.fromDate(
-          DateTime.now().add(Duration(days: 7)),
-        ),
+        'fecha_expiracion':
+            DateTime.now().add(const Duration(days: 7)).toIso8601String(),
       });
       
       // Enviar notificación push si está configurado

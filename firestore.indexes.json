@@ -16,8 +16,11 @@
     {"collectionGroup":"promociones","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"activo","order":"ASCENDING"},{"fieldPath":"fecha","order":"ASCENDING"}]},
     {"collectionGroup":"promociones","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"fecha","order":"ASCENDING"},{"fieldPath":"activo","order":"ASCENDING"}]},
     {"collectionGroup":"promociones","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"cancha_id","order":"ASCENDING"},{"fieldPath":"fecha","order":"ASCENDING"},{"fieldPath":"activo","order":"ASCENDING"}]},
+    {"collectionGroup":"reservas","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"fecha","order":"ASCENDING"}]},
     {"collectionGroup":"reservas","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"fecha","order":"ASCENDING"},{"fieldPath":"cancha_id","order":"ASCENDING"}]},
-    {"collectionGroup":"fcm_tokens","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"rol","order":"ASCENDING"}]}
+    {"collectionGroup":"fcm_tokens","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"rol","order":"ASCENDING"}]},
+    {"collectionGroup":"fcm_tokens","queryScope":"COLLECTION","fields":[{"fieldPath":"lugarId","order":"ASCENDING"},{"fieldPath":"staffPendingPush","order":"ASCENDING"}]},
+    {"collectionGroup":"fcm_tokens","queryScope":"COLLECTION","fields":[{"fieldPath":"rol","order":"ASCENDING"},{"fieldPath":"updatedAt","order":"ASCENDING"}]}
   ],
   "fieldOverrides": []
 }

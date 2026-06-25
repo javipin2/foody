@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'ciudad_screen.dart';
 import 'lugar_screen.dart';
+import '../models/ciudad.dart';
 import '../providers/version_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/version_service.dart';
 import '../services/ciudad_preference_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/shared_lugar_link_service.dart';
+import '../services/programador_deep_link_service.dart';
+import '../services/app_backend.dart';
 import 'update_required_screen.dart';
+import 'programador/programador_login_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
 import 'admin/super_admin_dashboard.dart';
 import 'admin/encargado_dashboard.dart';
@@ -70,6 +76,22 @@ class _SplashScreenState extends State<SplashScreen>
         PushNotificationService.onPermissionDenied!(msg);
       }
       PushNotificationService.pendingPermissionDeniedMessages.clear();
+
+      // Mostrar errores de registro de token si ocurrieron antes de tener context.
+      PushNotificationService.onRegistrationError = (message) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      };
+      for (final msg in PushNotificationService.pendingRegistrationErrorMessages) {
+        PushNotificationService.onRegistrationError!(msg);
+      }
+      PushNotificationService.pendingRegistrationErrorMessages.clear();
     });
 
     // Inicializar verificación de versiones
@@ -165,31 +187,34 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
+  Future<bool> _consumeProgramadorDeepLinkNavigation() async {
+    final open =
+        await ProgramadorDeepLinkService.consumePendingOpensProgramador();
+    if (!open || !mounted) return false;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => const ProgramadorLoginScreen(),
+      ),
+    );
+    return true;
+  }
+
   void _navigateToMainApp(AuthProvider authProvider) async {
     if (!mounted) return;
 
     _navigationTimer = Timer(const Duration(milliseconds: 500), () async {
       if (mounted) {
+        if (await _consumeProgramadorDeepLinkNavigation()) return;
         // Verificar si el usuario está autenticado
         if (authProvider.isAuthenticated) {
           // Navegar al dashboard correspondiente según el rol
           _navigateToDashboard(authProvider);
         } else {
-          // Verificar si es la primera vez o si hay ciudad guardada
-          final isFirstTime = await CiudadPreferenceService.isFirstTime();
-          final hasSelectedCiudad = await CiudadPreferenceService.hasSelectedCiudad();
-          
-          if (isFirstTime || !hasSelectedCiudad) {
-            // Primera vez o no hay ciudad guardada -> ir a selección de ciudades
-            _navigateToCiudadScreen();
+          final ciudadDestino = await _resolverCiudadInicial();
+          if (ciudadDestino != null) {
+            _navigateToLugarScreen(ciudadDestino);
           } else {
-            // Hay ciudad guardada -> ir directamente a lugares
-            final ciudad = await CiudadPreferenceService.getSelectedCiudad();
-            if (ciudad != null) {
-              _navigateToLugarScreen(ciudad);
-            } else {
-              _navigateToCiudadScreen();
-            }
+            _navigateToCiudadScreen();
           }
         }
       }
@@ -229,26 +254,17 @@ class _SplashScreenState extends State<SplashScreen>
 
     _navigationTimer = Timer(const Duration(milliseconds: 500), () async {
       if (mounted) {
+        if (await _consumeProgramadorDeepLinkNavigation()) return;
         // Verificar si el usuario está autenticado
         if (authProvider.isAuthenticated) {
           // Navegar al dashboard correspondiente según el rol
           _navigateToDashboard(authProvider);
         } else {
-          // Verificar si es la primera vez o si hay ciudad guardada
-          final isFirstTime = await CiudadPreferenceService.isFirstTime();
-          final hasSelectedCiudad = await CiudadPreferenceService.hasSelectedCiudad();
-          
-          if (isFirstTime || !hasSelectedCiudad) {
-            // Primera vez o no hay ciudad guardada -> ir a selección de ciudades
-            _navigateToCiudadScreen();
+          final ciudadDestino = await _resolverCiudadInicial();
+          if (ciudadDestino != null) {
+            _navigateToLugarScreen(ciudadDestino);
           } else {
-            // Hay ciudad guardada -> ir directamente a lugares
-            final ciudad = await CiudadPreferenceService.getSelectedCiudad();
-            if (ciudad != null) {
-              _navigateToLugarScreen(ciudad);
-            } else {
-              _navigateToCiudadScreen();
-            }
+            _navigateToCiudadScreen();
           }
         }
 
@@ -278,11 +294,46 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
+  Future<Ciudad?> _resolverCiudadInicial() async {
+    final pending = await SharedLugarLinkService.peekPending();
+
+    if (pending?.ciudadId != null && pending!.ciudadId!.isNotEmpty) {
+      final ciudad = await _getCiudadById(pending.ciudadId!);
+      if (ciudad != null) {
+        await CiudadPreferenceService.saveSelectedCiudad(ciudad);
+        return ciudad;
+      }
+    }
+
+    final isFirstTime = await CiudadPreferenceService.isFirstTime();
+    final hasSelectedCiudad = await CiudadPreferenceService.hasSelectedCiudad();
+    if (isFirstTime || !hasSelectedCiudad) return null;
+    return CiudadPreferenceService.getSelectedCiudad();
+  }
+
+  Future<Ciudad?> _getCiudadById(String ciudadId) async {
+    try {
+      if (AppBackend.supabaseReady) {
+        final row = await Supabase.instance.client
+            .from('ciudades')
+            .select()
+            .eq('id', ciudadId)
+            .maybeSingle();
+        if (row != null) {
+          return Ciudad.fromSupabase(Map<String, dynamic>.from(row));
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _navigateToLugarScreen(ciudad) {
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            LugarScreen(ciudad: ciudad),
+            LugarScreen(ciudad: ciudad, restartAmbientMusic: true),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(
             opacity: animation,
@@ -413,9 +464,9 @@ class _SplashScreenState extends State<SplashScreen>
                             ],
                           ),
                           child: Image.asset(
-                            'assets/demo.png',
-                            width: 240,
-                            height: 240,
+                            'assets/tucanchafacil.png',
+                            width: 440,
+                            height: 440,
                             errorBuilder: (context, error, stackTrace) {
                               debugPrint('Error cargando logo: $error');
                               return const Icon(Icons.error,

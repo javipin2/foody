@@ -9,6 +9,7 @@ import '../models/lugar.dart';
 import 'widgets/cancha_card.dart';
 import 'horarios_screen.dart';
 import 'sede_screen.dart';
+import 'lugar_screen.dart';
 
 // Colores del header (mismo diseño que sede/lugar)
 const _headerBackground = Color(0xFF111624);
@@ -214,6 +215,21 @@ class _CanchasScreenState extends State<CanchasScreen> {
 
     return WillPopScope(
       onWillPop: () async {
+        final sedeProvider =
+            Provider.of<SedeProvider>(context, listen: false);
+        final cantSedes = sedeProvider.sedes.length;
+
+        // Si hay una sola sede, evitamos el selector redundante.
+        if (cantSedes <= 1) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LugarScreen(ciudad: widget.ciudad),
+            ),
+          );
+          return false;
+        }
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -294,6 +310,21 @@ class _CanchasScreenState extends State<CanchasScreen> {
                 children: [
                   GestureDetector(
                     onTap: () {
+                      final sedeProvider =
+                          Provider.of<SedeProvider>(context, listen: false);
+                      final cantSedes = sedeProvider.sedes.length;
+
+                      if (cantSedes <= 1) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                LugarScreen(ciudad: widget.ciudad),
+                          ),
+                        );
+                        return;
+                      }
+
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
@@ -469,27 +500,27 @@ class _CanchasScreenState extends State<CanchasScreen> {
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.all(5),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF2E7D60), Color(0xFF4CAF50)],
+                            colors: [Color.fromARGB(255, 255, 255, 255), Color.fromARGB(255, 255, 255, 255)],
                           ),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF2E7D60).withOpacity(0.2),
+                              color: const Color.fromARGB(255, 255, 255, 255).withOpacity(0.2),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                        child: const Icon(Icons.sports_soccer_rounded, color: Colors.white, size: 20),
+                        child: const Icon(Icons.sports_soccer_rounded, color: Color.fromARGB(255, 0, 0, 0), size: 20),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       const Text(
                         'Canchas disponibles',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 15,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
                           letterSpacing: 0.3,

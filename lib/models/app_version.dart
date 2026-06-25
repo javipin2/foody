@@ -27,6 +27,29 @@ class AppVersion {
     this.maintenanceMessage = 'La aplicación está en mantenimiento',
   });
 
+  /// Desde JSON en Supabase (`app_config.value`) o mapa serializable.
+  factory AppVersion.fromRemoteJson(Map<String, dynamic> data) {
+    DateTime? lastUp;
+    final lu = data['last_updated'];
+    if (lu is String) {
+      lastUp = DateTime.tryParse(lu);
+    }
+    return AppVersion(
+      currentVersion: data['current_version'] ?? '1.0.0',
+      minimumRequiredVersion: data['minimum_required_version'] ?? '1.0.0',
+      forceUpdate: data['force_update'] ?? false,
+      updateMessage: data['update_message'] ?? 'Nueva versión disponible',
+      downloadUrl: data['download_url'] ?? '',
+      isPlayStoreAvailable: data['is_play_store_available'] ?? false,
+      playStoreUrl: data['play_store_url'] ?? '',
+      lastUpdated: lastUp,
+      newFeatures: List<String>.from(data['new_features'] ?? []),
+      maintenanceMode: data['maintenance_mode'] ?? false,
+      maintenanceMessage: data['maintenance_message'] ??
+          'La aplicación está en mantenimiento',
+    );
+  }
+
   factory AppVersion.fromFirestore(Map<String, dynamic> data) {
     return AppVersion(
       currentVersion: data['current_version'] ?? '1.0.0',
@@ -53,6 +76,22 @@ class AppVersion {
       'is_play_store_available': isPlayStoreAvailable,
       'play_store_url': playStoreUrl,
       'last_updated': lastUpdated,
+      'new_features': newFeatures,
+      'maintenance_mode': maintenanceMode,
+      'maintenance_message': maintenanceMessage,
+    };
+  }
+
+  Map<String, dynamic> toRemoteJson() {
+    return {
+      'current_version': currentVersion,
+      'minimum_required_version': minimumRequiredVersion,
+      'force_update': forceUpdate,
+      'update_message': updateMessage,
+      'download_url': downloadUrl,
+      'is_play_store_available': isPlayStoreAvailable,
+      'play_store_url': playStoreUrl,
+      'last_updated': lastUpdated?.toIso8601String(),
       'new_features': newFeatures,
       'maintenance_mode': maintenanceMode,
       'maintenance_message': maintenanceMessage,

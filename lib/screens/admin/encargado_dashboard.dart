@@ -80,15 +80,15 @@ class EncargadoDashboardScreenState extends State<EncargadoDashboardScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fadeController.forward();
-      _registerAdminTokenForAuditNotifications();
+      _registerTokenForCityPromotions();
       // En web el AuthProvider puede cargar lugarId después; re-registrar token cuando ya esté disponible.
       Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) _registerAdminTokenForAuditNotifications();
+        if (mounted) _registerTokenForCityPromotions();
       });
     });
   }
 
-  Future<void> _registerAdminTokenForAuditNotifications() async {
+  Future<void> _registerTokenForCityPromotions() async {
     final auth = Provider.of<auth_provider.AuthProvider>(context, listen: false);
     var ciudadId = auth.currentCiudadId;
     final lugarId = auth.currentLugarId;
@@ -106,10 +106,7 @@ class EncargadoDashboardScreenState extends State<EncargadoDashboardScreen>
       }
     }
     if (ciudadId != null && ciudadId.isNotEmpty) {
-      await PushNotificationService().updateCiudadForNotifications(
-        ciudadId,
-        lugarId: lugarId,
-      );
+      await PushNotificationService().updateCiudadForNotifications(ciudadId);
     }
   }
 

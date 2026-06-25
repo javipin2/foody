@@ -1,0 +1,61 @@
+---
+description: Multi-sucursal Foody — aislamiento por sede, roles, inventario cruzado solo lectura
+globs: foody_backend/**/*,lib/features/admin/**/*,lib/features/inventario/**/*,foody_supabase/**/*
+alwaysApply: false
+---
+
+# Foody — Multi-sucursal
+
+**Leer primero:** `docs/MULTI_SUCURSAL.md` (fuente de verdad).
+
+## Modelo acordado
+
+- **Restaurante** = marca + suscripción (`restaurante_id`). Ej.: Alitas House.
+- **Sucursal** = operación aislada (`sucursal_id`). Ej.: Norte, Sur — como restaurantes distintos en el día a día.
+- Cada sucursal tiene **su propio**: staff, menú, stock, pedidos, caja, cocina, domiciliarios de planta, reportes, alertas, facturación operativa.
+
+## No mezclar (escritura)
+
+Prohibido que un usuario de sucursal A **modifique** datos de sucursal B sin rol/permiso corporativo:
+
+- pedidos, caja, menú, compras, ajustes de inventario, usuarios, mesas, zonas, promociones.
+
+Toda mutación debe validar `sucursal_id` del JWT (o guard corporativo explícito).
+
+## Excepción única acordada: inventario hermano (solo lectura)
+
+- Admin/gerente de una sede puede **ver** stock de otras sucursales del **mismo** `restaurante_id`.
+- Permiso objetivo: `ver_inventario_otras_sucursales`.
+- **Sin** editar, comprar ni descontar en la sede ajena.
+- Traslados entre sedes (futuro): movimiento auditado, nunca mezcla automática.
+
+## Roles (objetivo)
+
+| Rol | Escribe en |
+|-----|------------|
+| Staff operativo (cajero, mesero, cocina, domi planta) | Solo su `sucursal_id` |
+| Admin / gerente **de sucursal** | Solo su `sucursal_id`; puede ver inventario hermano si tiene permiso |
+| Gerente cadena / dueño (corporativo) | Todas las sucursales del restaurante; selector en panel |
+
+No usar el selector de sucursal del panel para usuarios atados a una sola sede (cuando se implemente el guard).
+
+## Al codificar
+
+1. Incluir `WHERE sucursal_id = $X` en queries operativos.
+2. En controllers: validar que `:sucursal_id` del path pertenece al `restaurante_id` del usuario y, para escritura, coincide con `usuario.sucursal_id` salvo rol corporativo.
+3. No compartir catálogo ni stock entre sucursales por defecto.
+4. UI: indicar sucursal activa; modo consulta otra sede con etiqueta «Solo lectura».
+
+## Fase 1 implementada (2026-06-09)
+
+- `SucursalScopeService` — lectura/escritura por sucursal; inventario hermano solo lectura.
+- Permiso `ver_inventario_otras_sucursales` (migración `043`).
+- `GET /inventario/hermanas/resumen` + `InventarioHermanasPanel` Flutter.
+- Selector sucursal panel solo con `gestionar_sucursales`.
+
+## Pendiente Fase 2+
+
+- Extender scope a catálogo, mesas, zonas, alertas, costeo, usuarios.
+- Traslados stock entre sedes auditados.
+
+Actualizar `docs/AVANCE_PROYECTO.md` al cerrar cada fase.

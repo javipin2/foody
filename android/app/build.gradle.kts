@@ -19,7 +19,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.tucanchafacil.app"
+    namespace = "app.foody.cliente"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -34,11 +34,26 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.tucanchafacil.app"
+        // applicationId concreto por flavor (ver foody_multi_app_flavors.md).
+        applicationId = "app.foody.cliente"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    flavorDimensions += "app"
+    productFlavors {
+        create("cliente") {
+            dimension = "app"
+            applicationId = "app.foody.cliente"
+            resValue("string", "app_name", "Foody")
+        }
+        create("equipo") {
+            dimension = "app"
+            applicationId = "app.foody.equipo"
+            resValue("string", "app_name", "Foody Equipo")
+        }
     }
 
     signingConfigs {

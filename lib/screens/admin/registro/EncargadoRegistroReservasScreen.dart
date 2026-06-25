@@ -713,6 +713,12 @@ Future<void> _completarPagoReservaRecurrente(Reserva reserva) async {
 
   if (result == true && mounted) {
     try {
+      final lugarIdPago = reserva.lugarId ?? await LugarHelper.getLugarId();
+      if (lugarIdPago == null || lugarIdPago.isEmpty) {
+        _showErrorSnackBar('No se pudo determinar el lugar.');
+        return;
+      }
+
       // 🔥 NUEVA LÓGICA: Crear/actualizar solo la reserva individual de este día
       final fechaStr = DateFormat('yyyy-MM-dd').format(reserva.fecha);
       
@@ -735,6 +741,7 @@ Future<void> _completarPagoReservaRecurrente(Reserva reserva) async {
           'estado': 'completo',
           'precio_independiente_de_recurrencia': true, // Marcar como precio independiente
           'fecha_actualizacion_pago': Timestamp.now(),
+          'lugarId': lugarIdPago,
         });
         
         debugPrint('✅ Reserva individual actualizada: ${docExistente.id}');
@@ -750,8 +757,11 @@ Future<void> _completarPagoReservaRecurrente(Reserva reserva) async {
           'valor': montoTotalIndividual, // Valor del día específico
           'montoPagado': montoTotalIndividual, // Pago completo
           'sede': reserva.sede,
+          'lugarId': lugarIdPago,
           'confirmada': true,
           'reservaRecurrenteId': reserva.reservaRecurrenteId, // Referencia a la recurrente
+          if (reserva.reservaRecurrenteId != null)
+            'reserva_recurrente_id': reserva.reservaRecurrenteId,
           'esReservaRecurrente': true,
           'precio_independiente_de_recurrencia': true, // 🔥 CLAVE: Marca que este precio es independiente
           'created_at': Timestamp.now(),

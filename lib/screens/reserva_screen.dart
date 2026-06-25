@@ -91,23 +91,24 @@ class _ReservaScreenState extends State<ReservaScreen> with SingleTickerProvider
   // Validar formato de teléfono
   bool _esTelefonoValido(String telefono) {
     if (telefono.isEmpty) return false;
-    // Remover espacios, guiones y paréntesis
     final telefonoLimpio = telefono.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-    // Verificar que tenga al menos 10 dígitos y solo contenga números
     return telefonoLimpio.length >= 10 && RegExp(r'^\d+$').hasMatch(telefonoLimpio);
   }
 
   // Enviar mensaje de WhatsApp con los detalles de la reserva
   Future<void> _enviarMensajeWhatsApp(String referencia) async {
   final lugarId = widget.reserva.cancha.lugarId ?? '';
+  final sedeId = widget.reserva.cancha.sedeId;
   final config = lugarId.isNotEmpty
       ? await ConfigLugarService.getConfig(lugarId)
       : null;
-  final String numeroTelefono = (config != null && config.whatsappReservas.trim().isNotEmpty)
-      ? config.whatsappReservas.trim()
+  final String whatsappEf = config?.whatsappEfectivoParaSede(sedeId) ?? '';
+  final String cuentasEf = config?.textoCuentasEfectivoParaSede(sedeId) ?? '';
+  final String numeroTelefono = whatsappEf.isNotEmpty
+      ? whatsappEf
       : "+573013435434";
-  final String cuentaPago = (config != null && config.textoCuentasReservas.trim().isNotEmpty)
-      ? config.textoCuentasReservas.trim()
+  final String cuentaPago = cuentasEf.isNotEmpty
+      ? cuentasEf
       : "BANCOLOMBIA AHORROS⚽   *52400011088* ";
   final String canchaNombre = widget.reserva.cancha.nombre;
   final String fecha = DateFormat('EEEE, d \'de\' MMMM \'de\' yyyy', 'es').format(widget.reserva.fecha);
@@ -119,7 +120,7 @@ class _ReservaScreenState extends State<ReservaScreen> with SingleTickerProvider
   final double abono = _montoPagado;
   final String nombre = _nombreController.text.trim();
   final String telefono = _telefonoController.text.trim();
-  
+
   final double saldoPendiente = precioTotal - abono;
   final bool esPagoCompleto = saldoPendiente <= 0;
   
@@ -576,7 +577,7 @@ Future<bool?> _mostrarDialogoInstruccionesWhatsApp() async {
         'estado': 'pendiente',
         'pago_iniciado': FieldValue.serverTimestamp(),
         // Extender el tiempo de expiración para dar tiempo a la confirmación
-        'expira_en': DateTime.now().add(Duration(minutes: 12)).millisecondsSinceEpoch,
+        'expira_en': DateTime.now().add(Duration(hours: 12)).millisecondsSinceEpoch,
       });
 
       // Guardar la reserva pendiente

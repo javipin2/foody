@@ -24,6 +24,111 @@ enum PagoEstadoLugar {
   bloqueado,
 }
 
+/// Límites por plan (negocio).
+class _LimitesPlan {
+  static const int basicoSedes = 1;
+  static const int basicoCanchas = 2;
+  static const int premiumSedes = 3;
+  static const int premiumCanchas = 6;
+}
+
+void _aplicarMaximosPorPlan(
+  String? plan,
+  TextEditingController maxSedes,
+  TextEditingController maxCanchas,
+) {
+  switch ((plan ?? '').toLowerCase()) {
+    case 'basico':
+      maxSedes.text = '${_LimitesPlan.basicoSedes}';
+      maxCanchas.text = '${_LimitesPlan.basicoCanchas}';
+      break;
+    case 'premium':
+      maxSedes.text = '${_LimitesPlan.premiumSedes}';
+      maxCanchas.text = '${_LimitesPlan.premiumCanchas}';
+      break;
+    case 'pro':
+      maxSedes.clear();
+      maxCanchas.clear();
+      break;
+    case 'prueba':
+      maxSedes.text = '${_LimitesPlan.basicoSedes}';
+      maxCanchas.text = '${_LimitesPlan.basicoCanchas}';
+      break;
+    default:
+      maxSedes.clear();
+      maxCanchas.clear();
+  }
+}
+
+/// Si el campo va vacío y el plan no es Pro, se usan los mínimos del plan al guardar.
+int? _sedesPorDefectoSiVacio(String plan, int? parsed) {
+  if (parsed != null) return parsed;
+  switch (plan.toLowerCase()) {
+    case 'basico':
+    case 'prueba':
+      return _LimitesPlan.basicoSedes;
+    case 'premium':
+      return _LimitesPlan.premiumSedes;
+    case 'pro':
+      return null;
+    default:
+      return parsed;
+  }
+}
+
+int? _canchasPorDefectoSiVacio(String plan, int? parsed) {
+  if (parsed != null) return parsed;
+  switch (plan.toLowerCase()) {
+    case 'basico':
+    case 'prueba':
+      return _LimitesPlan.basicoCanchas;
+    case 'premium':
+      return _LimitesPlan.premiumCanchas;
+    case 'pro':
+      return null;
+    default:
+      return parsed;
+  }
+}
+
+/// null = OK; texto = error para SnackBar.
+String? _validarLimitesVsPlan(String? plan, int? maxSedes, int? maxCanchas) {
+  final p = (plan ?? '').toLowerCase();
+  if (p == 'pro') return null;
+  if (p == 'basico' || p == 'prueba') {
+    if (maxSedes != null && maxSedes > _LimitesPlan.basicoSedes) {
+      return '${p == 'prueba' ? 'Plan Prueba' : 'Plan Básico'}: como máximo ${_LimitesPlan.basicoSedes} sede.';
+    }
+    if (maxCanchas != null && maxCanchas > _LimitesPlan.basicoCanchas) {
+      return '${p == 'prueba' ? 'Plan Prueba' : 'Plan Básico'}: como máximo ${_LimitesPlan.basicoCanchas} canchas.';
+    }
+  }
+  if (p == 'premium') {
+    if (maxSedes != null && maxSedes > _LimitesPlan.premiumSedes) {
+      return 'Plan Premium: como máximo ${_LimitesPlan.premiumSedes} sedes.';
+    }
+    if (maxCanchas != null && maxCanchas > _LimitesPlan.premiumCanchas) {
+      return 'Plan Premium: como máximo ${_LimitesPlan.premiumCanchas} canchas.';
+    }
+  }
+  return null;
+}
+
+String _hintLimitesPlan(String? plan) {
+  switch ((plan ?? '').toLowerCase()) {
+    case 'basico':
+      return 'Tope del plan: ${_LimitesPlan.basicoSedes} sede y ${_LimitesPlan.basicoCanchas} canchas. Puedes indicar menos, no más.';
+    case 'premium':
+      return 'Tope del plan: ${_LimitesPlan.premiumSedes} sedes y ${_LimitesPlan.premiumCanchas} canchas.';
+    case 'pro':
+      return 'Plan Pro: ilimitado. Deja vacío = sin tope; si pones un número, actúa como límite interno.';
+    case 'prueba':
+      return 'Plan Prueba: mismos topes que Básico (${_LimitesPlan.basicoSedes} sede, ${_LimitesPlan.basicoCanchas} canchas).';
+    default:
+      return 'Elige un plan para ver sedes y canchas por defecto.';
+  }
+}
+
 class _GestionLugaresPageState extends State<GestionLugaresPage>
     with TickerProviderStateMixin {
   late AnimationController _animationController;
@@ -85,7 +190,7 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
+                          color: Colors.black.withValues(alpha: 0.08),
                           blurRadius: 18,
                           offset: const Offset(0, 6),
                         ),
@@ -100,7 +205,7 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.16),
+                                color: Colors.white.withValues(alpha: 0.16),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Icon(
@@ -679,7 +784,8 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                       Provider.of<LugarProvider>(context, listen: false)
                           .activarDesactivarLugar(lugar.id, value);
                     },
-                    activeColor: const Color(0xFF2E7D60),
+                    activeThumbColor: const Color(0xFF2E7D60),
+                    activeTrackColor: const Color(0xFF2E7D60).withValues(alpha: 0.45),
                   ),
                   PopupMenuButton<String>(
                     onSelected: (value) {
@@ -932,34 +1038,11 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                       onChanged: (value) {
                         setState(() {
                           planSeleccionado = value;
-                          // Establecer valores por defecto según el plan
-                          int? defSedes;
-                          int? defCanchas;
-                          switch ((value ?? '').toLowerCase()) {
-                            case 'basico':
-                              defSedes = 1;
-                              defCanchas = 2;
-                              break;
-                            case 'premium':
-                              defSedes = 3;
-                              defCanchas = 6;
-                              break;
-                            case 'pro':
-                              defSedes = null; // ilimitadas
-                              defCanchas = null;
-                              break;
-                            case 'prueba':
-                              defSedes = 1;
-                              defCanchas = 2;
-                              break;
-                            default:
-                              defSedes = null;
-                              defCanchas = null;
-                          }
-                          maxSedesController.text =
-                              defSedes != null ? defSedes.toString() : '';
-                          maxCanchasController.text =
-                              defCanchas != null ? defCanchas.toString() : '';
+                          _aplicarMaximosPorPlan(
+                            value,
+                            maxSedesController,
+                            maxCanchasController,
+                          );
                         });
                       },
                     ),
@@ -993,6 +1076,17 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                         ),
                       ],
                     ),
+                    if (planSeleccionado != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _hintLimitesPlan(planSeleccionado),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -1074,10 +1168,29 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                               final valorPlan = double.tryParse(
                                 valorPlanController.text.replaceAll(',', '.'),
                               );
-                              final maxSedes =
+                              final rawSedes =
                                   int.tryParse(maxSedesController.text.trim());
-                              final maxCanchas =
+                              final rawCanchas =
                                   int.tryParse(maxCanchasController.text.trim());
+                              final maxSedes = _sedesPorDefectoSiVacio(
+                                planSeleccionado!,
+                                rawSedes,
+                              );
+                              final maxCanchas = _canchasPorDefectoSiVacio(
+                                planSeleccionado!,
+                                rawCanchas,
+                              );
+                              final limiteErr = _validarLimitesVsPlan(
+                                planSeleccionado,
+                                maxSedes,
+                                maxCanchas,
+                              );
+                              if (limiteErr != null) {
+                                ScaffoldMessenger.of(rootContext).showSnackBar(
+                                  SnackBar(content: Text(limiteErr)),
+                                );
+                                return;
+                              }
                               final docRef = await FirebaseFirestore.instance.collection('lugares').add({
                                 'nombre': nombreController.text,
                                 'ciudadId': ciudadSeleccionada!,
@@ -1101,7 +1214,16 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                                     imageFile: imagenSeleccionada!,
                                   );
                                   await docRef.update({'fotoUrl': url});
-                                } catch (_) {}
+                                } catch (e) {
+                                  if (rootContext.mounted) {
+                                    ScaffoldMessenger.of(rootContext).showSnackBar(
+                                      SnackBar(
+                                        content: Text('No se pudo subir la imagen: $e'),
+                                        backgroundColor: Colors.orange.shade800,
+                                      ),
+                                    );
+                                  }
+                                }
                               }
                               Navigator.of(dialogContext).pop();
                               final prov = Provider.of<LugarProvider>(rootContext, listen: false);
@@ -1286,38 +1408,11 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                       onChanged: (value) {
                         setState(() {
                           planSeleccionado = value;
-                          // Opcionalmente actualizar valores por defecto al cambiar de plan
-                          int? defSedes;
-                          int? defCanchas;
-                          switch ((value ?? '').toLowerCase()) {
-                            case 'basico':
-                              defSedes = 1;
-                              defCanchas = 2;
-                              break;
-                            case 'premium':
-                              defSedes = 3;
-                              defCanchas = 6;
-                              break;
-                            case 'pro':
-                              defSedes = null;
-                              defCanchas = null;
-                              break;
-                            case 'prueba':
-                              defSedes = 1;
-                              defCanchas = 2;
-                              break;
-                            default:
-                              defSedes = null;
-                              defCanchas = null;
-                          }
-                          if (lugar.maxSedes == null) {
-                            maxSedesController.text =
-                                defSedes != null ? defSedes.toString() : '';
-                          }
-                          if (lugar.maxCanchas == null) {
-                            maxCanchasController.text =
-                                defCanchas != null ? defCanchas.toString() : '';
-                          }
+                          _aplicarMaximosPorPlan(
+                            value,
+                            maxSedesController,
+                            maxCanchasController,
+                          );
                         });
                       },
                     ),
@@ -1351,6 +1446,17 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                         ),
                       ],
                     ),
+                    if (planSeleccionado != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _hintLimitesPlan(planSeleccionado),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -1431,10 +1537,29 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                               final valorPlan = double.tryParse(
                                 valorPlanController.text.replaceAll(',', '.'),
                               );
-                              final maxSedes =
+                              final rawSedes =
                                   int.tryParse(maxSedesController.text.trim());
-                              final maxCanchas =
+                              final rawCanchas =
                                   int.tryParse(maxCanchasController.text.trim());
+                              final maxSedes = _sedesPorDefectoSiVacio(
+                                planSeleccionado!,
+                                rawSedes,
+                              );
+                              final maxCanchas = _canchasPorDefectoSiVacio(
+                                planSeleccionado!,
+                                rawCanchas,
+                              );
+                              final limiteErr = _validarLimitesVsPlan(
+                                planSeleccionado,
+                                maxSedes,
+                                maxCanchas,
+                              );
+                              if (limiteErr != null) {
+                                ScaffoldMessenger.of(rootContext).showSnackBar(
+                                  SnackBar(content: Text(limiteErr)),
+                                );
+                                return;
+                              }
                               final update = {
                                 'nombre': nombreController.text,
                                 'ciudadId': ciudadSeleccionada!,
@@ -1466,7 +1591,16 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
                                     imageFile: imagenNueva!,
                                   );
                                   update['fotoUrl'] = url;
-                                } catch (_) {}
+                                } catch (e) {
+                                  if (rootContext.mounted) {
+                                    ScaffoldMessenger.of(rootContext).showSnackBar(
+                                      SnackBar(
+                                        content: Text('No se pudo subir la imagen: $e'),
+                                        backgroundColor: Colors.orange.shade800,
+                                      ),
+                                    );
+                                  }
+                                }
                               }
                               Navigator.of(dialogContext).pop();
                               await Provider.of<LugarProvider>(rootContext, listen: false).actualizarLugar(
@@ -1494,20 +1628,33 @@ class _GestionLugaresPageState extends State<GestionLugaresPage>
   }
 
   void _mostrarDialogoEliminarLugar(Lugar lugar) {
+    final rootContext = context;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Eliminar Lugar'),
         content: Text('¿Estás seguro de que quieres eliminar el lugar "${lugar.nombre}"?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Provider.of<LugarProvider>(context, listen: false).eliminarLugar(lugar.id);
-              Navigator.pop(context);
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              final prov =
+                  Provider.of<LugarProvider>(rootContext, listen: false);
+              await prov.eliminarLugar(lugar.id);
+              if (!rootContext.mounted) return;
+              final err = prov.errorMessage;
+              if (err != null) {
+                ScaffoldMessenger.of(rootContext).showSnackBar(
+                  SnackBar(
+                    content: Text(err),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,

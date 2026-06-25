@@ -157,38 +157,18 @@ class SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fadeController.forward();
-      _registerAdminTokenForAuditNotifications();
-      // En web el AuthProvider puede cargar lugarId después; re-registrar token cuando ya esté disponible.
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) _registerAdminTokenForAuditNotifications();
-      });
+      // Registrar token para notificaciones de auditoría (superadmin) al entrar al dashboard
+      _registerAuditNotificationToken();
     });
   }
 
-  Future<void> _registerAdminTokenForAuditNotifications() async {
-    final auth = Provider.of<app_auth.AuthProvider>(context, listen: false);
-    var ciudadId = auth.currentCiudadId;
-    final lugarId = auth.currentLugarId;
-    // Si el usuario tiene lugar pero no ciudad (ej. superadmin con Ciudad: null), obtener ciudad del lugar.
-    if ((ciudadId == null || ciudadId.isEmpty) && lugarId != null && lugarId.isNotEmpty) {
-      try {
-        final lugarDoc = await FirebaseFirestore.instance
-            .collection('lugares')
-            .doc(lugarId)
-            .get();
-        if (lugarDoc.exists && lugarDoc.data() != null) {
-          ciudadId = lugarDoc.data()!['ciudadId'] as String?;
-        }
-      } catch (e) {
-        debugPrint('PushNotificationService: no se pudo obtener ciudadId del lugar: $e');
+  Future<void> _registerAuditNotificationToken() async {
+    try {
+      final lugarId = await LugarHelper.getLugarId();
+      if (lugarId != null && lugarId.isNotEmpty) {
+        await PushNotificationService().registerTokenForAuditAlerts(lugarId);
       }
-    }
-    if (ciudadId != null && ciudadId.isNotEmpty) {
-      await PushNotificationService().updateCiudadForNotifications(
-        ciudadId,
-        lugarId: lugarId,
-      );
-    }
+    } catch (_) {}
   }
 
   Future<void> _initPendingReservationsStream() async {

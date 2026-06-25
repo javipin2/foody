@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "518497313333",
+    "project_id": "foody-pin2",
+    "storage_bucket": "foody-pin2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:518497313333:android:297b2a5ff22e021866877c",
+        "android_client_info": {
+          "package_name": "app.foody.cliente"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADdo_HGzxWu-TCuShljDONPkKq1iFNeFc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:518497313333:android:c06f1118abf2288166877c",
+        "android_client_info": {
+          "package_name": "app.foody.equipo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyADdo_HGzxWu-TCuShljDONPkKq1iFNeFc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

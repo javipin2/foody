@@ -1,14 +1,53 @@
 // lib/screens/audit_screen.dart
 
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:reserva_canchas/models/audit_log.dart';
 import 'package:reserva_canchas/providers/audit_provider.dart';
-import 'package:reserva_canchas/services/cleanup_service.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+
+/// Tokens visuales — pantalla de auditoría (solo UI).
+final class _AuditTheme {
+  const _AuditTheme._();
+  static const Color bg = Color(0xFFF1F5F9);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color ink = Color(0xFF0F172A);
+  static const Color muted = Color(0xFF64748B);
+  static const Color border = Color(0xFFE2E8F0);
+  static const Color accent = Color(0xFF0D9488);
+  static const Color accentDark = Color(0xFF0F766E);
+  static const Color danger = Color(0xFFDC2626);
+}
+
+class _AuditCardShell extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  const _AuditCardShell({required this.child, this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding ?? const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _AuditTheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _AuditTheme.border),
+        boxShadow: [
+          BoxShadow(
+            color: _AuditTheme.ink.withValues(alpha: 0.06),
+            blurRadius: 32,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
 
 class AuditScreen extends StatefulWidget {
   const AuditScreen({super.key});
@@ -17,30 +56,22 @@ class AuditScreen extends StatefulWidget {
   _AuditScreenState createState() => _AuditScreenState();
 }
 
-class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStateMixin {
+class _AuditScreenState extends State<AuditScreen> {
   String _filtroRapidoFecha = 'hoy'; // hoy, ayer, semana, mes, personalizado
   String _filtroAccion = 'todas';
   String _filtroRiesgo = 'todos';
   DateTime? _fechaInicioPersonalizada;
   DateTime? _fechaFinPersonalizada;
-  bool _isCleaningUp = false;
-  Map<String, int> _cleanupStats = {};
   Timer? _autoRefreshTimer;
-  bool _autoRefreshEnabled = true;
-  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<AuditProvider>();
       provider.cargarAuditoria().then((_) {
         _aplicarFiltroRapido('hoy', provider);
       });
-      
-      _cargarEstadisticasLimpieza();
       _iniciarAutoRefresh();
     });
   }
@@ -48,19 +79,16 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     _autoRefreshTimer?.cancel();
-    _tabController.dispose();
     super.dispose();
   }
 
   void _iniciarAutoRefresh() {
     _autoRefreshTimer?.cancel();
-    if (_autoRefreshEnabled) {
-      _autoRefreshTimer = Timer.periodic(Duration(seconds: 30), (timer) {
-        if (mounted) {
-          context.read<AuditProvider>().cargarAuditoria(forzarRecarga: true);
-        }
-      });
-    }
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) {
+        context.read<AuditProvider>().cargarAuditoria(forzarRecarga: true);
+      }
+    });
   }
 
   Future<void> _aplicarFiltroRapido(String tipo, AuditProvider provider) async {
@@ -109,79 +137,51 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: _AuditTheme.bg,
       appBar: AppBar(
         title: Row(
           children: [
             Container(
-              padding: EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(Icons.security, size: 24),
+              child: const Icon(Icons.verified_user_outlined, size: 22),
             ),
-            SizedBox(width: 12),
-            Text('Auditoría', style: GoogleFonts.montserrat(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Auditoría',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  Text(
+                    'Actividad y riesgo del sistema',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.indigo.shade700,
+        backgroundColor: _AuditTheme.ink,
         foregroundColor: Colors.white,
-        elevation: 2,
-        actions: [
-          Tooltip(
-            message: _autoRefreshEnabled ? 'Auto-refresh activado' : 'Auto-refresh desactivado',
-            child: IconButton(
-              icon: Icon(_autoRefreshEnabled ? Icons.sync : Icons.sync_disabled),
-              onPressed: () {
-                setState(() {
-                  _autoRefreshEnabled = !_autoRefreshEnabled;
-                });
-                _iniciarAutoRefresh();
-              },
-            ),
-          ),
-          IconButton(
-            icon: Stack(
-              children: [
-                Icon(Icons.notifications),
-                Consumer<AuditProvider>(
-                  builder: (context, provider, _) {
-                    final criticas = provider.estadisticas['critico'] ?? 0;
-                    if (criticas > 0) {
-                      return Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: BoxConstraints(minWidth: 16, minHeight: 16),
-                          child: Text(
-                            criticas.toString(),
-                            style: TextStyle(fontSize: 10, color: Colors.white),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    }
-                    return SizedBox.shrink();
-                  },
-                ),
-              ],
-            ),
-            onPressed: _mostrarAlertas,
-            tooltip: 'Alertas críticas',
-          ),
-          IconButton(
-            icon: Icon(Icons.cleaning_services),
-            onPressed: _mostrarLimpieza,
-            tooltip: 'Limpieza de datos',
-          ),
-        ],
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.black26,
       ),
       body: Consumer<AuditProvider>(
         builder: (context, auditProvider, child) {
@@ -190,9 +190,31 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Cargando auditoría...', style: GoogleFonts.montserrat()),
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: _AuditTheme.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Cargando registro de auditoría',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: _AuditTheme.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Un momento…',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 13,
+                      color: _AuditTheme.muted,
+                    ),
+                  ),
                 ],
               ),
             );
@@ -200,18 +222,50 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
 
           if (auditProvider.errorMessage.isNotEmpty) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  SizedBox(height: 16),
-                  Text(auditProvider.errorMessage, style: GoogleFonts.montserrat()),
-                  SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => auditProvider.cargarAuditoria(forzarRecarga: true),
-                    child: Text('Reintentar'),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: _AuditCardShell(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_off_rounded, size: 56, color: _AuditTheme.danger.withValues(alpha: 0.85)),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No se pudo cargar',
+                          style: GoogleFonts.montserrat(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17,
+                            color: _AuditTheme.ink,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          auditProvider.errorMessage,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.montserrat(
+                            fontSize: 13,
+                            color: _AuditTheme.muted,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: () => auditProvider.cargarAuditoria(forzarRecarga: true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _AuditTheme.accent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.refresh_rounded, size: 20),
+                          label: Text('Reintentar', style: GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
             );
           }
@@ -303,87 +357,95 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   }
 
   Widget _buildFiltrosRapidosMobile(AuditProvider auditProvider) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: Colors.white,
-      child: Row(
-        children: [
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _mostrarFiltros(auditProvider),
-              icon: Icon(Icons.filter_list, size: 18),
-              label: Text('Filtros', style: GoogleFonts.montserrat(fontSize: 14)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade600,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Material(
+      color: _AuditTheme.surface,
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                onPressed: () => _mostrarFiltros(auditProvider),
+                icon: const Icon(Icons.tune_rounded, size: 20),
+                label: Text('Filtros', style: GoogleFonts.montserrat(fontSize: 14, fontWeight: FontWeight.w600)),
+                style: FilledButton.styleFrom(
+                  foregroundColor: _AuditTheme.ink,
+                  backgroundColor: _AuditTheme.border.withValues(alpha: 0.45),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
               ),
             ),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: () => _mostrarEstadisticas(auditProvider),
-              icon: Icon(Icons.analytics, size: 18),
-              label: Text('Estadísticas', style: GoogleFonts.montserrat(fontSize: 14)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade600,
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () => _mostrarEstadisticas(auditProvider),
+                icon: const Icon(Icons.insights_rounded, size: 20),
+                label: Text('Resumen', style: GoogleFonts.montserrat(fontSize: 14, fontWeight: FontWeight.w600)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _AuditTheme.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFiltrosCard(AuditProvider auditProvider) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
+  Widget _buildFiltrosCard(AuditProvider auditProvider, [StateSetter? sheetSetState]) {
+    return _AuditCardShell(
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.blue.shade600, Colors.indigo.shade600],
-              ),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
             child: Row(
               children: [
-                Icon(Icons.tune, color: Colors.white, size: 24),
-                SizedBox(width: 12),
-                Text(
-                  'Filtros',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: _AuditTheme.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.tune_rounded, color: _AuditTheme.accentDark, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Filtros',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: _AuditTheme.ink,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      Text(
+                        'Periodo, riesgo y tipo de acción',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 12,
+                          color: _AuditTheme.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
+          Divider(height: 1, thickness: 1, color: _AuditTheme.border),
           Padding(
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -406,7 +468,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                         _fechaInicioPersonalizada = null;
                         _fechaFinPersonalizada = null;
                       });
+                      sheetSetState?.call(() {});
                       await _aplicarFiltroRapido('hoy', auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipFiltro('Ayer', 'ayer', _filtroRapidoFecha == 'ayer', () async {
                       setState(() {
@@ -414,7 +478,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                         _fechaInicioPersonalizada = null;
                         _fechaFinPersonalizada = null;
                       });
+                      sheetSetState?.call(() {});
                       await _aplicarFiltroRapido('ayer', auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipFiltro('Semana', 'semana', _filtroRapidoFecha == 'semana', () async {
                       setState(() {
@@ -422,7 +488,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                         _fechaInicioPersonalizada = null;
                         _fechaFinPersonalizada = null;
                       });
+                      sheetSetState?.call(() {});
                       await _aplicarFiltroRapido('semana', auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipFiltro('Mes', 'mes', _filtroRapidoFecha == 'mes', () async {
                       setState(() {
@@ -430,9 +498,11 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                         _fechaInicioPersonalizada = null;
                         _fechaFinPersonalizada = null;
                       });
+                      sheetSetState?.call(() {});
                       await _aplicarFiltroRapido('mes', auditProvider);
+                      sheetSetState?.call(() {});
                     }),
-                    _buildChipFiltro('Personalizado', 'personalizado', _filtroRapidoFecha == 'personalizado', () {
+                    _buildChipFiltro('Personalizado', 'personalizado', _filtroRapidoFecha == 'personalizado', () async {
                       setState(() {
                         _filtroRapidoFecha = 'personalizado';
                         if (_fechaInicioPersonalizada == null) {
@@ -442,13 +512,15 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                           _fechaFinPersonalizada = DateTime.now();
                         }
                       });
-                      _aplicarFiltrosPersonalizados(auditProvider);
+                      sheetSetState?.call(() {});
+                      await _aplicarFiltrosPersonalizados(auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                   ],
                 ),
                 if (_filtroRapidoFecha == 'personalizado') ...[
                   SizedBox(height: 16),
-                  _buildRangoFechasPersonalizado(auditProvider),
+                  _buildRangoFechasPersonalizado(auditProvider, sheetSetState),
                 ],
                 SizedBox(height: 20),
                 Text(
@@ -466,23 +538,33 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                   children: [
                     _buildChipRiesgo('Todos', 'todos', Colors.grey, _filtroRiesgo == 'todos', () async {
                       setState(() => _filtroRiesgo = 'todos');
+                      sheetSetState?.call(() {});
                       await _aplicarFiltros(auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipRiesgo('Crítico', 'critico', Colors.red, _filtroRiesgo == 'critico', () async {
                       setState(() => _filtroRiesgo = 'critico');
+                      sheetSetState?.call(() {});
                       await _aplicarFiltros(auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipRiesgo('Alto', 'alto', Colors.orange, _filtroRiesgo == 'alto', () async {
                       setState(() => _filtroRiesgo = 'alto');
+                      sheetSetState?.call(() {});
                       await _aplicarFiltros(auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipRiesgo('Medio', 'medio', Colors.yellow.shade700, _filtroRiesgo == 'medio', () async {
                       setState(() => _filtroRiesgo = 'medio');
+                      sheetSetState?.call(() {});
                       await _aplicarFiltros(auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                     _buildChipRiesgo('Bajo', 'bajo', Colors.green, _filtroRiesgo == 'bajo', () async {
                       setState(() => _filtroRiesgo = 'bajo');
+                      sheetSetState?.call(() {});
                       await _aplicarFiltros(auditProvider);
+                      sheetSetState?.call(() {});
                     }),
                   ],
                 ),
@@ -525,7 +607,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                     )).toList(),
                     onChanged: (value) async {
                       setState(() => _filtroAccion = value!);
+                      sheetSetState?.call(() {});
                       await _aplicarFiltros(auditProvider);
+                      sheetSetState?.call(() {});
                     },
                   ),
                 ),
@@ -534,7 +618,7 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () async => await _limpiarFiltros(auditProvider),
+                        onPressed: () async => _limpiarFiltros(auditProvider, sheetSetState),
                         icon: Icon(Icons.clear, size: 18),
                         label: Text('Limpiar', style: GoogleFonts.montserrat()),
                         style: OutlinedButton.styleFrom(
@@ -556,23 +640,30 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   }
 
   Widget _buildChipFiltro(String label, String value, bool selected, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? Colors.blue.shade600 : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? Colors.blue.shade600 : Colors.grey.shade300,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? _AuditTheme.accent : _AuditTheme.border.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: selected ? _AuditTheme.accentDark : _AuditTheme.border,
+              width: 1,
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.montserrat(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: selected ? Colors.white : Colors.grey.shade700,
+          child: Text(
+            label,
+            style: GoogleFonts.montserrat(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? Colors.white : _AuditTheme.ink,
+            ),
           ),
         ),
       ),
@@ -580,45 +671,51 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   }
 
   Widget _buildChipRiesgo(String label, String value, Color color, bool selected, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? color : color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? color : color.withOpacity(0.3),
-            width: selected ? 2 : 1,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? color : color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: selected ? color : color.withValues(alpha: 0.35),
+              width: selected ? 2 : 1,
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: selected ? Colors.white : color,
-                shape: BoxShape.circle,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: selected ? Colors.white : color,
+                  shape: BoxShape.circle,
+                ),
               ),
-            ),
-            SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.montserrat(
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-                color: selected ? Colors.white : color,
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: GoogleFonts.montserrat(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                  color: selected ? Colors.white : color,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildRangoFechasPersonalizado(AuditProvider auditProvider) {
+  Widget _buildRangoFechasPersonalizado(AuditProvider auditProvider, [StateSetter? sheetSetState]) {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -656,7 +753,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                           _fechaFinPersonalizada = _fechaInicioPersonalizada;
                         }
                       });
+                      sheetSetState?.call(() {});
                       await _aplicarFiltrosPersonalizados(auditProvider);
+                      sheetSetState?.call(() {});
                     }
                   },
                   child: Container(
@@ -717,7 +816,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
                           _fechaInicioPersonalizada = _fechaFinPersonalizada;
                         }
                       });
+                      sheetSetState?.call(() {});
                       await _aplicarFiltrosPersonalizados(auditProvider);
+                      sheetSetState?.call(() {});
                     }
                   },
                   child: Container(
@@ -770,50 +871,55 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
 
   Widget _buildEstadisticasCard(AuditProvider auditProvider) {
     final estadisticas = auditProvider.estadisticas;
-    
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
+
+    return _AuditCardShell(
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.green.shade600, Colors.teal.shade600],
-              ),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
             child: Row(
               children: [
-                Icon(Icons.analytics, color: Colors.white, size: 24),
-                SizedBox(width: 12),
-                Text(
-                  'Estadísticas',
-                  style: GoogleFonts.montserrat(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14B8A6).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.insights_rounded, color: Color(0xFF0D9488), size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Resumen por riesgo',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: _AuditTheme.ink,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      Text(
+                        'Conteos del periodo filtrado',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 12,
+                          color: _AuditTheme.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
+          Divider(height: 1, thickness: 1, color: _AuditTheme.border),
           Padding(
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             child: Column(
               children: [
                 _buildEstadisticaItem('Total', estadisticas['total'], Colors.blue, Icons.list_alt),
@@ -835,19 +941,19 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
 
   Widget _buildEstadisticaItem(String label, int valor, Color color, IconData icon) {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
           Container(
-            padding: EdgeInsets.all(8),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color, size: 20),
           ),
@@ -885,89 +991,91 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   Widget _buildResumenSuperior(AuditProvider auditProvider) {
     final estadisticas = auditProvider.estadisticas;
     final entriesFiltradas = auditProvider.entriesFiltradas.length;
-    
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildResumenItem(
-              'Total',
-              estadisticas['total'].toString(),
-              Icons.list_alt,
-              Colors.blue,
+
+    final tiles = <Widget>[
+      _buildResumenItem('Total', estadisticas['total'].toString(), Icons.list_alt_rounded, const Color(0xFF2563EB)),
+      _buildResumenItem('Críticas', estadisticas['critico'].toString(), Icons.error_outline_rounded, _AuditTheme.danger),
+      _buildResumenItem('Altas', estadisticas['alto'].toString(), Icons.warning_amber_rounded, const Color(0xFFEA580C)),
+      _buildResumenItem('En vista', entriesFiltradas.toString(), Icons.visibility_rounded, _AuditTheme.accentDark),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 560;
+        if (narrow) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _AuditCardShell(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < tiles.length; i++) ...[
+                        if (i > 0)
+                          VerticalDivider(width: 1, thickness: 1, color: _AuditTheme.border, indent: 8, endIndent: 8),
+                        SizedBox(width: 112, child: tiles[i]),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: _AuditCardShell(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            child: Row(
+              children: [
+                for (var i = 0; i < tiles.length; i++) ...[
+                  if (i > 0) Container(width: 1, height: 72, color: _AuditTheme.border),
+                  Expanded(child: tiles[i]),
+                ],
+              ],
             ),
           ),
-          Container(width: 1, height: 60, color: Colors.grey.shade200),
-          Expanded(
-            child: _buildResumenItem(
-              'Críticas',
-              estadisticas['critico'].toString(),
-              Icons.error,
-              Colors.red,
-            ),
-          ),
-          Container(width: 1, height: 60, color: Colors.grey.shade200),
-          Expanded(
-            child: _buildResumenItem(
-              'Altas',
-              estadisticas['alto'].toString(),
-              Icons.warning,
-              Colors.orange,
-            ),
-          ),
-          Container(width: 1, height: 60, color: Colors.grey.shade200),
-          Expanded(
-            child: _buildResumenItem(
-              'Filtradas',
-              entriesFiltradas.toString(),
-              Icons.filter_list,
-              Colors.green,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildResumenItem(String label, String valor, IconData icon, Color color) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, color: color, size: 28),
+          child: Icon(icon, color: color, size: 24),
         ),
-        SizedBox(height: 8),
+        const SizedBox(height: 8),
         Text(
           valor,
           style: GoogleFonts.montserrat(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
             color: color,
+            letterSpacing: -0.5,
           ),
         ),
-        SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: GoogleFonts.montserrat(
-            fontSize: 12,
-            color: Colors.grey.shade600,
-            fontWeight: FontWeight.w500,
+            fontSize: 11,
+            color: _AuditTheme.muted,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
           ),
         ),
       ],
@@ -980,74 +1088,101 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
     
     if (entries.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 80, color: Colors.grey.shade300),
-            SizedBox(height: 16),
-            Text(
-              'No se encontraron entradas',
-              style: GoogleFonts.montserrat(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: _AuditTheme.border.withValues(alpha: 0.35),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.manage_search_rounded, size: 56, color: _AuditTheme.muted.withValues(alpha: 0.7)),
               ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Intenta ajustar los filtros',
-              style: GoogleFonts.montserrat(
-                fontSize: 14,
-                color: Colors.grey.shade500,
+              const SizedBox(height: 24),
+              Text(
+                'Sin resultados',
+                style: GoogleFonts.montserrat(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: _AuditTheme.ink,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                'Prueba otro rango de fechas o relaja los filtros de riesgo.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.montserrat(
+                  fontSize: 13,
+                  color: _AuditTheme.muted,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return RefreshIndicator(
       onRefresh: () => auditProvider.cargarAuditoria(forzarRecarga: true),
-      child: ListView.builder(
-        padding: EdgeInsets.all(16),
-        itemCount: entries.length + (tieneMas ? 1 : 0),
-        itemBuilder: (context, index) {
-          // Último ítem: botón / indicador de "Cargar más"
-          if (tieneMas && index == entries.length) {
-            if (auditProvider.isLoading) {
+      color: _AuditTheme.accent,
+      backgroundColor: _AuditTheme.surface,
+      child: AnimationLimiter(
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          itemCount: entries.length + (tieneMas ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (tieneMas && index == entries.length) {
+              if (auditProvider.isLoading) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: _AuditTheme.accent),
+                    ),
+                  ),
+                );
+              }
+
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: OutlinedButton.icon(
+                    onPressed: () => auditProvider.cargarMasAuditoria(),
+                    icon: const Icon(Icons.expand_more_rounded),
+                    label: Text('Cargar más', style: GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _AuditTheme.accentDark,
+                      side: BorderSide(color: _AuditTheme.accent.withValues(alpha: 0.45)),
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
               );
             }
 
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Center(
-                child: OutlinedButton.icon(
-                  onPressed: () => auditProvider.cargarMasAuditoria(),
-                  icon: Icon(Icons.expand_more),
-                  label: Text(
-                    'Cargar más',
-                    style: GoogleFonts.montserrat(),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+            final entry = entries[index];
+            return AnimationConfiguration.staggeredList(
+              position: index,
+              duration: const Duration(milliseconds: 340),
+              child: SlideAnimation(
+                verticalOffset: 28,
+                child: FadeInAnimation(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildAuditEntryCard(entry),
                   ),
                 ),
               ),
             );
-          }
-
-          final entry = entries[index];
-          return Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: _buildAuditEntryCard(entry),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -1055,121 +1190,122 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
   Widget _buildAuditEntryCard(AuditEntry entry) {
     final usuario = entry.usuarioNombre.isNotEmpty ? entry.usuarioNombre : 'Usuario';
     final avatarLetter = usuario.trim().isNotEmpty ? usuario.trim()[0].toUpperCase() : 'U';
+    final risk = entry.colorNivelRiesgo;
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        onTap: () => _mostrarDetalleEntry(entry),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: entry.colorNivelRiesgo.withOpacity(0.3),
-              width: entry.nivelRiesgo == 'critico' ? 2 : 1,
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: entry.colorNivelRiesgo.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: entry.colorNivelRiesgo.withOpacity(0.3)),
-                  ),
-                  child: Icon(entry.iconoNivelRiesgo, color: entry.colorNivelRiesgo, size: 24),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 14,
-                            backgroundColor: Colors.blueGrey.shade100,
-                            child: Text(
-                              avatarLetter,
-                              style: GoogleFonts.montserrat(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blueGrey.shade700,
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  usuario,
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade800,
-                                  ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  entry.fechaFormateada,
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        _formatDescription(entry),
-                        style: GoogleFonts.montserrat(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                          height: 1.4,
-                          color: Colors.grey.shade800,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      SizedBox(height: 8),
-                      _buildChipsResumen(entry),
-                    ],
-                  ),
-                ),
-                SizedBox(width: 8),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: entry.colorNivelRiesgo.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: entry.colorNivelRiesgo.withOpacity(0.3)),
-                  ),
-                  child: Text(
-                    entry.nombreNivelRiesgo,
-                    style: GoogleFonts.montserrat(
-                      color: entry.colorNivelRiesgo,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return Material(
+      color: _AuditTheme.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: risk.withValues(alpha: entry.nivelRiesgo == 'critico' ? 0.55 : 0.22),
+          width: entry.nivelRiesgo == 'critico' ? 1.5 : 1,
         ),
       ),
+      child: InkWell(
+        onTap: () => _mostrarDetalleEntry(entry),
+        borderRadius: BorderRadius.circular(16),
+        splashColor: _AuditTheme.accent.withValues(alpha: 0.08),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: entry.colorNivelRiesgo.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: entry.colorNivelRiesgo.withValues(alpha: 0.28)),
+                ),
+                child: Icon(entry.iconoNivelRiesgo, color: entry.colorNivelRiesgo, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: Colors.blueGrey.shade100,
+                          child: Text(
+                            avatarLetter,
+                            style: GoogleFonts.montserrat(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                usuario,
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                entry.fechaFormateada,
+                                style: GoogleFonts.montserrat(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _formatDescription(entry),
+                      style: GoogleFonts.montserrat(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        height: 1.4,
+                        color: Colors.grey.shade800,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildChipsResumen(entry),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: entry.colorNivelRiesgo.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: entry.colorNivelRiesgo.withValues(alpha: 0.28)),
+                ),
+                child: Text(
+                  entry.nombreNivelRiesgo,
+                  style: GoogleFonts.montserrat(
+                    color: entry.colorNivelRiesgo,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        ),
     );
   }
 
@@ -1286,7 +1422,7 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _limpiarFiltros(AuditProvider auditProvider) async {
+  Future<void> _limpiarFiltros(AuditProvider auditProvider, [StateSetter? sheetSetState]) async {
     setState(() {
       _filtroRapidoFecha = 'hoy';
       _filtroAccion = 'todas';
@@ -1294,7 +1430,9 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
       _fechaInicioPersonalizada = null;
       _fechaFinPersonalizada = null;
     });
+    sheetSetState?.call(() {});
     await _aplicarFiltroRapido('hoy', auditProvider);
+    sheetSetState?.call(() {});
   }
 
   void _mostrarFiltros(AuditProvider auditProvider) {
@@ -1302,34 +1440,39 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.85,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              margin: EdgeInsets.only(top: 12, bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
+      barrierColor: _AuditTheme.ink.withValues(alpha: 0.35),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            decoration: const BoxDecoration(
+              color: _AuditTheme.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(color: Color(0x1A0F172A), blurRadius: 24, offset: Offset(0, -4)),
+              ],
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: _buildFiltrosCard(auditProvider),
-              ),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 12, bottom: 16),
+                  decoration: BoxDecoration(
+                    color: _AuditTheme.border,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _buildFiltrosCard(auditProvider, setModalState),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -1339,24 +1482,25 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: _AuditTheme.ink.withValues(alpha: 0.35),
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.7,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
+        decoration: const BoxDecoration(
+          color: _AuditTheme.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(color: Color(0x1A0F172A), blurRadius: 24, offset: Offset(0, -4)),
+          ],
         ),
         child: Column(
           children: [
             Container(
               width: 40,
               height: 4,
-              margin: EdgeInsets.only(top: 12, bottom: 20),
+              margin: const EdgeInsets.only(top: 12, bottom: 16),
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
+                color: _AuditTheme.border,
+                borderRadius: BorderRadius.circular(3),
               ),
             ),
             Expanded(
@@ -1371,239 +1515,6 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
     );
   }
 
-  void _mostrarAlertas() async {
-    final auditProvider = context.read<AuditProvider>();
-    final alertas = await auditProvider.obtenerAlertasNoLeidas();
-    
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          constraints: BoxConstraints(maxWidth: 700, maxHeight: 600),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.red.shade50, Colors.red.shade100],
-                  ),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(Icons.warning, color: Colors.red.shade600, size: 24),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Alertas Críticas',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red.shade800,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            '${alertas.length} alertas pendientes',
-                            style: GoogleFonts.montserrat(
-                              color: Colors.red.shade600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.red.shade300),
-                      ),
-                      child: Text(
-                        '${alertas.length}',
-                        style: GoogleFonts.montserrat(
-                          color: Colors.red.shade700,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: Container(
-                  padding: EdgeInsets.all(24),
-                  child: alertas.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.check_circle_outline, size: 64, color: Colors.green.shade400),
-                              SizedBox(height: 16),
-                              Text(
-                                'No hay alertas pendientes',
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 18,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: alertas.length,
-                          itemBuilder: (context, index) {
-                            final alerta = alertas[index];
-                            return Container(
-                              margin: EdgeInsets.only(bottom: 16),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade50,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.red.shade200),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      padding: EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.shade100,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
-                                    ),
-                                    SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            alerta['titulo'],
-                                            style: GoogleFonts.montserrat(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.red.shade800,
-                                            ),
-                                          ),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            alerta['descripcion'],
-                                            style: GoogleFonts.montserrat(
-                                              fontSize: 14,
-                                              color: Colors.grey.shade700,
-                                            ),
-                                          ),
-                                          SizedBox(height: 12),
-                                          Row(
-                                            children: [
-                                              Icon(Icons.person, size: 16, color: Colors.grey.shade500),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                alerta['usuario'],
-                                                style: GoogleFonts.montserrat(
-                                                  fontSize: 12,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                              ),
-                                              SizedBox(width: 16),
-                                              Icon(Icons.access_time, size: 16, color: Colors.grey.shade500),
-                                              SizedBox(width: 4),
-                                              Text(
-                                                DateFormat('dd/MM/yyyy HH:mm').format(
-                                                  (alerta['timestamp'] as Timestamp).toDate()
-                                                ),
-                                                style: GoogleFonts.montserrat(
-                                                  fontSize: 12,
-                                                  color: Colors.grey.shade600,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      height: 36,
-                                      child: ElevatedButton(
-                                        onPressed: () {
-                                          auditProvider.marcarAlertaLeida(alerta['id']);
-                                          Navigator.pop(context);
-                                          _mostrarAlertas();
-                                        },
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green.shade600,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        ),
-                                        child: Text('Marcar leída', style: GoogleFonts.montserrat(fontSize: 12)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, size: 18),
-                      label: Text('Cerrar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey.shade600,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _mostrarDetalleEntry(AuditEntry entry) {
     showDialog(
       context: context,
@@ -1613,24 +1524,26 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
           final media = MediaQuery.of(context);
           final maxWidth = media.size.width < 600 ? 380.0 : 600.0;
           final maxHeight = media.size.height * 0.9;
+          final dialogWidth = (media.size.width * 0.92).clamp(280.0, maxWidth);
 
-          return Container(
-            width: media.size.width * 0.92,
-            constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+          return SizedBox(
+            width: dialogWidth,
+            height: maxHeight,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          padding: EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: entry.colorNivelRiesgo.withOpacity(0.06),
-                            borderRadius: BorderRadius.circular(12),
+                            color: entry.colorNivelRiesgo.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: entry.colorNivelRiesgo.withValues(alpha: 0.2)),
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2087,317 +2000,5 @@ class _AuditScreenState extends State<AuditScreen> with SingleTickerProviderStat
     }
     
     return entry.entidad;
-  }
-
-  Future<void> _cargarEstadisticasLimpieza() async {
-    try {
-      final stats = await CleanupService.obtenerEstadisticasAntiguos();
-      if (mounted) {
-        setState(() {
-          _cleanupStats = stats;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error cargando estadísticas: $e');
-    }
-  }
-
-  void _mostrarLimpieza() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          constraints: BoxConstraints(maxWidth: 600),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.orange.shade50, Colors.orange.shade100],
-                  ),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(Icons.cleaning_services, color: Colors.orange.shade600, size: 24),
-                    ),
-                    SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Limpieza de Datos',
-                            style: GoogleFonts.montserrat(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange.shade800,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Eliminar datos antiguos (más de 30 días)',
-                            style: GoogleFonts.montserrat(
-                              color: Colors.orange.shade600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildCleanupStats(),
-                      SizedBox(height: 20),
-                      Container(
-                        padding: EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.blue.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.info_outline, color: Colors.blue.shade600, size: 20),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Información sobre la limpieza',
-                                  style: GoogleFonts.montserrat(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue.shade800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 12),
-                            Text(
-                              '• Se eliminarán automáticamente los datos de auditoría con más de 30 días de antigüedad\n'
-                              '• Los datos críticos se mantienen para análisis de seguridad\n'
-                              '• La limpieza se ejecuta automáticamente cada día al iniciar la aplicación',
-                              style: GoogleFonts.montserrat(
-                                fontSize: 14,
-                                color: Colors.blue.shade700,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, size: 18),
-                      label: Text('Cerrar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey.shade600,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: _isCleaningUp ? null : _ejecutarLimpiezaManual,
-                      icon: _isCleaningUp 
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Icon(Icons.cleaning_services, size: 18),
-                      label: Text(_isCleaningUp ? 'Limpiando...' : 'Limpiar Ahora'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade600,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCleanupStats() {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Datos antiguos disponibles para limpieza:',
-            style: GoogleFonts.montserrat(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade800,
-            ),
-          ),
-          SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  'Logs de Auditoría',
-                  _cleanupStats['audit_antiguos']?.toString() ?? '0',
-                  Colors.blue,
-                  Icons.analytics,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 12),
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.shade200),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.warning, color: Colors.orange.shade600, size: 20),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Total: ${_cleanupStats['total_antiguos'] ?? 0} registros antiguos',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.orange.shade800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem(String label, String value, Color color, IconData icon) {
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.montserrat(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          Text(
-            label,
-            style: GoogleFonts.montserrat(
-              fontSize: 12,
-              color: color,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _ejecutarLimpiezaManual() async {
-    setState(() {
-      _isCleaningUp = true;
-    });
-
-    try {
-      final resultados = await CleanupService.ejecutarLimpiezaManual();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ Limpieza completada: ${resultados['audit_eliminados']} logs de auditoría eliminados',
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 4),
-          ),
-        );
-        
-        Navigator.pop(context);
-        await _cargarEstadisticasLimpieza();
-        context.read<AuditProvider>().cargarAuditoria(forzarRecarga: true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error en la limpieza: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isCleaningUp = false;
-        });
-      }
-    }
   }
 }

@@ -1,0 +1,45 @@
+---
+description: Foody — identidad, stack fijo y reglas de oro del proyecto
+alwaysApply: true
+---
+
+# Foody — contexto global
+
+SaaS POS multi-restaurante (LATAM). Base de referencia: **Tu Cancha Fácil** en este repo; producto objetivo: **Foody**.
+
+## Stack (no sugerir alternativas)
+
+- **Flutter**: solo interfaz; entry point único `lib/main.dart` (evolución in-place del repo, ver regla `foody-mismo-repositorio`)
+- **NestJS + TypeScript**: cerebro / toda la lógica de negocio
+- **PostgreSQL** vía **Supabase self-hosted** en VPS (pruebas = PC con Ubuntu)
+- **Supabase**: Auth (staff), Realtime (solo escuchar), Storage (imágenes)
+- **FCM**, impresión **Python** local (WebSocket), **Docker**
+
+Documentación maestra: `INFRAESTRUCTURA/`, memoria: `MEMORIA.md`, entorno: `docs/ENTORNO_LOCAL.md`, **avance vivo: `docs/AVANCE_PROYECTO.md`** (actualizar en cada tarea — regla `foody-avance-documentar.mdc`).
+
+## Flutter = solo UI (sin excepciones)
+
+- Muestra datos del backend o de Realtime (lectura).
+- Captura acciones del usuario y las envía al API (`POST`, `PATCH`, etc.).
+- **Prohibido**: calcular totales, IVA, descuentos, validar stock, decidir precios, escribir en BD crítica, mandar a impresoras.
+- Carrito en pantalla = estado visual; precios y totales mostrados vienen del backend; confirmación siempre vía `POST /pedidos`.
+
+## Backend = cerebro
+
+- Transacciones PostgreSQL atómicas en operaciones críticas.
+- Respuestas: `{ exito, datos, mensaje }` o `{ exito: false, error, mensaje }`.
+- Guards en orden: JWT → UsuarioActivo → SuscripcionActiva → Rol → SuperAdmin (`/super/*`).
+- Toda query de sucursal incluye `sucursal_id`. `auditoria_logs` solo INSERT.
+- **Multi-sucursal:** cada sede es operación aislada (menú, stock, staff, caja). Ver inventario otra sede del mismo restaurante = solo lectura. Spec: `docs/MULTI_SUCURSAL.md`, regla `foody-multi-sucursal.mdc`.
+
+## Código en español
+
+Variables, tablas, comentarios, mensajes al usuario y commits en español.
+
+## Apps Flutter
+
+`foody_cliente` (sin login), `foody_admin`, `foody_cocina`, `foody_domiciliario`.
+
+## UI Foody
+
+Primario `#FF6B35`, secundario `#2EC4B6`, acento `#FFE66D`. Poppins + Inter.

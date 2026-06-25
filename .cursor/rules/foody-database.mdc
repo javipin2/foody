@@ -1,0 +1,23 @@
+---
+description: SQL PostgreSQL Foody — sucursal_id, migraciones, RLS
+globs: "{foody_supabase,supabase}/**/*.sql"
+alwaysApply: false
+---
+
+# Base de datos Foody
+
+## Esquema
+
+Fuente de verdad: `INFRAESTRUCTURA/esquema_maestro_bd_v3.md`. Migraciones en `foody_supabase/migrations/` (orden numérico).
+
+## Reglas
+
+- PK `uuid` con `gen_random_uuid()`.
+- **`sucursal_id`** en casi todas las tablas operativas — obligatorio en WHERE/INSERT.
+- `pedido_items.precio_unitario`: snapshot al crear pedido, no FK dinámico al precio actual del producto.
+- `auditoria_logs`: solo INSERT; `REVOKE UPDATE, DELETE`.
+- Clientes finales en `dispositivos_cliente`, no en `usuarios`.
+
+## Self-hosted
+
+PostgreSQL corre en Docker en el VPS de pruebas (Ubuntu en tu PC). NestJS usa `DATABASE_URL`; Flutter no conecta a Postgres directo.

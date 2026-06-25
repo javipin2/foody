@@ -1,6 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'app_backend.dart';
 import 'lugar_helper.dart';
 
 /// Planes disponibles para un lugar.
@@ -24,6 +25,21 @@ class PlanFeatureService {
   static LugarPlan _cachedPlan = LugarPlan.desconocido;
   static String? _cachedLugarId;
 
+  static Future<Map<String, dynamic>?> _lugarRow(String lugarId) async {
+    if (!AppBackend.supabaseReady) return null;
+    try {
+      final row = await Supabase.instance.client
+          .from('lugares')
+          .select()
+          .eq('id', lugarId)
+          .maybeSingle();
+      return row == null ? null : Map<String, dynamic>.from(row);
+    } catch (e) {
+      debugPrint('PlanFeatureService: error leyendo lugar: $e');
+      return null;
+    }
+  }
+
   /// Obtener el plan actual del lugar del usuario autenticado (con caché).
   static Future<LugarPlan> getCurrentPlan() async {
     final lugarId = await LugarHelper.getLugarId();
@@ -34,18 +50,13 @@ class PlanFeatureService {
     }
 
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('lugares')
-          .doc(lugarId)
-          .get();
-
-      if (!doc.exists) {
+      final data = await _lugarRow(lugarId);
+      if (data == null) {
         _cachedLugarId = lugarId;
         _cachedPlan = LugarPlan.desconocido;
         return _cachedPlan;
       }
 
-      final data = doc.data() as Map<String, dynamic>;
       final String? planStr = data['plan'] as String?;
       _cachedPlan = _mapStringToPlan(planStr);
       _cachedLugarId = lugarId;
@@ -140,10 +151,13 @@ class PlanFeatureService {
       throw Exception('No se pudo obtener el lugar actual para actualizar el plan.');
     }
 
-    await FirebaseFirestore.instance
-        .collection('lugares')
-        .doc(lugarId)
-        .update({'plan': _mapPlanToString(newPlan)});
+    if (!AppBackend.supabaseReady) {
+      throw Exception('Supabase no configurado.');
+    }
+    await Supabase.instance.client.from('lugares').update({
+      'plan': _mapPlanToString(newPlan),
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', lugarId);
 
     _cachedLugarId = lugarId;
     _cachedPlan = newPlan;
@@ -154,17 +168,12 @@ class PlanFeatureService {
     final lugarId = await LugarHelper.getLugarId();
     if (lugarId == null) return null;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('lugares')
-        .doc(lugarId)
-        .get();
-
-    if (!doc.exists) return null;
-    final data = doc.data() as Map<String, dynamic>;
+    final data = await _lugarRow(lugarId);
+    if (data == null) return null;
 
     final planStr = data['plan'] as String?;
     final plan = _mapStringToPlan(planStr);
-    final dynamic maxSedesField = data['maxSedes'];
+    final dynamic maxSedesField = data['max_sedes'];
 
     int? maxSedes;
     if (maxSedesField is num) {
@@ -181,17 +190,12 @@ class PlanFeatureService {
     final lugarId = await LugarHelper.getLugarId();
     if (lugarId == null) return null;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('lugares')
-        .doc(lugarId)
-        .get();
-
-    if (!doc.exists) return null;
-    final data = doc.data() as Map<String, dynamic>;
+    final data = await _lugarRow(lugarId);
+    if (data == null) return null;
 
     final planStr = data['plan'] as String?;
     final plan = _mapStringToPlan(planStr);
-    final dynamic maxCanchasField = data['maxCanchas'];
+    final dynamic maxCanchasField = data['max_canchas'];
 
     int? maxCanchas;
     if (maxCanchasField is num) {

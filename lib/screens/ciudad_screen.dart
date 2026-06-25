@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/ciudad_provider.dart';
 import '../models/ciudad.dart';
 import '../services/ciudad_preference_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/shared_lugar_link_service.dart';
 import 'lugar_screen.dart';
-import 'programador/programador_login_screen.dart';
+import '../services/app_backend.dart';
 
 class CiudadScreen extends StatefulWidget {
   const CiudadScreen({super.key});
@@ -15,6 +18,12 @@ class CiudadScreen extends StatefulWidget {
 }
 
 class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMixin {
+  static const _bg = Color(0xFFF7F7F7);
+  static const _surface = Colors.white;
+  static const _ink = Color(0xFF111111);
+  static const _muted = Color(0xFF666666);
+  static const _border = Color(0xFFE8E8E8);
+
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -50,6 +59,18 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
     // Cargar ciudades después del build para evitar "setState during build"
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<CiudadProvider>(context, listen: false).fetchCiudades();
+      if (PushNotificationService.consumeRepickCiudadHintAfterPushFailure() &&
+          mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Para recibir promociones de tu ciudad, elige de nuevo la ciudad. '
+              'Así volvemos a registrar las notificaciones en este dispositivo.',
+            ),
+            duration: Duration(seconds: 6),
+          ),
+        );
+      }
     });
   }
 
@@ -70,7 +91,8 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => LugarScreen(ciudad: ciudadGuardada),
+                builder: (context) =>
+                    LugarScreen(ciudad: ciudadGuardada, restartAmbientMusic: true),
               ),
             );
           } else {
@@ -81,7 +103,10 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => LugarScreen(ciudad: primeraCiudad),
+                  builder: (context) => LugarScreen(
+                    ciudad: primeraCiudad,
+                    restartAmbientMusic: true,
+                  ),
                 ),
               );
             }
@@ -94,7 +119,10 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => LugarScreen(ciudad: primeraCiudad),
+                builder: (context) => LugarScreen(
+                  ciudad: primeraCiudad,
+                  restartAmbientMusic: true,
+                ),
               ),
             );
           }
@@ -102,41 +130,23 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
         return false;
       },
       child: Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: _bg,
       appBar: AppBar(
         title: const Text(
           'Seleccionar Ciudad',
           style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: 0.3,
+            fontWeight: FontWeight.w600,
+            color: _ink,
+            letterSpacing: -0.2,
           ),
         ),
-        backgroundColor: const Color(0xFF2E7D60),
-        foregroundColor: Colors.white,
+        backgroundColor: _surface,
+        foregroundColor: _ink,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.admin_panel_settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProgramadorLoginScreen(),
-                ),
-              );
-            },
-            tooltip: 'Acceso Programador',
-          ),
-        ],
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF2E7D60), Color(0xFF43A077)],
-            ),
-          ),
+        scrolledUnderElevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: _border),
         ),
       ),
       body: Stack(
@@ -153,14 +163,14 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2E7D60)),
+                        valueColor: AlwaysStoppedAnimation<Color>(_ink),
                       ),
                       SizedBox(height: 16),
                       Text(
                         'Cargando ciudades...',
                         style: TextStyle(
                           fontSize: 16,
-                          color: Colors.grey,
+                          color: _muted,
                         ),
                       ),
                     ],
@@ -176,20 +186,24 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
                       Icon(
                         Icons.error_outline,
                         size: 64,
-                        color: Colors.red[300],
+                        color: Colors.black45,
                       ),
                       const SizedBox(height: 16),
                       Text(
                         ciudadProvider.errorMessage!,
-                        style: const TextStyle(fontSize: 16),
+                        style: const TextStyle(fontSize: 16, color: _ink),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () => ciudadProvider.fetchCiudades(),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E7D60),
+                          backgroundColor: _ink,
                           foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         child: const Text('Reintentar'),
                       ),
@@ -206,14 +220,14 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
                       Icon(
                         Icons.location_city,
                         size: 64,
-                        color: Colors.grey,
+                        color: Colors.black38,
                       ),
                       SizedBox(height: 16),
                       Text(
                         'No hay ciudades disponibles',
                         style: TextStyle(
                           fontSize: 18,
-                          color: Colors.grey,
+                          color: _muted,
                         ),
                       ),
                     ],
@@ -223,7 +237,7 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
 
               return RefreshIndicator(
                 onRefresh: () => ciudadProvider.fetchCiudades(),
-                color: const Color(0xFF2E7D60),
+                color: _ink,
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: ciudadProvider.ciudades.length,
@@ -240,22 +254,23 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
           if (_isSelectingCiudad)
             Positioned.fill(
               child: Container(
-                color: Colors.black26,
+                color: Colors.black45,
                 child: const Center(
                   child: Card(
                     margin: EdgeInsets.symmetric(horizontal: 48),
+                    color: _surface,
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2E7D60)),
+                            valueColor: AlwaysStoppedAnimation<Color>(_ink),
                           ),
                           SizedBox(height: 16),
                           Text(
                             'Cargando ciudad...',
-                            style: TextStyle(fontSize: 16, color: Colors.black87),
+                            style: TextStyle(fontSize: 16, color: _ink),
                           ),
                         ],
                       ),
@@ -280,62 +295,80 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
           scale: scale,
           child: Card(
             margin: const EdgeInsets.only(bottom: 16),
-            elevation: 6,
-            shadowColor: Colors.black26,
+            color: _surface,
+            elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: _border),
             ),
             child: InkWell(
               onTap: _isSelectingCiudad
                   ? null
                   : () async {
                       setState(() => _isSelectingCiudad = true);
-                      final c = ciudad;
+                      var c = ciudad;
                       try {
+                        // Guardar ciudad primero (rápido, local); navegamos de inmediato.
                         await CiudadPreferenceService.saveSelectedCiudad(c);
-                        await PushNotificationService().updateCiudadForNotifications(c.id);
-                      } catch (_) {}
+                      } catch (e) {
+                        if (mounted) setState(() => _isSelectingCiudad = false);
+                        return;
+                      }
                       if (!mounted) return;
+                      setState(() => _isSelectingCiudad = false);
+                      final pending = await SharedLugarLinkService.peekPending();
+                      if (pending?.ciudadId != null &&
+                          pending!.ciudadId!.isNotEmpty &&
+                          pending.ciudadId != c.id) {
+                        final ciudadDelEnlace =
+                            await _getCiudadById(pending.ciudadId!);
+                        if (ciudadDelEnlace != null) {
+                          c = ciudadDelEnlace;
+                          await CiudadPreferenceService.saveSelectedCiudad(c);
+                        }
+                      }
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => LugarScreen(ciudad: c),
+                          builder: (context) =>
+                              LugarScreen(ciudad: c, restartAmbientMusic: true),
                         ),
-                      ).then((_) {
-                        if (mounted) setState(() => _isSelectingCiudad = false);
-                      });
+                      );
+                      // FCM y registro de token en segundo plano (sin bloquear la UI).
+                      PushNotificationService()
+                          .updateCiudadForNotifications(c.id)
+                          .timeout(
+                            const Duration(seconds: 10),
+                            onTimeout: () {
+                              if (kDebugMode) {
+                                debugPrint(
+                                    'PushNotificationService: updateCiudad timeout');
+                              }
+                            },
+                          )
+                          .catchError((e) {
+                            if (kDebugMode) {
+                              debugPrint(
+                                  'PushNotificationService: error en segundo plano $e');
+                            }
+                          });
                     },
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Colors.white, Colors.green[50]!],
-                  ),
+                  color: _surface,
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 60,
-                      height: 60,
+                      width: 58,
+                      height: 58,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF2E7D60), Color(0xFF4CAF50)],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF2E7D60).withOpacity(0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                        borderRadius: BorderRadius.circular(14),
+                        color: const Color(0xFF111111),
                       ),
                       child: Center(
                         child: Text(
@@ -357,18 +390,18 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
                             ciudad.nombre,
                             style: const TextStyle(
                               fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF2E7D60),
+                              fontWeight: FontWeight.w700,
+                              color: _ink,
                             ),
                           ),
                           const SizedBox(height: 6),
                           Row(
                             children: [
-                              Icon(Icons.location_city, size: 16, color: Colors.grey[600]),
+                              Icon(Icons.location_city, size: 16, color: Colors.grey[700]),
                               const SizedBox(width: 6),
                               Text(
                                 'Código: ${ciudad.codigo}',
-                                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                                style: const TextStyle(fontSize: 13, color: _muted),
                               ),
                             ],
                           ),
@@ -378,12 +411,12 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2E7D60).withOpacity(0.1),
+                        color: const Color(0xFFF2F2F2),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
                         Icons.arrow_forward_ios,
-                        color: Color(0xFF2E7D60),
+                        color: _ink,
                         size: 16,
                       ),
                     ),
@@ -395,5 +428,20 @@ class _CiudadScreenState extends State<CiudadScreen> with TickerProviderStateMix
         );
       },
     );
+  }
+
+  Future<Ciudad?> _getCiudadById(String ciudadId) async {
+    try {
+      if (!AppBackend.supabaseReady) return null;
+      final row = await Supabase.instance.client
+          .from('ciudades')
+          .select()
+          .eq('id', ciudadId)
+          .maybeSingle();
+      if (row == null) return null;
+      return Ciudad.fromSupabase(Map<String, dynamic>.from(row));
+    } catch (_) {
+      return null;
+    }
   }
 }

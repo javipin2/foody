@@ -1,14 +1,17 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:reserva_canchas/providers/audit_provider.dart'; // Para debugPrint
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+
+import 'package:reserva_canchas/providers/audit_provider.dart';
+import 'package:reserva_canchas/services/app_backend.dart';
 
 class SedeProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _sedes = [];
   String _selectedSede = '';
   String _errorMessage = '';
-  String? _lugarId; // Nuevo: ID del lugar para filtrar sedes
+  String? _lugarId;
   String? _lastLoadedLugarId;
   bool _isFetching = false;
 
@@ -20,9 +23,26 @@ class SedeProvider extends ChangeNotifier {
           sede['nombre'] as String: sede['imagen'] as String? ?? ''
       };
   String get selectedSede => _selectedSede;
+
+  /// Id de la fila `sedes` en Supabase (menú, reservas, etc.).
+  String? get selectedSedeId => selectedSedeFirestoreId;
+
+  /// Compatibilidad nombre anterior.
+  String? get selectedSedeFirestoreId {
+    if (_selectedSede.isEmpty) return null;
+    for (final s in _sedes) {
+      if ((s['nombre'] as String?) == _selectedSede) {
+        return s['id'] as String?;
+      }
+    }
+    return null;
+  }
+
   String get errorMessage => _errorMessage;
   String? get lugarId => _lugarId;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  SupabaseClient? get _db =>
+      AppBackend.supabaseReady ? Supabase.instance.client : null;
 
   void setSede(String sede) {
     _selectedSede = sede;
@@ -30,92 +50,86 @@ class SedeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Nuevo: Establecer lugar para filtrar sedes
   void setLugar(String lugarId) {
-    if (_lugarId == lugarId) return; // Evitar notificaciones innecesarias
+    if (_lugarId == lugarId) return;
     _lugarId = lugarId;
     debugPrint('Lugar establecido: $lugarId');
-    // No llamamos fetchSedes aquí para evitar doble carga si el llamador ya la dispara
     notifyListeners();
   }
 
-  // Nuevo: Limpiar lugar
   void clearLugar() {
     _lugarId = null;
     _sedes = [];
     _selectedSede = '';
+    _lastLoadedLugarId = null;
     debugPrint('Lugar limpiado');
     notifyListeners();
   }
 
-  Future<void> fetchSedes() async {
+  Future<void> fetchSedes({bool force = false}) async {
     if (_isFetching) {
       debugPrint('fetchSedes evitado: ya hay una carga en curso');
       return;
     }
+    final db = _db;
+    if (db == null) {
+      _errorMessage = 'Supabase no configurado';
+      notifyListeners();
+      return;
+    }
     try {
       _errorMessage = '';
-      debugPrint('Iniciando fetchSedes desde colección sedes...');
-      debugPrint(
-          'Usuario autenticado: ${FirebaseAuth.instance.currentUser?.uid ?? "No autenticado"}');
-      debugPrint('Lugar ID: $_lugarId');
-
+      debugPrint('fetchSedes desde Supabase...');
       if (_lugarId == null) {
         _errorMessage = 'No se ha seleccionado un lugar';
-        debugPrint('Error: No se ha seleccionado un lugar');
         notifyListeners();
         return;
       }
 
-      if (_lastLoadedLugarId == _lugarId && _sedes.isNotEmpty) {
-        debugPrint('Sedes ya cargadas para lugar $_lugarId, omitiendo recarga');
+      if (!force && _lastLoadedLugarId == _lugarId && _sedes.isNotEmpty) {
+        debugPrint('Sedes ya cargadas para lugar $_lugarId');
         return;
       }
 
       _isFetching = true;
 
-      // Solo validar permisos si el usuario está autenticado y tiene rol
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         try {
-          final userDoc = await FirebaseFirestore.instance
-              .collection('usuarios')
-              .doc(user.uid)
-              .get();
-          
-          if (userDoc.exists) {
-            final userData = userDoc.data()!;
-            final userRole = userData['rol'];
-            final userLugarId = userData['lugarId'];
-            
-            // Solo validar si el usuario tiene un rol (no es visitante)
-            if (userRole != null && userRole != 'programador' && userLugarId != _lugarId) {
+          final prof = await db
+              .from('staff_profiles')
+              .select('rol,lugar_id')
+              .eq('id', user.uid)
+              .maybeSingle();
+          if (prof != null) {
+            final userRole = prof['rol'];
+            final userLugarId = prof['lugar_id'] as String?;
+            if (userRole != null &&
+                userRole != 'programador' &&
+                userLugarId != null &&
+                userLugarId != _lugarId) {
               _errorMessage = 'No tienes permisos para acceder a este lugar';
-              debugPrint('Error: Usuario no autorizado para lugar $_lugarId');
               notifyListeners();
               return;
             }
           }
         } catch (e) {
-          debugPrint('Error verificando permisos: $e');
-          // Si hay error, permitir acceso (fallback para visitantes)
+          debugPrint('Error verificando permisos staff: $e');
         }
       }
 
-      final snapshot = await FirebaseFirestore.instance
-          .collection('sede')
-          .where('lugarId', isEqualTo: _lugarId)
-          .where('activa', isEqualTo: true)
-          .orderBy('nombre')
-          .limit(100)
-          .get();
+      final snapshot = await db
+          .from('sedes')
+          .select()
+          .eq('lugar_id', _lugarId!)
+          .eq('activa', true)
+          .order('nombre', ascending: true)
+          .limit(100);
 
-      debugPrint('Sedes obtenidas para lugar $_lugarId: ${snapshot.docs.length}');
-
-      _sedes = snapshot.docs.map((doc) {
-        final data = doc.data();
+      _sedes = (snapshot as List<dynamic>).map((doc) {
+        final data = Map<String, dynamic>.from(doc as Map);
         return {
-          'id': doc.id,
+          'id': data['id'] as String,
           'nombre': data['nombre'] ?? '',
           'imagen': data['imagen'] ?? '',
           'descripcion': data['descripcion'] ?? '',
@@ -123,32 +137,45 @@ class SedeProvider extends ChangeNotifier {
           'ubicacion': data['ubicacion'] ?? '',
           'latitud': data['latitud'],
           'longitud': data['longitud'],
-          'createdAt': data['createdAt']?.toDate() ?? DateTime.now(),
+          'createdAt': _parseDate(data['created_at']),
         };
       }).toList();
 
-      debugPrint('Sedes cargadas: ${_sedes.map((s) => s['nombre']).toList()}');
       _lastLoadedLugarId = _lugarId;
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al cargar sedes: $e';
       debugPrint('Error en fetchSedes: $e');
       notifyListeners();
-    }
-    finally {
+    } finally {
       _isFetching = false;
     }
   }
 
-  Future<bool> sedeHasCanchas(String nombreSede) async {
-    try {
-      final canchasSnapshot = await FirebaseFirestore.instance
-          .collection('canchas')
-          .where('sede', isEqualTo: nombreSede)
-          .limit(1)
-          .get();
+  DateTime _parseDate(dynamic v) {
+    if (v == null) return DateTime.now();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+    return DateTime.now();
+  }
 
-      return canchasSnapshot.docs.isNotEmpty;
+  Future<bool> sedeHasCanchas(String nombreSede) async {
+    final db = _db;
+    if (db == null) return false;
+    try {
+      final sede = _sedes.cast<Map<String, dynamic>?>().firstWhere(
+            (s) => s != null && s['nombre'] == nombreSede,
+            orElse: () => null,
+          );
+      if (sede == null) return false;
+      final sid = sede['id'] as String?;
+      if (sid == null || sid.isEmpty) return false;
+      final rows = await db
+          .from('canchas')
+          .select('id')
+          .eq('sede_id', sid)
+          .limit(1);
+      return (rows as List).isNotEmpty;
     } catch (e) {
       debugPrint('Error verificando canchas de la sede: $e');
       return false;
@@ -156,46 +183,55 @@ class SedeProvider extends ChangeNotifier {
   }
 
   Future<void> crearSede(String nombreSede,
-      {String? imageUrl, String? descripcion, String? ubicacion, double? latitud, double? longitud}) async {
+      {String? imageUrl,
+      String? descripcion,
+      String? ubicacion,
+      double? latitud,
+      double? longitud}) async {
+    final db = _db;
+    if (db == null) return;
+
     if (nombreSede.isEmpty) {
       _errorMessage = 'El nombre de la sede no puede estar vacío';
-      debugPrint('Error: Nombre de sede vacío');
       notifyListeners();
       return;
     }
 
     if (_sedes.any((sede) => sede['nombre'] == nombreSede)) {
       _errorMessage = 'Ya existe una sede con ese nombre';
-      debugPrint('Error: Sede ya existe');
+      notifyListeners();
+      return;
+    }
+
+    if (_lugarId == null) {
+      _errorMessage = 'No hay lugar seleccionado';
       notifyListeners();
       return;
     }
 
     try {
       _errorMessage = '';
-      debugPrint('Creando sede: $nombreSede');
-
       final defaultImageUrl = imageUrl ??
           'https://images.unsplash.com/photo-1544966503-7cc5ac882d5f?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=200';
+      final id = const Uuid().v4();
 
-      final sedeRef = FirebaseFirestore.instance.collection('sede').doc();
-      await sedeRef.set({
+      await db.from('sedes').insert({
+        'id': id,
+        'lugar_id': _lugarId,
         'nombre': nombreSede,
         'imagen': defaultImageUrl,
         'descripcion': descripcion ?? 'Presione para continuar',
         'ubicacion': ubicacion ?? nombreSede.toLowerCase(),
         'latitud': latitud,
         'longitud': longitud,
-        'lugarId': _lugarId, // ✅ Agregar lugarId
         'activa': true,
-        'createdAt': FieldValue.serverTimestamp(),
+        'created_at': DateTime.now().toIso8601String(),
       });
 
-      // 🔍 AUDITORÍA: Registrar creación de sede
       await AuditProvider.registrarAccion(
         accion: 'crear_sede',
         entidad: 'sede',
-        entidadId: sedeRef.id,
+        entidadId: id,
         datosNuevos: {
           'nombre': nombreSede,
           'imagen': defaultImageUrl,
@@ -214,7 +250,7 @@ class SedeProvider extends ChangeNotifier {
       );
 
       _sedes.add({
-        'id': sedeRef.id,
+        'id': id,
         'nombre': nombreSede,
         'imagen': defaultImageUrl,
         'descripcion': descripcion ?? 'Presione para continuar',
@@ -228,7 +264,6 @@ class SedeProvider extends ChangeNotifier {
       _sedes.sort(
           (a, b) => (a['nombre'] as String).compareTo(b['nombre'] as String));
 
-      debugPrint('Sede creada exitosamente: $nombreSede');
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al crear la sede: $e';
@@ -238,6 +273,9 @@ class SedeProvider extends ChangeNotifier {
   }
 
   Future<void> renombrarSede(String sedeId, String nuevoNombre) async {
+    final db = _db;
+    if (db == null) return;
+
     if (nuevoNombre.isEmpty) {
       _errorMessage = 'El nuevo nombre de la sede no puede estar vacío';
       notifyListeners();
@@ -252,8 +290,6 @@ class SedeProvider extends ChangeNotifier {
 
     try {
       _errorMessage = '';
-      debugPrint('Renombrando sede con ID: $sedeId a $nuevoNombre');
-
       final sedeIndex = _sedes.indexWhere((sede) => sede['id'] == sedeId);
       if (sedeIndex == -1) {
         _errorMessage = 'Sede no encontrada';
@@ -261,31 +297,21 @@ class SedeProvider extends ChangeNotifier {
         return;
       }
 
-      final batch = FirebaseFirestore.instance.batch();
+      final oldName = _sedes[sedeIndex]['nombre'] as String;
 
-      final sedeRef = FirebaseFirestore.instance.collection('sede').doc(sedeId);
-      batch.update(sedeRef, {'nombre': nuevoNombre});
-
-      final canchaDocs = await FirebaseFirestore.instance
-          .collection('canchas')
-          .where('sedeId', isEqualTo: sedeId)
-          .get();
-
-      for (var doc in canchaDocs.docs) {
-        batch.update(doc.reference, {'sede': nuevoNombre});
-      }
-
-      await batch.commit();
+      await db.from('sedes').update({'nombre': nuevoNombre}).eq('id', sedeId);
+      await db
+          .from('reservas')
+          .update({'sede_nombre': nuevoNombre}).eq('sede_id', sedeId);
 
       _sedes[sedeIndex]['nombre'] = nuevoNombre;
       _sedes.sort(
           (a, b) => (a['nombre'] as String).compareTo(b['nombre'] as String));
 
-      if (_selectedSede == _sedes[sedeIndex]['nombre']) {
+      if (_selectedSede == oldName) {
         _selectedSede = nuevoNombre;
       }
 
-      debugPrint('Sede renombrada exitosamente');
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al renombrar la sede: $e';
@@ -296,9 +322,9 @@ class SedeProvider extends ChangeNotifier {
 
   Future<void> actualizarUbicacionSede(
       String sedeId, double? latitud, double? longitud) async {
+    final db = _db;
+    if (db == null) return;
     try {
-      debugPrint('Actualizando ubicación de sede con ID: $sedeId');
-
       final sedeIndex = _sedes.indexWhere((sede) => sede['id'] == sedeId);
       if (sedeIndex == -1) {
         _errorMessage = 'Sede no encontrada';
@@ -312,15 +338,11 @@ class SedeProvider extends ChangeNotifier {
         updateData['longitud'] = longitud;
       }
 
-      await FirebaseFirestore.instance
-          .collection('sede')
-          .doc(sedeId)
-          .update(updateData);
+      await db.from('sedes').update(updateData).eq('id', sedeId);
 
       _sedes[sedeIndex]['latitud'] = latitud;
       _sedes[sedeIndex]['longitud'] = longitud;
 
-      debugPrint('Ubicación actualizada exitosamente');
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al actualizar la ubicación: $e';
@@ -330,11 +352,10 @@ class SedeProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> actualizarImagenSede(
-      String sedeId, String nuevaImagenUrl) async {
+  Future<void> actualizarImagenSede(String sedeId, String nuevaImagenUrl) async {
+    final db = _db;
+    if (db == null) return;
     try {
-      debugPrint('Actualizando imagen de sede con ID: $sedeId');
-
       final sedeIndex = _sedes.indexWhere((sede) => sede['id'] == sedeId);
       if (sedeIndex == -1) {
         _errorMessage = 'Sede no encontrada';
@@ -342,14 +363,10 @@ class SedeProvider extends ChangeNotifier {
         return;
       }
 
-      await FirebaseFirestore.instance
-          .collection('sede')
-          .doc(sedeId)
-          .update({'imagen': nuevaImagenUrl});
+      await db.from('sedes').update({'imagen': nuevaImagenUrl}).eq('id', sedeId);
 
       _sedes[sedeIndex]['imagen'] = nuevaImagenUrl;
 
-      debugPrint('Imagen actualizada exitosamente');
       notifyListeners();
     } catch (e) {
       debugPrint('Error actualizando imagen de sede: $e');
@@ -359,10 +376,10 @@ class SedeProvider extends ChangeNotifier {
   }
 
   Future<void> desactivarSede(String sedeId) async {
+    final db = _db;
+    if (db == null) return;
     try {
       _errorMessage = '';
-      debugPrint('Desactivando sede con ID: $sedeId');
-
       final now = DateTime.now();
       final hoy = DateTime(now.year, now.month, now.day);
 
@@ -375,16 +392,15 @@ class SedeProvider extends ChangeNotifier {
       final nombreSede = _sedes[sedeIndex]['nombre'] as String;
       final datosSedeAnterior = Map<String, dynamic>.from(_sedes[sedeIndex]);
 
-      final reservasActivasQuery = await FirebaseFirestore.instance
-          .collection('reservas')
-          .where('sede', isEqualTo: sedeId)
-          .get();
+      final resRows = await db
+          .from('reservas')
+          .select('id,fecha')
+          .eq('sede_id', sedeId);
 
-      final reservasActivas = reservasActivasQuery.docs.where((doc) {
-        final data = doc.data();
-        final fechaStr = data['fecha'] as String?;
+      final reservasActivas = (resRows as List<dynamic>).where((row) {
+        final m = Map<String, dynamic>.from(row as Map);
+        final fechaStr = m['fecha'] as String?;
         if (fechaStr == null) return false;
-
         try {
           final fechaReserva = DateTime.parse(fechaStr);
           final fechaReservaSinHora =
@@ -403,12 +419,8 @@ class SedeProvider extends ChangeNotifier {
         return;
       }
 
-      await FirebaseFirestore.instance
-          .collection('sede')
-          .doc(sedeId)
-          .update({'activa': false});
+      await db.from('sedes').update({'activa': false}).eq('id', sedeId);
 
-      // 🔍 AUDITORÍA: Registrar desactivación de sede
       await AuditProvider.registrarAccion(
         accion: 'desactivar_sede',
         entidad: 'sede',
@@ -428,7 +440,6 @@ class SedeProvider extends ChangeNotifier {
         _selectedSede = '';
       }
 
-      debugPrint('Sede desactivada exitosamente: $nombreSede');
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al desactivar la sede: $e';
@@ -438,10 +449,10 @@ class SedeProvider extends ChangeNotifier {
   }
 
   Future<void> eliminarSedeCompletamente(String sedeId) async {
+    final db = _db;
+    if (db == null) return;
     try {
       _errorMessage = '';
-      debugPrint('🗑️ Eliminando completamente la sede con ID: $sedeId');
-
       final now = DateTime.now();
       final hoy = DateTime(now.year, now.month, now.day);
 
@@ -453,16 +464,15 @@ class SedeProvider extends ChangeNotifier {
       }
       final nombreSede = _sedes[sedeIndex]['nombre'] as String;
 
-      final reservasActivasQuery = await FirebaseFirestore.instance
-          .collection('reservas')
-          .where('sede', isEqualTo: sedeId)
-          .get();
+      final resRows = await db
+          .from('reservas')
+          .select('id,fecha')
+          .eq('sede_id', sedeId);
 
-      final reservasActivas = reservasActivasQuery.docs.where((doc) {
-        final data = doc.data();
-        final fechaStr = data['fecha'] as String?;
+      final reservasActivas = (resRows as List<dynamic>).where((row) {
+        final m = Map<String, dynamic>.from(row as Map);
+        final fechaStr = m['fecha'] as String?;
         if (fechaStr == null) return false;
-
         try {
           final fechaReserva = DateTime.parse(fechaStr);
           final fechaReservaSinHora =
@@ -481,30 +491,9 @@ class SedeProvider extends ChangeNotifier {
         return;
       }
 
-      final batch = FirebaseFirestore.instance.batch();
-
-      final sedeRef = FirebaseFirestore.instance.collection('sede').doc(sedeId);
-      batch.delete(sedeRef);
-
-      final canchaDocs = await FirebaseFirestore.instance
-          .collection('canchas')
-          .where('sedeId', isEqualTo: sedeId)
-          .get();
-
-      for (var doc in canchaDocs.docs) {
-        batch.delete(doc.reference);
-      }
-
-      final reservaDocs = await FirebaseFirestore.instance
-          .collection('reservas')
-          .where('sede', isEqualTo: sedeId)
-          .get();
-
-      for (var doc in reservaDocs.docs) {
-        batch.delete(doc.reference);
-      }
-
-      await batch.commit();
+      await db.from('reservas').delete().eq('sede_id', sedeId);
+      await db.from('canchas').delete().eq('sede_id', sedeId);
+      await db.from('sedes').delete().eq('id', sedeId);
 
       if (sedeIndex != -1) {
         _sedes.removeAt(sedeIndex);
@@ -514,33 +503,22 @@ class SedeProvider extends ChangeNotifier {
         _selectedSede = '';
       }
 
-      debugPrint('✅ Sede eliminada completamente: $nombreSede');
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al eliminar la sede: $e';
-      debugPrint('❌ Error en eliminarSedeCompletamente: $e');
+      debugPrint('Error en eliminarSedeCompletamente: $e');
       notifyListeners();
     }
   }
 
   Future<void> eliminarSede(String sedeId) async {
+    final db = _db;
+    if (db == null) return;
     try {
       _errorMessage = '';
-      debugPrint('Eliminando sede: $sedeId');
-
-      final canchasSnapshot = await FirebaseFirestore.instance
-          .collection('canchas')
-          .where('sedeId', isEqualTo: sedeId)
-          .get();
-
-      for (var doc in canchasSnapshot.docs) {
-        await doc.reference.delete();
-      }
-
-      await FirebaseFirestore.instance.collection('sede').doc(sedeId).delete();
-
-      debugPrint('Sede $sedeId eliminada con éxito');
-      await fetchSedes();
+      await db.from('canchas').delete().eq('sede_id', sedeId);
+      await db.from('sedes').delete().eq('id', sedeId);
+      await fetchSedes(force: true);
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Error al eliminar sede: $e';
@@ -551,84 +529,88 @@ class SedeProvider extends ChangeNotifier {
   }
 
   Future<String?> getDownloadLinkFromFirebase() async {
+    return getDownloadLinkFromSupabase();
+  }
+
+  Future<String?> getDownloadLinkFromSupabase() async {
+    final db = _db;
+    if (db == null) return null;
     try {
-      DocumentSnapshot linkDoc =
-          await _firestore.collection('link').doc('descarga').get();
-
-      if (linkDoc.exists) {
-        Map<String, dynamic> data = linkDoc.data() as Map<String, dynamic>;
-        return data['apk_url'] as String?;
-      }
-
-      return null;
+      final row = await db
+          .from('app_download_links')
+          .select('apk_url')
+          .eq('id', 'descarga')
+          .maybeSingle();
+      if (row == null) return null;
+      return row['apk_url'] as String?;
     } catch (e) {
-      print('Error al obtener enlace de descarga desde Firebase: $e');
+      debugPrint('Error al obtener enlace de descarga: $e');
       return null;
     }
   }
 
-  // Método alternativo para obtener múltiples campos del documento descarga
   Future<Map<String, dynamic>?> getDownloadInfo() async {
+    final db = _db;
+    if (db == null) return null;
     try {
-      DocumentSnapshot linkDoc =
-          await _firestore.collection('link').doc('descarga').get();
-
-      if (linkDoc.exists) {
-        return linkDoc.data() as Map<String, dynamic>;
-      }
-
-      return null;
+      final row = await db
+          .from('app_download_links')
+          .select()
+          .eq('id', 'descarga')
+          .maybeSingle();
+      return row == null ? null : Map<String, dynamic>.from(row);
     } catch (e) {
-      print('Error al obtener información de descarga: $e');
+      debugPrint('Error al obtener información de descarga: $e');
       return null;
     }
   }
 
-  // Método para verificar si el enlace está activo
   Future<bool> isDownloadLinkActive() async {
+    final db = _db;
+    if (db == null) return false;
     try {
-      DocumentSnapshot linkDoc =
-          await _firestore.collection('link').doc('descarga').get();
-
-      if (linkDoc.exists) {
-        Map<String, dynamic> data = linkDoc.data() as Map<String, dynamic>;
-        return data['active'] ?? true; // Por defecto true si no existe el campo
-      }
-
-      return false;
+      final row = await db
+          .from('app_download_links')
+          .select('active')
+          .eq('id', 'descarga')
+          .maybeSingle();
+      if (row == null) return false;
+      return row['active'] as bool? ?? true;
     } catch (e) {
-      print('Error al verificar estado del enlace: $e');
+      debugPrint('Error al verificar estado del enlace: $e');
       return false;
     }
   }
 
-  // Método para actualizar el enlace de descarga (para admin)
   Future<bool> updateDownloadLink(String newLink) async {
+    final db = _db;
+    if (db == null) return false;
     try {
-      await _firestore.collection('link').doc('descarga').set({
+      await db.from('app_download_links').upsert({
+        'id': 'descarga',
         'apk_url': newLink,
-        'updated_at': FieldValue.serverTimestamp(),
+        'updated_at': DateTime.now().toIso8601String(),
         'active': true,
-      }, SetOptions(merge: true));
-
+      });
       return true;
     } catch (e) {
-      print('Error al actualizar enlace de descarga: $e');
+      debugPrint('Error al actualizar enlace de descarga: $e');
       return false;
     }
   }
 
-  // Método para desactivar el enlace de descarga
   Future<bool> deactivateDownloadLink() async {
+    final db = _db;
+    if (db == null) return false;
     try {
-      await _firestore.collection('link').doc('descarga').update({
+      await db.from('app_download_links').upsert({
+        'id': 'descarga',
         'active': false,
-        'deactivated_at': FieldValue.serverTimestamp(),
+        'deactivated_at': DateTime.now().toIso8601String(),
       });
-
       return true;
     } catch (e) {
-      print('Error al desactivar enlace: $e');
+      debugPrint('Error al desactivar enlace: $e');
       return false;
     }
   }

@@ -1,0 +1,47 @@
+---
+description: Flutter Foody — solo UI, Riverpod, Dio, GoRouter
+globs: lib/**/*.dart
+alwaysApply: false
+---
+
+# Flutter Foody
+
+## Rol del código Dart
+
+Solo **presentación y transporte**: widgets, navegación, llamadas HTTP, suscripción Realtime, `fromJson` para pintar.
+
+```dart
+// ❌ Mal — lógica de negocio en Flutter
+final total = items.fold(0.0, (s, i) => s + i.precio * i.cantidad);
+if (stock < cantidad) return;
+
+// ✅ Bien — mostrar lo que devolvió el backend
+Text('${pedido.totalFormateado}'); // total viene del JSON del API
+```
+
+## Stack objetivo (migración desde Provider legacy)
+
+- Estado: **Riverpod** (o `StatefulWidget` + repository en pantallas aún no migradas)
+- HTTP: **Dio** + interceptor Bearer
+- Rutas: **GoRouter**
+- Estructura preferida: **adaptar** `lib/screens/<pantalla>.dart` existente cuando el flujo coincida; si no, `lib/features/<feature>/` copiando UI/animaciones del legacy
+- Core: `lib/core/constantes/`, `lib/core/tema/`, `lib/core/red/`
+
+## Reutilizar la base (regla `foody-reutilizar-base`)
+
+- Misma pantalla, mismo diseño y animaciones; cambiar **solo** fuente de datos (NestJS) y nombres de modelo (`slug`, `sucursal_id`, etc.).
+- No crear UI paralela “simple” si `lib/screens/` ya tiene la experiencia pulida.
+
+## Supabase en Flutter
+
+- **Realtime**: solo escuchar (pedidos, kanban).
+- **Storage**: subir imágenes de productos (única excepción de escritura directa).
+- **No** insertar/actualizar pedidos, stock, caja ni precios en Supabase desde Flutter.
+
+## Cliente sin login
+
+`device_id` en SharedPreferences; registrar con `POST /dispositivos/registrar`.
+
+## Legacy en este repo
+
+Código bajo `lib/providers/`, `lib/services/pedido_service.dart` con escritura directa a Supabase es **deuda técnica** — al tocarlo, mover lógica a NestJS.

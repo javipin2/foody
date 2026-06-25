@@ -18,6 +18,7 @@ import 'package:reserva_canchas/models/horario.dart';
 import 'package:reserva_canchas/screens/admin/reservas/admin_reservas_horarios_screen.dart';
 import 'package:reserva_canchas/utils/reserva_audit_utils.dart';
 import 'package:reserva_canchas/services/lugar_helper.dart';
+import 'package:reserva_canchas/utils/reserva_slot_ocupado_utils.dart';
 
 
 class EditarReservaScreen extends StatefulWidget {
@@ -625,18 +626,34 @@ void _initializeDataWithDebounce() {
         valoresActuales['sede'] != _valoresOriginales['sede'];
 
     if (cambiosImportantes) {
-      final disponible = await _verificarDisponibilidadCompleta(
-        DateTime.parse(valoresActuales['fecha']),
-        valoresActuales['cancha_id'],
-        valoresActuales['horario'],
+      final lugarId = await LugarHelper.getLugarId();
+      if (lugarId == null) {
+        setState(() { _isSaving = false; });
+        _mostrarError('No se pudo verificar disponibilidad (lugar).');
+        return;
+      }
+      final recurrenteProvider =
+          Provider.of<ReservaRecurrenteProvider>(context, listen: false);
+      await recurrenteProvider.fetchReservasRecurrentes(
+        sede: valoresActuales['sede'] as String,
       );
-
-      if (!disponible) {
-        final continuar = await _mostrarDialogoConflictoHorario();
-        if (!continuar) {
-          setState(() { _isSaving = false; });
-          return;
-        }
+      final ocupado = await turnoEstaOcupado(
+        firestore: FirebaseFirestore.instance,
+        recurrenteProvider: recurrenteProvider,
+        fecha: DateTime.parse(valoresActuales['fecha'] as String),
+        sede: valoresActuales['sede'] as String,
+        canchaId: valoresActuales['cancha_id'] as String,
+        lugarId: lugarId,
+        horarioFormateado: valoresActuales['horario'] as String,
+        excluirDocumentoReservaId: widget.reserva.id,
+        excluirRecurrenteReglaId: widget.reserva.reservaRecurrenteId,
+      );
+      if (ocupado) {
+        setState(() { _isSaving = false; });
+        _mostrarError(
+          'Este turno ya está ocupado (reserva confirmada o regla fija). Elige otra fecha, sede, cancha u horario.',
+        );
+        return;
       }
     }
 
@@ -1059,64 +1076,6 @@ void _initializeDataWithDebounce() {
     _mostrarError('$mensajeError: ${error.toString()}');
   }
 
-
-  Future<bool> _verificarDisponibilidadCompleta(
-    DateTime fecha,
-    String canchaId,
-    String horario,
-  ) async {
-    try {
-      // Obtener lugarId del usuario autenticado
-      final lugarId = await LugarHelper.getLugarId();
-      if (lugarId == null) {
-        debugPrint('EditarReservaScreen: No se pudo obtener lugarId para verificar disponibilidad');
-        return false;
-      }
-
-      // Verificar reservas normales
-      final reservasNormales = await FirebaseFirestore.instance
-          .collection('reservas')
-          .where('cancha_id', isEqualTo: canchaId)
-          .where('fecha', isEqualTo: DateFormat('yyyy-MM-dd').format(fecha))
-          .where('horario', isEqualTo: horario)
-          .where('lugarId', isEqualTo: lugarId) // ✅ Agregar filtrado por lugarId
-          .get();
-
-      // Filtrar la reserva actual
-      final reservasConflicto = reservasNormales.docs
-          .where((doc) => doc.id != widget.reserva.id)
-          .toList();
-
-      if (reservasConflicto.isNotEmpty) {
-        return false; // Hay conflicto con reservas normales
-      }
-
-      // Verificar reservas recurrentes
-      final reservaRecurrenteProvider = Provider.of<ReservaRecurrenteProvider>(
-        context, 
-        listen: false
-      );
-
-      final reservasRecurrentesActivas = reservaRecurrenteProvider
-          .obtenerReservasActivasParaFecha(
-        fecha,
-        sede: _nuevaSede,
-        canchaId: canchaId,
-      );
-
-      final horarioNormalizado = Horario.normalizarHora(horario);
-      final tieneConflictoRecurrente = reservasRecurrentesActivas.any((reserva) {
-        return Horario.normalizarHora(reserva.horario) == horarioNormalizado;
-      });
-
-      return !tieneConflictoRecurrente;
-
-    } catch (e) {
-      debugPrint('Error verificando disponibilidad: $e');
-      return true; // En caso de error, permitir el cambio
-    }
-  }
-
   /// **Obtener datos actualizados de la cancha**
   Future<Map<String, dynamic>?> _obtenerDatosCancha(String canchaId) async {
     try {
@@ -1138,71 +1097,6 @@ void _initializeDataWithDebounce() {
       debugPrint('Error obteniendo datos de cancha: $e');
       return null;
     }
-  }
-
-  /// **Mostrar diálogo de conflicto de horario**
-  Future<bool> _mostrarDialogoConflictoHorario() async {
-    return await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning, color: Colors.orange.shade600),
-            const SizedBox(width: 8),
-            const Text('Conflicto de Horario'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Ya existe una reserva para esta cancha en la fecha y hora seleccionadas.',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Fecha: ${DateFormat('EEEE d MMMM, yyyy', 'es').format(_nuevaFecha!)}'),
-                  Text('Cancha: $_nuevaCanchaId'),
-                  Text('Horario: $_nuevoHorario'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '⚠️ Este cambio podría crear una doble reserva. ¿Deseas continuar de todos modos?',
-              style: TextStyle(
-                color: Colors.orange,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.shade600,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Continuar'),
-          ),
-        ],
-      ),
-    ) ?? false;
   }
 
   List<String> _obtenerResumenCambios() {

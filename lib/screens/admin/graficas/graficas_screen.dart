@@ -10,6 +10,7 @@ import '../../../models/cancha.dart';
 import '../../../models/reserva.dart';
 import '../../../providers/reserva_recurrente_provider.dart';
 import '../../../services/lugar_helper.dart';
+import '../../../utils/reserva_merge_utils.dart';
 import 'dart:async';
 
 class EstadisticasScreen extends StatefulWidget {
@@ -179,11 +180,19 @@ class EstadisticasScreenState extends State<EstadisticasScreen> {
     Map<String, Cancha> canchasMap = {for (var c in _canchas) c.id: c};
   
     List<Reserva> reservasNormales = [];
+    final Set<String> clavesPuntualesQueBloqueanRecurrente = {};
     for (var doc in snapshot.docs) {
       try {
+        final data = doc.data() as Map<String, dynamic>?;
         var reserva = Reserva.fromFirestoreWithCanchas(doc, canchasMap);
         if (reserva.confirmada == true) {
           reservasNormales.add(reserva);
+          final clave = claveTurnoReserva(reserva);
+          final esPrecioIndependiente =
+              data?['precio_independiente_de_recurrencia'] as bool? ?? false;
+          if (!esPrecioIndependiente) {
+            clavesPuntualesQueBloqueanRecurrente.add(clave);
+          }
         }
       } catch (e) {
         debugPrint('ERROR: Al procesar reserva ${doc.id}: $e');
@@ -221,10 +230,14 @@ class EstadisticasScreenState extends State<EstadisticasScreen> {
     debugPrint('📊 Reservas normales: ${reservasNormales.length}');
     debugPrint('📊 Reservas recurrentes virtuales: ${reservasRecurrentes.length}');
   
-    List<Reserva> todasLasReservas = [...reservasNormales, ...reservasRecurrentes];
-  
-    debugPrint('📊 Total reservas combinadas: ${todasLasReservas.length}');
-  
+    final todasLasReservas = fusionarYDedupReservasConVirtualesRecurrentes(
+      reservasPuntuales: reservasNormales,
+      clavesPuntualesQueBloqueanRecurrente: clavesPuntualesQueBloqueanRecurrente,
+      virtualesDesdeRecurrentes: reservasRecurrentes,
+    );
+
+    debugPrint('📊 Total reservas combinadas (fusionadas, sin doble conteo): ${todasLasReservas.length}');
+
     _reservasActuales = _aplicarFiltros(todasLasReservas);
     _calcularTodasLasEstadisticas();
   

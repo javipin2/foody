@@ -246,9 +246,12 @@ class Reserva {
     final precioPersonalizado = data['precio_personalizado'] as bool? ?? false;
     final precioOriginal = (data['precio_original'] as num?)?.toDouble();
     final descuentoAplicado = (data['descuento_aplicado'] as num?)?.toDouble();
-    // ✅ LEER NUEVAS PROPIEDADES PARA RECURRENCIA
-    final reservaRecurrenteId = data['reserva_recurrente_id'] as String?;
-    final esReservaRecurrente = data['es_reserva_recurrente'] as bool? ?? false;
+    // ✅ LEER NUEVAS PROPIEDADES PARA RECURRENCIA (camelCase y snake_case en BD)
+    final reservaRecurrenteId = data['reserva_recurrente_id'] as String? ??
+        data['reservaRecurrenteId'] as String?;
+    final esReservaRecurrente = data['es_reserva_recurrente'] as bool? ??
+        data['esReservaRecurrente'] as bool? ??
+        false;
     final abonoEntregado = (data['abono_entregado'] as bool?);
     final promocionId = (data['promocion_id'] as String?);
     

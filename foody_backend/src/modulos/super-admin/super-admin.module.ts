@@ -1,0 +1,12 @@
+import { Module } from '@nestjs/common';
+import { AuthModule } from '../../core/auth/auth.module';
+import { OnboardingModule } from '../../core/onboarding/onboarding.module';
+import { SuperAdminController } from './super-admin.controller';
+import { SuperAdminService } from './super-admin.service';
+
+@Module({
+  imports: [AuthModule, OnboardingModule],
+  controllers: [SuperAdminController],
+  providers: [SuperAdminService],
+})
+export class SuperAdminModule {}

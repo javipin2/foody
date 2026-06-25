@@ -1,13 +1,15 @@
 name: reserva_canchas
 description: Aplicación para reservar canchas sintéticas.
 publish_to: 'none'
-version: 1.3.0+5
+version: 1.3.0+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_web_plugins:
     sdk: flutter
   
   # Internacionalización y localización
@@ -18,6 +20,9 @@ dependencies:
 
   # Estado y arquitectura
   provider: ^6.0.5
+  flutter_riverpod: ^2.6.1
+  go_router: ^14.6.2
+  dio: ^5.7.0
   
   # UI y widgets
   table_calendar: ^3.0.9
@@ -29,6 +34,9 @@ dependencies:
   
   # Networking y HTTP
   http: ^1.3.0
+
+  # Supabase (datos: menú, pedidos, etc. — Firebase solo FCM en esta transición)
+  supabase_flutter: ^2.8.4
   
   # Firebase
   firebase_core: ^3.13.0
@@ -50,8 +58,11 @@ dependencies:
   csv: ^5.1.1
   
   # Utilidades
+  uuid: ^4.5.1
   crypto: ^3.0.5
   url_launcher: ^6.2.2
+  share_plus: ^11.0.0
+  app_links: ^6.4.0
   image_picker: ^1.1.2
   flutter_image_compress: ^2.3.0
   logging: ^1.2.0  # Para manejo de logs en producción
@@ -66,10 +77,11 @@ dependencies:
 
   usb_thermal_printer_web_pro: ^0.1.2
   
-  # Mapas y geolocalización
-  google_maps_flutter: ^2.5.0
-  google_maps_flutter_web: ^0.5.4
+  # Mapas y geolocalización (OpenStreetMap — sin costo por carga)
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   geolocator: ^11.0.0
+  audioplayers: ^6.6.0
 
 dev_dependencies:
   flutter_test:
@@ -93,6 +105,8 @@ flutter:
     - assets/fondo2.jpg
     - assets/redi22.png
     - assets/grama1.jpg
+    - assets/tucanchafacil.png
+    - assets/Michel Teló - Ai Se Eu Te Pego (LetraLyrics).mp3
 
   # Optimizaciones para producción
   # Esto ayuda a reducir el tamaño de la app
