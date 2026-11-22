@@ -3,35 +3,97 @@ import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
 import { PedidosCajaAuditoriaService } from '../pedidos/pedidos-caja-auditoria.service';
+import { PedidosEstadoCommandService } from '../pedidos/pedidos-estado-command.service';
+import { PedidosSoporteService } from '../pedidos/pedidos-soporte.service';
 import { AsignarDomiciliarioDto } from './dto/asignar-domiciliario.dto';
 import { ConfirmarEntregaDto } from './dto/confirmar-entrega.dto';
+import { UbicacionEntregaDto } from './dto/independiente.dto';
 export declare class DomiciliariosService {
     private readonly database;
     private readonly alertasRiesgo;
     private readonly realtime;
     private readonly cajaAuditoria;
-    constructor(database: DatabaseService, alertasRiesgo: AlertasRiesgoService, realtime: RealtimeBroadcastService, cajaAuditoria: PedidosCajaAuditoriaService);
+    private readonly pedidosEstadoCommand;
+    private readonly pedidosSoporte;
+    constructor(database: DatabaseService, alertasRiesgo: AlertasRiesgoService, realtime: RealtimeBroadcastService, cajaAuditoria: PedidosCajaAuditoriaService, pedidosEstadoCommand: PedidosEstadoCommandService, pedidosSoporte: PedidosSoporteService);
     listarPlantaDisponibles(sucursalId: string): Promise<QueryResultRow[]>;
     asignarPlanta(dto: AsignarDomiciliarioDto, usuarioAdminId: string): Promise<{
         pedido_id: string;
         estado: string;
     }>;
-    historialEntregas(usuarioId: string, limite?: number): Promise<QueryResultRow[]>;
-    estadisticasPlanta(usuarioId: string): Promise<{
+    reasignarPlanta(dto: AsignarDomiciliarioDto, usuarioAdminId: string): Promise<{
+        pedido_id: string;
+        estado: string;
+        reasignado: boolean;
+    }>;
+    historialEntregas(usuarioId: string, opts?: {
+        desde?: string;
+        hasta?: string;
+        limite?: number;
+    }): Promise<QueryResultRow[]>;
+    estadisticasPlanta(usuarioId: string, opts?: {
+        desde?: string;
+        hasta?: string;
+    }): Promise<{
         entregas_hoy: number;
         entregas_semana: number;
         entregas_mes: number;
+        entregas_rango: number;
+        total_cobrado_rango: number;
         tiempo_promedio_min: number | null;
+        saldo_por_liquidar: number;
     }>;
     pedidosAsignados(usuarioId: string): Promise<QueryResultRow[]>;
+    resumenLiquidacion(sucursalId: string): Promise<{
+        permite_fiado_domiciliario: boolean;
+        domiciliarios: {
+            domiciliario_planta_id: string;
+            nombre: string;
+            pedidos: number;
+            total_pendiente: number;
+        }[];
+    }>;
+    resumenDomicilios(sucursalId: string, desde?: string, hasta?: string): Promise<{
+        domicilio_ingresa_a_caja: boolean;
+        domiciliarios: {
+            domiciliario_planta_id: string;
+            nombre: string;
+            pedidos_entregados: number;
+            total_domicilios: number;
+        }[];
+    }>;
+    liquidarDomiciliario(sucursalId: string, domiciliarioPlantaId: string, usuarioId: string): Promise<{
+        domiciliario_planta_id: string;
+        liquidados: number;
+        total: number;
+    }>;
+    configurarFiadoDomiciliario(sucursalId: string, permitir: boolean): Promise<{
+        sucursal_id: string;
+        permite_fiado_domiciliario: boolean;
+    }>;
+    configurarDomicilioEnCaja(sucursalId: string, ingresa: boolean): Promise<{
+        sucursal_id: string;
+        domicilio_ingresa_a_caja: boolean;
+    }>;
     marcarEnCamino(pedidoId: string, usuarioId: string): Promise<{
         pedido_id: string;
         estado: string;
     }>;
+    registrarUbicacionEntrega(usuarioId: string, dto: UbicacionEntregaDto): Promise<{
+        ok: boolean;
+        registrado: boolean;
+        pedido_id?: undefined;
+    } | {
+        ok: boolean;
+        registrado: boolean;
+        pedido_id: string;
+    }>;
+    private registrarCobroEntrega;
     confirmarEntrega(pedidoId: string, usuarioId: string, dto: ConfirmarEntregaDto): Promise<{
         pedido_id: string;
         estado: string;
     }>;
+    resumenComisionesIndependientes(sucursalId: string): Promise<QueryResultRow[]>;
     private obtenerPlantaPorUsuario;
     private consultarUno;
 }

@@ -1,0 +1,17 @@
+export declare const SQL_TZ_NEGOCIO = "America/Bogota";
+export declare function sqlPedidosValidos(prefijoColumna?: string): string;
+export declare const SQL_PEDIDOS_VALIDOS: string;
+export declare const SQL_PEDIDOS_VALIDOS_P: string;
+export declare function sqlFechaRango(col: string, pDesde: string, pHasta: string): string;
+export declare const SQL_FECHA_PEDIDOS_P2_P3: string;
+export declare const SQL_FECHA_PEDIDOS_P_P2_P3: string;
+export declare const SQL_FECHA_CAJA_COALESCED_P2_P3: string;
+export declare const SQL_NETO_MOVIMIENTO_CAJA = "CASE WHEN m.tipo = 'venta' THEN m.monto ELSE -m.monto END";
+export declare const SQL_TIPOS_MOV_CAJA_VENTA = "m.tipo IN ('venta', 'devolucion')";
+export declare const SQL_DIA_LOCAL = "(created_at AT TIME ZONE 'America/Bogota')::date";
+export declare const SQL_DIA_LOCAL_P = "(p.created_at AT TIME ZONE 'America/Bogota')::date";
+export declare const SQL_HOY_LOCAL = "(NOW() AT TIME ZONE 'America/Bogota')::date";
+export declare const SQL_INICIO_HOY_LOCAL = "(((NOW() AT TIME ZONE 'America/Bogota')::date)::timestamp AT TIME ZONE 'America/Bogota')";
+export declare const SQL_PEDIDO_ES_HOY = "created_at >= (((NOW() AT TIME ZONE 'America/Bogota')::date)::timestamp AT TIME ZONE 'America/Bogota') AND created_at < ((((NOW() AT TIME ZONE 'America/Bogota')::date)::timestamp AT TIME ZONE 'America/Bogota') + interval '1 day')";
+export declare const SQL_PEDIDO_DESDE_7D = "created_at >= (NOW() AT TIME ZONE 'America/Bogota')::date - interval '6 days'";
+export declare const SQL_PEDIDO_DESDE_7D_P = "p.created_at >= (NOW() AT TIME ZONE 'America/Bogota')::date - interval '6 days'";

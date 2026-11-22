@@ -29,4 +29,23 @@ export class DashboardController {
     );
     return this.dashboardService.resumen(id);
   }
+
+  @Get('graficos')
+  @Permisos('ver_dashboard')
+  async graficos(
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.dashboardService.graficos(id);
+  }
+
+  @Get('consolidado')
+  @Permisos('ver_dashboard', 'gestionar_sucursales')
+  async consolidado(@UsuarioActual() usuario: JwtPayload) {
+    return this.dashboardService.consolidadoParaUsuario(usuario);
+  }
 }

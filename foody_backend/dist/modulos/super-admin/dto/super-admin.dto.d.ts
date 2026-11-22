@@ -19,7 +19,7 @@ export declare class ActualizarDomiciliarioEstadoDto {
     estado_cuenta: string;
     motivo?: string;
 }
-declare const ROLES_STAFF_SUPER: readonly ["admin", "gerente", "cajero", "mesero", "domiciliario_planta", "cocina_principal"];
+declare const ROLES_STAFF_SUPER: readonly ["admin", "gerente", "gerente_cadena", "cajero", "mesero", "domiciliario_planta", "cocina", "cocina_principal"];
 export declare class CrearRestauranteDto {
     ciudad_id: string;
     nombre_restaurante: string;

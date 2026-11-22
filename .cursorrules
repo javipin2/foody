@@ -1,6 +1,6 @@
 # FOODY — reglas globales (ver también .cursor/rules/)
 
-Proyecto: SaaS POS multi-restaurante. Documentación: INFRAESTRUCTURA/, MEMORIA.md, docs/ENTORNO_LOCAL.md.
+Proyecto: SaaS POS multi-restaurante. Documentación: **`docs/MASTER_STATUS.md`** (estado), INFRAESTRUCTURA/, MEMORIA.md, docs/ENTORNO_LOCAL.md.
 
 UN SOLO REPO: no crear proyecto/copia paralela; evolucionar este workspace (modificar, migrar, eliminar legacy). Entry point: lib/main.dart.
 
@@ -13,3 +13,5 @@ Código en español. Convenciones: Riverpod, Dio, GoRouter, features/ en Flutter
 Respuestas API: { exito, datos, mensaje }. Errores: { exito: false, error, mensaje }.
 
 Colores: #FF6B35, #2EC4B6, #FFE66D. No sugerir stacks alternativos.
+
+VERIFICAR ANTES DE ENTREGAR: sesión completa backend+frontend+UX juntos (scripts/verificar-*.ps1, API viva); ver `.cursor/rules/foody-verificar-antes-entregar.mdc` y `.cursor/rules/foody-sesion-completa-antes-entregar.mdc`.

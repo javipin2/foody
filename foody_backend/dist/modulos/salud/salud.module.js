@@ -8,6 +8,8 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SaludModule = void 0;
 const common_1 = require("@nestjs/common");
+const realtime_module_1 = require("../../core/realtime/realtime.module");
+const impresion_module_1 = require("../../core/impresion/impresion.module");
 const health_controller_1 = require("./health.controller");
 const salud_controller_1 = require("./salud.controller");
 const salud_service_1 = require("./salud.service");
@@ -16,6 +18,7 @@ let SaludModule = class SaludModule {
 exports.SaludModule = SaludModule;
 exports.SaludModule = SaludModule = __decorate([
     (0, common_1.Module)({
+        imports: [realtime_module_1.RealtimeModule, impresion_module_1.ImpresionModule],
         controllers: [salud_controller_1.SaludController, health_controller_1.HealthController],
         providers: [salud_service_1.SaludService],
     })

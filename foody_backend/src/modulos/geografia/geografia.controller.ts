@@ -1,4 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { RateLimitPublico } from '../../compartido/guards/rate-limit.guard';
+import { BuscarGeografiaDto } from './dto/buscar-geografia.dto';
 import { GeografiaService } from './geografia.service';
 
 @Controller('geografia')
@@ -7,16 +9,12 @@ export class GeografiaController {
 
   /** Público: autocompletar direcciones vía Photon (OSM). */
   @Get('buscar')
-  buscar(
-    @Query('q') consulta: string,
-    @Query('lat') lat?: string,
-    @Query('lng') lng?: string,
-    @Query('limite') limite?: string,
-  ) {
-    return this.geografia.buscarDirecciones(consulta ?? '', {
-      lat: lat != null ? Number(lat) : undefined,
-      lng: lng != null ? Number(lng) : undefined,
-      limite: limite != null ? Number(limite) : undefined,
+  @RateLimitPublico(40, 60_000)
+  buscar(@Query() dto: BuscarGeografiaDto) {
+    return this.geografia.buscarDirecciones(dto.q ?? '', {
+      lat: dto.lat,
+      lng: dto.lng,
+      limite: dto.limite,
     });
   }
 }

@@ -11,13 +11,13 @@ Esta carpeta aísla el entry point de emergencia del producto anterior.
 
 | Ruta | Estado |
 |------|--------|
-| `lib/legacy/main_reserva_canchas.dart` | Referencia de emergencia; no usar en builds Foody |
-| `lib/screens/` | Reservas canchas, Firebase, dashboards antiguos |
-| `lib/providers/` | Provider + Firebase (solo legacy) |
-| `lib/services/pedido_service.dart`, `menu_catalog_service.dart` | Escritura Firebase; reemplazados por NestJS |
+| `lib/legacy/main_reserva_canchas.dart` | Stub informativo (P3-03); no arranca reservas |
+| ~~`lib/screens/`~~ | **Eliminado** P3-03 — flujos en `lib/features/` |
+| `lib/providers/` | **Eliminado** P3-04 — Riverpod en `lib/features/` |
+| ~~`lib/services/pedido_service.dart`, `menu_catalog_service.dart`~~ | **Eliminados** P3-04 |
 
 ## Regla de limpieza
 
-1. `lib/features/` **no** debe importar `lib/screens/`.
-2. Borrar archivos en `lib/screens/` solo cuando ningún import los referencie (hoy: solo `main_reserva_canchas.dart`).
-3. Renombrar paquete `reserva_canchas` → Sprint 11 (no bloqueante).
+1. `lib/features/` **no** importa `lib/screens/` (cumplido).
+2. ~~Borrar `lib/screens/`~~ — hecho 2026-07-01 (P3-03).
+3. Renombrar paquete `reserva_canchas` → Sprint 11 (P3-05, no bloqueante).

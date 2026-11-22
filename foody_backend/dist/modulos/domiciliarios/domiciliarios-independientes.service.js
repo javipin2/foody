@@ -12,16 +12,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DomiciliariosIndependientesService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
+const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
 const alertas_riesgo_service_1 = require("../alertas/alertas-riesgo.service");
+const pedidos_caja_auditoria_service_1 = require("../pedidos/pedidos-caja-auditoria.service");
+const pedidos_estado_command_service_1 = require("../pedidos/pedidos-estado-command.service");
+const pedidos_soporte_service_1 = require("../pedidos/pedidos-soporte.service");
 const dispatch_service_1 = require("./dispatch.service");
+const cobro_domicilio_util_1 = require("./cobro-domicilio.util");
 let DomiciliariosIndependientesService = class DomiciliariosIndependientesService {
     database;
     dispatch;
     alertasRiesgo;
-    constructor(database, dispatch, alertasRiesgo) {
+    realtime;
+    cajaAuditoria;
+    pedidosEstadoCommand;
+    pedidosSoporte;
+    constructor(database, dispatch, alertasRiesgo, realtime, cajaAuditoria, pedidosEstadoCommand, pedidosSoporte) {
         this.database = database;
         this.dispatch = dispatch;
         this.alertasRiesgo = alertasRiesgo;
+        this.realtime = realtime;
+        this.cajaAuditoria = cajaAuditoria;
+        this.pedidosEstadoCommand = pedidosEstadoCommand;
+        this.pedidosSoporte = pedidosSoporte;
     }
     async iniciarSesion(domiciliarioId, dto) {
         const dom = await this.obtenerActivo(domiciliarioId);
@@ -40,7 +53,27 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
         await this.database.consultar(`UPDATE domiciliarios_sesiones
        SET lat_actual = $1, lng_actual = $2
        WHERE id = $3`, [dto.lat, dto.lng, sesion.id]);
-        return { ok: true };
+        const params = [domiciliarioId];
+        let filtroPedido = '';
+        if (dto.pedido_id) {
+            filtroPedido = ' AND ad.pedido_id = $2';
+            params.push(dto.pedido_id);
+        }
+        const asignacion = await this.database.consultarUno(`SELECT ad.id, ad.pedido_id
+       FROM asignaciones_domicilio ad
+       WHERE ad.domiciliario_independiente_id = $1
+         AND ad.estado = 'en_camino'${filtroPedido}
+       ORDER BY ad.asignado_at DESC
+       LIMIT 1`, params);
+        if (asignacion) {
+            await this.database.consultar(`INSERT INTO domiciliarios_ubicaciones_historial (asignacion_id, lat, lng)
+         VALUES ($1, $2, $3)`, [asignacion.id, dto.lat, dto.lng]);
+            this.pedidosSoporte.emitirUbicacionRepartidor(asignacion.pedido_id, {
+                repartidor_lat: dto.lat,
+                repartidor_lng: dto.lng,
+            });
+        }
+        return { ok: true, registrado: !!asignacion };
     }
     async cerrarSesion(domiciliarioId) {
         await this.database.consultar(`UPDATE domiciliarios_sesiones
@@ -48,8 +81,17 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
        WHERE domiciliario_id = $1 AND activa = true`, [domiciliarioId]);
         return { ok: true };
     }
+    async estadoSesion(domiciliarioId) {
+        const sesion = await this.database.consultarUno(`SELECT activa, disponible FROM domiciliarios_sesiones
+       WHERE domiciliario_id = $1 AND activa = true
+       ORDER BY iniciada_at DESC LIMIT 1`, [domiciliarioId]);
+        return {
+            activa: !!sesion,
+            disponible: sesion?.disponible ?? false,
+        };
+    }
     async ofertasActivas(domiciliarioId) {
-        return this.database.consultar(`SELECT o.id AS oferta_id,
+        const filas = await this.database.consultar(`SELECT o.id AS oferta_id,
               o.pedido_id,
               o.radio_busqueda_km,
               o.intento_numero,
@@ -58,9 +100,12 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
               p.direccion_entrega,
               p.costo_domicilio,
               p.cliente_nombre,
-              p.cliente_telefono,
+              p.lat,
+              p.lng,
               s.nombre AS sucursal_nombre,
               s.direccion AS sucursal_direccion,
+              s.lat AS sucursal_lat,
+              s.lng AS sucursal_lng,
               r.id AS respuesta_id
        FROM respuestas_oferta r
        JOIN ofertas_pedido o ON o.id = r.oferta_id
@@ -71,6 +116,17 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
          AND o.expira_at > now()
          AND r.respuesta = 'no_vio'
        ORDER BY o.created_at DESC`, [domiciliarioId]);
+        return filas.map((f) => {
+            const costo = Number(f.costo_domicilio ?? 0);
+            const { comision, ganancia } = this.dispatch.calcularGanancias(costo);
+            return {
+                ...f,
+                comision_foody_pct: costo > 0 ? Math.round((comision / costo) * 100) : 15,
+                comision_foody: comision,
+                ganancia_estimada: ganancia,
+                valor_domicilio: costo,
+            };
+        });
     }
     async responderOferta(ofertaId, domiciliarioId, dto) {
         return this.database.enTransaccion(async (client) => {
@@ -118,14 +174,35 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
          WHERE oferta_id = $1 AND domiciliario_id != $2 AND respuesta = 'no_vio'`, [ofertaId, domiciliarioId]);
             const asignacion = await client.query(`INSERT INTO asignaciones_domicilio (
            pedido_id, sucursal_id, domiciliario_independiente_id,
-           tipo_domiciliario, estado
-         ) VALUES ($1,$2,$3,'independiente','asignado')
+           tipo_domiciliario, estado, distancia_km
+         )
+         SELECT $1, $2, $3::uuid, 'independiente', 'asignado',
+           CASE
+             WHEN s.lat IS NOT NULL AND s.lng IS NOT NULL
+              AND p.lat IS NOT NULL AND p.lng IS NOT NULL
+             THEN ROUND((
+               6371 * acos(LEAST(1::float8, GREATEST(-1::float8,
+                 cos(radians(s.lat::float8)) * cos(radians(p.lat::float8))
+                 * cos(radians(p.lng::float8) - radians(s.lng::float8))
+                 + sin(radians(s.lat::float8)) * sin(radians(p.lat::float8))
+               )))
+             )::numeric, 3)
+             ELSE NULL
+           END
+         FROM pedidos p
+         JOIN sucursales s ON s.id = p.sucursal_id
+         WHERE p.id = $1 AND p.sucursal_id = $2
          RETURNING id`, [oferta.pedido_id, oferta.sucursal_id, domiciliarioId]);
             const asignacionId = asignacion.rows[0].id;
-            await client.query(`UPDATE pedidos SET estado = 'asignado' WHERE id = $1`, [oferta.pedido_id]);
-            await client.query(`INSERT INTO estados_pedido_historial
-           (pedido_id, estado_anterior, estado_nuevo, motivo)
-         VALUES ($1, 'listo', 'asignado', 'Domiciliario independiente aceptó oferta')`, [oferta.pedido_id]);
+            await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
+                pedidoId: oferta.pedido_id,
+                sucursalId: oferta.sucursal_id,
+                nuevoEstado: 'asignado',
+                origen: 'domiciliario',
+                motivo: 'Domiciliario independiente aceptó oferta',
+                estadoAnterior: 'listo',
+                tipo: 'domicilio',
+            });
             await client.query(`UPDATE domiciliarios_sesiones SET disponible = false
          WHERE domiciliario_id = $1 AND activa = true`, [domiciliarioId]);
             const costo = Number(pedido.costo_domicilio ?? 0);
@@ -155,9 +232,12 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
               p.cliente_nombre,
               p.cliente_telefono,
               p.direccion_entrega,
+              p.subtotal,
               p.total,
               p.metodo_pago,
               p.costo_domicilio,
+              p.lat,
+              p.lng,
               ad.estado AS estado_asignacion,
               ad.asignado_at,
               s.nombre AS sucursal_nombre,
@@ -173,7 +253,7 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
     }
     async marcarEnCamino(pedidoId, domiciliarioId) {
         return this.database.enTransaccion(async (client) => {
-            const asignacion = await this.consultarUnoCliente(client, `SELECT id FROM asignaciones_domicilio
+            const asignacion = await this.consultarUnoCliente(client, `SELECT id, sucursal_id FROM asignaciones_domicilio
          WHERE pedido_id = $1
            AND domiciliario_independiente_id = $2
            AND estado = 'asignado' FOR UPDATE`, [pedidoId, domiciliarioId]);
@@ -181,17 +261,20 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
                 throw new common_1.BadRequestException('Pedido no asignado a ti');
             }
             await client.query(`UPDATE asignaciones_domicilio SET estado = 'en_camino' WHERE id = $1`, [asignacion.id]);
-            await client.query(`UPDATE pedidos SET estado = 'en_camino' WHERE id = $1`, [
+            await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
                 pedidoId,
-            ]);
-            await client.query(`INSERT INTO estados_pedido_historial
-           (pedido_id, estado_anterior, estado_nuevo, motivo)
-         VALUES ($1, 'asignado', 'en_camino', 'Domiciliario independiente en camino')`, [pedidoId]);
+                sucursalId: asignacion.sucursal_id,
+                nuevoEstado: 'en_camino',
+                origen: 'domiciliario',
+                motivo: 'Domiciliario independiente en camino',
+                estadoAnterior: 'asignado',
+                tipo: 'domicilio',
+            });
             return { pedido_id: pedidoId, estado: 'en_camino' };
         });
     }
-    async confirmarEntrega(pedidoId, domiciliarioId) {
-        return this.database.enTransaccion(async (client) => {
+    async confirmarEntrega(pedidoId, domiciliarioId, dto = {}) {
+        const result = await this.database.enTransaccion(async (client) => {
             const asignacion = await this.consultarUnoCliente(client, `SELECT id FROM asignaciones_domicilio
          WHERE pedido_id = $1
            AND domiciliario_independiente_id = $2
@@ -199,31 +282,129 @@ let DomiciliariosIndependientesService = class DomiciliariosIndependientesServic
             if (!asignacion) {
                 throw new common_1.BadRequestException('El pedido debe estar en camino');
             }
+            const pedidoRow = await this.consultarUnoCliente(client, `SELECT sucursal_id, numero_pedido, total,
+                COALESCE(costo_domicilio, 0) AS costo_domicilio,
+                COALESCE(monto_pagado, 0) AS monto_pagado, metodo_pago
+         FROM pedidos WHERE id = $1 FOR UPDATE`, [pedidoId]);
+            if (!pedidoRow) {
+                throw new common_1.NotFoundException('Pedido no encontrado');
+            }
+            const cfg = await this.consultarUnoCliente(client, `SELECT COALESCE(domicilio_ingresa_a_caja, false) AS domicilio_ingresa_a_caja
+         FROM sucursales WHERE id = $1`, [pedidoRow.sucursal_id]);
+            const domicilioEnCaja = cfg?.domicilio_ingresa_a_caja ?? false;
+            const { saldo, productoPendiente, domicilioPendiente } = (0, cobro_domicilio_util_1.repartirCobroDomicilio)(Number(pedidoRow.total), Number(pedidoRow.costo_domicilio), Number(pedidoRow.monto_pagado ?? 0));
+            const metodoEntrega = dto.metodo_pago?.trim();
+            const metodoDomicilio = dto.metodo_pago_domicilio?.trim() || metodoEntrega;
+            if (saldo > 0.01) {
+                if (!metodoEntrega || metodoEntrega === 'pendiente') {
+                    throw new common_1.BadRequestException({
+                        error: 'COBRO_REQUERIDO',
+                        message: 'Indica método de pago al entregar (efectivo, tarjeta, transferencia o nequi)',
+                    });
+                }
+                if (productoPendiente > 0.01) {
+                    await client.query(`INSERT INTO pagos_pedido (
+               sucursal_id, pedido_id, monto, propina, metodo_pago, usuario_id, referencia
+             ) VALUES ($1,$2,$3,0,$4,NULL,$5)`, [
+                        pedidoRow.sucursal_id,
+                        pedidoId,
+                        productoPendiente,
+                        metodoEntrega,
+                        'Cobro producto contra entrega (independiente)',
+                    ]);
+                    await this.cajaAuditoria.registrarVentaEnCaja(client, pedidoRow.sucursal_id, pedidoId, productoPendiente, metodoEntrega, {
+                        exigirCaja: true,
+                        descripcion: `Domicilio independiente entregado ${pedidoRow.numero_pedido}`,
+                    });
+                }
+                if (domicilioPendiente > 0.01) {
+                    await client.query(`INSERT INTO pagos_pedido (
+               sucursal_id, pedido_id, monto, propina, metodo_pago, usuario_id, referencia
+             ) VALUES ($1,$2,$3,0,$4,NULL,$5)`, [
+                        pedidoRow.sucursal_id,
+                        pedidoId,
+                        domicilioPendiente,
+                        metodoDomicilio,
+                        domicilioEnCaja
+                            ? 'Cobro domicilio contra entrega (independiente)'
+                            : 'Domicilio independiente (fuera de caja)',
+                    ]);
+                    if (domicilioEnCaja) {
+                        await this.cajaAuditoria.registrarVentaEnCaja(client, pedidoRow.sucursal_id, pedidoId, domicilioPendiente, metodoDomicilio ?? metodoEntrega, {
+                            exigirCaja: true,
+                            descripcion: `Domicilio (cobro) ${pedidoRow.numero_pedido}`,
+                        });
+                    }
+                }
+                await client.query(`UPDATE pedidos
+           SET monto_pagado = $2, metodo_pago = $3
+           WHERE id = $1`, [pedidoId, Number(pedidoRow.total), metodoEntrega]);
+            }
+            else if (metodoEntrega && metodoEntrega !== 'pendiente') {
+                await client.query(`UPDATE pedidos SET metodo_pago = $1 WHERE id = $2`, [metodoEntrega, pedidoId]);
+            }
             await client.query(`UPDATE asignaciones_domicilio
          SET estado = 'entregado', entregado_at = now()
          WHERE id = $1`, [asignacion.id]);
-            await client.query(`UPDATE pedidos SET estado = 'entregado' WHERE id = $1`, [
+            await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
                 pedidoId,
-            ]);
-            await client.query(`INSERT INTO estados_pedido_historial
-           (pedido_id, estado_anterior, estado_nuevo, motivo)
-         VALUES ($1, 'en_camino', 'entregado', 'Entrega confirmada por independiente')`, [pedidoId]);
+                sucursalId: pedidoRow.sucursal_id,
+                nuevoEstado: 'entregado',
+                origen: 'domiciliario',
+                motivo: 'Entrega confirmada por independiente',
+                estadoAnterior: 'en_camino',
+                tipo: 'domicilio',
+            });
             await client.query(`UPDATE domiciliarios_sesiones SET disponible = true
          WHERE domiciliario_id = $1 AND activa = true`, [domiciliarioId]);
-            const pedido = await this.consultarUnoCliente(client, `SELECT sucursal_id FROM pedidos WHERE id = $1`, [pedidoId]);
-            if (pedido) {
-                await this.alertasRiesgo.evaluarDemoraEntrega(client, pedidoId, pedido.sucursal_id);
-            }
-            return { pedido_id: pedidoId, estado: 'entregado' };
+            await this.alertasRiesgo.evaluarDemoraEntrega(client, pedidoId, pedidoRow.sucursal_id);
+            return {
+                pedido_id: pedidoId,
+                estado: 'entregado',
+                sucursal_id: pedidoRow.sucursal_id,
+                numero_pedido: pedidoRow.numero_pedido,
+            };
         });
+        void this.realtime.pedidoActualizado({
+            pedido_id: result.pedido_id,
+            sucursal_id: result.sucursal_id,
+            estado: result.estado,
+            numero_pedido: result.numero_pedido,
+        });
+        void this.realtime.cajaMovimiento(result.sucursal_id, {
+            pedido_id: result.pedido_id,
+        });
+        return { pedido_id: result.pedido_id, estado: result.estado };
     }
-    async ganancias(domiciliarioId) {
-        return this.database.consultar(`SELECT id, valor_domicilio, comision_foody, ganancia_domiciliario,
-              pagado, created_at
-       FROM ganancias_domiciliario
-       WHERE domiciliario_id = $1
-       ORDER BY created_at DESC
-       LIMIT 50`, [domiciliarioId]);
+    async ganancias(domiciliarioId, opts) {
+        const params = [domiciliarioId];
+        let filtroFecha = '';
+        if (opts?.desde) {
+            params.push(opts.desde);
+            filtroFecha += ` AND g.created_at >= $${params.length}::timestamptz`;
+        }
+        if (opts?.hasta) {
+            params.push(opts.hasta);
+            filtroFecha += ` AND g.created_at < ($${params.length}::date + interval '1 day')`;
+        }
+        const filas = await this.database.consultar(`SELECT g.id, g.valor_domicilio, g.comision_foody, g.ganancia_domiciliario,
+              g.pagado, g.created_at, ad.pedido_id, p.numero_pedido
+       FROM ganancias_domiciliario g
+       LEFT JOIN asignaciones_domicilio ad ON ad.id = g.asignacion_id
+       LEFT JOIN pedidos p ON p.id = ad.pedido_id
+       WHERE g.domiciliario_id = $1${filtroFecha}
+       ORDER BY g.created_at DESC
+       LIMIT 100`, params);
+        const totalGanancia = filas.reduce((s, f) => s + Number(f.ganancia_domiciliario ?? 0), 0);
+        const totalComision = filas.reduce((s, f) => s + Number(f.comision_foody ?? 0), 0);
+        return {
+            items: filas,
+            resumen: {
+                entregas: filas.length,
+                total_ganancia: totalGanancia,
+                total_comision: totalComision,
+            },
+        };
     }
     async obtenerActivo(domiciliarioId) {
         const dom = await this.database.consultarUno(`SELECT id, ciudad_id, estado_cuenta
@@ -252,6 +433,10 @@ exports.DomiciliariosIndependientesService = DomiciliariosIndependientesService 
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         dispatch_service_1.DispatchService,
-        alertas_riesgo_service_1.AlertasRiesgoService])
+        alertas_riesgo_service_1.AlertasRiesgoService,
+        realtime_broadcast_service_1.RealtimeBroadcastService,
+        pedidos_caja_auditoria_service_1.PedidosCajaAuditoriaService,
+        pedidos_estado_command_service_1.PedidosEstadoCommandService,
+        pedidos_soporte_service_1.PedidosSoporteService])
 ], DomiciliariosIndependientesService);
 //# sourceMappingURL=domiciliarios-independientes.service.js.map

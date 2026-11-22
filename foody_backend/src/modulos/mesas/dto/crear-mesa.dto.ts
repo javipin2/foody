@@ -1,4 +1,12 @@
-import { IsBoolean, IsOptional, IsString, IsUUID, MinLength, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 export class CrearMesaDto {
   @IsUUID()
@@ -6,6 +14,7 @@ export class CrearMesaDto {
 
   @IsString()
   @MinLength(1)
+  @MaxLength(80)
   nombre: string;
 
   @IsOptional()
@@ -17,6 +26,7 @@ export class ActualizarMesaDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(80)
   nombre?: string;
 
   @IsOptional()

@@ -12,14 +12,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DatabaseService = void 0;
 const common_1 = require("@nestjs/common");
 const pg_1 = require("pg");
+const transaction_hooks_service_1 = require("./transaction-hooks.service");
 let DatabaseService = class DatabaseService {
+    transactionHooks;
     pool;
-    constructor() {
+    constructor(transactionHooks) {
+        this.transactionHooks = transactionHooks;
         const connectionString = process.env.DATABASE_URL;
         if (!connectionString) {
             throw new Error('DATABASE_URL no está definida en .env');
         }
-        this.pool = new pg_1.Pool({ connectionString });
+        this.pool = new pg_1.Pool({
+            connectionString,
+            max: Number(process.env.DB_POOL_MAX) || 10,
+        });
+        this.pool.on('error', (err) => {
+            console.error('[DatabaseService] Error en cliente idle del pool:', err.message);
+        });
     }
     async consultar(sql, parametros = []) {
         const resultado = await this.pool.query(sql, parametros);
@@ -35,10 +44,12 @@ let DatabaseService = class DatabaseService {
             await client.query('BEGIN');
             const resultado = await fn(client);
             await client.query('COMMIT');
+            this.transactionHooks.ejecutarTrasCommit(client);
             return resultado;
         }
         catch (error) {
             await client.query('ROLLBACK');
+            this.transactionHooks.descartar(client);
             throw error;
         }
         finally {
@@ -48,10 +59,31 @@ let DatabaseService = class DatabaseService {
     async onModuleDestroy() {
         await this.pool.end();
     }
+    async intentarAdvisoryLock(lockKey, fn) {
+        const client = await this.pool.connect();
+        let adquirio = false;
+        try {
+            const r = await client.query(`SELECT pg_try_advisory_lock($1::bigint) AS ok`, [lockKey]);
+            adquirio = !!r.rows[0]?.ok;
+            if (!adquirio)
+                return null;
+            return await fn();
+        }
+        finally {
+            if (adquirio) {
+                try {
+                    await client.query(`SELECT pg_advisory_unlock($1::bigint)`, [lockKey]);
+                }
+                catch {
+                }
+            }
+            client.release();
+        }
+    }
 };
 exports.DatabaseService = DatabaseService;
 exports.DatabaseService = DatabaseService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [])
+    __metadata("design:paramtypes", [transaction_hooks_service_1.TransactionHooksService])
 ], DatabaseService);
 //# sourceMappingURL=database.service.js.map

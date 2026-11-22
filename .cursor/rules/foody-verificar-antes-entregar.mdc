@@ -1,0 +1,48 @@
+---
+description: Verificar en entorno real antes de reportar resultados al usuario (como producción)
+alwaysApply: true
+---
+
+# Foody — verificar antes de entregar
+
+**No declarar “hecho”, “funciona” ni “listo” sin evidencia de ejecución real.**
+
+Para cambios de módulo/feature (no un typo): también aplica **`.cursor/rules/foody-sesion-completa-antes-entregar.mdc`** — backend + frontend + UX juntos en la misma sesión, no capas aisladas.
+
+## Obligatorio al cerrar implementación o fix
+
+1. **Ejecutar** la verificación tú mismo (shell, script, curl, `flutter analyze` en archivos tocados).
+2. **Reiniciar** servicios si el cambio es backend (`npm run build` + API en `:3000`) o requiere dist nuevo.
+3. **Probar el flujo completo** del cambio (happy path + al menos un error esperado), no solo compilar. Si el alcance toca UI y API: verificar **ambos** y el contrato entre ellos.
+4. **Reportar con evidencia**: qué comando/script corriste, resultado (OK/FAIL), y qué quedó sin probar (p. ej. UI manual en dispositivo).
+5. **Si el entorno está caído**: intentar levantarlo (Docker/API/migraciones) antes de entregar; no posponer la verificación por defecto.
+
+## Scripts del repo (preferir reutilizar)
+
+| Área | Script |
+|------|--------|
+| **CI entrada** | `scripts/verificar-ci.ps1` (rapido / `-Completo`) |
+| **QA manual** | `scripts/verificar-qa-manual.ps1` → `docs/CHECKLIST_QA_ROLES.md` |
+| P2 menú/traslados/super | `scripts/verificar-p2-pulido.ps1` |
+| Multi-sucursal | `scripts/verificar-multi-sucursal.ps1` |
+| Suite E2E | `scripts/verificar-todos-e2e.ps1` |
+| Inventario/menú | `scripts/verificar-inventario-menu.ps1` |
+
+Doc: `docs/CI_E2E.md` · GitHub: `.github/workflows/ci.yml`
+
+Si no existe script: crear uno mínimo en `scripts/verificar-*.ps1` cuando la lógica sea no trivial (ponytail: dejar runnable check).
+
+## Pre-requisitos locales
+
+- Docker/Supabase verde, API `GET /api/v1/salud` → `exito: true`
+- Credenciales demo: `admin@foody.demo` / `super@foody.demo` / `123456`
+
+## Qué NO cuenta como verificado
+
+- Solo `npm run build` o lectura de código
+- Asumir que el servidor en memoria tiene el último `dist`
+- “Debería funcionar” sin comando ejecutado en esta sesión
+
+## Formato al usuario
+
+Incluir sección breve **Verificación** con comandos y resultado. Si falla: arreglar o decir explícitamente qué bloquea (servicio caído, seed faltante, etc.).

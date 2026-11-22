@@ -35,6 +35,14 @@ bool unidadesCosteoCompatibles(String unidadLinea, String unidadBase) {
   return false;
 }
 
+/// Unidades que se pueden elegir en una línea (g/kg o ml/L).
+List<String> unidadesDeFamiliaCosteo(String unidadBase) {
+  final u = normalizarUnidadCosteo(unidadBase);
+  if (_grupoPeso.contains(u)) return const ['g', 'kg'];
+  if (_grupoVolumen.contains(u)) return const ['ml', 'L'];
+  return [u];
+}
+
 /// Convierte cantidad de [desde] hacia [hacia] (g↔kg, ml↔L).
 double convertirCantidadCosteo(
   double cantidad,

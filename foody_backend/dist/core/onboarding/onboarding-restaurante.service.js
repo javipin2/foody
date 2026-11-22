@@ -18,9 +18,10 @@ let OnboardingRestauranteService = class OnboardingRestauranteService {
         this.database = database;
     }
     async crear(dto) {
-        const ciudad = await this.database.consultarUno(`SELECT id FROM ciudades WHERE id = $1 AND activa = true`, [dto.ciudad_id]);
+        const ciudad = await this.database.consultarUno(`SELECT id, slug FROM ciudades WHERE id = $1 AND activa = true`, [dto.ciudad_id]);
         if (!ciudad)
             throw new common_1.BadRequestException('Ciudad no válida');
+        const centroCiudad = this.centroCiudadPorSlug(ciudad.slug);
         const email = dto.admin_email.trim().toLowerCase();
         const existeEmail = await this.database.consultarUno(`SELECT id FROM usuarios WHERE LOWER(email) = $1`, [email]);
         if (existeEmail) {
@@ -49,17 +50,17 @@ let OnboardingRestauranteService = class OnboardingRestauranteService {
          VALUES ($1, $2, true, $3) RETURNING id`, [dto.ciudad_id, dto.nombre_restaurante.trim(), origen]);
             const restauranteId = rest.rows[0].id;
             const suc = await client.query(`INSERT INTO sucursales (
-           restaurante_id, ciudad_id, nombre, direccion, activa
-         ) VALUES ($1, $2, $3, $4, true) RETURNING id`, [
+           restaurante_id, ciudad_id, nombre, direccion, lat, lng, activa
+         ) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`, [
                 restauranteId,
                 dto.ciudad_id,
                 dto.nombre_sucursal.trim(),
                 dto.direccion_sucursal?.trim() ?? null,
+                centroCiudad?.lat ?? null,
+                centroCiudad?.lng ?? null,
             ]);
             const sucursalId = suc.rows[0].id;
             await client.query(`INSERT INTO cocinas (sucursal_id, nombre) VALUES ($1, 'Cocina principal')`, [sucursalId]);
-            await client.query(`INSERT INTO horarios_sucursal (sucursal_id, dia_semana, hora_apertura, hora_cierre, activo)
-         SELECT $1, d, '08:00', '22:00', true FROM generate_series(0, 6) AS d`, [sucursalId]);
             await client.query(`INSERT INTO suscripciones_restaurante (
            restaurante_id, estado, plan, fecha_vencimiento
          ) VALUES ($1, $2, $3, $4)`, [restauranteId, estado, plan, fechaVencimiento]);
@@ -84,13 +85,44 @@ let OnboardingRestauranteService = class OnboardingRestauranteService {
                 sucursal_id: sucursalId,
                 admin_id: admin.rows[0].id,
                 admin_email: email,
+                ciudad_slug: ciudad.slug,
                 suscripcion: {
                     estado,
                     plan,
                     ...(estado === 'prueba' ? { dias_prueba: diasPrueba } : {}),
                 },
             };
+        }).then(async (resultado) => {
+            await this.completarPostCommit(resultado.sucursal_id, resultado.ciudad_slug);
+            const { ciudad_slug: _slug, ...out } = resultado;
+            return out;
         });
+    }
+    async completarPostCommit(sucursalId, ciudadSlug) {
+        try {
+            const centro = this.centroCiudadPorSlug(ciudadSlug);
+            if (centro) {
+                await this.database.consultar(`INSERT INTO zonas_cobertura (sucursal_id, nombre, costo_domicilio, distancia_max_km, activa)
+           SELECT $1, 'Zona centro', 4000, 5, true
+           WHERE NOT EXISTS (
+             SELECT 1 FROM zonas_cobertura WHERE sucursal_id = $1
+           )`, [sucursalId]);
+            }
+            await this.database.consultar(`INSERT INTO horarios_sucursal (sucursal_id, dia_semana, hora_apertura, hora_cierre, activo)
+         SELECT $1, d, '08:00', '22:00', true
+         FROM generate_series(0, 6) AS d
+         WHERE NOT EXISTS (
+           SELECT 1 FROM horarios_sucursal WHERE sucursal_id = $1
+         )`, [sucursalId]);
+        }
+        catch {
+        }
+    }
+    centroCiudadPorSlug(slug) {
+        const centros = {
+            valledupar: { lat: 10.463714, lng: -73.253222 },
+        };
+        return centros[slug.toLowerCase()] ?? null;
     }
 };
 exports.OnboardingRestauranteService = OnboardingRestauranteService;

@@ -15,6 +15,48 @@ class MenuModel {
         for (final c in categorias) ...c.productos,
       ];
 
+  /// Productos de categorías Bebidas/Jugos.
+  List<ProductoMenuModel> productosBebidasVendibles({String? excluirId}) {
+    return [
+      for (final c in categorias)
+        if (esNombreCategoriaBebidas(c.nombre))
+          for (final p in c.productos)
+            if (p.disponible && p.id != excluirId) p.conCategoria(c.id),
+    ];
+  }
+
+  static bool esNombreCategoriaExtras(String nombre) {
+    final n = nombre.trim().toLowerCase();
+    return n.contains('extra') ||
+        n.contains('topping') ||
+        n.contains('adicional') ||
+        n == 'extras';
+  }
+
+  static bool esNombreCategoriaBebidas(String nombre) {
+    final n = nombre.trim().toLowerCase();
+    return n.contains('bebida') || n.contains('jugo');
+  }
+
+  bool productoEsDeCategoriaBebidas(ProductoMenuModel p) {
+    for (final c in categorias) {
+      if (c.productos.any((x) => x.id == p.id)) {
+        return esNombreCategoriaBebidas(c.nombre);
+      }
+    }
+    return false;
+  }
+
+  bool productoEsUpsell(ProductoMenuModel p) {
+    for (final c in categorias) {
+      if (c.productos.any((x) => x.id == p.id)) {
+        return esNombreCategoriaExtras(c.nombre) ||
+            esNombreCategoriaBebidas(c.nombre);
+      }
+    }
+    return false;
+  }
+
   factory MenuModel.fromJson(Map<String, dynamic> json) {
     return MenuModel(
       sucursal: SucursalMenuModel.fromJson(
@@ -218,17 +260,20 @@ class ComboItemMenuModel {
   const ComboItemMenuModel({
     required this.tipoItem,
     required this.nombreItem,
+    this.itemId,
     this.cantidad = 1,
   });
 
   final String tipoItem;
   final String nombreItem;
+  final String? itemId;
   final int cantidad;
 
   factory ComboItemMenuModel.fromJson(Map<String, dynamic> json) {
     return ComboItemMenuModel(
       tipoItem: json['tipo_item'] as String? ?? 'producto',
       nombreItem: json['nombre_item'] as String? ?? '',
+      itemId: json['item_id'] as String?,
       cantidad: (json['cantidad'] as num?)?.toInt() ?? 1,
     );
   }

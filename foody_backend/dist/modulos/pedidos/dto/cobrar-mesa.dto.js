@@ -33,6 +33,7 @@ class CobrarMesaDto {
     item_ids;
     monto_parcial;
     propina;
+    idempotency_key;
 }
 exports.CobrarMesaDto = CobrarMesaDto;
 __decorate([
@@ -70,4 +71,9 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CobrarMesaDto.prototype, "propina", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CobrarMesaDto.prototype, "idempotency_key", void 0);
 //# sourceMappingURL=cobrar-mesa.dto.js.map

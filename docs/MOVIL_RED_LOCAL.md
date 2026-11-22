@@ -54,7 +54,7 @@ netsh advfirewall firewall add rule name="Foody Supabase 8000" dir=in action=all
 | Internet público (como VPS) | Necesitas **una** de estas: |
 
 1. **VPS real** (producción Foody en Ubuntu en la nube) — objetivo final del proyecto
-2. **Túnel** (pruebas): [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), ngrok, etc. → URL pública HTTPS que apuntas en `configuracion.dart`
+2. **Cloudflare Tunnel + foodyy.store** — `docs/CLOUDFLARE_TUNNEL_FOODY.md` · `scripts/iniciar-foody-foodyy-store.bat`
 3. **VPN** a tu red de casa (WireGuard/OpenVPN) y seguir usando `ipLan`
 
 El PC de desarrollo **no es** un VPS: tu router no expone puertos a Internet salvo que configures port forwarding manual (no recomendado en dev).

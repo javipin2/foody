@@ -1,5 +1,5 @@
 ---
-description: Documentar avance del proyecto en docs/AVANCE_PROYECTO.md (leer antes de codificar, actualizar al terminar)
+description: Documentar avance en docs/MASTER_STATUS.md + AVANCE_PROYECTO.md (leer antes de codificar, actualizar al terminar)
 alwaysApply: true
 ---
 
@@ -7,20 +7,45 @@ alwaysApply: true
 
 ## Fuente de verdad del estado
 
-- **Leer primero** (cada sesión con trabajo sustantivo): `docs/AVANCE_PROYECTO.md` — sección **«Resumen de 1 minuto»** antes de las tablas largas
-- **Mapa por módulo (hecho/falta):** `docs/MODULOS_ESTADO.md` — consultar para priorizar; actualizar al cerrar tarea que cambie el estado de un módulo
-- **Actualizar siempre** al cerrar una tarea, PR o bloque de implementación en la misma sesión
-- No duplicar detalle técnico en `MEMORIA.md` — solo enlaces a `AVANCE_PROYECTO.md` y `MODULOS_ESTADO.md`
+- **Leer primero:** `docs/MASTER_STATUS.md` — estado consolidado (implementado, pendiente, problemas, módulos)
+- **Cola de corrección:** `docs/INFORME_MAESTRO_FOODY.md` — F0–F8 priorizado por ops (Prompt 35)
+- **Referencias técnicas:** `docs/AVANCE_PROYECTO.md` — BD, env, endpoints, changelog sprint
+- **Checklist accionable:** `docs/ROADMAP_TERMINAR_FOODY.md` — ítems P0→P3
+- **Mapa por módulo (secundario):** `docs/MODULOS_ESTADO.md` — no duplicar fixes; sincronizar desde MASTER
+- **Evidencia forense:** `docs/archivo/auditorias-prompts/` — detalle de IDs; no lectura diaria
+- **Actualizar siempre** al cerrar una tarea: `MASTER_STATUS.md` + viñeta en `AVANCE_PROYECTO.md` (+ fila en INFORME_MAESTRO si aplica)
+- No duplicar detalle técnico en `MEMORIA.md` — enlaces a los docs anteriores
+
+## Todo hallazgo se documenta (no solo las tareas cerradas)
+
+**Si lo reportas al usuario, queda escrito.** Nada vive solo en el chat: el chat se pierde, los docs no.
+
+Aplica a **cualquier** hallazgo, aunque sea incidental, menor o esté fuera del alcance pedido:
+
+- Bug, riesgo de producción, fuga de datos, deuda técnica
+- Config sospechosa (`.env` duplicado, secreto en repo, puerto raro)
+- Script/tooling que da falsos positivos o falsos negativos
+- Contradicción entre lo documentado y lo que hace el código
+- Algo que **verificaste que está bien** y desmiente una sospecha previa (evita re-auditar lo mismo)
+
+Cada hallazgo lleva: **ID estable** (`AREA-TEMA-NN`), severidad, evidencia (archivo:línea o comando + salida) y estado (`✅` corregido / `🟣` abierto / `🟡` aceptado).
+
+Destino mínimo: fila en `docs/MASTER_STATUS.md` + viñeta en `docs/AVANCE_PROYECTO.md` + (si es crítico/alto ops) actualizar `docs/INFORME_MAESTRO_FOODY.md`.  
+Detalle forense largo: opcional en `docs/archivo/auditorias-prompts/` (nuevo o anexo al AUDITORIA del área).
+
+**No documentar «lo importante» y dejar el resto en el chat.** Si al escribir el resumen mencionas algo que no está en ningún `.md`, vuelve y escríbelo antes de cerrar.
 
 ## Cuándo actualizar
 
-Actualiza `docs/AVANCE_PROYECTO.md` si cambias cualquiera de estos:
+Actualiza **`docs/AVANCE_PROYECTO.md`** si cambias cualquiera de estos:
 
 - Backend (`foody_backend/`), migraciones (`foody_supabase/`), Flutter (`lib/features/` o migración desde `lib/screens/`)
 - Rutas (`app_router.dart`), flujos de usuario, integraciones (Supabase Realtime, FCM, impresión)
 - Decisiones que posponen trabajo (por qué no está hecho aún y en qué sprint va)
 
-Si el cambio mueve ítems de *Falta* → *Hecho* en un módulo, actualiza también la sección correspondiente en **`docs/MODULOS_ESTADO.md`** (estado, hecho, falta, changelog al pie).
+**Siempre actualizar también `docs/MASTER_STATUS.md`** (estado global del módulo o problema resuelto/abierto).
+
+Si el cambio mueve ítems de *Falta* → *Hecho* en un módulo, actualiza también la sección correspondiente en **`docs/MODULOS_ESTADO.md`** (estado, hecho, falta, changelog al pie) **o** solo MASTER si el fichero de módulos está desfasado a propósito.
 
 ## Qué escribir (evitar redundancia)
 
@@ -44,9 +69,9 @@ Además, en cada actualización:
 
 ## Antes de implementar
 
-1. Lee `docs/AVANCE_PROYECTO.md` + `docs/MODULOS_ESTADO.md` + `MEMORIA.md`
+1. Lee `docs/MASTER_STATUS.md` + `docs/INFORME_MAESTRO_FOODY.md` + `docs/AVANCE_PROYECTO.md` + `MEMORIA.md`
 2. Comprueba si el ítem ya está `✅` o `🟡` y extiende en lugar de crear en paralelo
-3. Respeta el orden de sprints salvo que el usuario pida otra prioridad explícita
+3. Respeta el orden F0 del informe maestro / sprints salvo prioridad explícita del usuario
 
 ## Formato breve en commits (opcional)
 

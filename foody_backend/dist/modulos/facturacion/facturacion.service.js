@@ -12,10 +12,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.FacturacionService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
+const pedido_estados_1 = require("../pedidos/pedido-estados");
+const auditoria_service_1 = require("../auditoria/auditoria.service");
 let FacturacionService = class FacturacionService {
     database;
-    constructor(database) {
+    auditoria;
+    constructor(database, auditoria) {
         this.database = database;
+        this.auditoria = auditoria;
     }
     calcularDesgloseIva(total, config) {
         const aplica = config.aplica_iva && Number(config.porcentaje_iva) > 0;
@@ -111,6 +115,22 @@ let FacturacionService = class FacturacionService {
         await client.query(`UPDATE pedidos SET factura_id = $1 WHERE id = $2`, [facturaId, params.pedidoId]);
         return facturaId;
     }
+    async sincronizarBorradorDesdePedidoEnTransaccion(client, sucursalId, pedidoId) {
+        const pedido = await this.consultarUnoCliente(client, `SELECT factura_id, total FROM pedidos
+       WHERE id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]);
+        if (!pedido?.factura_id)
+            return false;
+        const factura = await this.consultarUnoCliente(client, `SELECT id, estado FROM facturas
+       WHERE id = $1 AND sucursal_id = $2 AND pedido_id = $3`, [pedido.factura_id, sucursalId, pedidoId]);
+        if (!factura || factura.estado !== 'borrador')
+            return false;
+        const total = Number(pedido.total);
+        const config = await this.consultarConfigCliente(client, sucursalId);
+        const desglose = this.calcularDesgloseIva(total, config);
+        await client.query(`UPDATE facturas SET subtotal = $1, iva = $2, total = $3
+       WHERE id = $4 AND estado = 'borrador'`, [desglose.subtotal, desglose.iva, desglose.total, factura.id]);
+        return true;
+    }
     async calcularIvaParaPedidoEnTransaccion(client, sucursalId, total) {
         const config = await this.consultarConfigCliente(client, sucursalId);
         const desglose = this.calcularDesgloseIva(total, config);
@@ -146,6 +166,19 @@ let FacturacionService = class FacturacionService {
                     message: 'La factura está anulada',
                 });
             }
+            const pedido = await this.consultarUnoCliente(client, `SELECT estado, tipo, total, monto_pagado FROM pedidos
+         WHERE id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]);
+            if (!pedido)
+                throw new common_1.NotFoundException('Pedido no encontrado');
+            if (!(0, pedido_estados_1.pedidoTerminalOperativo)(pedido)) {
+                throw new common_1.BadRequestException({
+                    error: 'PEDIDO_NO_FACTURABLE',
+                    message: pedido.tipo === 'domicilio'
+                        ? 'Solo puedes emitir factura cuando el domicilio está entregado y cobrado.'
+                        : 'Solo puedes emitir factura cuando el pedido está pagado en caja.',
+                });
+            }
+            await this.sincronizarBorradorDesdePedidoEnTransaccion(client, sucursalId, pedidoId);
             const siguiente = (config.consecutivo_actual ?? 0) + 1;
             const prefijo = config.prefijo_factura ?? 'FE';
             const numeroFactura = `${prefijo}-${String(siguiente).padStart(8, '0')}`;
@@ -174,14 +207,17 @@ let FacturacionService = class FacturacionService {
                 throw new common_1.BadRequestException('El motivo de anulación es obligatorio');
             }
             await client.query(`UPDATE facturas SET estado = 'anulada' WHERE id = $1`, [facturaId]);
-            await client.query(`INSERT INTO auditoria_logs (
-           sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues
-         ) VALUES ($1,$2,'ANULAR_FACTURA','facturas',$3,$4::jsonb)`, [
+            await this.auditoria.registrarEnTransaccion(client, {
                 sucursalId,
+                accion: 'ANULAR_FACTURA',
+                tablaAfectada: 'facturas',
+                registroId: facturaId,
                 usuarioId,
-                facturaId,
-                JSON.stringify({ motivo: motivo.trim(), pedido_id: factura.pedido_id }),
-            ]);
+                datosDespues: {
+                    motivo: motivo.trim(),
+                    pedido_id: factura.pedido_id,
+                },
+            });
             return {
                 factura_id: facturaId,
                 estado: 'anulada',
@@ -207,7 +243,7 @@ let FacturacionService = class FacturacionService {
         });
         const emisor = config?.razon_social ?? 'Restaurante';
         const nitEmisor = config?.nit ?? '—';
-        const resolucion = config?.resolucion_dian ?? '—';
+        const resolucion = '—';
         const estado = String(factura.estado ?? 'borrador');
         const titulo = estado === 'emitida' ? 'Factura electrónica' : 'Borrador de factura';
         return `<!DOCTYPE html>
@@ -224,7 +260,7 @@ let FacturacionService = class FacturacionService {
 <body>
   <h1>${titulo}</h1>
   <p class="muted">${emisor} · NIT ${nitEmisor}</p>
-  <p class="muted">Resolución DIAN: ${resolucion}</p>
+  <p class="muted">DIAN electrónico pausado (CUFE/XML no enviado)</p>
   <table>
     <tr><td>Número</td><td>${factura.numero_factura ?? 'Pendiente'}</td></tr>
     <tr><td>Pedido</td><td>${factura.numero_pedido ?? '—'}</td></tr>
@@ -271,6 +307,7 @@ let FacturacionService = class FacturacionService {
 exports.FacturacionService = FacturacionService;
 exports.FacturacionService = FacturacionService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [database_service_1.DatabaseService])
+    __metadata("design:paramtypes", [database_service_1.DatabaseService,
+        auditoria_service_1.AuditoriaService])
 ], FacturacionService);
 //# sourceMappingURL=facturacion.service.js.map

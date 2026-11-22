@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -18,6 +19,7 @@ import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.dec
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { GuardarConfigFiscalDto } from './dto/guardar-config-fiscal.dto';
+import { AnularFacturaDto } from './dto/anular-factura.dto';
 import { FacturacionService } from './facturacion.service';
 
 @Controller('facturacion')
@@ -32,7 +34,7 @@ export class FacturacionController {
   @Get('config/:sucursal_id')
   @Permisos('ver_facturacion', 'gestionar_facturacion')
   async obtenerConfig(
-    @Param('sucursal_id') sucursalId: string,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     await this.sucursalScope.validarLecturaOperativa(usuario, sucursalId);
@@ -52,7 +54,7 @@ export class FacturacionController {
   @Get('facturas/:id/pdf')
   @Permisos('ver_facturacion', 'gestionar_facturacion')
   async pdf(
-    @Param('id') facturaId: string,
+    @Param('id', ParseUUIDPipe) facturaId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {
@@ -66,7 +68,7 @@ export class FacturacionController {
   @Get('facturas/:sucursal_id')
   @Permisos('ver_facturacion', 'gestionar_facturacion')
   async listarFacturas(
-    @Param('sucursal_id') sucursalId: string,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
     @Query('estado') estado: string | undefined,
     @UsuarioActual() usuario: JwtPayload,
   ) {
@@ -77,7 +79,7 @@ export class FacturacionController {
   @Post('emitir/:pedido_id')
   @Permisos('gestionar_facturacion')
   async emitir(
-    @Param('pedido_id') pedidoId: string,
+    @Param('pedido_id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {
@@ -88,8 +90,8 @@ export class FacturacionController {
   @Post('anular/:factura_id')
   @Permisos('gestionar_facturacion')
   async anular(
-    @Param('factura_id') facturaId: string,
-    @Body() body: { motivo: string },
+    @Param('factura_id', ParseUUIDPipe) facturaId: string,
+    @Body() body: AnularFacturaDto,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {

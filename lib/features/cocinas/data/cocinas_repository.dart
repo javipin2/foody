@@ -136,6 +136,54 @@ class CocinasRepository {
     _validar(r.data);
   }
 
+  /// VIE-09 C: fallo de preparación (N/D + merma + alerta).
+  Future<void> falloPreparacion({
+    required String itemId,
+    required String motivo,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/cocina/items/$itemId/fallo-preparacion',
+      data: {'motivo': motivo},
+    );
+    _validar(r.data);
+  }
+
+  Future<void> marcarPrioridadItem({
+    required String itemId,
+    required bool urgente,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/cocina/items/$itemId/prioridad',
+      data: {'urgente': urgente},
+    );
+    _validar(r.data);
+  }
+
+  Future<void> actualizarObservacionesItem({
+    required String itemId,
+    required String observaciones,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/cocina/items/$itemId/observaciones',
+      data: {'observaciones': observaciones},
+    );
+    _validar(r.data);
+  }
+
+  Future<void> reimprimirPedido({
+    required String pedidoId,
+    String? sucursalId,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/impresion/reimprimir',
+      data: {
+        'pedido_id': pedidoId,
+        if (sucursalId != null) 'sucursal_id': sucursalId,
+      },
+    );
+    _validar(r.data);
+  }
+
   List<Map<String, dynamic>> _lista(Map<String, dynamic>? data) {
     if (data == null) throw Exception('Respuesta vacía');
     final env = RespuestaApi<List<dynamic>>.fromJson(

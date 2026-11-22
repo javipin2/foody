@@ -1,12 +1,12 @@
 import { JwtPayload } from '../../core/auth/jwt-payload';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
-import { ActualizarZonaDto, CrearZonaDto, UbicacionSucursalDto } from './dto/zona.dto';
+import { ActualizarZonaDto, CotizarDomicilioDto, CrearZonaDto, UbicacionSucursalDto } from './dto/zona.dto';
 import { ZonasService } from './zonas.service';
 export declare class ZonasController {
     private readonly zonas;
     private readonly sucursalScope;
     constructor(zonas: ZonasService, sucursalScope: SucursalScopeService);
-    cotizar(sucursalId: string, lat?: string, lng?: string): Promise<{
+    cotizar(dto: CotizarDomicilioDto): Promise<{
         costo: number;
         zona_id: string | null;
         zona_nombre: string | null;

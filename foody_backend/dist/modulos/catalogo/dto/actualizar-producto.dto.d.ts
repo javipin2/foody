@@ -8,4 +8,5 @@ export declare class ActualizarProductoDto {
     orden?: number;
     margen_objetivo?: number;
     precio_para_llevar?: number | null;
+    imagen_url?: string | null;
 }

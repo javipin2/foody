@@ -114,10 +114,86 @@ let WompiService = class WompiService {
             status: String(d['status'] ?? ''),
             reference: String(d['reference'] ?? ''),
             payment_link_id: d['payment_link_id'] ? String(d['payment_link_id']) : null,
+            payment_source_id: d['payment_source_id']
+                ? String(d['payment_source_id'])
+                : null,
             payment_method_type: d['payment_method_type']
                 ? String(d['payment_method_type'])
                 : null,
             amount_in_cents: Number(d['amount_in_cents'] ?? 0),
+            customer_email: d['customer_email'] ? String(d['customer_email']) : null,
+        };
+    }
+    secretoIntegridad() {
+        const key = this.config.get('WOMPI_INTEGRIDAD')?.trim() ||
+            this.config.get('WOMPI_INTEGRITY_SECRET')?.trim();
+        if (!key) {
+            throw new common_1.ServiceUnavailableException('Wompi no configurado (falta secreto de integridad)');
+        }
+        return key;
+    }
+    firmaIntegridad(referencia, montoCentavos, moneda = 'COP') {
+        const cadena = `${referencia}${montoCentavos}${moneda}${this.secretoIntegridad()}`;
+        return (0, crypto_1.createHash)('sha256').update(cadena).digest('hex');
+    }
+    async crearTransaccionRecurrente(input) {
+        const body = {
+            amount_in_cents: input.montoCentavos,
+            currency: 'COP',
+            customer_email: input.customerEmail,
+            reference: input.referenciaInterna,
+            payment_source_id: Number(input.paymentSourceId),
+            recurrent: true,
+            payment_method: { installments: 1 },
+            signature: this.firmaIntegridad(input.referenciaInterna, input.montoCentavos),
+        };
+        if (input.redirectUrl) {
+            body.redirect_url = input.redirectUrl;
+        }
+        const resp = await fetch(`${this.baseUrl()}/transactions`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.clavePrivada()}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+        const json = (await resp.json());
+        if (!resp.ok || !json.data) {
+            const detalle = json?.error?.reason ?? json?.error?.type ?? resp.statusText;
+            throw new common_1.BadRequestException(`Wompi rechazó el cobro recurrente: ${detalle}`);
+        }
+        const d = json.data;
+        return {
+            id: String(d['id'] ?? ''),
+            status: String(d['status'] ?? ''),
+            reference: String(d['reference'] ?? input.referenciaInterna),
+        };
+    }
+    async consultarFuentePago(paymentSourceId) {
+        const id = paymentSourceId.trim();
+        const resp = await fetch(`${this.baseUrl()}/payment_sources/${encodeURIComponent(id)}`, {
+            headers: { Authorization: `Bearer ${this.clavePrivada()}` },
+        });
+        const json = (await resp.json());
+        if (!resp.ok || !json.data) {
+            const detalle = json.error?.reason ?? resp.statusText;
+            throw new common_1.BadRequestException(`No se pudo consultar la fuente de pago Wompi: ${detalle}`);
+        }
+        const d = json.data;
+        const publicData = d['public_data'];
+        return {
+            id: String(d['id'] ?? id),
+            status: String(d['status'] ?? ''),
+            type: d['type'] ? String(d['type']) : null,
+            public_data: publicData
+                ? {
+                    last_four: publicData['last_four']
+                        ? String(publicData['last_four'])
+                        : undefined,
+                    brand: publicData['brand'] ? String(publicData['brand']) : undefined,
+                }
+                : undefined,
         };
     }
     validarFirmaEvento(evento, checksumHeader) {

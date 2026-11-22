@@ -11,14 +11,29 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfirmarEntregaDto = void 0;
 const class_validator_1 = require("class-validator");
+const METODOS_ENTREGA = [
+    'efectivo',
+    'tarjeta',
+    'transferencia',
+    'nequi',
+    'pendiente',
+    'pendiente_liquidacion',
+];
 class ConfirmarEntregaDto {
     metodo_pago;
+    metodo_pago_domicilio;
 }
 exports.ConfirmarEntregaDto = ConfirmarEntregaDto;
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.IsIn)(['efectivo', 'tarjeta', 'transferencia', 'nequi', 'pendiente']),
+    (0, class_validator_1.IsIn)(METODOS_ENTREGA),
     __metadata("design:type", String)
 ], ConfirmarEntregaDto.prototype, "metodo_pago", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsIn)(METODOS_ENTREGA),
+    __metadata("design:type", String)
+], ConfirmarEntregaDto.prototype, "metodo_pago_domicilio", void 0);
 //# sourceMappingURL=confirmar-entrega.dto.js.map

@@ -21,6 +21,7 @@ class CrearProductoDto {
     disponible;
     orden;
     precio_para_llevar;
+    imagen_url;
 }
 exports.CrearProductoDto = CrearProductoDto;
 __decorate([
@@ -66,4 +67,9 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CrearProductoDto.prototype, "precio_para_llevar", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CrearProductoDto.prototype, "imagen_url", void 0);
 //# sourceMappingURL=crear-producto.dto.js.map

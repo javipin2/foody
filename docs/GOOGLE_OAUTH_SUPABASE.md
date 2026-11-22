@@ -1,6 +1,7 @@
 # Google OAuth — Supabase self-hosted (Foody)
 
-> Login «Continuar con Google» en app **Equipo** (`/admin/login`, `/admin/registro`).
+> **Equipo:** «Continuar con Google» en `/admin/login` y `/admin/registro` → JWT Nest (`/auth/login-google`).  
+> **Cliente:** «Continuar con Google» en `/cliente/mis-pedidos` → vincula `device_id` ↔ `auth_uid` (`POST /dispositivos/vincular-auth`). **No** crea fila en `usuarios` staff.
 
 ## Por qué fallaba
 
@@ -27,6 +28,7 @@
 
    ```
    http://localhost:8080
+   http://localhost:8081
    ```
 
    > **No pongas** `http://192.168.227.118:8000/...` — Google muestra error «debe terminar en .com».
@@ -46,10 +48,21 @@ Esto actualiza `.env` en WSL, `ADDITIONAL_REDIRECT_URLS` y recrea `supabase-auth
 ### 3. Probar
 
 ```powershell
+# Staff
 .\scripts\flutter-run-flavor.ps1 -Flavor equipo -Device chrome -WebPort 8080
+# Cliente (historial)
+.\scripts\flutter-run-flavor.ps1 -Flavor cliente -Device chrome -WebPort 8081
 ```
 
-Equipo → **Continuar con Google**.
+Equipo → **Continuar con Google** (staff).  
+Cliente → **Mis pedidos** → **Continuar con Google** (historial en la nube).
+
+Redirects que deja el script en `ADDITIONAL_REDIRECT_URLS`:
+
+- `http://localhost:8080/admin/login`
+- `http://localhost:8080/admin/registro`
+- `http://localhost:8081/cliente/mis-pedidos`
+- `foody://login`
 
 ## Sin Google (alternativa inmediata)
 
@@ -63,7 +76,9 @@ Equipo → **Continuar con Google**.
 | `scripts/configurar-google-oauth-supabase.sh` | Lógica en WSL |
 | `~/supabase-docker/docker-compose.yml` | `GOTRUE_EXTERNAL_GOOGLE_*` |
 | `lib/features/auth/presentation/staff_login_screen.dart` | `signInWithOAuth` |
-| `lib/features/auth/domain/google_oauth_staff_service.dart` | OAuth unificado + redirect web/móvil |
+| `lib/features/auth/domain/google_oauth_staff_service.dart` | OAuth staff + redirect web/móvil |
+| `lib/features/auth/domain/google_oauth_cliente_service.dart` | OAuth consumidor → vincular-auth |
+| `lib/features/pedidos/presentation/mis_pedidos_screen.dart` | CTA Google + historial |
 | `lib/config/app_link_config.dart` | `foody://login` deep link móvil |
 
 ## Móvil (APK / Play Store)

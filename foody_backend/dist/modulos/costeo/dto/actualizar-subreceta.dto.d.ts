@@ -5,5 +5,6 @@ export declare class ActualizarSubrecetaDto {
     cantidad_resultado: number;
     unidad_resultado: string;
     margen_error?: number;
+    usa_produccion_lote?: boolean;
     items: SubrecetaItemDto[];
 }

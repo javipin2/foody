@@ -8,4 +8,7 @@ export declare class PlanFeaturesService {
     incluyeModulo(plan: string | null | undefined, modulo: ModuloPlan): boolean;
     assertLimiteSucursales(restauranteId: string): Promise<void>;
     assertLimiteUsuariosStaff(restauranteId: string): Promise<void>;
+    assertLimiteMesas(restauranteId: string, sucursalId: string): Promise<void>;
+    assertLimiteProductos(restauranteId: string, sucursalId: string): Promise<void>;
+    assertLimiteIngredientes(restauranteId: string, sucursalId: string): Promise<void>;
 }

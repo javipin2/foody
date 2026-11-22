@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
+import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
+import 'package:reserva_canchas/features/cliente/presentation/foody_scaffold_cliente.dart';
 import 'package:reserva_canchas/features/promociones/presentation/promociones_ciudad_stories_bar.dart';
 import 'package:reserva_canchas/features/restaurantes/data/restaurantes_repository.dart';
 import 'package:reserva_canchas/features/restaurantes/domain/restaurante_model.dart';
@@ -56,112 +60,235 @@ class _RestaurantesScreenFoodyState extends State<RestaurantesScreenFoody> {
     }).toList();
   }
 
+  void _abrir(RestauranteModel r) {
+    context.push(
+      '/restaurantes/${r.id}/sucursales'
+      '?nombre=${Uri.encodeComponent(r.nombre)}',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: ColoresFoody.fondo,
+    final ancho = FoodyBreakpoints.widthOf(context);
+    final maxW = FoodyBreakpoints.maxContentCliente;
+
+    return FoodyScaffoldCliente(
       appBar: AppBar(
-        title: Text(widget.ciudadNombre),
-        backgroundColor: ColoresFoody.fondo,
         elevation: 0,
+        scrolledUnderElevation: 1,
+        backgroundColor: AnaliticaTokens.surface,
+        foregroundColor: AnaliticaTokens.ink,
+        surfaceTintColor: Colors.transparent,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.ciudadNombre,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                color: AnaliticaTokens.ink,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const Text(
+              'Lugares cerca de ti',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: AnaliticaTokens.inkMuted,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Más opciones',
+            icon: const Icon(Icons.more_vert, color: AnaliticaTokens.inkMuted),
+            onSelected: (value) {
+              if (value == 'cambiar_ciudad') {
+                context.go('/cliente');
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'cambiar_ciudad',
+                child: Text('Cambiar ciudad'),
+              ),
+            ],
+          ),
+        ],
       ),
-      body: RefreshIndicator(
-        color: ColoresFoody.primario,
-        onRefresh: () async {
-          setState(() {
-            _futureRestaurantes =
-                _repositorio.listarPorCiudad(widget.ciudadSlug);
-          });
-          await _futureRestaurantes;
-        },
-        child: FutureBuilder<List<RestauranteModel>>(
-          future: _futureRestaurantes,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                children: [
-                  _ErrorEstado(
-                    mensaje: 'No pudimos cargar los restaurantes',
-                    detalle: '${snapshot.error}',
-                    onReintentar: _reintentar,
-                  ),
-                ],
-              );
-            }
+      body: ColoredBox(
+        color: AnaliticaTokens.canvas,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxW),
+            child: RefreshIndicator(
+              color: AnaliticaTokens.ink,
+              onRefresh: () async {
+                setState(() {
+                  _futureRestaurantes =
+                      _repositorio.listarPorCiudad(widget.ciudadSlug);
+                });
+                await _futureRestaurantes;
+              },
+              child: FutureBuilder<List<RestauranteModel>>(
+                future: _futureRestaurantes,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return FoodyEstadoUi.cargando(
+                      mensaje: 'Cargando lugares…',
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.2,
+                        ),
+                        FoodyEstadoUi.error(
+                          mensaje: mensajeErrorHttp(
+                            snapshot.error!,
+                            contexto: 'cargar restaurantes',
+                          ),
+                          onReintentar: _reintentar,
+                        ),
+                      ],
+                    );
+                  }
 
-            final todos = snapshot.data ?? [];
-            final restaurantes = _filtrar(todos);
+                  final todos = snapshot.data ?? [];
+                  final restaurantes = _filtrar(todos);
+                  final cols = FoodyBreakpoints.esLarge(ancho)
+                      ? 3
+                      : (FoodyBreakpoints.esExpanded(ancho) ? 2 : 1);
+                  final bannerAlto = FoodyBreakpoints.esLarge(ancho)
+                      ? 156.0
+                      : (FoodyBreakpoints.esExpanded(ancho) ? 140.0 : 132.0);
+                  // Portada + solape logo (~28) + pie (padding 30+12 + texto ~34).
+                  final cardAlto = bannerAlto + 100;
 
-            return CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: PromocionesCiudadStoriesBar(
-                    ciudadSlug: widget.ciudadSlug,
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: SearchBar(
-                      controller: _busquedaController,
-                      hintText: 'Buscar restaurante…',
-                      leading: const Icon(Icons.search),
-                      trailing: _filtro.isNotEmpty
-                          ? [
-                              IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () => _busquedaController.clear(),
-                              ),
-                            ]
-                          : null,
-                      backgroundColor: WidgetStateProperty.all(
-                        ColoresFoody.tarjeta,
+                  return CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: PromocionesCiudadStoriesBar(
+                          ciudadSlug: widget.ciudadSlug,
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-                if (todos.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Text('No hay restaurantes disponibles'),
-                    ),
-                  )
-                else if (restaurantes.isEmpty)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Text('Sin resultados para tu búsqueda'),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    sliver: SliverList.separated(
-                      itemCount: restaurantes.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 14),
-                      itemBuilder: (context, index) {
-                        return _RestauranteCard(
-                          restaurante: restaurantes[index],
-                          onTap: () {
-                            context.push(
-                              '/restaurantes/${restaurantes[index].id}/sucursales'
-                              '?nombre=${Uri.encodeComponent(restaurantes[index].nombre)}',
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            );
-          },
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AnaliticaTokens.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: AnaliticaTokens.border),
+                              boxShadow: AnaliticaTokens.shadowSoft,
+                            ),
+                            child: TextField(
+                              controller: _busquedaController,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AnaliticaTokens.ink,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Buscar restaurante…',
+                                hintStyle: const TextStyle(
+                                  color: AnaliticaTokens.inkSoft,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.search_rounded,
+                                  color: AnaliticaTokens.inkSoft,
+                                ),
+                                suffixIcon: _filtro.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(
+                                          Icons.clear_rounded,
+                                          color: AnaliticaTokens.inkSoft,
+                                        ),
+                                        onPressed: _busquedaController.clear,
+                                      )
+                                    : null,
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 14,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (todos.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: FoodyEstadoUi.vacio(
+                            titulo: 'Aún no hay lugares aquí',
+                            subtitulo: 'Prueba otra ciudad o vuelve más tarde',
+                            icono: Icons.storefront_outlined,
+                            etiquetaAccion: 'Cambiar ciudad',
+                            onAccion: () => context.go('/cliente'),
+                          ),
+                        )
+                      else if (restaurantes.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: FoodyEstadoUi.vacio(
+                            titulo: 'Sin resultados',
+                            subtitulo: 'Prueba otro nombre',
+                            icono: Icons.search_off_outlined,
+                          ),
+                        )
+                      else if (cols == 1)
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                          sliver: SliverList.separated(
+                            itemCount: restaurantes.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 14),
+                            itemBuilder: (context, index) {
+                              return _RestauranteCard(
+                                restaurante: restaurantes[index],
+                                bannerAlto: bannerAlto,
+                                onTap: () => _abrir(restaurantes[index]),
+                              );
+                            },
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: cols,
+                              mainAxisSpacing: 14,
+                              crossAxisSpacing: 14,
+                              mainAxisExtent: cardAlto,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                return _RestauranteCard(
+                                  restaurante: restaurantes[index],
+                                  bannerAlto: bannerAlto,
+                                  onTap: () => _abrir(restaurantes[index]),
+                                );
+                              },
+                              childCount: restaurantes.length,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -172,60 +299,86 @@ class _RestauranteCard extends StatelessWidget {
   const _RestauranteCard({
     required this.restaurante,
     required this.onTap,
+    this.bannerAlto = 132,
   });
 
   final RestauranteModel restaurante;
   final VoidCallback onTap;
+  final double bannerAlto;
+
+  static const _logoSize = 56.0;
 
   @override
   Widget build(BuildContext context) {
     final banner = restaurante.bannerUrl;
     final logo = restaurante.logoUrl;
+    final tieneLogo = logo != null && logo.isNotEmpty;
+    final subtitulo = (restaurante.descripcion ?? '').trim().isNotEmpty
+        ? restaurante.descripcion!.trim()
+        : 'Ver menú y sedes';
 
     return Material(
-      color: ColoresFoody.tarjeta,
-      borderRadius: BorderRadius.circular(16),
+      color: AnaliticaTokens.surface,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: 120,
-              child: Stack(
-                fit: StackFit.expand,
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+            border: Border.all(color: AnaliticaTokens.border),
+            boxShadow: AnaliticaTokens.shadowSoft,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  if (banner != null && banner.isNotEmpty)
-                    Image.network(
-                      banner,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _bannerPlaceholder(),
-                    )
-                  else
-                    _bannerPlaceholder(),
+                  SizedBox(
+                    height: bannerAlto,
+                    width: double.infinity,
+                    child: banner != null && banner.isNotEmpty
+                        ? Image.network(
+                            banner,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: bannerAlto,
+                            alignment: Alignment.center,
+                            cacheWidth: 900,
+                            errorBuilder: (_, __, ___) => _bannerPlaceholder(),
+                          )
+                        : _bannerPlaceholder(),
+                  ),
+                  // Anillo blanco vía padding (border+clip llenaba el círculo y ocultaba el borde).
                   Positioned(
-                    left: 12,
-                    bottom: -24,
+                    left: 14,
+                    bottom: -_logoSize / 2.4,
                     child: Container(
-                      width: 56,
-                      height: 56,
+                      width: _logoSize,
+                      height: _logoSize,
+                      padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white,
-                        border: Border.all(color: ColoresFoody.tarjeta, width: 3),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            blurRadius: 8,
+                            color: AnaliticaTokens.ink.withValues(alpha: 0.16),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
                       child: ClipOval(
-                        child: logo != null && logo.isNotEmpty
+                        child: tieneLogo
                             ? Image.network(
                                 logo,
                                 fit: BoxFit.cover,
+                                width: _logoSize,
+                                height: _logoSize,
+                                alignment: Alignment.center,
+                                cacheWidth: 240,
                                 errorBuilder: (_, __, ___) =>
                                     _logoPlaceholder(),
                               )
@@ -235,99 +388,89 @@ class _RestauranteCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          restaurante.nombre,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        if (restaurante.descripcion != null &&
-                            restaurante.descripcion!.isNotEmpty) ...[
-                          const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 30, 12, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            restaurante.descripcion!,
-                            maxLines: 2,
+                            restaurante.nombre,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: ColoresFoody.gris,
-                                ),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: AnaliticaTokens.ink,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitulo,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: AnaliticaTokens.inkMuted,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    color: ColoresFoody.gris,
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AnaliticaTokens.ink,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Ver menú',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _bannerPlaceholder() {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            ColoresFoody.primario.withValues(alpha: 0.85),
-            ColoresFoody.secundario.withValues(alpha: 0.75),
-          ],
+    return const ColoredBox(
+      color: AnaliticaTokens.surfaceMuted,
+      child: Center(
+        child: Icon(
+          Icons.restaurant_rounded,
+          color: AnaliticaTokens.inkSoft,
+          size: 40,
         ),
-      ),
-      child: const Center(
-        child: Icon(Icons.restaurant, color: Colors.white54, size: 40),
       ),
     );
   }
 
   Widget _logoPlaceholder() {
-    return ColoredBox(
-      color: ColoresFoody.primario.withValues(alpha: 0.12),
-      child: Icon(Icons.restaurant, color: ColoresFoody.primario, size: 28),
-    );
-  }
-}
-
-class _ErrorEstado extends StatelessWidget {
-  const _ErrorEstado({
-    required this.mensaje,
-    required this.detalle,
-    required this.onReintentar,
-  });
-
-  final String mensaje;
-  final String detalle;
-  final VoidCallback onReintentar;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(mensaje, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(detalle, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: onReintentar, child: const Text('Reintentar')),
-          ],
-        ),
+    return const ColoredBox(
+      color: AnaliticaTokens.surfaceMuted,
+      child: Icon(
+        Icons.storefront_rounded,
+        color: AnaliticaTokens.ink,
+        size: 26,
       ),
     );
   }

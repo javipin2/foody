@@ -6,5 +6,7 @@ export declare class JwtPayload {
     restaurante_id: string | null;
     permisos: string[];
     ciudad_id?: string | null;
+    cocina_id?: string | null;
     plan?: string;
+    tv?: number;
 }

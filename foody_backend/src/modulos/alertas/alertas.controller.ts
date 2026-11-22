@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -54,7 +55,7 @@ export class AlertasController {
   @Patch(':id/revisar')
   @Permisos('ver_alertas')
   async revisar(
-    @Param('id') alertaId: string,
+    @Param('id', ParseUUIDPipe) alertaId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {

@@ -1,0 +1,63 @@
+# Foody — CI: build + analyze (siempre) · E2E API (manual con stack local)
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: 'Ejecutar E2E API (requiere secrets/self-hosted con Supabase)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  backend-build:
+    name: NestJS build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: foody_backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: foody_backend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  flutter-analyze:
+    name: Flutter analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos lib/
+
+  e2e-api:
+    name: E2E API (manual)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_e2e == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aviso E2E
+        run: |
+          echo "::warning::E2E completo requiere Postgres con migraciones 001-063 y seed demo."
+          echo "En desarrollo local: Docker Supabase + iniciar-backend-wsl.bat + pwsh scripts/verificar-ci.ps1 -Completo"
+          echo "Para CI automatico: usar runner self-hosted con el stack ya levantado."
+      - name: Comprobar salud (opcional)
+        continue-on-error: true
+        run: |
+          curl -sf http://localhost:3000/api/v1/salud || echo "API no alcanzable en runner — omitir o usar self-hosted"

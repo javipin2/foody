@@ -1,4 +1,7 @@
 import { CanActivate, ExecutionContext } from '@nestjs/common';
+import { DatabaseService } from '../../database/database.service';
 export declare class SuperAdminGuard implements CanActivate {
-    canActivate(context: ExecutionContext): boolean;
+    private readonly database;
+    constructor(database: DatabaseService);
+    canActivate(context: ExecutionContext): Promise<boolean>;
 }

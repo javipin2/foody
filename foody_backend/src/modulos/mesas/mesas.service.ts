@@ -4,7 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { PoolClient } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
+import { PedidosCuentaMesaService } from '../pedidos/pedidos-cuenta-mesa.service';
+import { PedidosEstadoCommandService } from '../pedidos/pedidos-estado-command.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import {
   AlertasRiesgoService,
@@ -14,6 +17,8 @@ import { ActualizarMesaDto } from './dto/crear-mesa.dto';
 import { CrearMesaDto } from './dto/crear-mesa.dto';
 import { TransferirMesaDto } from './dto/transferir-mesa.dto';
 import { AsignarTurnoMesasDto } from './dto/asignar-turno-mesas.dto';
+import { SQL_WHERE_PEDIDO_BLOQUEA_MESA } from '../pedidos/pedido-estados';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 
 const ESTADOS_PEDIDO_CERRADO = [
   'entregado',
@@ -22,12 +27,18 @@ const ESTADOS_PEDIDO_CERRADO = [
   'pagado',
 ] as const;
 
+import { PlanFeaturesService } from '../../core/auth/plan-features.service';
+
 @Injectable()
 export class MesasService {
   constructor(
     private readonly database: DatabaseService,
     private readonly realtime: RealtimeBroadcastService,
     private readonly alertasRiesgo: AlertasRiesgoService,
+    private readonly planFeatures: PlanFeaturesService,
+    private readonly cuentaMesa: PedidosCuentaMesaService,
+    private readonly auditoria: AuditoriaService,
+    private readonly estadoPedido: PedidosEstadoCommandService,
   ) {}
 
   async listarConEstado(sucursalId: string, incluirInactivas = false) {
@@ -45,7 +56,10 @@ export class MesasService {
               p.id AS pedido_id,
               p.estado AS pedido_estado,
               p.numero_pedido,
-              p.created_at AS pedido_creado_at
+              p.created_at AS pedido_creado_at,
+              (SELECT COUNT(*)::int FROM pedidos pq
+               WHERE pq.mesa_id = m.id AND pq.estado = 'pendiente_aprobacion'
+              ) AS qr_pendientes_count
        FROM mesas m
        LEFT JOIN usuarios u ON u.id = m.mesera_asignada_id
        LEFT JOIN LATERAL (
@@ -66,7 +80,10 @@ export class MesasService {
     );
   }
 
-  async crear(dto: CrearMesaDto) {
+  async crear(dto: CrearMesaDto, restauranteId?: string) {
+    if (restauranteId) {
+      await this.planFeatures.assertLimiteMesas(restauranteId, dto.sucursal_id);
+    }
     const qrToken = dto.qr_token?.trim() || this.generarQrToken(dto.nombre);
 
     const existe = await this.database.consultarUno<{ id: string }>(
@@ -308,16 +325,14 @@ export class MesasService {
          WHERE id = $1 AND sucursal_id = $3`,
         [mesaPrincipalId, mesaPrincipalId, sucursalId],
       );
-      await client.query(
-        `INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues)
-         VALUES ($1,$2,'UNIR_MESAS','mesas',$3,$4::jsonb)`,
-        [
-          sucursalId,
-          usuarioId,
-          mesaPrincipalId,
-          JSON.stringify({ mesas_secundarias: mesasSecundarias }),
-        ],
-      );
+      await this.auditoria.registrarEnTransaccion(client, {
+        sucursalId,
+        accion: 'UNIR_MESAS',
+        tablaAfectada: 'mesas',
+        registroId: mesaPrincipalId,
+        usuarioId,
+        datosDespues: { mesas_secundarias: mesasSecundarias },
+      });
     });
 
     void this.realtime.mesasActualizadas(sucursalId);
@@ -332,69 +347,173 @@ export class MesasService {
     sucursalId: string,
     usuarioId: string,
     dto: { cliente_nombre: string; cliente_telefono?: string; motivo: string },
+    rolUsuario?: string | null,
   ) {
+    const motivo = dto.motivo?.trim();
+    const clienteNombre = dto.cliente_nombre?.trim();
+    if (!clienteNombre) {
+      throw new BadRequestException('El nombre del cliente es obligatorio');
+    }
+    if (!motivo) {
+      throw new BadRequestException('El motivo es obligatorio');
+    }
+
     const result = await this.database.enTransaccion(async (client) => {
+      const mesa = await client.query<{
+        id: string;
+        mesa_grupo_id: string | null;
+      }>(
+        `SELECT id, mesa_grupo_id FROM mesas
+         WHERE id = $1 AND sucursal_id = $2 AND activa = true
+         FOR UPDATE`,
+        [mesaId, sucursalId],
+      );
+      if (!mesa.rows[0]) {
+        throw new NotFoundException('Mesa no encontrada');
+      }
+
+      const mesaIds = await this.resolverIdsMesasGrupo(
+        client,
+        mesa.rows[0].id,
+        mesa.rows[0].mesa_grupo_id,
+      );
+
       const pedidos = await client.query<{
         id: string;
         numero_pedido: string;
+        estado: string;
+        tipo: string;
         total: string;
         monto_pagado: string;
+        mesa_id: string;
       }>(
-        `SELECT id, numero_pedido, total, COALESCE(monto_pagado, 0) AS monto_pagado
+        `SELECT id, numero_pedido, estado, tipo, total,
+                COALESCE(monto_pagado, 0) AS monto_pagado, mesa_id
          FROM pedidos
-         WHERE mesa_id = $1 AND sucursal_id = $2
+         WHERE mesa_id = ANY($1::uuid[])
+           AND sucursal_id = $2
            AND estado NOT IN ('entregado', 'cancelado', 'rechazado', 'pagado')
          FOR UPDATE`,
-        [mesaId, sucursalId],
+        [mesaIds, sucursalId],
       );
       if (!pedidos.rows.length) {
         throw new BadRequestException('No hay pedidos activos en la mesa');
       }
 
       const cuentas: { pedido_id: string; monto: number }[] = [];
+      const pedidosCerrados: {
+        id: string;
+        numero_pedido: string;
+        estado_anterior: string;
+        saldo_cxc: number;
+      }[] = [];
+
       for (const p of pedidos.rows) {
-        const saldo = Number(p.total) - Number(p.monto_pagado);
-        if (saldo <= 0) continue;
+        const total = Number(p.total);
+        const montoPagado = Number(p.monto_pagado);
+        const saldo = Math.max(0, total - montoPagado);
+        const estadoAnterior = p.estado;
+
+        if (saldo > 0.01) {
+          await client.query(
+            `INSERT INTO cuentas_por_cobrar (
+               sucursal_id, pedido_id, cliente_nombre, cliente_telefono, monto, usuario_id
+             ) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [
+              sucursalId,
+              p.id,
+              clienteNombre,
+              dto.cliente_telefono?.trim() ?? null,
+              saldo,
+              usuarioId,
+            ],
+          );
+          cuentas.push({ pedido_id: p.id, monto: saldo });
+        }
+
+        const montoFinal = saldo > 0.01 ? montoPagado : total;
+        const motivoEstado =
+          saldo > 0.01
+            ? `Salió sin pagar (CxC $${saldo.toFixed(2)}): ${motivo}`
+            : `Cierre mesa sin saldo pendiente: ${motivo}`;
+
+        // PED-BYPASS-01: montos fuera del command; estado vía puerta única.
         await client.query(
-          `INSERT INTO cuentas_por_cobrar (
-             sucursal_id, pedido_id, cliente_nombre, cliente_telefono, monto, usuario_id
-           ) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [
-            sucursalId,
-            p.id,
-            dto.cliente_nombre.trim(),
-            dto.cliente_telefono?.trim() ?? null,
-            saldo,
-            usuarioId,
-          ],
+          `UPDATE pedidos
+           SET monto_pagado = $2,
+               metodo_pago = COALESCE(NULLIF(metodo_pago, ''), 'pendiente')
+           WHERE id = $1`,
+          [p.id, montoFinal],
         );
-        cuentas.push({ pedido_id: p.id, monto: saldo });
+        await this.estadoPedido.aplicarEstadoEnTransaccion(client, {
+          pedidoId: p.id,
+          sucursalId,
+          nuevoEstado: 'pagado',
+          origen: 'cobro',
+          usuarioId,
+          estadoAnterior: estadoAnterior,
+          tipo: p.tipo,
+          motivo: motivoEstado,
+          rol: rolUsuario,
+        });
+
+        pedidosCerrados.push({
+          id: p.id,
+          numero_pedido: p.numero_pedido,
+          estado_anterior: estadoAnterior,
+          saldo_cxc: saldo > 0.01 ? saldo : 0,
+        });
+      }
+
+      for (const idMesa of mesaIds) {
+        await this.cuentaMesa.liberarMesaSiSinPedidosActivos(
+          client,
+          idMesa,
+          sucursalId,
+        );
       }
 
       await this.alertasRiesgo.registrarEnTransaccion(client, {
         sucursalId,
         tipo: 'salio_sin_pagar',
         nivel: 'alto',
-        descripcion: `Mesa sin pago: ${dto.motivo.trim()}`,
+        descripcion: `Mesa sin pago: ${motivo}`,
         referenciaId: mesaId,
         referenciaTipo: 'mesa',
         deduplicar: false,
       });
 
-      await client.query(
-        `INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues)
-         VALUES ($1,$2,'SALIO_SIN_PAGAR','mesas',$3,$4::jsonb)`,
-        [
-          sucursalId,
-          usuarioId,
-          mesaId,
-          JSON.stringify({ motivo: dto.motivo, cuentas }),
-        ],
-      );
+      await this.auditoria.registrarEnTransaccion(client, {
+        sucursalId,
+        accion: 'SALIO_SIN_PAGAR',
+        tablaAfectada: 'mesas',
+        registroId: mesaId,
+        usuarioId,
+        datosDespues: {
+          motivo,
+          cliente_nombre: clienteNombre,
+          cuentas,
+          pedidos_cerrados: pedidosCerrados,
+          mesas_grupo: mesaIds,
+        },
+      });
 
-      return { mesa_id: mesaId, cuentas_creadas: cuentas };
+      return {
+        mesa_id: mesaId,
+        mesas_liberadas: mesaIds,
+        cuentas_creadas: cuentas,
+        pedidos_cerrados: pedidosCerrados,
+      };
     });
 
+    for (const p of result.pedidos_cerrados) {
+      void this.realtime.pedidoActualizado({
+        pedido_id: p.id,
+        sucursal_id: sucursalId,
+        estado: 'pagado',
+        numero_pedido: p.numero_pedido,
+      });
+    }
     void this.realtime.mesasActualizadas(sucursalId);
     return result;
   }
@@ -411,6 +530,10 @@ export class MesasService {
     await this.obtenerMesa(dto.mesa_destino_id, dto.sucursal_id);
 
     const result = await this.database.enTransaccion(async (client) => {
+      await client.query(
+        `SELECT id FROM mesas WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
+        [dto.mesa_origen_id, dto.sucursal_id],
+      );
       await client.query(
         `SELECT id FROM mesas WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
         [dto.mesa_destino_id, dto.sucursal_id],
@@ -474,10 +597,39 @@ export class MesasService {
       );
 
       await client.query(
-        `UPDATE mesas SET estado_operativo = 'ocupada'
-         WHERE id = $1 AND sucursal_id = $2`,
-        [dto.mesa_destino_id, dto.sucursal_id],
+        `UPDATE mesas d
+         SET estado_operativo = 'ocupada',
+             mesera_asignada_id = COALESCE(d.mesera_asignada_id, o.mesera_asignada_id),
+             mesera_asignada_at = COALESCE(d.mesera_asignada_at, o.mesera_asignada_at)
+         FROM mesas o
+         WHERE d.id = $1 AND d.sucursal_id = $2
+           AND o.id = $3 AND o.sucursal_id = $2`,
+        [dto.mesa_destino_id, dto.sucursal_id, dto.mesa_origen_id],
       );
+
+      await client.query(
+        `UPDATE pedidos p
+         SET mesera_id = COALESCE(p.mesera_id, m.mesera_asignada_id)
+         FROM mesas m
+         WHERE p.id = $1 AND m.id = $2`,
+        [dto.pedido_id, dto.mesa_destino_id],
+      );
+
+      const activoOrigen = await client.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM pedidos
+         WHERE mesa_id = $1 AND sucursal_id = $2
+           AND (${SQL_WHERE_PEDIDO_BLOQUEA_MESA})`,
+        [dto.mesa_origen_id, dto.sucursal_id],
+      );
+      if ((activoOrigen.rows[0]?.n ?? 0) === 0) {
+        await client.query(
+          `UPDATE mesas
+           SET mesera_asignada_id = NULL, mesera_asignada_at = NULL,
+               estado_operativo = 'libre', mesa_grupo_id = NULL
+           WHERE id = $1 AND sucursal_id = $2`,
+          [dto.mesa_origen_id, dto.sucursal_id],
+        );
+      }
 
       const transferencia = await client.query<{ id: string }>(
         `INSERT INTO transferencias_mesa
@@ -499,22 +651,20 @@ export class MesasService {
       );
       const totalTransferencias = Number(previas.rows[0]?.total ?? 0);
 
-      await client.query(
-        `INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues)
-         VALUES ($1,$2,'TRANSFERIR_MESA','mesas',$3,$4::jsonb)`,
-        [
-          dto.sucursal_id,
-          usuarioId,
-          dto.pedido_id,
-          JSON.stringify({
-            pedido_id: dto.pedido_id,
-            numero_pedido: fila.numero_pedido,
-            mesa_origen_id: dto.mesa_origen_id,
-            mesa_destino_id: dto.mesa_destino_id,
-            motivo: dto.motivo?.trim() || null,
-          }),
-        ],
-      );
+      await this.auditoria.registrarEnTransaccion(client, {
+        sucursalId: dto.sucursal_id,
+        accion: 'TRANSFERIR_MESA',
+        tablaAfectada: 'mesas',
+        registroId: dto.pedido_id,
+        usuarioId,
+        datosDespues: {
+          pedido_id: dto.pedido_id,
+          numero_pedido: fila.numero_pedido,
+          mesa_origen_id: dto.mesa_origen_id,
+          mesa_destino_id: dto.mesa_destino_id,
+          motivo: dto.motivo?.trim() || null,
+        },
+      });
 
       if (totalTransferencias > UMBRALES_ALERTA.transferenciasMesa) {
         await this.alertasRiesgo.registrarEnTransaccion(client, {
@@ -567,6 +717,24 @@ export class MesasService {
     const html = this.generarHtmlQr(mesa.nombre as string, url, mesa.qr_token as string);
 
     return { mesa, url, html };
+  }
+
+  private async resolverIdsMesasGrupo(
+    client: PoolClient,
+    mesaId: string,
+    mesaGrupoId: string | null,
+  ): Promise<string[]> {
+    const grupoId = mesaGrupoId ?? mesaId;
+    const filas = await client.query<{ id: string }>(
+      `SELECT id FROM mesas
+       WHERE sucursal_id = (
+         SELECT sucursal_id FROM mesas WHERE id = $1 LIMIT 1
+       )
+         AND (id = $2 OR mesa_grupo_id = $2)`,
+      [mesaId, grupoId],
+    );
+    const ids = filas.rows.map((f) => f.id);
+    return ids.length ? ids : [mesaId];
   }
 
   private async obtenerMesa(mesaId: string, sucursalId: string) {

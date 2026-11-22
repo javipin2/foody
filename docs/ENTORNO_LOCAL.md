@@ -2,6 +2,8 @@
 
 Guía para desarrollar con **Supabase self-hosted** + **NestJS** + **Flutter**, sin depender del cloud de Supabase.
 
+> **URLs, puertos y dominio:** un solo archivo — [`config/foody-entorno.env`](../config/foody-entorno.env). Tras editar: `.\scripts\sincronizar-entorno.ps1`. Detalle: [`CONFIG_ENTORNO_FOODY.md`](CONFIG_ENTORNO_FOODY.md).
+
 ## Arquitectura en tu PC
 
 ```
@@ -97,12 +99,14 @@ WSL **no** hay que “abrirlo” como programa: se usa solo cuando ejecutas un s
 | Paso | Qué hacer |
 |------|-----------|
 | 1 | Encender **Docker Desktop** (Supabase en verde) |
-| 2 | Doble clic en `scripts/iniciar-backend-wsl.bat` — deja esa ventana abierta |
+| 2 | Doble clic en `scripts/iniciar-backend-wsl.bat` — **Node en Windows** (deja esa ventana abierta; no ejecutes otros comandos ahí) |
 | 3 | Doble clic en `scripts/iniciar-flutter-web.bat` **o** `scripts/iniciar-foody-dev.bat` (abre backend + Flutter) |
 
 Atajo todo-en-uno: **`scripts/iniciar-foody-dev.bat`** (backend en ventana aparte, luego Flutter).
 
-La primera vez en WSL, dentro de `foody_backend`: `npm install` (y `.env` desde `.env.example`).
+> **Importante:** el backend NestJS debe correr con **Node de Windows**, no en WSL. Las dependencias nativas (`sharp`) se instalan para Windows; en WSL el proceso muere al arrancar y `localhost:3000` queda vacío (`ERR_CONNECTION_REFUSED`). WSL sigue usándose para Supabase/scripts Docker.
+
+La primera vez en `foody_backend` (PowerShell o CMD): `npm install` (y `.env` desde `.env.example` o `scripts/sincronizar-env-backend.bat`).
 
 ## Paso 3 — Backend NestJS
 
@@ -135,6 +139,15 @@ Copiar plantilla:
 **Importante:** en móvil físico usa la **IP Wi‑Fi de Windows** (`ipconfig`), no `localhost` ni la IP WSL. Script: `.\scripts\sincronizar-ip-movil.ps1` → luego `flutter build apk`.
 
 **Importante (WSL):** reemplazar `IP_UBUNTU` por la IP LAN de tu PC Ubuntu (`ip a` → `inet 192.168.x.x`).
+
+### Flutter web en Windows (puertos)
+
+| Flavor | Puerto | Comando típico |
+|--------|--------|----------------|
+| `equipo` | 8080 | `.\scripts\flutter-run-flavor.ps1 -Flavor equipo -Device chrome -WebPort 8080` |
+| `cliente` | 8082 (si pediste 8080) | `.\scripts\flutter-run-flavor.ps1 -Flavor cliente -Device chrome` |
+
+Si el puerto está ocupado (`errno 10048`): suele ser un `dartvm` de un `flutter run` anterior. **Solo DX local — no es fallo de producción.** Libera con `-LiberarPuerto` (ver `docs/ESTRATEGIA_BACKEND_PRIMERO.md`).
 
 Firewall Ubuntu:
 

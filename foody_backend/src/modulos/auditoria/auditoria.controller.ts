@@ -8,7 +8,9 @@ import { SuscripcionActivaGuard } from '../../core/auth/guards/suscripcion-activ
 import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { AuditoriaService } from './auditoria.service';
+import { TimelineAuditoriaDto } from './dto/timeline-auditoria.dto';
 
 @Controller('auditoria')
 @UseGuards(
@@ -20,21 +22,26 @@ import { AuditoriaService } from './auditoria.service';
 )
 @RequiereModulo('reportes')
 export class AuditoriaController {
-  constructor(private readonly auditoria: AuditoriaService) {}
+  constructor(
+    private readonly auditoria: AuditoriaService,
+    private readonly sucursalScope: SucursalScopeService,
+  ) {}
 
   @Get('timeline')
   @Permisos('ver_reportes')
-  timeline(
+  async timeline(
     @UsuarioActual() usuario: JwtPayload,
-    @Query('desde') desde: string,
-    @Query('hasta') hasta: string,
-    @Query('sucursal_id') sucursalId?: string,
+    @Query() query: TimelineAuditoriaDto,
   ) {
     const hoy = new Date().toISOString().slice(0, 10);
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      query.sucursal_id,
+    );
     return this.auditoria.timelineTurno({
-      sucursal_id: sucursalId ?? usuario.sucursal_id!,
-      desde: desde ?? hoy,
-      hasta: hasta ?? hoy,
+      sucursal_id: id,
+      desde: query.desde ?? hoy,
+      hasta: query.hasta ?? hoy,
     });
   }
 }

@@ -62,6 +62,14 @@ export function convertirCantidad(
   return cantidad;
 }
 
+/** Unidades elegibles en receta/subreceta según la unidad del insumo o resultado. */
+export function unidadesDeFamilia(unidadBase: string): string[] {
+  const u = normalizarUnidad(unidadBase);
+  if (GRUPO_PESO.has(u)) return ['g', 'kg'];
+  if (GRUPO_VOLUMEN.has(u)) return ['ml', 'L'];
+  return [u];
+}
+
 export function exigirUnidadesCompatibles(
   unidadLinea: string,
   unidadBase: string,

@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
+import { AlmacenamientoService } from '../almacenamiento/almacenamiento.service';
 import {
   ActualizarPromocionDto,
   CrearPromocionDto,
@@ -12,18 +14,25 @@ import {
 
 @Injectable()
 export class PromocionesService {
-  constructor(private readonly database: DatabaseService) {}
+  private readonly logger = new Logger(PromocionesService.name);
+
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly almacenamiento: AlmacenamientoService,
+  ) {}
 
   listarActivas(sucursalId: string) {
     return this.database.consultar(
-      `SELECT id, titulo, imagen_url, descripcion, codigo,
-              descuento_porcentaje, descuento_monto,
-              expira_at, vistas, created_at
-       FROM estados_promociones
-       WHERE sucursal_id = $1
-         AND activa = true
-         AND (expira_at IS NULL OR expira_at > now())
-       ORDER BY created_at DESC`,
+      `SELECT p.id, p.titulo, p.imagen_url, p.tipo_media, p.descripcion, p.codigo,
+              p.descuento_porcentaje, p.descuento_monto,
+              p.expira_at, p.vistas, p.created_at,
+              p.producto_id, pr.nombre AS producto_nombre
+       FROM estados_promociones p
+       LEFT JOIN productos pr ON pr.id = p.producto_id
+       WHERE p.sucursal_id = $1
+         AND p.activa = true
+         AND (p.expira_at IS NULL OR p.expira_at > now())
+       ORDER BY p.created_at DESC`,
       [sucursalId],
     );
   }
@@ -34,14 +43,19 @@ export class PromocionesService {
       `SELECT r.id AS restaurante_id,
               r.nombre AS restaurante_nombre,
               r.logo_url,
+              r.banner_url,
               COALESCE(
                 json_agg(
                   json_build_object(
                     'id', p.id,
                     'titulo', p.titulo,
                     'imagen_url', p.imagen_url,
+                    'tipo_media', p.tipo_media,
                     'descripcion', p.descripcion,
-                    'sucursal_id', s.id
+                    'sucursal_id', s.id,
+                    'producto_id', p.producto_id,
+                    'producto_nombre', pr.nombre,
+                    'expira_at', p.expira_at
                   )
                   ORDER BY p.created_at DESC
                 ) FILTER (WHERE p.id IS NOT NULL),
@@ -53,8 +67,9 @@ export class PromocionesService {
        LEFT JOIN estados_promociones p ON p.sucursal_id = s.id
          AND p.activa = true
          AND (p.expira_at IS NULL OR p.expira_at > now())
+       LEFT JOIN productos pr ON pr.id = p.producto_id
        WHERE c.slug = $1 AND c.activa = true AND r.activo = true
-       GROUP BY r.id, r.nombre, r.logo_url
+       GROUP BY r.id, r.nombre, r.logo_url, r.banner_url
        HAVING COUNT(p.id) > 0
        ORDER BY r.nombre ASC`,
       [slug],
@@ -63,37 +78,49 @@ export class PromocionesService {
 
   listarAdmin(sucursalId: string) {
     return this.database.consultar(
-      `SELECT id, titulo, imagen_url, descripcion, codigo,
-              descuento_porcentaje, descuento_monto,
-              activa, expira_at, vistas, created_at
-       FROM estados_promociones
-       WHERE sucursal_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT p.id, p.titulo, p.imagen_url, p.tipo_media, p.descripcion, p.codigo,
+              p.descuento_porcentaje, p.descuento_monto,
+              p.activa, p.expira_at, p.vistas, p.created_at,
+              p.producto_id, pr.nombre AS producto_nombre
+       FROM estados_promociones p
+       LEFT JOIN productos pr ON pr.id = p.producto_id
+       WHERE p.sucursal_id = $1
+       ORDER BY p.created_at DESC`,
       [sucursalId],
     );
   }
 
   async crear(dto: CrearPromocionDto) {
     if (!dto.imagen_url?.trim()) {
-      throw new BadRequestException('La URL de imagen es obligatoria');
+      throw new BadRequestException('La URL de media es obligatoria');
     }
+    const tipoMedia = dto.tipo_media === 'video' ? 'video' : 'imagen';
     this.validarDescuentoDto(dto.descuento_porcentaje, dto.descuento_monto, dto.codigo);
+    if (dto.producto_id) {
+      await this.exigirProductoDeSucursal(dto.producto_id, dto.sucursal_id);
+    }
+    // ponytail: estados tipo WhatsApp — 24h por defecto si no envían fecha
+    const expiraAt =
+      dto.expira_at ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     return this.database.consultarUno(
       `INSERT INTO estados_promociones (
-         sucursal_id, titulo, imagen_url, descripcion, expira_at, activa,
-         codigo, descuento_porcentaje, descuento_monto
-       ) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
-       RETURNING id, titulo, imagen_url, descripcion, codigo,
-                 descuento_porcentaje, descuento_monto, activa, expira_at, vistas, created_at`,
+         sucursal_id, titulo, imagen_url, tipo_media, descripcion, expira_at, activa,
+         codigo, descuento_porcentaje, descuento_monto, producto_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10)
+       RETURNING id, titulo, imagen_url, tipo_media, descripcion, codigo,
+                 descuento_porcentaje, descuento_monto, activa, expira_at,
+                 vistas, created_at, producto_id`,
       [
         dto.sucursal_id,
         dto.titulo?.trim() || null,
         dto.imagen_url.trim(),
+        tipoMedia,
         dto.descripcion?.trim() || null,
-        dto.expira_at ?? null,
+        expiraAt,
         dto.codigo?.trim().toUpperCase() || null,
         dto.descuento_porcentaje ?? null,
         dto.descuento_monto ?? null,
+        dto.producto_id ?? null,
       ],
     );
   }
@@ -139,13 +166,21 @@ export class PromocionesService {
       campos.push(`descuento_monto = $${i++}`);
       valores.push(dto.descuento_monto);
     }
+    if (dto.producto_id !== undefined) {
+      if (dto.producto_id) {
+        await this.exigirProductoDeSucursal(dto.producto_id, sucursalId);
+      }
+      campos.push(`producto_id = $${i++}`);
+      valores.push(dto.producto_id || null);
+    }
     if (!campos.length) return { id };
     valores.push(id, sucursalId);
     return this.database.consultarUno(
       `UPDATE estados_promociones SET ${campos.join(', ')}
        WHERE id = $${i++} AND sucursal_id = $${i}
        RETURNING id, titulo, imagen_url, descripcion, codigo,
-                 descuento_porcentaje, descuento_monto, activa, expira_at, vistas, created_at`,
+                 descuento_porcentaje, descuento_monto, activa, expira_at,
+                 vistas, created_at, producto_id`,
       valores,
     );
   }
@@ -333,5 +368,81 @@ export class PromocionesService {
       [id, sucursalId],
     );
     if (!fila) throw new NotFoundException('Promoción no encontrada');
+  }
+
+  async eliminar(id: string, sucursalId: string) {
+    const fila = await this.database.consultarUno<{
+      id: string;
+      imagen_url: string;
+    }>(
+      `SELECT id, imagen_url FROM estados_promociones WHERE id = $1 AND sucursal_id = $2`,
+      [id, sucursalId],
+    );
+    if (!fila) throw new NotFoundException('Promoción no encontrada');
+    await this.database.consultar(
+      `DELETE FROM promocion_vistas WHERE promocion_id = $1`,
+      [id],
+    );
+    await this.database.consultar(
+      `DELETE FROM estados_promociones WHERE id = $1 AND sucursal_id = $2`,
+      [id, sucursalId],
+    );
+    await this.almacenamiento.eliminarPorUrl(fila.imagen_url);
+    return { eliminado: true };
+  }
+
+  /**
+   * STOR-01: borra estados con expira_at < now()-7d y su objeto en Storage.
+   * Idempotente. Grace 7 días por si alguien reabre ventana de vistas.
+   */
+  async limpiarExpiradas(diasGracia = 7): Promise<{
+    filas: number;
+    objetos_storage: number;
+  }> {
+    const gracia = Number.isFinite(diasGracia) && diasGracia >= 0 ? diasGracia : 7;
+    const filas = await this.database.consultar<{
+      id: string;
+      imagen_url: string;
+    }>(
+      `SELECT id, imagen_url FROM estados_promociones
+       WHERE expira_at IS NOT NULL
+         AND expira_at < now() - ($1::int * interval '1 day')
+       LIMIT 200`,
+      [gracia],
+    );
+    let objetos = 0;
+    for (const f of filas) {
+      if (await this.almacenamiento.eliminarPorUrl(f.imagen_url)) objetos += 1;
+      await this.database.consultar(
+        `DELETE FROM promocion_vistas WHERE promocion_id = $1`,
+        [f.id],
+      );
+      await this.database.consultar(
+        `DELETE FROM estados_promociones WHERE id = $1`,
+        [f.id],
+      );
+    }
+    if (filas.length > 0) {
+      this.logger.log(
+        `Limpieza estados: ${filas.length} filas, ${objetos} objetos Storage`,
+      );
+    }
+    return { filas: filas.length, objetos_storage: objetos };
+  }
+
+  private async exigirProductoDeSucursal(
+    productoId: string,
+    sucursalId: string,
+  ) {
+    const fila = await this.database.consultarUno<{ id: string }>(
+      `SELECT id FROM productos
+       WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
+      [productoId, sucursalId],
+    );
+    if (!fila) {
+      throw new BadRequestException(
+        'El producto no pertenece a esta sede o no está disponible',
+      );
+    }
   }
 }

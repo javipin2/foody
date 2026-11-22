@@ -3,7 +3,9 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
@@ -16,7 +18,11 @@ import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
 import { CocinasService } from './cocinas.service';
-import { CambiarEstadoItemDto } from './dto/cocina.dto';
+import { CambiarEstadoItemDto, FalloPreparacionDto } from './dto/cocina.dto';
+import {
+  ActualizarObservacionesItemDto,
+  PrioridadItemCocinaDto,
+} from './dto/item-kds-mutacion.dto';
 
 @Controller('cocina')
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, PlanFeaturesGuard, RolGuard)
@@ -27,25 +33,27 @@ export class CocinaTicketsController {
   @Get('cocinas')
   @Permisos('ver_cocina')
   listarCocinas(@UsuarioActual() usuario: JwtPayload) {
-    return this.cocinas.listarCocinas(usuario.sucursal_id!);
+    return this.cocinas.listarCocinasParaKds(usuario);
   }
 
   @Get('tickets/:cocina_id')
   @Permisos('ver_cocina')
-  tickets(
-    @Param('cocina_id') cocinaId: string,
+  async tickets(
+    @Param('cocina_id', ParseUUIDPipe) cocinaId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
+    await this.cocinas.exigirAccesoCocinaKds(usuario, cocinaId);
     return this.cocinas.listarTickets(cocinaId, usuario.sucursal_id!);
   }
 
   @Patch('items/:item_id/estado')
   @Permisos('ver_cocina')
-  cambiarEstadoItem(
-    @Param('item_id') itemId: string,
+  async cambiarEstadoItem(
+    @Param('item_id', ParseUUIDPipe) itemId: string,
     @Body() dto: CambiarEstadoItemDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
+    await this.cocinas.exigirAccesoItemKds(usuario, itemId);
     return this.cocinas.cambiarEstadoItem(
       itemId,
       usuario.sucursal_id!,
@@ -55,13 +63,31 @@ export class CocinaTicketsController {
     );
   }
 
-  @Patch('items/:item_id/observaciones')
+  /** VIE-09 C: fallo de preparación (N/D + merma + alerta). */
+  @Post('items/:item_id/fallo-preparacion')
   @Permisos('ver_cocina')
-  actualizarObservaciones(
-    @Param('item_id') itemId: string,
-    @Body() body: { observaciones: string },
+  async falloPreparacion(
+    @Param('item_id', ParseUUIDPipe) itemId: string,
+    @Body() dto: FalloPreparacionDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
+    await this.cocinas.exigirAccesoItemKds(usuario, itemId);
+    return this.cocinas.falloPreparacion(
+      itemId,
+      usuario.sucursal_id!,
+      usuario.sub ?? null,
+      dto.motivo,
+    );
+  }
+
+  @Patch('items/:item_id/observaciones')
+  @Permisos('ver_cocina')
+  async actualizarObservaciones(
+    @Param('item_id', ParseUUIDPipe) itemId: string,
+    @Body() body: ActualizarObservacionesItemDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    await this.cocinas.exigirAccesoItemKds(usuario, itemId);
     return this.cocinas.actualizarObservacionesItem(
       itemId,
       usuario.sucursal_id!,
@@ -71,11 +97,12 @@ export class CocinaTicketsController {
 
   @Patch('items/:item_id/prioridad')
   @Permisos('ver_cocina')
-  prioridad(
-    @Param('item_id') itemId: string,
-    @Body() body: { urgente: boolean },
+  async prioridad(
+    @Param('item_id', ParseUUIDPipe) itemId: string,
+    @Body() body: PrioridadItemCocinaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
+    await this.cocinas.exigirAccesoItemKds(usuario, itemId);
     return this.cocinas.marcarPrioridadItem(
       itemId,
       usuario.sucursal_id!,

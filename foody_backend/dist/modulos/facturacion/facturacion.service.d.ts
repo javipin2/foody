@@ -1,5 +1,6 @@
 import { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { GuardarConfigFiscalDto } from './dto/guardar-config-fiscal.dto';
 export interface DesgloseIva {
     subtotal: number;
@@ -20,7 +21,8 @@ export interface ConfigFiscalRow {
 }
 export declare class FacturacionService {
     private readonly database;
-    constructor(database: DatabaseService);
+    private readonly auditoria;
+    constructor(database: DatabaseService, auditoria: AuditoriaService);
     calcularDesgloseIva(total: number, config: Pick<ConfigFiscalRow, 'aplica_iva' | 'porcentaje_iva'>): DesgloseIva;
     obtenerConfig(sucursalId: string): Promise<ConfigFiscalRow | null>;
     guardarConfig(dto: GuardarConfigFiscalDto): Promise<QueryResultRow | null>;
@@ -33,6 +35,7 @@ export declare class FacturacionService {
         nombreFiscalCliente: string;
         emailCliente: string;
     }): Promise<string>;
+    sincronizarBorradorDesdePedidoEnTransaccion(client: PoolClient, sucursalId: string, pedidoId: string): Promise<boolean>;
     calcularIvaParaPedidoEnTransaccion(client: PoolClient, sucursalId: string, total: number): Promise<{
         iva_porcentaje: number;
         iva_valor: number;

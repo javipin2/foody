@@ -10,10 +10,15 @@ class InventarioTrasladosPanel extends StatefulWidget {
     super.key,
     required this.sucursalId,
     this.sucursalesHermanas = const [],
+    this.habilitado = true,
+    this.tienePermisoHermanas = true,
   });
 
   final String sucursalId;
   final List<Map<String, dynamic>> sucursalesHermanas;
+  final bool habilitado;
+  /// NAV-MG-05: distingue «sin permiso» vs «sin otras sedes».
+  final bool tienePermisoHermanas;
 
   @override
   State<InventarioTrasladosPanel> createState() =>
@@ -208,8 +213,65 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
     }
   }
 
+  Future<void> _cancelar(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancelar traslado'),
+        content: const Text(
+          'Se devolverá el stock a la sucursal de origen. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _repo.cancelarTraslado(id);
+      await _cargar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Traslado cancelado'),
+            backgroundColor: ColoresFoody.exito,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'cancelar traslado'))),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!widget.habilitado) {
+      final mensaje = !widget.tienePermisoHermanas
+          ? 'No tienes permiso para ver inventario de otras sedes. '
+              'Sin ese permiso no puedes crear traslados entre sucursales.'
+          : 'No hay otras sucursales activas en tu restaurante. '
+              'Cuando exista otra sede, podrás solicitar o enviar insumos desde aquí.';
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            mensaje,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
     if (_cargando) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -260,6 +322,25 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
                     itemBuilder: (_, i) {
                       final t = _traslados[i];
                       final estado = t['estado'] as String? ?? 'pendiente';
+                      final usuario = t['usuario_nombre'] as String?;
+                      final esDestino =
+                          t['sucursal_destino_id'] == widget.sucursalId;
+                      final esOrigen =
+                          t['sucursal_origen_id'] == widget.sucursalId;
+                      Widget? trailing;
+                      if (estado == 'pendiente' && esDestino) {
+                        trailing = FilledButton(
+                          onPressed: () => _recibir('${t['id']}'),
+                          child: const Text('Recibir'),
+                        );
+                      } else if (estado == 'pendiente' && esOrigen) {
+                        trailing = TextButton(
+                          onPressed: () => _cancelar('${t['id']}'),
+                          child: const Text('Cancelar'),
+                        );
+                      } else {
+                        trailing = Chip(label: Text(estado));
+                      }
                       return Card(
                         child: ListTile(
                           title: Text(
@@ -267,16 +348,11 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
                           ),
                           subtitle: Text(
                             '${t['sucursal_origen']} → ${t['sucursal_destino']}\n'
-                            '${fecha.format(DateTime.parse('${t['created_at']}').toLocal())} · $estado',
+                            '${fecha.format(DateTime.parse('${t['created_at']}').toLocal())} · $estado'
+                            '${usuario != null ? ' · $usuario' : ''}',
                           ),
                           isThreeLine: true,
-                          trailing: estado == 'pendiente' &&
-                                  t['sucursal_destino_id'] == widget.sucursalId
-                              ? FilledButton(
-                                  onPressed: () => _recibir('${t['id']}'),
-                                  child: const Text('Recibir'),
-                                )
-                              : Chip(label: Text(estado)),
+                          trailing: trailing,
                         ),
                       );
                     },

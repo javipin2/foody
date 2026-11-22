@@ -18,24 +18,119 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const ws_1 = __importDefault(require("ws"));
 const database_service_1 = require("../database/database.service");
+const MAX_INTENTOS_JOB = 10;
+const INTERVALO_COLA_MS = 5000;
 let ImpresionService = ImpresionService_1 = class ImpresionService {
     database;
     config;
     logger = new common_1.Logger(ImpresionService_1.name);
     procesando = false;
+    LOCK_IMPRESION_COLA = 9200003;
     constructor(database, config) {
         this.database = database;
         this.config = config;
     }
     onModuleInit() {
-        setInterval(() => void this.procesarCola(), 5000);
+        setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_IMPRESION_COLA, () => this.procesarCola()), INTERVALO_COLA_MS);
+    }
+    async reimprimirPedido(pedidoId, sucursalId) {
+        const pedido = await this.database.consultarUno(`SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]);
+        if (!pedido) {
+            throw new common_1.NotFoundException({
+                error: 'PEDIDO_NO_ENCONTRADO',
+                message: 'Pedido no encontrado en esta sucursal',
+            });
+        }
+        const cocinas = await this.database.consultar(`SELECT DISTINCT pi.cocina_id
+       FROM pedido_items pi
+       WHERE pi.pedido_id = $1 AND pi.cocina_id IS NOT NULL`, [pedidoId]);
+        if (!cocinas.length) {
+            throw new common_1.BadRequestException({
+                error: 'IMPRESION_SIN_COCINA',
+                message: 'Este pedido no tiene ítems de cocina para imprimir',
+            });
+        }
+        await this.encolarPorPedidoInterno(pedidoId, sucursalId);
+        return { pedido_id: pedidoId, encolado: true };
     }
     async encolarPorPedido(pedidoId, sucursalId) {
         try {
             await this.encolarPorPedidoInterno(pedidoId, sucursalId);
         }
         catch (err) {
-            this.logger.warn(`Cola impresión pedido ${pedidoId}: ${err instanceof Error ? err.message : String(err)}`);
+            const mensaje = err instanceof Error ? err.message : String(err);
+            this.logger.error(`Cola impresión pedido ${pedidoId}: ${mensaje}`);
+            try {
+                await this.database.consultar(`INSERT INTO impresion_cocina_jobs
+             (sucursal_id, cocina_id, pedido_id, payload, estado, ultimo_error)
+           VALUES ($1, NULL, $2, $3::jsonb, 'error', $4)`, [
+                    sucursalId,
+                    pedidoId,
+                    JSON.stringify({
+                        error_encolado: true,
+                        pedido_id: pedidoId,
+                    }),
+                    mensaje.slice(0, 500),
+                ]);
+            }
+            catch (e2) {
+                this.logger.error(`No se pudo registrar job error impresión: ${e2 instanceof Error ? e2.message : e2}`);
+            }
+        }
+    }
+    async listarJobs(sucursalId, limit = 20) {
+        return this.database.consultar(`SELECT j.id, j.pedido_id, j.cocina_id, j.estado, j.intentos,
+              j.ultimo_error, j.simulado, j.created_at, j.procesado_at,
+              c.nombre AS cocina_nombre
+       FROM impresion_cocina_jobs j
+       LEFT JOIN cocinas c ON c.id = j.cocina_id
+       WHERE j.sucursal_id = $1
+       ORDER BY j.created_at DESC
+       LIMIT $2`, [sucursalId, limit]);
+    }
+    async procesarColaManual() {
+        await this.procesarCola();
+    }
+    async estadisticasCola() {
+        const fila = await this.database.consultarUno(`SELECT
+         COUNT(*) FILTER (WHERE estado = 'pendiente')::int AS pendientes,
+         COUNT(*) FILTER (WHERE estado = 'error')::int AS error,
+         COUNT(*) FILTER (
+           WHERE estado = 'enviado'
+             AND procesado_at > NOW() - INTERVAL '24 hours'
+         )::int AS enviados_24h
+       FROM impresion_cocina_jobs`);
+        return {
+            pendientes: fila?.pendientes ?? 0,
+            error: fila?.error ?? 0,
+            enviados_24h: fila?.enviados_24h ?? 0,
+        };
+    }
+    async verificarAgente() {
+        const url = this.config.get('FOODY_PRINTER_WS') ?? 'ws://127.0.0.1:8765';
+        try {
+            const r = await this.enviarWs({ accion: 'ping' }, 3000);
+            if (r.exito) {
+                return {
+                    conectado: true,
+                    url,
+                    mensaje: 'Agente Python de impresión conectado',
+                };
+            }
+            return {
+                conectado: false,
+                url,
+                mensaje: r.error ?? 'Agente respondió con error',
+            };
+        }
+        catch (err) {
+            return {
+                conectado: false,
+                url,
+                mensaje: err instanceof Error
+                    ? err.message
+                    : 'Agente no disponible - inicia foody_python_printer',
+            };
         }
     }
     async encolarPorPedidoInterno(pedidoId, sucursalId) {
@@ -46,7 +141,22 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
        WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`, [pedidoId, sucursalId]);
         if (!cocinas.length)
             return;
-        const pedido = await this.database.consultarUno(`SELECT numero_pedido, tipo FROM pedidos WHERE id = $1`, [pedidoId]);
+        const copiaRow = await this.database.consultarUno(`UPDATE pedidos
+       SET comanda_copia = comanda_copia + 1
+       WHERE id = $1 AND sucursal_id = $2
+       RETURNING comanda_copia`, [pedidoId, sucursalId]);
+        const nCopia = copiaRow?.comanda_copia ?? 1;
+        const pedido = await this.database.consultarUno(`SELECT p.numero_pedido, p.tipo, p.created_at, m.nombre AS mesa_nombre
+       FROM pedidos p
+       LEFT JOIN mesas m ON m.id = p.mesa_id
+       WHERE p.id = $1`, [pedidoId]);
+        const fecha = pedido?.created_at
+            ? new Date(pedido.created_at).toLocaleString('es-CO', {
+                timeZone: 'America/Bogota',
+                dateStyle: 'short',
+                timeStyle: 'short',
+            })
+            : '—';
         for (const coc of cocinas) {
             const items = await this.database.consultar(`SELECT pr.nombre, pi.cantidad, pi.observaciones
          FROM pedido_items pi
@@ -57,19 +167,30 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
                 const nota = i.observaciones?.trim();
                 return `${i.cantidad}x ${i.nombre}${nota ? ` (${nota})` : ''}`;
             });
-            const ticket = [
+            const encabezado = [
                 `=== ${coc.cocina_nombre ?? 'Cocina'} ===`,
                 `Pedido #${pedido?.numero_pedido ?? '?'}`,
+                pedido?.mesa_nombre ? `Mesa: ${pedido.mesa_nombre}` : null,
                 `Tipo: ${pedido?.tipo ?? '—'}`,
+                `Fecha: ${fecha}`,
+                '------------------------',
                 ...lineas,
-                '---',
-            ].join('\n');
+                '------------------------',
+                `Copia ${nCopia}`,
+                'Foody',
+            ]
+                .filter((l) => l != null)
+                .join('\n');
             await this.database.consultar(`INSERT INTO impresion_cocina_jobs (sucursal_id, cocina_id, pedido_id, payload)
          VALUES ($1, $2, $3, $4::jsonb)`, [
                 sucursalId,
                 coc.cocina_id,
                 pedidoId,
-                JSON.stringify({ ticket, pedido_id: pedidoId }),
+                JSON.stringify({
+                    ticket: encabezado,
+                    pedido_id: pedidoId,
+                    copia: nCopia,
+                }),
             ]);
         }
         void this.procesarCola();
@@ -79,44 +200,132 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
             return;
         this.procesando = true;
         try {
-            const jobs = await this.database.consultar(`SELECT id, payload FROM impresion_cocina_jobs
-         WHERE estado = 'pendiente'
-         ORDER BY created_at ASC
-         LIMIT 5`);
+            const jobs = await this.database.consultar(`SELECT j.id, j.payload, j.cocina_id, j.intentos,
+                i.nombre AS impresora_nombre,
+                i.ip_local AS impresora_ip,
+                i.tipo AS impresora_tipo
+         FROM impresion_cocina_jobs j
+         LEFT JOIN impresoras i
+           ON i.cocina_id = j.cocina_id
+          AND i.sucursal_id = j.sucursal_id
+          AND i.activa = true
+         WHERE j.estado = 'pendiente'
+           AND j.intentos < $1
+         ORDER BY j.created_at ASC
+         LIMIT 5`, [MAX_INTENTOS_JOB]);
             for (const job of jobs) {
-                try {
-                    await this.enviarTicket(job.payload?.ticket ?? '');
-                    await this.database.consultar(`UPDATE impresion_cocina_jobs SET estado = 'enviado' WHERE id = $1`, [job.id]);
-                }
-                catch (err) {
-                    this.logger.warn(`Job impresión ${job.id}: ${String(err)}`);
-                    await this.database.consultar(`UPDATE impresion_cocina_jobs SET estado = 'error' WHERE id = $1`, [job.id]);
-                }
+                await this.procesarJob(job);
             }
         }
         finally {
             this.procesando = false;
         }
     }
-    enviarTicket(ticket) {
+    async procesarJob(job) {
+        const ticket = job.payload?.ticket ?? '';
+        try {
+            const resultado = await this.enviarTicket(ticket, {
+                cocina_id: job.cocina_id,
+                impresora: job.impresora_ip
+                    ? {
+                        nombre: job.impresora_nombre,
+                        ip_local: job.impresora_ip,
+                        tipo: job.impresora_tipo,
+                    }
+                    : null,
+            });
+            if (resultado.exito) {
+                await this.database.consultar(`UPDATE impresion_cocina_jobs
+           SET estado = 'enviado',
+               simulado = $2,
+               ultimo_error = NULL,
+               procesado_at = now()
+           WHERE id = $1`, [job.id, resultado.simulado === true]);
+                if (resultado.simulado) {
+                    this.logger.log(`Job ${job.id}: ticket simulado (sin impresora física)`);
+                }
+                return;
+            }
+            await this.registrarFalloJob(job.id, job.intentos, resultado.error ?? 'Impresión rechazada por el agente');
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await this.registrarFalloJob(job.id, job.intentos, msg);
+        }
+    }
+    async registrarFalloJob(jobId, intentosActuales, error) {
+        const nuevosIntentos = intentosActuales + 1;
+        const estado = nuevosIntentos >= MAX_INTENTOS_JOB ? 'error' : 'pendiente';
+        await this.database.consultar(`UPDATE impresion_cocina_jobs
+       SET intentos = $2,
+           ultimo_error = $3,
+           estado = $4
+       WHERE id = $1`, [jobId, nuevosIntentos, error.slice(0, 500), estado]);
+        if (estado === 'error') {
+            this.logger.warn(`Job impresión ${jobId} agotó reintentos: ${error}`);
+        }
+        else {
+            this.logger.debug(`Job impresión ${jobId} reintento ${nuevosIntentos}/${MAX_INTENTOS_JOB}: ${error}`);
+        }
+    }
+    enviarTicket(ticket, meta) {
+        return this.enviarWs({
+            ticket,
+            cuerpo: ticket,
+            cocina_id: meta?.cocina_id ?? null,
+            impresora: meta?.impresora ?? null,
+        });
+    }
+    enviarWs(payload, timeoutMs = 8000) {
         const url = this.config.get('FOODY_PRINTER_WS') ?? 'ws://127.0.0.1:8765';
         return new Promise((resolve, reject) => {
             const ws = new ws_1.default(url);
+            let resuelto = false;
+            const finalizar = (fn) => {
+                if (resuelto)
+                    return;
+                resuelto = true;
+                clearTimeout(timeout);
+                try {
+                    ws.close();
+                }
+                catch {
+                }
+                fn();
+            };
             const timeout = setTimeout(() => {
                 ws.terminate();
-                reject(new Error('Timeout impresora'));
-            }, 4000);
+                reject(new Error('Timeout agente impresión'));
+            }, timeoutMs);
             ws.on('open', () => {
-                ws.send(JSON.stringify({ ticket, cuerpo: ticket }));
+                ws.send(JSON.stringify(payload));
             });
-            ws.on('message', () => {
-                clearTimeout(timeout);
-                ws.close();
-                resolve();
+            ws.on('message', (raw) => {
+                try {
+                    const texto = raw.toString();
+                    const data = JSON.parse(texto);
+                    if (data.pong) {
+                        finalizar(() => resolve({ exito: true, mensaje: 'pong' }));
+                        return;
+                    }
+                    finalizar(() => {
+                        if (data.exito) {
+                            resolve(data);
+                        }
+                        else {
+                            resolve({
+                                exito: false,
+                                error: data.error ?? data.mensaje ?? 'Error desconocido',
+                            });
+                        }
+                    });
+                }
+                catch {
+                    finalizar(() => reject(new Error('Respuesta inválida del agente de impresión')));
+                }
             });
             ws.on('error', (err) => {
-                clearTimeout(timeout);
-                reject(err);
+                finalizar(() => reject(err));
             });
         });
     }

@@ -15,6 +15,7 @@ class HistorialPedidosService {
     required String sucursalNombre,
     num? total,
     String? estado,
+    String? seguimientoToken,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final lista = _leerLista(prefs);
@@ -25,6 +26,7 @@ class HistorialPedidosService {
       'sucursal_nombre': sucursalNombre,
       if (total != null) 'total': total,
       if (estado != null) 'estado': estado,
+      if (seguimientoToken != null) 'seguimiento_token': seguimientoToken,
       'created_at': DateTime.now().toIso8601String(),
     });
     if (lista.length > _maxEntradas) {

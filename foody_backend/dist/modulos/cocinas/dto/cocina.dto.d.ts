@@ -24,3 +24,6 @@ export declare class CambiarEstadoItemDto {
     estado_cocina: 'pendiente' | 'preparando' | 'listo' | 'no_disponible';
     motivo?: string;
 }
+export declare class FalloPreparacionDto {
+    motivo: string;
+}

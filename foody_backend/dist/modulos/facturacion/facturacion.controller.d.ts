@@ -1,6 +1,7 @@
 import { JwtPayload } from '../../core/auth/jwt-payload';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { GuardarConfigFiscalDto } from './dto/guardar-config-fiscal.dto';
+import { AnularFacturaDto } from './dto/anular-factura.dto';
 import { FacturacionService } from './facturacion.service';
 export declare class FacturacionController {
     private readonly facturacionService;
@@ -14,9 +15,7 @@ export declare class FacturacionController {
     }>;
     listarFacturas(sucursalId: string, estado: string | undefined, usuario: JwtPayload): Promise<import("pg").QueryResultRow[]>;
     emitir(pedidoId: string, usuario: JwtPayload, sucursalId?: string): Promise<Record<string, unknown> | null>;
-    anular(facturaId: string, body: {
-        motivo: string;
-    }, usuario: JwtPayload, sucursalId?: string): Promise<{
+    anular(facturaId: string, body: AnularFacturaDto, usuario: JwtPayload, sucursalId?: string): Promise<{
         factura_id: string;
         estado: string;
         nota: string;

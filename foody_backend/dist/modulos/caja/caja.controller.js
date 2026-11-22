@@ -27,8 +27,10 @@ const abrir_caja_dto_1 = require("./dto/abrir-caja.dto");
 const cerrar_caja_dto_1 = require("./dto/cerrar-caja.dto");
 const gasto_caja_dto_1 = require("./dto/gasto-caja.dto");
 const crear_cuenta_por_cobrar_dto_1 = require("./dto/crear-cuenta-por-cobrar.dto");
+const pagar_cuenta_por_cobrar_dto_1 = require("./dto/pagar-cuenta-por-cobrar.dto");
 const retiro_caja_dto_1 = require("./dto/retiro-caja.dto");
 const devolucion_caja_dto_1 = require("./dto/devolucion-caja.dto");
+const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 let CajaController = class CajaController {
     cajaService;
     sucursalScope;
@@ -47,24 +49,27 @@ let CajaController = class CajaController {
         return this.cajaService.abrir({ ...dto, sucursal_id: id }, usuario.sub);
     }
     async cerrar(dto, usuario) {
-        await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
-        return this.cajaService.cerrar(dto, usuario.sub);
+        return this.cajaService.cerrar(dto, usuario);
     }
-    async listarFiados(sucursalId, usuario) {
+    async resumenFiados(sucursalId, usuario) {
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
-        return this.cajaService.listarCuentasPorCobrar(id);
+        return this.cajaService.resumenCuentasPorCobrar(id);
+    }
+    async listarFiados(sucursalId, incluirPagadas, usuario) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.cajaService.listarCuentasPorCobrar(id, incluirPagadas === 'true' || incluirPagadas === '1');
     }
     async crearFiado(dto, usuario) {
         const id = await this.sucursalScope.resolverEscritura(usuario, dto.sucursal_id);
         return this.cajaService.crearCuentaPorCobrar({ ...dto, sucursal_id: id }, usuario.sub);
     }
-    async pagarFiado(id, usuario) {
+    async pagarFiado(id, dto, usuario) {
         const sucursalId = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
-        return this.cajaService.pagarCuentaPorCobrar(id, sucursalId, usuario.sub);
+        return this.cajaService.pagarCuentaPorCobrar(id, sucursalId, usuario.sub, dto.metodo_pago ?? 'efectivo');
     }
-    async movimientos(cajaId, usuario) {
+    async movimientos(cajaId, query, usuario) {
         const sucursalId = await this.sucursalScope.resolverLecturaOperativa(usuario, usuario.sucursal_id);
-        return this.cajaService.listarMovimientos(cajaId, sucursalId);
+        return this.cajaService.listarMovimientos(cajaId, sucursalId, query.page, query.limit);
     }
     async retiro(dto, usuario) {
         const sucursalId = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
@@ -83,7 +88,7 @@ exports.CajaController = CajaController;
 __decorate([
     (0, common_1.Get)('activa/:sucursal_id'),
     (0, permisos_decorator_1.Permisos)('ver_caja'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
@@ -91,6 +96,7 @@ __decorate([
 ], CajaController.prototype, "activa", null);
 __decorate([
     (0, common_1.Post)('abrir'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
     (0, permisos_decorator_1.Permisos)('abrir_caja'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -110,12 +116,22 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "cerrar", null);
 __decorate([
-    (0, common_1.Get)('cuentas-por-cobrar/:sucursal_id'),
+    (0, common_1.Get)('cuentas-por-cobrar/:sucursal_id/resumen'),
     (0, permisos_decorator_1.Permisos)('ver_caja'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], CajaController.prototype, "resumenFiados", null);
+__decorate([
+    (0, common_1.Get)('cuentas-por-cobrar/:sucursal_id'),
+    (0, permisos_decorator_1.Permisos)('ver_caja'),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Query)('incluir_pagadas')),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "listarFiados", null);
 __decorate([
@@ -131,19 +147,23 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('cuentas-por-cobrar/:id/pagar'),
     (0, permisos_decorator_1.Permisos)('ver_caja'),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, pagar_cuenta_por_cobrar_dto_1.PagarCuentaPorCobrarDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "pagarFiado", null);
 __decorate([
     (0, common_1.Get)(':caja_id/movimientos'),
     (0, permisos_decorator_1.Permisos)('ver_caja'),
-    __param(0, (0, common_1.Param)('caja_id')),
-    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(0, (0, common_1.Param)('caja_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, paginacion_dto_1.PaginacionQueryDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "movimientos", null);
 __decorate([

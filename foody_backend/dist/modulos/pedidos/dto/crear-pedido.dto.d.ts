@@ -18,6 +18,8 @@ export declare class ComboPedidoDto {
     combo_id: string;
     cantidad: number;
     precio: number;
+    toppings?: ToppingItemDto[];
+    bebidas?: BebidaItemDto[];
 }
 export declare class CrearPedidoDto {
     sucursal_id: string;
@@ -35,10 +37,12 @@ export declare class CrearPedidoDto {
     nombre_fiscal_cliente?: string;
     email_cliente?: string;
     observaciones?: string;
+    fecha_entrega_deseada?: string;
     items?: ItemPedidoDto[];
     combos?: ComboPedidoDto[];
     codigo_promocion?: string;
     idempotency_key?: string;
+    forzar_fuera_horario?: boolean;
     pagos?: PagoLineaDto[];
     propina?: number;
 }

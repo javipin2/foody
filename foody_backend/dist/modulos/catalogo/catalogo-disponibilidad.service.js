@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CatalogoDisponibilidadService = void 0;
 const common_1 = require("@nestjs/common");
+const menu_cache_service_1 = require("../../core/cache/menu-cache.service");
 const database_service_1 = require("../../core/database/database.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
 const costeo_service_1 = require("../costeo/costeo.service");
@@ -18,27 +19,41 @@ let CatalogoDisponibilidadService = class CatalogoDisponibilidadService {
     database;
     costeo;
     realtime;
-    constructor(database, costeo, realtime) {
+    menuCache;
+    constructor(database, costeo, realtime, menuCache) {
         this.database = database;
         this.costeo = costeo;
         this.realtime = realtime;
+        this.menuCache = menuCache;
     }
     async sincronizarPorIngrediente(sucursalId, ingredienteId) {
         return this.database.enTransaccion(async (client) => this.sincronizarPorIngredienteEnTransaccion(client, sucursalId, ingredienteId));
     }
     async sincronizarPorIngredienteEnTransaccion(client, sucursalId, ingredienteId) {
-        const productos = await client.query(`SELECT DISTINCT p.id
+        const productos = await client.query(`WITH RECURSIVE recetas_relacionadas AS (
+         -- Caso base: recetas que usan el ingrediente directamente
+         SELECT DISTINCT receta_id
+         FROM receta_items
+         WHERE ingrediente_id = $2
+         
+         UNION
+         
+         -- Caso recursivo: recetas que usan una subreceta que usa el ingrediente
+         SELECT ri.receta_id
+         FROM receta_items ri
+         INNER JOIN recetas_relacionadas rr ON rr.receta_id = ri.subreceta_id
+         WHERE ri.tipo_item = 'subreceta'
+       )
+       SELECT DISTINCT p.id
        FROM productos p
-       INNER JOIN recetas r ON r.id = p.receta_id
-       INNER JOIN receta_items ri ON ri.receta_id = r.id
-       WHERE p.sucursal_id = $1 AND ri.ingrediente_id = $2
+       INNER JOIN recetas_relacionadas rr ON rr.receta_id = p.receta_id
+       WHERE p.sucursal_id = $1
        UNION
        SELECT DISTINCT pii.producto_id AS id
        FROM producto_items_incluidos pii
        INNER JOIN productos pin ON pin.id = pii.producto_incluido_id
-       INNER JOIN recetas r ON r.id = pin.receta_id
-       INNER JOIN receta_items ri ON ri.receta_id = r.id
-       WHERE pii.sucursal_id = $1 AND ri.ingrediente_id = $2`, [sucursalId, ingredienteId]);
+       INNER JOIN recetas_relacionadas rr ON rr.receta_id = pin.receta_id
+       WHERE pii.sucursal_id = $1`, [sucursalId, ingredienteId]);
         const cambios = [];
         for (const row of productos.rows) {
             const cambio = await this.evaluarDisponibilidadProducto(client, sucursalId, row.id);
@@ -50,6 +65,7 @@ let CatalogoDisponibilidadService = class CatalogoDisponibilidadService {
     emitirCambios(sucursalId, cambios) {
         if (!cambios.length)
             return;
+        void this.menuCache.invalidar(sucursalId);
         const agotados = cambios.filter((c) => !c.disponible).map((c) => c.producto_id);
         const reactivados = cambios.filter((c) => c.disponible).map((c) => c.producto_id);
         if (agotados.length) {
@@ -96,6 +112,7 @@ exports.CatalogoDisponibilidadService = CatalogoDisponibilidadService = __decora
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         costeo_service_1.CosteoService,
-        realtime_broadcast_service_1.RealtimeBroadcastService])
+        realtime_broadcast_service_1.RealtimeBroadcastService,
+        menu_cache_service_1.MenuCacheService])
 ], CatalogoDisponibilidadService);
 //# sourceMappingURL=catalogo-disponibilidad.service.js.map

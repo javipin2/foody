@@ -17,6 +17,26 @@ let AuditoriaService = class AuditoriaService {
     constructor(database) {
         this.database = database;
     }
+    async registrarEnTransaccion(client, registro) {
+        await client.query(`INSERT INTO auditoria_logs (
+         sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_antes, datos_despues
+       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`, [
+            registro.sucursalId,
+            registro.usuarioId ?? null,
+            registro.accion,
+            registro.tablaAfectada,
+            registro.registroId,
+            registro.datosAntes
+                ? JSON.stringify(registro.datosAntes)
+                : null,
+            registro.datosDespues
+                ? JSON.stringify(registro.datosDespues)
+                : null,
+        ]);
+    }
+    async registrar(registro) {
+        await this.database.enTransaccion((client) => this.registrarEnTransaccion(client, registro));
+    }
     async timelineTurno(filtro) {
         const { sucursal_id, desde, hasta } = filtro;
         const hastaExclusive = `${hasta}T23:59:59.999Z`;
@@ -29,7 +49,8 @@ let AuditoriaService = class AuditoriaService {
        WHERE a.sucursal_id = $1
          AND a.created_at >= $2::timestamptz
          AND a.created_at <= $3::timestamptz
-       ORDER BY a.created_at ASC`, [sucursal_id, desde, hastaExclusive]);
+       ORDER BY a.created_at ASC
+       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
         const alertas = await this.database.consultar(`SELECT ar.id, ar.created_at AS ocurrido_at, 'alerta' AS fuente,
               ar.tipo, ar.nivel, ar.descripcion AS detalle,
               ar.referencia_id, ar.referencia_tipo, ar.revisada
@@ -37,7 +58,8 @@ let AuditoriaService = class AuditoriaService {
        WHERE ar.sucursal_id = $1
          AND ar.created_at >= $2::timestamptz
          AND ar.created_at <= $3::timestamptz
-       ORDER BY ar.created_at ASC`, [sucursal_id, desde, hastaExclusive]);
+       ORDER BY ar.created_at ASC
+       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
         const caja = await this.database.consultar(`SELECT m.id, m.created_at AS ocurrido_at, 'caja' AS fuente,
               m.tipo, m.monto, m.metodo_pago, m.descripcion AS detalle,
               m.pedido_id, u.nombre AS usuario_nombre
@@ -46,14 +68,16 @@ let AuditoriaService = class AuditoriaService {
        WHERE m.sucursal_id = $1
          AND m.created_at >= $2::timestamptz
          AND m.created_at <= $3::timestamptz
-       ORDER BY m.created_at ASC`, [sucursal_id, desde, hastaExclusive]);
+       ORDER BY m.created_at ASC
+       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
         const pedidos = await this.database.consultar(`SELECT p.id, p.created_at AS ocurrido_at, 'pedido' AS fuente,
               p.estado AS tipo, p.numero_pedido, p.total, p.tipo AS canal
        FROM pedidos p
        WHERE p.sucursal_id = $1
          AND p.created_at >= $2::timestamptz
          AND p.created_at <= $3::timestamptz
-       ORDER BY p.created_at ASC`, [sucursal_id, desde, hastaExclusive]);
+       ORDER BY p.created_at ASC
+       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
         const eventos = [
             ...auditoria.map((e) => ({ ...e, ocurrido_at: String(e.ocurrido_at) })),
             ...alertas.map((e) => ({ ...e, ocurrido_at: String(e.ocurrido_at) })),

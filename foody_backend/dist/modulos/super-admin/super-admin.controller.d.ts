@@ -14,6 +14,17 @@ export declare class SuperAdminController {
     estadisticas(): Promise<{
         pedidos_hoy: number;
         ingresos_foody_hoy: number;
+        self_service: {
+            registros_self_service: number;
+            pagos_aprobados_30d: number;
+            ingresos_cop_30d: number;
+            pagos_pendientes: number;
+            tasa_conversion_pagos_pct: number;
+            suscripciones_por_plan: {
+                plan: string;
+                total: number;
+            }[];
+        };
         ciudades_activas: number;
         restaurantes_activos: number;
         sucursales_activas: number;
@@ -34,7 +45,7 @@ export declare class SuperAdminController {
         id: string;
         nombre: string;
         email: string;
-        rol: "domiciliario_planta" | "cajero" | "mesero" | "admin" | "gerente" | "cocina_principal";
+        rol: "cocina" | "gerente_cadena" | "admin" | "domiciliario_planta" | "cajero" | "mesero" | "gerente" | "cocina_principal";
         sucursal_id: string;
         restaurante_id: string;
     }>;
@@ -50,6 +61,7 @@ export declare class SuperAdminController {
     domiciliarios(): Promise<import("pg").QueryResultRow[]>;
     domiciliarioEstado(id: string, dto: ActualizarDomiciliarioEstadoDto): Promise<import("pg").QueryResultRow | null>;
     documentosPendientes(): Promise<import("pg").QueryResultRow[]>;
+    documentosDomiciliario(id: string): Promise<import("pg").QueryResultRow[]>;
     aprobarDocumento(id: string, dto: AprobarDocumentoDto, usuario: JwtPayload): Promise<{
         documento_id: string;
         estado: "rechazado" | "aprobado";

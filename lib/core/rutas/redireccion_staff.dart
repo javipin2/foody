@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:reserva_canchas/config/app_link_config.dart';
+import 'package:reserva_canchas/features/auth/data/auth_repository.dart';
+import 'package:reserva_canchas/features/pagos/domain/pagos_deep_link_service.dart';
 
 /// Rutas post-login según `dashboard` del backend (`auth.service.resolverDashboard`).
 /// Alineado con `INFRAESTRUCTURA/foody_flujo_completo_pantallas.html`.
@@ -18,8 +21,15 @@ void irDashboardStaff(BuildContext context, String dashboard) {
     case 'cocina':
       context.go('/admin/cocina');
     default:
-      context.go('/admin/panel');
+      final pagoId = PagosDeepLinkService.consumirPagoIdPendiente();
+      context.go(AppLinkConfig.rutaPanelTrasPago(pagoId: pagoId));
   }
+}
+
+/// Cierra JWT + Supabase OAuth y vuelve al login staff (sin pasar por splash).
+Future<void> cerrarSesionStaff(BuildContext context) async {
+  await AuthRepository().logout();
+  if (context.mounted) context.go('/admin/login');
 }
 
 /// Etiqueta legible del rol para cabeceras staff.

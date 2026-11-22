@@ -19,10 +19,17 @@ export declare class RealtimeBroadcastService implements OnModuleInit, OnModuleD
     constructor(config: ConfigService);
     onModuleInit(): void;
     estaConfigurado(): boolean;
+    pepper(): string;
+    topicSucursal(sucursalId: string): string;
+    topicCocina(cocinaId: string): string;
+    topicRestaurante(restauranteId: string): string;
+    topicDomiciliarioPlanta(usuarioId: string): string;
+    topicDomiciliarioIndep(domiciliarioId: string): string;
     verificarConexion(): Promise<SaludRealtime>;
     onModuleDestroy(): void;
     pedidoActualizado(payload: EventoPedidoBroadcast): Promise<void>;
-    pedidoSeguimiento(pedidoId: string, payload: Record<string, unknown>): Promise<void>;
+    static canalPedidoSeguimiento(pedidoId: string, seguimientoToken: string): string;
+    pedidoSeguimiento(pedidoId: string, seguimientoToken: string, payload: Record<string, unknown>): Promise<void>;
     mesasActualizadas(sucursalId: string): Promise<void>;
     cocinaActualizada(cocinaId: string, payload: Record<string, unknown>): Promise<void>;
     domiciliarioPlantaActualizado(usuarioId: string, payload: Record<string, unknown>): Promise<void>;
@@ -39,8 +46,22 @@ export declare class RealtimeBroadcastService implements OnModuleInit, OnModuleD
     catalogoDisponibilidad(sucursalId: string, payload: {
         producto_ids?: string[];
         combo_ids?: string[];
+        topping_ids?: string[];
+        bebida_ids?: string[];
         disponible: boolean;
     }): Promise<void>;
+    suscripcionActualizada(restauranteId: string, payload: {
+        plan: string;
+        pago_id?: string;
+    }): Promise<void>;
+    llamarMesera(sucursalId: string, payload: {
+        pedido_id: string;
+        mesa_id?: string | null;
+        numero_pedido?: string;
+    }): Promise<void>;
+    ubicacionRepartidor(pedidoId: string, seguimientoToken: string, payload: Record<string, unknown>): Promise<void>;
+    ofertaExpirada(domiciliarioId: string, payload: Record<string, unknown>): Promise<void>;
+    pedidoDesasignado(usuarioId: string, payload: Record<string, unknown>): Promise<void>;
     private obtenerCanal;
     private enviarBroadcast;
 }

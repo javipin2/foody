@@ -53,6 +53,50 @@ class SucursalesRepository {
     return _parsearMapa(r.data);
   }
 
+  Future<Map<String, dynamic>> actualizar({
+    required String id,
+    String? nombre,
+    String? direccion,
+    String? telefono,
+    bool? activa,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/sucursales/$id',
+      data: {
+        if (nombre != null) 'nombre': nombre,
+        if (direccion != null) 'direccion': direccion,
+        if (telefono != null) 'telefono': telefono,
+        if (activa != null) 'activa': activa,
+      },
+    );
+    return _parsearMapa(r.data);
+  }
+
+  Future<Map<String, dynamic>> obtenerMarca() async {
+    final r = await _dio.get<Map<String, dynamic>>('/sucursales/marca');
+    return _parsearMapa(r.data);
+  }
+
+  Future<Map<String, dynamic>> actualizarMarca({
+    String? nombre,
+    String? telefono,
+    String? logoUrl,
+    String? bannerUrl,
+    String? descripcion,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/sucursales/marca',
+      data: {
+        if (nombre != null) 'nombre': nombre,
+        if (telefono != null) 'telefono': telefono,
+        if (logoUrl != null) 'logo_url': logoUrl,
+        if (bannerUrl != null) 'banner_url': bannerUrl,
+        if (descripcion != null) 'descripcion': descripcion,
+      },
+    );
+    return _parsearMapa(r.data);
+  }
+
   Future<Map<String, dynamic>> _parsearMapa(Map<String, dynamic>? data) async {
     if (data == null) throw Exception('Respuesta vacía');
     final env = RespuestaApi<Map<String, dynamic>>.fromJson(

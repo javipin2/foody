@@ -34,6 +34,13 @@ let DashboardController = class DashboardController {
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
         return this.dashboardService.resumen(id);
     }
+    async graficos(usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.dashboardService.graficos(id);
+    }
+    async consolidado(usuario) {
+        return this.dashboardService.consolidadoParaUsuario(usuario);
+    }
 };
 exports.DashboardController = DashboardController;
 __decorate([
@@ -45,6 +52,23 @@ __decorate([
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
     __metadata("design:returntype", Promise)
 ], DashboardController.prototype, "resumen", null);
+__decorate([
+    (0, common_1.Get)('graficos'),
+    (0, permisos_decorator_1.Permisos)('ver_dashboard'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], DashboardController.prototype, "graficos", null);
+__decorate([
+    (0, common_1.Get)('consolidado'),
+    (0, permisos_decorator_1.Permisos)('ver_dashboard', 'gestionar_sucursales'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], DashboardController.prototype, "consolidado", null);
 exports.DashboardController = DashboardController = __decorate([
     (0, common_1.Controller)('dashboard'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),

@@ -1,4 +1,4 @@
-# Verifica módulo FCM (diagnóstico + push de prueba)
+# Verifica modulo FCM (diagnostico + push de prueba)
 # Uso: .\scripts\verificar-fcm.ps1
 
 $ErrorActionPreference = 'Stop'
@@ -12,24 +12,24 @@ function Login-Staff {
   return $r.datos
 }
 
-Write-Host "=== Verificar FCM ===" -ForegroundColor Cyan
+Write-Host '=== Verificar FCM ===' -ForegroundColor Cyan
 
 $salud = Invoke-RestMethod -Uri "$base/salud" -TimeoutSec 5
 if (-not $salud.exito) { throw 'API no responde' }
-Write-Host "OK salud" -ForegroundColor Green
+Write-Host 'OK salud' -ForegroundColor Green
 
 $admin = Login-Staff 'admin@foody.demo'
 $h = @{ Authorization = "Bearer $($admin.token)" }
 
 $diag = Invoke-RestMethod -Uri "$base/notificaciones/diagnostico" -Headers $h
-Write-Host "Diagnóstico FCM:" -ForegroundColor Yellow
+Write-Host 'Diagnostico FCM:' -ForegroundColor Yellow
 Write-Host "  firebase_admin = $($diag.datos.firebase_admin)"
 Write-Host "  pendientes     = $($diag.datos.pendientes)"
 
 if (-not $diag.datos.firebase_admin) {
-  Write-Host ""
-  Write-Host "AVISO: Firebase Admin NO inicializado." -ForegroundColor Yellow
-  Write-Host "Define FIREBASE_SERVICE_ACCOUNT_PATH en foody_backend/.env y reinicia." -ForegroundColor Yellow
+  Write-Host ''
+  Write-Host 'AVISO: Firebase Admin NO inicializado.' -ForegroundColor Yellow
+  Write-Host 'Define FIREBASE_SERVICE_ACCOUNT_PATH en foody_backend/.env y reinicia.' -ForegroundColor Yellow
 }
 
 $prueba = Invoke-RestMethod -Uri "$base/notificaciones/prueba" -Method POST -Headers $h
@@ -38,9 +38,10 @@ Write-Host "Push prueba encolado: procesadas=$($prueba.datos.procesadas) enviado
 if ($diag.datos.tokens_web_staff -gt 0 -or $diag.datos.tokens_web_cliente -gt 0) {
   $web = Invoke-RestMethod -Uri "$base/notificaciones/prueba-web" -Method POST -Headers $h -ContentType 'application/json' -Body '{}'
   Write-Host "Push prueba WEB: enviados=$($web.datos.enviados) tokens_web=$($web.datos.tokens_web) fallos=$($web.datos.fallos)" -ForegroundColor Green
-} else {
-  Write-Host "Sin tokens web — abre Foody en Chrome y acepta notificaciones" -ForegroundColor Yellow
+}
+else {
+  Write-Host 'Sin tokens web - abre Foody en Chrome y acepta notificaciones' -ForegroundColor Yellow
 }
 
-Write-Host ""
-Write-Host "Verificación FCM OK (móvil + web si hay tokens registrados)" -ForegroundColor Green
+Write-Host ''
+Write-Host 'Verificacion FCM OK' -ForegroundColor Green

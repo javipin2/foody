@@ -1,0 +1,8 @@
+# Atajos Foody
+
+Doble clic aqui esta bien: estos archivos solo llaman a los reales en `scripts\`.
+
+Orden:
+1. Docker
+2. `iniciar-backend-wsl.bat`
+3. `iniciar-foody-subdominios.bat`

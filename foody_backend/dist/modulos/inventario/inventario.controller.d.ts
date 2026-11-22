@@ -7,6 +7,7 @@ import { CerrarConteoDto } from './dto/cerrar-conteo.dto';
 import { RegistrarCompraDto } from './dto/registrar-compra.dto';
 import { CrearTrasladoDto } from './dto/crear-traslado.dto';
 import { InventarioService } from './inventario.service';
+import { PaginacionQueryDto } from '../../compartido/dto/paginacion.dto';
 export declare class InventarioController {
     private readonly inventario;
     private readonly sucursalScope;
@@ -21,7 +22,15 @@ export declare class InventarioController {
         traslado_id: string;
         estado: string;
     }>;
+    cancelarTraslado(id: string, usuario: JwtPayload): Promise<{
+        traslado_id: string;
+        estado: string;
+    }>;
     resumenHermanas(usuario: JwtPayload): Promise<{
+        sucursal_propia: string | null;
+        puede_ver_hermanas: boolean;
+        sucursales: never[];
+    } | {
         sucursal_propia: string;
         puede_ver_hermanas: boolean;
         sucursales: {
@@ -41,10 +50,6 @@ export declare class InventarioController {
                 bajo_minimo: boolean;
             }[];
         }[];
-    } | {
-        sucursal_propia: string | null;
-        puede_ver_hermanas: boolean;
-        sucursales: never[];
     }>;
     iniciarConteo(sucursalId: string, usuario: JwtPayload): Promise<{
         conteo_id: string;
@@ -55,23 +60,47 @@ export declare class InventarioController {
         items: number;
         ajustes: number;
     }>;
-    movimientos(sucursalId: string, usuario: JwtPayload): Promise<import("pg").QueryResultRow[]>;
-    costos(sucursalId: string, usuario: JwtPayload): Promise<import("pg").QueryResultRow[]>;
-    recetaProducto(productoId: string, usuario: JwtPayload): Promise<{
+    movimientos(sucursalId: string, usuario: JwtPayload, page?: string, limit?: string): Promise<import("pg").QueryResultRow[] | import("../../compartido/dto/paginacion.dto").ResultadoPaginado<import("pg").QueryResultRow>>;
+    costos(sucursalId: string, usuario: JwtPayload): Promise<{
+        tipo_entidad: string;
+        costo_canal_llevar: number;
+        precio_sugerido_llevar: number | null;
+        margen_llevar_porcentaje: number | null;
+    }[]>;
+    recetaProducto(productoId: string, tipoEntidad: string | undefined, usuario: JwtPayload): Promise<{
         producto_id: string;
+        tipo_entidad: "bebida" | "topping";
         receta_id: null;
         items: never[];
         margen_error: number;
         costo_calculado: string | null;
     } | {
         producto_id: string;
+        tipo_entidad: "bebida" | "topping";
         receta_id: string;
         margen_error: number;
         costo_calculado: string | null;
         items: import("pg").QueryResultRow[];
+    } | {
+        producto_id: string;
+        tipo_entidad: string;
+        receta_id: null;
+        items: never[];
+        margen_error: number;
+        costo_calculado: string | null;
+        costo_domicilio: string | null;
+    } | {
+        producto_id: string;
+        tipo_entidad: string;
+        receta_id: string;
+        margen_error: number;
+        costo_calculado: string | null;
+        costo_domicilio: string | null;
+        items: import("pg").QueryResultRow[];
     }>;
     configurarReceta(dto: ConfigurarRecetaProductoDto, usuario: JwtPayload): Promise<{
         producto_id: string;
+        tipo_entidad: string;
         receta_id: string;
         costo_calculado: number;
         items: number;
@@ -80,10 +109,13 @@ export declare class InventarioController {
         compra_id: string;
         total_compra: number;
     }>;
-    listar(sucursalId: string, usuario: JwtPayload): Promise<(import("pg").QueryResultRow & {
+    listar(sucursalId: string, usuario: JwtPayload, pag: PaginacionQueryDto): Promise<(import("pg").QueryResultRow & {
         costo_real: number;
         factor_correccion: number | null;
-    })[]>;
+    })[] | import("../../compartido/dto/paginacion.dto").ResultadoPaginado<import("pg").QueryResultRow & {
+        costo_real: number;
+        factor_correccion: number | null;
+    }>>;
     crear(dto: CrearIngredienteDto, usuario: JwtPayload): Promise<Record<string, unknown> & {
         costo_real: number;
         factor_correccion: number | null;

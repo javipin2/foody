@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
@@ -46,7 +47,7 @@ export class MesasController {
   }
 
   @Post('transferir')
-  @Permisos('gestionar_mesas')
+  @Permisos('gestionar_mesas', 'cobrar_pedido')
   async transferir(
     @Body() dto: TransferirMesaDto,
     @UsuarioActual() usuario: JwtPayload,
@@ -58,7 +59,7 @@ export class MesasController {
   @Post(':id/reservar')
   @Permisos('gestionar_mesas')
   async reservar(
-    @Param('id') mesaId: string,
+    @Param('id', ParseUUIDPipe) mesaId: string,
     @Body() dto: ReservarMesaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
@@ -69,7 +70,7 @@ export class MesasController {
   @Post(':id/cancelar-reserva')
   @Permisos('gestionar_mesas')
   async cancelarReserva(
-    @Param('id') mesaId: string,
+    @Param('id', ParseUUIDPipe) mesaId: string,
     @Query('sucursal_id') sucursalId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
@@ -95,7 +96,7 @@ export class MesasController {
   @Post(':id/salio-sin-pagar')
   @Permisos('gestionar_mesas', 'ver_caja')
   async salioSinPagar(
-    @Param('id') mesaId: string,
+    @Param('id', ParseUUIDPipe) mesaId: string,
     @Body() dto: SalioSinPagarDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
@@ -105,13 +106,14 @@ export class MesasController {
       dto.sucursal_id,
       usuario.sub,
       dto,
+      usuario.rol,
     );
   }
 
   @Get(':id/qr')
   @Permisos('gestionar_mesas')
   async qr(
-    @Param('id') mesaId: string,
+    @Param('id', ParseUUIDPipe) mesaId: string,
     @Query('sucursal_id') sucursalId: string,
     @Query('base_url') baseUrl: string | undefined,
     @UsuarioActual() usuario: JwtPayload,
@@ -144,13 +146,13 @@ export class MesasController {
     @UsuarioActual() usuario: JwtPayload,
   ) {
     await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
-    return this.mesasService.crear(dto);
+    return this.mesasService.crear(dto, usuario.restaurante_id ?? undefined);
   }
 
   @Patch(':id')
   @Permisos('gestionar_mesas')
   async actualizar(
-    @Param('id') mesaId: string,
+    @Param('id', ParseUUIDPipe) mesaId: string,
     @Query('sucursal_id') sucursalId: string,
     @Body() dto: ActualizarMesaDto,
     @UsuarioActual() usuario: JwtPayload,
@@ -162,7 +164,7 @@ export class MesasController {
   @Delete(':id')
   @Permisos('gestionar_mesas')
   async desactivar(
-    @Param('id') mesaId: string,
+    @Param('id', ParseUUIDPipe) mesaId: string,
     @Query('sucursal_id') sucursalId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {

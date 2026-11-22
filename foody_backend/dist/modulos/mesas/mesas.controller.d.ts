@@ -36,9 +36,16 @@ export declare class MesasController {
     }>;
     salioSinPagar(mesaId: string, dto: SalioSinPagarDto, usuario: JwtPayload): Promise<{
         mesa_id: string;
+        mesas_liberadas: string[];
         cuentas_creadas: {
             pedido_id: string;
             monto: number;
+        }[];
+        pedidos_cerrados: {
+            id: string;
+            numero_pedido: string;
+            estado_anterior: string;
+            saldo_cxc: number;
         }[];
     }>;
     qr(mesaId: string, sucursalId: string, baseUrl: string | undefined, usuario: JwtPayload): Promise<{

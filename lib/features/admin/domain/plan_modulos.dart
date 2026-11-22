@@ -10,16 +10,18 @@ class PlanModulosFoody {
     'domiciliarios': 'domiciliarios',
     'zonas': 'zonas_domicilio',
     'reportes': 'reportes',
+    'analitica': 'analitica',
     'facturacion': 'facturacion',
   };
 
   static const planMinimoPorModulo = <String, String>{
-    'inventario': 'pro',
-    'costeo': 'pro',
-    'cocina': 'pro',
-    'domiciliarios': 'pro',
-    'zonas_domicilio': 'pro',
-    'reportes': 'pro',
+    'inventario': 'gratis',
+    'costeo': 'gratis',
+    'cocina': 'gratis',
+    'domiciliarios': 'gratis',
+    'zonas_domicilio': 'gratis',
+    'reportes': 'gratis',
+    'analitica': 'pro',
     'facturacion': 'enterprise',
   };
 
@@ -32,6 +34,7 @@ class PlanModulosFoody {
     'domiciliarios': 'Asigna repartidores y sigue entregas desde el panel.',
     'zonas': 'Cobra domicilio por zona y distancia automáticamente.',
     'reportes': 'Cuadre de caja y reportes para decidir con datos.',
+    'analitica': 'KPIs, gráficas y riesgo operativo en un solo lugar.',
     'facturacion': 'Emite facturación electrónica desde Foody.',
   };
 

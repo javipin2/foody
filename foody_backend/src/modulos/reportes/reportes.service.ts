@@ -1,5 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
+import {
+  SQL_DIA_LOCAL,
+  SQL_FECHA_CAJA_COALESCED_P2_P3,
+  SQL_FECHA_PEDIDOS_P2_P3,
+  SQL_FECHA_PEDIDOS_P_P2_P3,
+  SQL_NETO_MOVIMIENTO_CAJA,
+  SQL_PEDIDOS_VALIDOS,
+  SQL_PEDIDOS_VALIDOS_P,
+  SQL_TIPOS_MOV_CAJA_VENTA,
+} from '../../compartido/sql/ventas-metricas.sql';
 
 export interface RangoFechas {
   desde: string;
@@ -27,26 +37,22 @@ export class ReportesService {
               COALESCE(AVG(total), 0)::text AS ticket_promedio
        FROM pedidos
        WHERE sucursal_id = $1
-         AND created_at >= $2::timestamptz
-         AND created_at < ($3::date + interval '1 day')
-         AND estado NOT IN ('cancelado', 'rechazado')`,
+         AND ${SQL_FECHA_PEDIDOS_P2_P3}
+         AND ${SQL_PEDIDOS_VALIDOS}`,
       [sucursalId, rango.desde, rango.hasta],
     );
-
-    const filtroFechaCaja = `COALESCE(p.created_at, m.created_at)`;
 
     const caja = await this.database.consultarUno<{
       ventas_caja: string;
       movimientos: string;
     }>(
-      `SELECT COALESCE(SUM(m.monto), 0)::text AS ventas_caja,
-              COUNT(*)::text AS movimientos
+      `SELECT COALESCE(SUM(${SQL_NETO_MOVIMIENTO_CAJA}), 0)::text AS ventas_caja,
+              COUNT(*) FILTER (WHERE m.tipo = 'venta')::text AS movimientos
        FROM movimientos_caja m
        LEFT JOIN pedidos p ON p.id = m.pedido_id
        WHERE m.sucursal_id = $1
-         AND m.tipo = 'venta'
-         AND ${filtroFechaCaja} >= $2::timestamptz
-         AND ${filtroFechaCaja} < ($3::date + interval '1 day')`,
+         AND ${SQL_TIPOS_MOV_CAJA_VENTA}
+         AND ${SQL_FECHA_CAJA_COALESCED_P2_P3}`,
       [sucursalId, rango.desde, rango.hasta],
     );
 
@@ -58,14 +64,14 @@ export class ReportesService {
       total: string;
     }>(
       `SELECT COALESCE(m.metodo_pago, 'sin_metodo') AS metodo_pago,
-              COALESCE(SUM(m.monto), 0)::text AS total
+              COALESCE(SUM(${SQL_NETO_MOVIMIENTO_CAJA}), 0)::text AS total
        FROM movimientos_caja m
        LEFT JOIN pedidos p ON p.id = m.pedido_id
        WHERE m.sucursal_id = $1
-         AND m.tipo = 'venta'
-         AND COALESCE(p.created_at, m.created_at) >= $2::timestamptz
-         AND COALESCE(p.created_at, m.created_at) < ($3::date + interval '1 day')
+         AND ${SQL_TIPOS_MOV_CAJA_VENTA}
+         AND ${SQL_FECHA_CAJA_COALESCED_P2_P3}
        GROUP BY m.metodo_pago
+       HAVING COALESCE(SUM(${SQL_NETO_MOVIMIENTO_CAJA}), 0) <> 0
        ORDER BY total DESC`,
       [sucursalId, rango.desde, rango.hasta],
     );
@@ -80,9 +86,8 @@ export class ReportesService {
               COALESCE(SUM(total), 0)::text AS ventas
        FROM pedidos
        WHERE sucursal_id = $1
-         AND created_at >= $2::timestamptz
-         AND created_at < ($3::date + interval '1 day')
-         AND estado NOT IN ('cancelado', 'rechazado')
+         AND ${SQL_FECHA_PEDIDOS_P2_P3}
+         AND ${SQL_PEDIDOS_VALIDOS}
        GROUP BY tipo
        ORDER BY ventas DESC`,
       [sucursalId, rango.desde, rango.hasta],
@@ -103,6 +108,12 @@ export class ReportesService {
         ventas_movimientos_caja: ventasCaja,
         diferencia: Math.round((ventasPedidos - ventasCaja) * 100) / 100,
         movimientos_venta: Number(caja?.movimientos ?? 0),
+        // CONS-REP-OPEN-01: universos distintos (tickets vs cobrado), no bug de suma.
+        etiqueta_ventas_pedidos: 'Tickets (total pedidos)',
+        etiqueta_ventas_caja: 'Cobrado en caja (neto)',
+        nota_universos:
+          'Tickets suma pedidos del período (incluye abiertos sin cobrar). ' +
+          'Caja es neto venta−devolución. Diferencia esperable con mesas/domicilios pendientes.',
         por_metodo_caja: porMetodoCaja.map((f) => ({
           metodo_pago: f.metodo_pago,
           total: Number(f.total),
@@ -126,14 +137,30 @@ export class ReportesService {
       `SELECT pr.id AS producto_id,
               pr.nombre,
               COALESCE(SUM(pi.cantidad), 0)::text AS cantidad,
-              COALESCE(SUM(pi.cantidad * pi.precio_unitario), 0)::text AS ventas
+              COALESCE(
+                SUM(
+                  pi.cantidad * pi.precio_unitario
+                  + COALESCE(pit_ag.sum_topping, 0) * pi.cantidad
+                  + COALESCE(pib_ag.sum_bebida, 0)
+                ),
+                0
+              )::text AS ventas
        FROM pedido_items pi
        JOIN pedidos p ON p.id = pi.pedido_id
        JOIN productos pr ON pr.id = pi.producto_id
+       LEFT JOIN (
+         SELECT pedido_item_id, SUM(precio_topping) AS sum_topping
+         FROM pedido_item_toppings
+         GROUP BY pedido_item_id
+       ) pit_ag ON pit_ag.pedido_item_id = pi.id
+       LEFT JOIN (
+         SELECT pedido_item_id, SUM(precio_bebida * cantidad) AS sum_bebida
+         FROM pedido_item_bebidas
+         GROUP BY pedido_item_id
+       ) pib_ag ON pib_ag.pedido_item_id = pi.id
        WHERE p.sucursal_id = $1
-         AND p.created_at >= $2::timestamptz
-         AND p.created_at < ($3::date + interval '1 day')
-         AND p.estado NOT IN ('cancelado', 'rechazado')
+         AND ${SQL_FECHA_PEDIDOS_P_P2_P3}
+         AND ${SQL_PEDIDOS_VALIDOS_P}
        GROUP BY pr.id, pr.nombre
        ORDER BY cantidad DESC
        LIMIT 25`,
@@ -159,8 +186,7 @@ export class ReportesService {
       `SELECT estado, COUNT(*)::text AS total
        FROM pedidos
        WHERE sucursal_id = $1
-         AND created_at >= $2::timestamptz
-         AND created_at < ($3::date + interval '1 day')
+         AND ${SQL_FECHA_PEDIDOS_P2_P3}
        GROUP BY estado
        ORDER BY total DESC`,
       [sucursalId, rango.desde, rango.hasta],
@@ -171,16 +197,15 @@ export class ReportesService {
       pedidos: string;
       ventas: string;
     }>(
-      `SELECT (created_at AT TIME ZONE 'America/Bogota')::date::text AS dia,
+      `SELECT ${SQL_DIA_LOCAL}::text AS dia,
               COUNT(*)::text AS pedidos,
               COALESCE(SUM(total) FILTER (
-                WHERE estado NOT IN ('cancelado', 'rechazado')
+                WHERE ${SQL_PEDIDOS_VALIDOS}
               ), 0)::text AS ventas
        FROM pedidos
        WHERE sucursal_id = $1
-         AND created_at >= $2::timestamptz
-         AND created_at < ($3::date + interval '1 day')
-       GROUP BY (created_at AT TIME ZONE 'America/Bogota')::date
+         AND ${SQL_FECHA_PEDIDOS_P2_P3}
+       GROUP BY ${SQL_DIA_LOCAL}
        ORDER BY dia ASC`,
       [sucursalId, rango.desde, rango.hasta],
     );

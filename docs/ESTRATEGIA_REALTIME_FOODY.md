@@ -1,4 +1,4 @@
-# Foody — Estrategia de eventos y Realtime
+﻿# Foody — Estrategia de eventos y Realtime
 
 > **Rol:** Especialista sistemas distribuidos / eventos realtime  
 > **Fecha:** 2026-06-12 (actualizado tras RT-1…RT-5)  
@@ -6,18 +6,21 @@
 
 ---
 
-## 0. Resumen ejecutivo (jun-12)
+## 0. Resumen ejecutivo (jul-01)
 
 | Fase | Estado | Notas |
 |------|--------|-------|
 | **RT-1** Cocina KDS | ✅ | `cocina_actualizada` desde `CocinasService`, `pedidos-items`, `pedidos-soporte`; `KdsScreen` RT + poll 60 s |
 | **RT-2** Domiciliarios | ✅ | Canales planta/indep; dashboards RT + poll 60 s |
 | **RT-3** Sheet mesa | ✅ | `MesaPedidosSheet` suscribe sucursal |
-| **RT-4** Caja | ✅ | `caja_movimiento` en cobro mesa, pagos, apertura; `CajaAdminScreen` escucha |
-| **RT-5** Debounce/coalesce | ✅ | `FoodyRealtime` 300 ms; evento `sucursal_actualizada` si lote mixto |
+| **RT-4** Caja | ✅ | `caja_movimiento` en cobro mesa, pagos, apertura, retiro, gasto, devolución, cierre; `CajaAdminScreen` escucha |
+| **RT-5** Debounce/coalesce | ✅ | `FoodyRealtime` 300 ms; evento `sucursal_actualizada` si lote mixto; re-emite eventos filtrados |
+| **RT-7** Eventos recomendados | ✅ | `qr_aprobacion_urgente`, `catalogo_disponibilidad`, `event_id` UUID |
+| **RT-8** Coherencia domi/caja/GPS | ✅ | `llamar_mesera`, `ubicacion_repartidor`, `oferta_expirada`, `pedido_desasignado`, dedup Flutter |
+| **RT-9** Canal seguimiento opaco | ✅ | `seguimiento_token` + `pedido_{id}_{token}`; API estado con auth |
 | **RT-6** FCM | ⏳ | Pospuesto — ver §10 |
 
-**Próximo paso Realtime:** eventos recomendados (`qr_aprobacion_urgente`, `catalogo_disponibilidad`) + `event_id` UUID en payload backend (dedup D6).
+**Próximo paso Realtime:** FCM (RT-6, Sprint 7). Ítems checklist opcionales (cron QR 3/5 min, KDS segunda estación, modo degradado §5.1) — no bloquean piloto.
 
 ---
 
@@ -37,7 +40,7 @@
 |--------|-------|------------------------|----------------------|
 | `pedido_actualizado` | `sucursal_{id}` | Pedidos (crear, estado, aprobar, ítems, cobrar…) | Kanban, mesas, sheet mesa |
 | `mesas_actualizadas` | `sucursal_{id}` | MesasService; Pedidos agregar/cobrar | Grid mesas |
-| `estado_actualizado` | `pedido_{id}` | Pedidos seguimiento | Seguimiento cliente |
+| `estado_actualizado` | `pedido_{id}_{seguimiento_token}` | Pedidos seguimiento | Seguimiento cliente (RT-9) |
 | `cocina_actualizada` | `cocina_{id}` | CocinasService, pedidos-items, pedidos-soporte | KdsScreen |
 | `caja_movimiento` | `sucursal_{id}` | CajaService, pedidos-pagos, pedidos-crear | CajaAdminScreen |
 | `alerta_nueva` | `sucursal_{id}` | AlertasRiesgoService (parcial) | AlertasAdminScreen |
@@ -51,6 +54,12 @@
 | `KdsScreen` | 60 s | Respaldo si WebSocket cae |
 | `DashboardDomiciliarioIndependienteScreen` | 60 s | Respaldo ofertas |
 | `DashboardDomiciliarioScreen` (planta) | 60 s | Respaldo asignaciones |
+| `PedidosKanbanWidget` | 30–60 s | `PollRealtimeRespaldo` (R9) |
+| `MesasGridWidget` | 30–60 s | `PollRealtimeRespaldo` (R9) |
+| `MesaPedidosSheet` | 30–60 s | `PollRealtimeRespaldo` (R9) |
+| `CajaAdminScreen` | 30–60 s | `PollRealtimeRespaldo` (R9) |
+| `AlertasAdminScreen` | 30–60 s | `PollRealtimeRespaldo` (R9) |
+| `SeguimientoPedidoScreen` | 30–60 s | `PollRealtimeRespaldo` (R9) |
 | Kanban reloj UI | 30 s | Solo reloj visual, no refetch |
 | Grid mesas pulso QR | 800 ms | Animación UI, no datos |
 
@@ -351,7 +360,7 @@ Cliente Flutter: debounce 300 ms + `sucursal_actualizada` si lote mixto (RT-5).
 
 - Implementación actual: `foody_backend/src/core/realtime/`, `lib/core/realtime/foody_realtime.dart`
 - Escenarios operativos: `docs/ESCENARIOS_NEGOCIO_FOODY.md`
-- Arquitectura: `docs/AUDITORIA_ARQUITECTONICA_FOODY.md` §6
+- Arquitectura: `docs/archivo/auditorias-prompts/AUDITORIA_ARQUITECTONICA_FOODY.md` §6
 - FCM pospuesto: `docs/AVANCE_PROYECTO.md` «Pospuesto por acuerdo»
 - Pendiente global producto: §10 abajo
 - Catálogo escenarios (filas desactualizadas): `docs/ESCENARIOS_NEGOCIO_FOODY.md` — resync ⏳

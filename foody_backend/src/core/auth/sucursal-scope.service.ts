@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { JwtPayload } from './jwt-payload';
+import { ROL_GERENTE_CADENA } from './roles-food';
 
 /** Permiso corporativo: operar varias sucursales del mismo restaurante. */
 export const PERMISO_OPERAR_MULTI_SUCURSAL = 'gestionar_sucursales';
@@ -18,6 +19,7 @@ export class SucursalScopeService {
   constructor(private readonly database: DatabaseService) {}
 
   esCorporativo(usuario: JwtPayload): boolean {
+    if (usuario.rol === ROL_GERENTE_CADENA) return true;
     return (
       usuario.permisos?.includes(PERMISO_OPERAR_MULTI_SUCURSAL) ?? false
     );
@@ -31,7 +33,9 @@ export class SucursalScopeService {
   }
 
   resolverSucursalId(usuario: JwtPayload, solicitada?: string | null): string {
-    const id = solicitada ?? usuario.sucursal_id;
+    const bruta = solicitada ?? usuario.sucursal_id;
+    const id =
+      typeof bruta === 'string' ? bruta.trim().replace(/^=+/, '') : bruta;
     if (!id) {
       throw new UnauthorizedException('Usuario sin sucursal asignada');
     }

@@ -1,0 +1,1 @@
+{"version":3,"file":"roles-food.js","sourceRoot":"","sources":["../../../src/core/auth/roles-food.ts"],"names":[],"mappings":";;;AAIA,gDAEC;AAGD,kCAEC;AAVY,QAAA,kBAAkB,GAAG,gBAAgB,CAAC;AAGnD,SAAgB,kBAAkB,CAAC,GAAW;IAC5C,OAAO,GAAG,KAAK,OAAO,IAAI,GAAG,KAAK,0BAAkB,CAAC;AACvD,CAAC;AAGD,SAAgB,WAAW,CAAC,GAAW;IACrC,OAAO,GAAG,KAAK,QAAQ,IAAI,GAAG,CAAC,UAAU,CAAC,SAAS,CAAC,CAAC;AACvD,CAAC"}

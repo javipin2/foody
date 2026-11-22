@@ -5,9 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:reserva_canchas/core/mapas/mapa_foody.dart';
 import 'package:intl/intl.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:uuid/uuid.dart';
 import 'package:reserva_canchas/core/red/dialogo_stock_insuficiente.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/widgets/foody_pasos_pedido.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
+import 'package:reserva_canchas/features/cliente/presentation/foody_scaffold_cliente.dart';
 import 'package:reserva_canchas/features/pedidos/data/historial_pedidos_service.dart';
 import 'package:reserva_canchas/features/pedidos/data/pedidos_cliente_repository.dart';
 import 'package:reserva_canchas/features/pedidos/providers/carrito_provider.dart';
@@ -40,12 +43,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _nombreFiscal = TextEditingController();
   final _email = TextEditingController();
   final _codigoPromo = TextEditingController();
+  final _propina = TextEditingController(text: '0');
   final _repo = PedidosClienteRepository();
   final _zonasRepo = ZonasRepository();
   late String _tipo;
   String _metodoPago = 'efectivo';
   bool _requiereFactura = false;
   bool _enviando = false;
+  final _idempotencyKey = const Uuid().v4();
   num _costoDomicilio = 5000;
   String? _zonaNombre;
   bool _cotizandoDomicilio = false;
@@ -55,13 +60,27 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _obteniendoUbicacion = false;
   num _descuentoPromo = 0;
   String? _codigoPromoAplicado;
+  DateTime? _fechaEncargo;
   bool _validandoCodigo = false;
+  String? _errorFormulario;
+  String? _errorDireccion;
+  String? _errorFactura;
+  String? _errorEncargo;
+  final _scrollCtrl = ScrollController();
+  /// Totales de `POST /pedidos/estimar` (autoritativos).
+  num? _totalServidor;
+  bool _estimando = false;
+  String? _errorEstimar;
 
   @override
   void initState() {
     super.initState();
     _tipo = widget.mesaId != null ? 'mesa' : 'para_llevar';
     _cotizarDomicilio();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final carrito = ref.read(carritoProvider);
+      _refrescarEstimar(carrito);
+    });
   }
 
   final _formato = NumberFormat.currency(
@@ -92,7 +111,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return true;
     } catch (e) {
       if (!mounted) return false;
-      final mensaje = mensajeErrorHttp(e, contexto: 'cotizar domicilio');
+      final mensaje = mensajeErrorCliente(e, contexto: 'cotizar domicilio');
       setState(() {
         _cotizandoDomicilio = false;
         _errorDomicilio = mensaje;
@@ -103,6 +122,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   @override
   void dispose() {
+    _scrollCtrl.dispose();
     _nombre.dispose();
     _telefono.dispose();
     _direccion.dispose();
@@ -110,10 +130,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _nombreFiscal.dispose();
     _email.dispose();
     _codigoPromo.dispose();
+    _propina.dispose();
     super.dispose();
   }
 
-  double _totalEstimado(CarritoState carrito) {
+  /// Fallback UI si estimar falla (red); cobro real sigue en POST /pedidos.
+  double _totalEstimadoLocal(CarritoState carrito) {
     final tipo = _resolverTipo(carrito);
     var t = carrito.lineas.values.fold<double>(
       0,
@@ -123,6 +145,54 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     t -= _descuentoPromo.toDouble();
     if (t < 0) t = 0;
     return t;
+  }
+
+  double _totalMostrar(CarritoState carrito) {
+    if (_totalServidor != null) return _totalServidor!.toDouble();
+    return _totalEstimadoLocal(carrito);
+  }
+
+  Future<void> _refrescarEstimar(CarritoState carrito) async {
+    if (carrito.lineas.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _totalServidor = 0;
+          _estimando = false;
+          _errorEstimar = null;
+        });
+      }
+      return;
+    }
+    if (mounted) setState(() => _estimando = true);
+    try {
+      final tipo = _resolverTipo(carrito);
+      final datos = await _repo.estimarTotales(
+        sucursalId: widget.sucursalId,
+        tipo: tipo,
+        lineas: carrito.lineas.values.toList(),
+        mesaId: widget.mesaId,
+        lat: _lat,
+        lng: _lng,
+        codigoPromocion: _codigoPromoAplicado,
+      );
+      if (!mounted) return;
+      setState(() {
+        _totalServidor = datos['total'] as num? ?? 0;
+        _descuentoPromo = datos['descuento'] as num? ?? 0;
+        if (tipo == 'domicilio') {
+          _costoDomicilio = datos['costo_domicilio'] as num? ?? _costoDomicilio;
+        }
+        _estimando = false;
+        _errorEstimar = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _estimando = false;
+        _errorEstimar = mensajeErrorCliente(e, contexto: 'estimar total');
+        _totalServidor = null;
+      });
+    }
   }
 
   Future<void> _aplicarCodigoPromo(CarritoState carrito) async {
@@ -144,13 +214,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       setState(() {
         _descuentoPromo = res['monto'] as num? ?? 0;
         _codigoPromoAplicado = codigo.toUpperCase();
+        _validandoCodigo = false;
       });
+      await _refrescarEstimar(carrito);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'Descuento aplicado: ${_formato.format(_descuentoPromo)}',
           ),
-          backgroundColor: ColoresFoody.exito,
+          backgroundColor: AnaliticaTokens.inventario,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
@@ -162,7 +236,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(mensajeErrorHttp(e, contexto: 'validar código')),
-            backgroundColor: ColoresFoody.error,
+            backgroundColor: AnaliticaTokens.alertas,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -264,17 +339,31 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
   }
 
+  void _mostrarErrorFormulario(String mensaje) {
+    setState(() => _errorFormulario = mensaje);
+    if (_scrollCtrl.hasClients) {
+      _scrollCtrl.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   Future<void> _confirmar() async {
     final carrito = ref.read(carritoProvider);
     if (carrito.lineas.isEmpty) return;
 
+    setState(() {
+      _errorFormulario = null;
+      _errorDireccion = null;
+      _errorFactura = null;
+      _errorEncargo = null;
+    });
+
     if (_carritoMezclaEncargo(carrito)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No mezcles productos de encargo con el menú regular. Haz pedidos separados.',
-          ),
-        ),
+      _mostrarErrorFormulario(
+        'No mezcles productos de encargo con el menú regular. Haz pedidos separados.',
       );
       return;
     }
@@ -282,22 +371,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final tipoPedido = _resolverTipo(carrito);
 
     if (tipoPedido == 'domicilio' && _direccion.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Indica la dirección de entrega')),
-      );
+      setState(() {
+        _errorDireccion = 'Indica la dirección de entrega';
+        _errorFormulario = 'Completa la dirección de entrega';
+      });
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+      return;
+    }
+    if (tipoPedido == 'encargo' && _fechaEncargo == null) {
+      setState(() {
+        _errorEncargo = 'Selecciona la fecha deseada (mínimo 2 días)';
+        _errorFormulario = _errorEncargo;
+      });
       return;
     }
     if (tipoPedido == 'domicilio') {
       final cotizado = await _cotizarDomicilio();
       if (!cotizado || _errorDomicilio != null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                _errorDomicilio ??
-                    'No se pudo validar la zona de domicilio. Revisa tu ubicación.',
-              ),
-            ),
+          _mostrarErrorFormulario(
+            _errorDomicilio ??
+                'No se pudo validar la zona de domicilio. Revisa tu ubicación.',
           );
         }
         return;
@@ -308,11 +408,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       if (_nit.text.trim().isEmpty ||
           _nombreFiscal.text.trim().isEmpty ||
           _email.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Completa NIT, nombre fiscal y email para la factura'),
-          ),
-        );
+        setState(() {
+          _errorFactura =
+              'Completa NIT, nombre fiscal y email para la factura';
+          _errorFormulario = _errorFactura;
+        });
         return;
       }
     }
@@ -338,6 +438,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             _requiereFactura ? _nombreFiscal.text.trim() : null,
         emailCliente: _requiereFactura ? _email.text.trim() : null,
         codigoPromocion: _codigoPromoAplicado,
+        propina: widget.mesaId == null
+            ? double.tryParse(_propina.text.replaceAll(',', '').trim())
+            : null,
+        idempotencyKey: _idempotencyKey,
+        fechaEntregaDeseada: tipoPedido == 'encargo'
+            ? DateFormat('yyyy-MM-dd').format(_fechaEncargo!)
+            : null,
       );
       await HistorialPedidosService.registrar(
         pedidoId: resultado['pedido_id'] as String,
@@ -345,11 +452,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         sucursalNombre: widget.sucursalNombre,
         total: resultado['total'] as num?,
         estado: resultado['estado'] as String?,
+        seguimientoToken: resultado['seguimiento_token'] as String?,
       );
       ref.read(carritoProvider.notifier).limpiar();
       if (!mounted) return;
       final pedidoId = resultado['pedido_id'] as String;
-      context.go('/pedidos/$pedidoId/seguimiento');
+      final token = resultado['seguimiento_token'] as String?;
+      final qs = token != null && token.isNotEmpty ? '?token=$token' : '';
+      context.go('/pedidos/$pedidoId/seguimiento$qs');
     } catch (e) {
       if (mounted) {
         final mostrado = await mostrarDialogoStockSiAplica(context, e);
@@ -366,292 +476,718 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
+  InputDecoration _campo({
+    required String label,
+    String? hint,
+    String? errorText,
+    String? helperText,
+    String? prefixText,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      errorText: errorText,
+      helperText: helperText,
+      prefixText: prefixText,
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: AnaliticaTokens.surface,
+      labelStyle: const TextStyle(color: AnaliticaTokens.inkMuted),
+      hintStyle: const TextStyle(color: AnaliticaTokens.inkSoft),
+      helperStyle: const TextStyle(
+        color: AnaliticaTokens.inkMuted,
+        fontSize: 12,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        borderSide: const BorderSide(color: AnaliticaTokens.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        borderSide: const BorderSide(color: AnaliticaTokens.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        borderSide: const BorderSide(color: AnaliticaTokens.ink, width: 1.4),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        borderSide: const BorderSide(color: AnaliticaTokens.alertas),
+      ),
+    );
+  }
+
+  Widget _tituloSeccion(String texto) {
+    return Text(
+      texto,
+      style: const TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: 15,
+        color: AnaliticaTokens.ink,
+        letterSpacing: -0.2,
+      ),
+    );
+  }
+
+  Widget _chipPago(String valor, String etiqueta) {
+    final selected = _metodoPago == valor;
+    return FilterChip(
+      label: Text(etiqueta),
+      selected: selected,
+      showCheckmark: false,
+      onSelected: (_) => setState(() => _metodoPago = valor),
+      selectedColor: AnaliticaTokens.ink,
+      backgroundColor: AnaliticaTokens.surface,
+      side: BorderSide(
+        color: selected ? AnaliticaTokens.ink : AnaliticaTokens.border,
+      ),
+      labelStyle: TextStyle(
+        color: selected ? Colors.white : AnaliticaTokens.ink,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        fontSize: 13,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final carrito = ref.watch(carritoProvider);
+    final total = _totalMostrar(carrito);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Confirmar pedido')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (widget.mesaId != null) ...[
-            Card(
-              color: ColoresFoody.secundario.withValues(alpha: 0.12),
-              child: ListTile(
-                leading: const Icon(Icons.table_restaurant),
-                title: Text('Mesa ${widget.mesaNombre ?? ''}'),
-                subtitle: const Text('El pedido irá a aprobación de la mesera'),
+    return FoodyScaffoldCliente(
+      mostrarNavInferior: false,
+      appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        backgroundColor: AnaliticaTokens.surface,
+        foregroundColor: AnaliticaTokens.ink,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: false,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Confirmar pedido',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+                color: AnaliticaTokens.ink,
+                letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(height: 16),
-          ] else if (_carritoSoloEncargo(carrito)) ...[
-            Card(
-              color: ColoresFoody.acento.withValues(alpha: 0.35),
-              child: const ListTile(
-                leading: Icon(Icons.event_available),
-                title: Text('Pedido de encargo'),
-                subtitle: Text(
-                  'El restaurante confirmará disponibilidad y tiempo antes de prepararlo.',
+            Text(
+              widget.sucursalNombre,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                color: AnaliticaTokens.inkMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+      body: ColoredBox(
+        color: AnaliticaTokens.canvas,
+        child: ListView(
+          controller: _scrollCtrl,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            const FoodyPasosPedido(pasoActual: 2),
+            const Text(
+              'Completa tus datos. El restaurante confirma el total al aceptar.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: AnaliticaTokens.inkMuted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (_errorFormulario != null) ...[
+              Material(
+                color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: AnaliticaTokens.alertas,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _errorFormulario!,
+                          style: const TextStyle(
+                            color: AnaliticaTokens.alertas,
+                            fontSize: 14,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-          ] else ...[
-            Text('Tipo de pedido', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'para_llevar', label: Text('Para llevar')),
-                ButtonSegment(value: 'domicilio', label: Text('Domicilio')),
-              ],
-              selected: {_tipo},
-              onSelectionChanged: (s) {
-                setState(() => _tipo = s.first);
-                _cotizarDomicilio();
-              },
-            ),
-            if (_usaPrecioLlevar(_tipo) &&
-                _cantidadConPrecioLlevar(carrito) > 0) ...[
               const SizedBox(height: 12),
+            ],
+            if (widget.mesaId != null) ...[
               Card(
-                color: ColoresFoody.secundario.withValues(alpha: 0.12),
+                elevation: 0,
+                color: AnaliticaTokens.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                  side: const BorderSide(color: AnaliticaTokens.border),
+                ),
                 child: ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.info_outline, size: 20),
+                  leading: Icon(
+                    Icons.table_restaurant_rounded,
+                    color: AnaliticaTokens.ink.withValues(alpha: 0.75),
+                  ),
                   title: Text(
-                    '${_cantidadConPrecioLlevar(carrito)} producto(s) con precio para llevar',
-                    style: const TextStyle(fontSize: 13),
+                    'Mesa ${widget.mesaNombre ?? ''}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AnaliticaTokens.ink,
+                    ),
                   ),
                   subtitle: const Text(
-                    'El total usa el precio de canal llevar/domicilio donde aplique.',
-                    style: TextStyle(fontSize: 12),
+                    'El pedido irá a aprobación de la mesera',
+                    style: TextStyle(color: AnaliticaTokens.inkMuted),
                   ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ] else if (_carritoSoloEncargo(carrito)) ...[
+              Card(
+                elevation: 0,
+                color: AnaliticaTokens.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                  side: const BorderSide(color: AnaliticaTokens.border),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Icon(
+                        Icons.event_available_rounded,
+                        color: AnaliticaTokens.ink.withValues(alpha: 0.75),
+                      ),
+                      title: const Text(
+                        'Pedido de encargo',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: AnaliticaTokens.ink,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'El restaurante confirmará disponibilidad y tiempo antes de prepararlo.',
+                        style: TextStyle(color: AnaliticaTokens.inkMuted),
+                      ),
+                    ),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.calendar_today_rounded,
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                      title: Text(
+                        _fechaEncargo == null
+                            ? 'Fecha de entrega deseada'
+                            : DateFormat.yMMMd('es').format(_fechaEncargo!),
+                        style: const TextStyle(color: AnaliticaTokens.ink),
+                      ),
+                      subtitle: Text(
+                        _errorEncargo ?? 'Mínimo 2 días de anticipación',
+                        style: TextStyle(
+                          color: _errorEncargo != null
+                              ? AnaliticaTokens.alertas
+                              : AnaliticaTokens.inkMuted,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        final hoy = DateTime.now();
+                        final minima =
+                            DateTime(hoy.year, hoy.month, hoy.day + 2);
+                        final maxima =
+                            DateTime(hoy.year + 1, hoy.month, hoy.day);
+                        final elegida = await showDatePicker(
+                          context: context,
+                          initialDate: _fechaEncargo ?? minima,
+                          firstDate: minima,
+                          lastDate: maxima,
+                          locale: const Locale('es'),
+                        );
+                        if (elegida != null) {
+                          setState(() {
+                            _fechaEncargo = elegida;
+                            _errorEncargo = null;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ] else ...[
+              _tituloSeccion('Tipo de pedido'),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return AnaliticaTokens.ink;
+                    }
+                    return AnaliticaTokens.surface;
+                  }),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return Colors.white;
+                    }
+                    return AnaliticaTokens.ink;
+                  }),
+                  side: WidgetStateProperty.all(
+                    const BorderSide(color: AnaliticaTokens.border),
+                  ),
+                ),
+                segments: const [
+                  ButtonSegment(
+                    value: 'para_llevar',
+                    label: Text('paso por el local'),
+                    icon: Icon(Icons.shopping_bag_outlined, size: 18),
+                  ),
+                  ButtonSegment(
+                    value: 'domicilio',
+                    label: Text('Domicilio'),
+                    icon: Icon(Icons.delivery_dining_outlined, size: 18),
+                  ),
+                ],
+                selected: {_tipo},
+                onSelectionChanged: (s) {
+                  setState(() => _tipo = s.first);
+                  _cotizarDomicilio().then((_) {
+                    if (mounted) _refrescarEstimar(carrito);
+                  });
+                },
+              ),
+              if (_usaPrecioLlevar(_tipo) &&
+                  _cantidadConPrecioLlevar(carrito) > 0) ...[
+                const SizedBox(height: 12),
+                Card(
+                  elevation: 0,
+                  color: AnaliticaTokens.surfaceMuted,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                    side: const BorderSide(color: AnaliticaTokens.border),
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(
+                      Icons.info_outline,
+                      size: 20,
+                      color: AnaliticaTokens.inkMuted,
+                    ),
+                    title: Text(
+                      '${_cantidadConPrecioLlevar(carrito)} producto(s) con precio para llevar',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AnaliticaTokens.ink,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'El total usa el precio de canal llevar/domicilio donde aplique.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+            ],
+            _tituloSeccion('Tus datos'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _nombre,
+              textCapitalization: TextCapitalization.words,
+              style: const TextStyle(color: AnaliticaTokens.ink),
+              decoration: _campo(label: 'Nombre'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _telefono,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: AnaliticaTokens.ink),
+              decoration: _campo(label: 'Teléfono'),
+            ),
+            if (_tipo == 'domicilio') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _direccion,
+                maxLines: 2,
+                style: const TextStyle(color: AnaliticaTokens.ink),
+                onChanged: (_) {
+                  if (_errorDireccion != null) {
+                    setState(() => _errorDireccion = null);
+                  }
+                },
+                decoration: _campo(
+                  label: 'Dirección de entrega',
+                  errorText: _errorDireccion,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed:
+                        _obteniendoUbicacion ? null : _usarUbicacionActual,
+                    icon: _obteniendoUbicacion
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AnaliticaTokens.ink,
+                            ),
+                          )
+                        : const Icon(Icons.my_location),
+                    label: const Text('Usar mi ubicación'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AnaliticaTokens.ink,
+                      side: const BorderSide(color: AnaliticaTokens.border),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _abrirMapaEntrega,
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('Elegir en mapa'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AnaliticaTokens.ink,
+                      side: const BorderSide(color: AnaliticaTokens.border),
+                    ),
+                  ),
+                ],
+              ),
+              if (_lat != null && _lng != null) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                  child: MapaFoody(
+                    altura: 140,
+                    centro: LatLng(_lat!, _lng!),
+                    zoom: 16,
+                    interactuable: false,
+                    mostrarControles: false,
+                    marcadores: [
+                      MarcadorFoody(lat: _lat!, lng: _lng!),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              if (_cotizandoDomicilio)
+                const LinearProgressIndicator(
+                  minHeight: 2,
+                  color: AnaliticaTokens.ink,
+                )
+              else if (_errorDomicilio != null)
+                Text(
+                  _errorDomicilio!,
+                  style: const TextStyle(
+                    color: AnaliticaTokens.alertas,
+                    fontSize: 13,
+                  ),
+                )
+              else
+                Text(
+                  'Costo domicilio: ${_formato.format(_costoDomicilio)}'
+                  '${_zonaNombre != null ? ' ($_zonaNombre)' : ''}',
+                  style: const TextStyle(
+                    color: AnaliticaTokens.inkMuted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+            ],
+            const SizedBox(height: 20),
+            Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+                colorScheme: Theme.of(context).colorScheme.copyWith(
+                      primary: AnaliticaTokens.ink,
+                    ),
+              ),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                collapsedIconColor: AnaliticaTokens.inkMuted,
+                iconColor: AnaliticaTokens.ink,
+                title: const Text(
+                  'Factura (opcional)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AnaliticaTokens.ink,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Solo si necesitas datos fiscales',
+                  style: TextStyle(
+                    color: AnaliticaTokens.inkMuted,
+                    fontSize: 12.5,
+                  ),
+                ),
+                initiallyExpanded: false,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    activeThumbColor: AnaliticaTokens.ink,
+                    title: const Text(
+                      'Necesito factura',
+                      style: TextStyle(color: AnaliticaTokens.ink),
+                    ),
+                    subtitle: const Text(
+                      'Te pediremos NIT y razón social',
+                      style: TextStyle(color: AnaliticaTokens.inkMuted),
+                    ),
+                    value: _requiereFactura,
+                    onChanged: (v) => setState(() => _requiereFactura = v),
+                  ),
+                  if (_requiereFactura) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nit,
+                      style: const TextStyle(color: AnaliticaTokens.ink),
+                      decoration: _campo(
+                        label: 'NIT o cédula',
+                        errorText: _errorFactura,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _nombreFiscal,
+                      style: const TextStyle(color: AnaliticaTokens.ink),
+                      decoration: _campo(label: 'Nombre o razón social'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(color: AnaliticaTokens.ink),
+                      decoration: _campo(label: 'Email'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (widget.mesaId == null) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _propina,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(color: AnaliticaTokens.ink),
+                decoration: _campo(
+                  label: 'Propina (opcional)',
+                  hint: '0',
+                  prefixText: r'$ ',
+                  helperText: 'Se registra al cobrar tu pedido',
                 ),
               ),
             ],
-            const SizedBox(height: 24),
-          ],
-          TextField(
-            controller: _nombre,
-            decoration: const InputDecoration(
-              labelText: 'Nombre',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _telefono,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Teléfono',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          if (_tipo == 'domicilio') ...[
-            const SizedBox(height: 12),
-            TextField(
-              controller: _direccion,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Dirección de entrega',
-                border: OutlineInputBorder(),
-              ),
-            ),
+            const SizedBox(height: 20),
+            _tituloSeccion('Método de pago'),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                OutlinedButton.icon(
-                  onPressed: _obteniendoUbicacion ? null : _usarUbicacionActual,
-                  icon: _obteniendoUbicacion
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.my_location),
-                  label: const Text('Usar mi ubicación'),
+                _chipPago('efectivo', 'Efectivo'),
+                _chipPago('nequi', 'Nequi'),
+                _chipPago('tarjeta', 'Tarjeta'),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _tituloSeccion('Código promocional'),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _codigoPromo,
+                    textCapitalization: TextCapitalization.characters,
+                    style: const TextStyle(color: AnaliticaTokens.ink),
+                    decoration: _campo(
+                      label: 'Código',
+                      suffixIcon: _codigoPromoAplicado != null
+                          ? const Icon(
+                              Icons.check_circle,
+                              color: AnaliticaTokens.inventario,
+                            )
+                          : null,
+                    ),
+                  ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: _abrirMapaEntrega,
-                  icon: const Icon(Icons.map_outlined),
-                  label: const Text('Elegir en mapa'),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: _validandoCodigo
+                      ? null
+                      : () => _aplicarCodigoPromo(carrito),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AnaliticaTokens.ink,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(96, 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(AnaliticaTokens.r12),
+                    ),
+                  ),
+                  child: _validandoCodigo
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Aplicar'),
                 ),
               ],
             ),
-            if (_lat != null && _lng != null) ...[
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: MapaFoody(
-                  altura: 140,
-                  centro: LatLng(_lat!, _lng!),
-                  zoom: 16,
-                  interactuable: false,
-                  mostrarControles: false,
-                  marcadores: [
-                    MarcadorFoody(lat: _lat!, lng: _lng!),
+            const SizedBox(height: 20),
+            Card(
+              elevation: 0,
+              color: AnaliticaTokens.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                side: const BorderSide(color: AnaliticaTokens.border),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '${carrito.totalItems} ${carrito.totalItems == 1 ? 'producto' : 'productos'}',
+                      style: const TextStyle(
+                        color: AnaliticaTokens.inkMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (_tipo == 'domicilio') ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Domicilio: ${_formato.format(_costoDomicilio)}',
+                        style: const TextStyle(color: AnaliticaTokens.ink),
+                      ),
+                    ],
+                    if (_descuentoPromo > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Descuento ($_codigoPromoAplicado): -${_formato.format(_descuentoPromo)}',
+                        style: const TextStyle(
+                          color: AnaliticaTokens.inventario,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 20, color: AnaliticaTokens.border),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _estimando
+                              ? 'Calculando…'
+                              : (_totalServidor != null
+                                  ? 'Total'
+                                  : 'Total estimado'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                            color: AnaliticaTokens.ink,
+                          ),
+                        ),
+                        Text(
+                          _formato.format(total),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                            color: AnaliticaTokens.ink,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_errorEstimar != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _errorEstimar!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AnaliticaTokens.alertas,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    const Text(
+                      'El total final lo confirma el restaurante al aceptar tu pedido.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AnaliticaTokens.inkMuted,
+                        height: 1.3,
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ],
-            const SizedBox(height: 8),
-            if (_cotizandoDomicilio)
-              const LinearProgressIndicator(minHeight: 2)
-            else if (_errorDomicilio != null)
-              Text(
-                _errorDomicilio!,
-                style: TextStyle(color: ColoresFoody.error, fontSize: 13),
-              )
-            else
-              Text(
-                'Costo domicilio: ${_formato.format(_costoDomicilio)}'
-                '${_zonaNombre != null ? ' ($_zonaNombre)' : ''}',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-              ),
-          ],
-          const SizedBox(height: 24),
-          SwitchListTile(
-            title: const Text('Necesito factura'),
-            subtitle: const Text('Te pediremos datos fiscales'),
-            value: _requiereFactura,
-            onChanged: (v) => setState(() => _requiereFactura = v),
-          ),
-          if (_requiereFactura) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nit,
-              decoration: const InputDecoration(
-                labelText: 'NIT o cédula',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _nombreFiscal,
-              decoration: const InputDecoration(
-                labelText: 'Nombre o razón social',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
             ),
           ],
-          const SizedBox(height: 24),
-          Text('Método de pago', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Efectivo'),
-                selected: _metodoPago == 'efectivo',
-                onSelected: (_) => setState(() => _metodoPago = 'efectivo'),
+        ),
+      ),
+      bottomBar: Material(
+        elevation: 0,
+        color: AnaliticaTokens.surface,
+        child: SafeArea(
+          child: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: AnaliticaTokens.border),
               ),
-              ChoiceChip(
-                label: const Text('Nequi'),
-                selected: _metodoPago == 'nequi',
-                onSelected: (_) => setState(() => _metodoPago = 'nequi'),
-              ),
-              ChoiceChip(
-                label: const Text('Tarjeta'),
-                selected: _metodoPago == 'tarjeta',
-                onSelected: (_) => setState(() => _metodoPago = 'tarjeta'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _codigoPromo,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: InputDecoration(
-                    labelText: 'Código promocional',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _codigoPromoAplicado != null
-                        ? Icon(Icons.check_circle, color: ColoresFoody.exito)
-                        : null,
-                  ),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: FilledButton(
+              onPressed: _enviando ? null : _confirmar,
+              style: FilledButton.styleFrom(
+                backgroundColor: AnaliticaTokens.ink,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AnaliticaTokens.inkSoft,
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
                 ),
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _validandoCodigo
-                    ? null
-                    : () => _aplicarCodigoPromo(carrito),
-                child: _validandoCodigo
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Aplicar'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('${carrito.totalItems} productos'),
-                  if (_tipo == 'domicilio')
-                    Text('Domicilio: ${_formato.format(_costoDomicilio)}'),
-                  if (_descuentoPromo > 0)
-                    Text(
-                      'Descuento ($_codigoPromoAplicado): -${_formato.format(_descuentoPromo)}',
-                      style: const TextStyle(color: ColoresFoody.exito),
+              child: _enviando
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      'Hacer pedido · ${_formato.format(total)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                  const Divider(),
-                  Text(
-                    'Total estimado: ${_formato.format(_totalEstimado(carrito))}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      color: ColoresFoody.primario,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'El total final lo confirma el restaurante al aceptar tu pedido.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
             ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton(
-            onPressed: _enviando ? null : _confirmar,
-            style: FilledButton.styleFrom(
-              backgroundColor: ColoresFoody.primario,
-              minimumSize: const Size.fromHeight(52),
-            ),
-            child: _enviando
-                ? const SizedBox(
-                    height: 22,
-                    width: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Hacer pedido'),
           ),
         ),
       ),

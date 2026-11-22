@@ -36,4 +36,26 @@ class DispositivoService {
       'plataforma': plataforma ?? _plataformaPorDefecto(),
     });
   }
+
+  /// Vincula Google (Supabase access token) al device_id local.
+  static Future<Map<String, dynamic>> vincularAuthCliente({
+    required String accessToken,
+  }) async {
+    final deviceId = await obtenerDeviceId();
+    final dio = ClienteDio.instancia();
+    final respuesta = await dio.post<Map<String, dynamic>>(
+      '/dispositivos/vincular-auth',
+      data: {
+        'device_id': deviceId,
+        'access_token': accessToken,
+      },
+    );
+    final data = respuesta.data;
+    if (data == null) throw Exception('Respuesta vacía al vincular sesión');
+    // Envoltura { exito, datos } o mapa plano.
+    final datos = data['datos'];
+    if (datos is Map<String, dynamic>) return datos;
+    if (data['auth_uid'] != null) return data;
+    throw Exception(data['mensaje']?.toString() ?? 'No se pudo vincular Google');
+  }
 }

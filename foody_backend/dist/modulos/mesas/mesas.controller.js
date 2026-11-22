@@ -56,7 +56,7 @@ let MesasController = class MesasController {
     }
     async salioSinPagar(mesaId, dto, usuario) {
         await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
-        return this.mesasService.registrarSalidaSinPagar(mesaId, dto.sucursal_id, usuario.sub, dto);
+        return this.mesasService.registrarSalidaSinPagar(mesaId, dto.sucursal_id, usuario.sub, dto, usuario.rol);
     }
     async qr(mesaId, sucursalId, baseUrl, usuario) {
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
@@ -68,7 +68,7 @@ let MesasController = class MesasController {
     }
     async crear(dto, usuario) {
         await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
-        return this.mesasService.crear(dto);
+        return this.mesasService.crear(dto, usuario.restaurante_id ?? undefined);
     }
     async actualizar(mesaId, sucursalId, dto, usuario) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -92,7 +92,7 @@ __decorate([
 ], MesasController.prototype, "asignarTurno", null);
 __decorate([
     (0, common_1.Post)('transferir'),
-    (0, permisos_decorator_1.Permisos)('gestionar_mesas'),
+    (0, permisos_decorator_1.Permisos)('gestionar_mesas', 'cobrar_pedido'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -103,7 +103,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/reservar'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -114,7 +114,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/cancelar-reserva'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)('sucursal_id')),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -134,7 +134,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/salio-sin-pagar'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas', 'ver_caja'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -145,7 +145,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':id/qr'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)('sucursal_id')),
     __param(2, (0, common_1.Query)('base_url')),
     __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -176,7 +176,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)('sucursal_id')),
     __param(2, (0, common_1.Body)()),
     __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -188,7 +188,7 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)('sucursal_id')),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),

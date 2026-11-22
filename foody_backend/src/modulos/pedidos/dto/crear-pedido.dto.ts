@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
+  IsDateString,
   IsIn,
   IsNumber,
   IsOptional,
@@ -65,6 +67,19 @@ export class ComboPedidoDto {
   @IsNumber()
   @Min(0)
   precio: number;
+
+  /** Extras opcionales sobre el combo (precio fijo + extras). */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ToppingItemDto)
+  toppings?: ToppingItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BebidaItemDto)
+  bebidas?: BebidaItemDto[];
 }
 
 export class CrearPedidoDto {
@@ -106,6 +121,7 @@ export class CrearPedidoDto {
   metodo_pago?: string;
 
   @IsOptional()
+  @IsBoolean()
   requiere_factura?: boolean;
 
   @IsOptional()
@@ -123,6 +139,11 @@ export class CrearPedidoDto {
   @IsOptional()
   @IsString()
   observaciones?: string;
+
+  /** PED-020: fecha deseada de entrega (solo tipo encargo). */
+  @IsOptional()
+  @IsDateString()
+  fecha_entrega_deseada?: string;
 
   @IsOptional()
   @IsArray()
@@ -143,6 +164,11 @@ export class CrearPedidoDto {
   @IsOptional()
   @IsString()
   idempotency_key?: string;
+
+  /** PED-009: solo staff admin/gerente con permiso explícito. */
+  @IsOptional()
+  @IsBoolean()
+  forzar_fuera_horario?: boolean;
 
   /** CAJ-005: pago mixto al crear (para llevar / mostrador). Suma debe igualar total. */
   @IsOptional()

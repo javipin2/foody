@@ -71,4 +71,61 @@ export class PlanFeaturesService {
       });
     }
   }
+
+  async assertLimiteMesas(restauranteId: string, sucursalId: string): Promise<void> {
+    const plan = normalizarPlan(await this.obtenerPlanRestaurante(restauranteId));
+    const limite = LIMITES_POR_PLAN[plan].max_mesas;
+    const fila = await this.database.consultarUno<{ total: string }>(
+      `SELECT COUNT(*)::text AS total FROM mesas
+       WHERE sucursal_id = $1 AND activa = true`,
+      [sucursalId],
+    );
+    const actual = Number(fila?.total ?? 0);
+    if (actual >= limite) {
+      throw new ForbiddenException({
+        error: 'PLAN_LIMITE_EXCEDIDO',
+        message: `Tu plan «${plan}» permite hasta ${limite} mesas activas. Actualiza el plan para agregar más.`,
+        limite,
+        actual,
+      });
+    }
+  }
+
+  async assertLimiteProductos(restauranteId: string, sucursalId: string): Promise<void> {
+    const plan = normalizarPlan(await this.obtenerPlanRestaurante(restauranteId));
+    const limite = LIMITES_POR_PLAN[plan].max_productos;
+    const fila = await this.database.consultarUno<{ total: string }>(
+      `SELECT COUNT(*)::text AS total FROM productos
+       WHERE sucursal_id = $1`,
+      [sucursalId],
+    );
+    const actual = Number(fila?.total ?? 0);
+    if (actual >= limite) {
+      throw new ForbiddenException({
+        error: 'PLAN_LIMITE_EXCEDIDO',
+        message: `Tu plan «${plan}» permite hasta ${limite} productos activos. Actualiza el plan para agregar más.`,
+        limite,
+        actual,
+      });
+    }
+  }
+
+  async assertLimiteIngredientes(restauranteId: string, sucursalId: string): Promise<void> {
+    const plan = normalizarPlan(await this.obtenerPlanRestaurante(restauranteId));
+    const limite = LIMITES_POR_PLAN[plan].max_ingredientes;
+    const fila = await this.database.consultarUno<{ total: string }>(
+      `SELECT COUNT(*)::text AS total FROM ingredientes
+       WHERE sucursal_id = $1 AND activo = true`,
+      [sucursalId],
+    );
+    const actual = Number(fila?.total ?? 0);
+    if (actual >= limite) {
+      throw new ForbiddenException({
+        error: 'PLAN_LIMITE_EXCEDIDO',
+        message: `Tu plan «${plan}» permite hasta ${limite} ingredientes/insumos activos. Actualiza el plan para agregar más.`,
+        limite,
+        actual,
+      });
+    }
+  }
 }

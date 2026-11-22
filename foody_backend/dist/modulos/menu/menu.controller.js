@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MenuController = void 0;
 const common_1 = require("@nestjs/common");
+const rate_limit_guard_1 = require("../../compartido/guards/rate-limit.guard");
 const menu_service_1 = require("./menu.service");
 let MenuController = class MenuController {
     menuService;
@@ -30,6 +31,7 @@ let MenuController = class MenuController {
 exports.MenuController = MenuController;
 __decorate([
     (0, common_1.Get)('mesa/:qr_token'),
+    (0, rate_limit_guard_1.RateLimitPublico)(90, 60_000),
     __param(0, (0, common_1.Param)('qr_token')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
@@ -37,7 +39,8 @@ __decorate([
 ], MenuController.prototype, "obtenerPorMesaQr", null);
 __decorate([
     (0, common_1.Get)(':sucursal_id'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    (0, rate_limit_guard_1.RateLimitPublico)(90, 60_000),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)

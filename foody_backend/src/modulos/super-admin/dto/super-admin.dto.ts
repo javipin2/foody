@@ -72,9 +72,11 @@ export class ActualizarDomiciliarioEstadoDto {
 const ROLES_STAFF_SUPER = [
   'admin',
   'gerente',
+  'gerente_cadena',
   'cajero',
   'mesero',
   'domiciliario_planta',
+  'cocina',
   'cocina_principal',
 ] as const;
 

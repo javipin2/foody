@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
 import { JwtPayload } from '../../core/auth/jwt-payload';
@@ -12,8 +24,10 @@ import { AbrirCajaDto } from './dto/abrir-caja.dto';
 import { CerrarCajaDto } from './dto/cerrar-caja.dto';
 import { GastoCajaDto } from './dto/gasto-caja.dto';
 import { CrearCuentaPorCobrarDto } from './dto/crear-cuenta-por-cobrar.dto';
+import { PagarCuentaPorCobrarDto } from './dto/pagar-cuenta-por-cobrar.dto';
 import { RetiroCajaDto } from './dto/retiro-caja.dto';
 import { DevolucionCajaDto } from './dto/devolucion-caja.dto';
+import { PaginacionQueryDto } from '../../compartido/dto/paginacion.dto';
 
 @Controller('caja')
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, RolGuard)
@@ -26,7 +40,7 @@ export class CajaController {
   @Get('activa/:sucursal_id')
   @Permisos('ver_caja')
   async activa(
-    @Param('sucursal_id') sucursalId: string,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const id = await this.sucursalScope.resolverLecturaOperativa(
@@ -39,6 +53,7 @@ export class CajaController {
   }
 
   @Post('abrir')
+  @HttpCode(HttpStatus.CREATED)
   @Permisos('abrir_caja')
   async abrir(
     @Body() dto: AbrirCajaDto,
@@ -57,21 +72,38 @@ export class CajaController {
     @Body() dto: CerrarCajaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
-    await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
-    return this.cajaService.cerrar(dto, usuario.sub);
+    // Scope real: sucursal de la caja (CajaService.cerrar → RBAC-TENANT-01)
+    return this.cajaService.cerrar(dto, usuario);
   }
 
-  @Get('cuentas-por-cobrar/:sucursal_id')
+  @Get('cuentas-por-cobrar/:sucursal_id/resumen')
   @Permisos('ver_caja')
-  async listarFiados(
-    @Param('sucursal_id') sucursalId: string,
+  async resumenFiados(
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const id = await this.sucursalScope.resolverLecturaOperativa(
       usuario,
       sucursalId,
     );
-    return this.cajaService.listarCuentasPorCobrar(id);
+    return this.cajaService.resumenCuentasPorCobrar(id);
+  }
+
+  @Get('cuentas-por-cobrar/:sucursal_id')
+  @Permisos('ver_caja')
+  async listarFiados(
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
+    @Query('incluir_pagadas') incluirPagadas: string | undefined,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.cajaService.listarCuentasPorCobrar(
+      id,
+      incluirPagadas === 'true' || incluirPagadas === '1',
+    );
   }
 
   @Post('cuentas-por-cobrar')
@@ -93,27 +125,39 @@ export class CajaController {
   @Patch('cuentas-por-cobrar/:id/pagar')
   @Permisos('ver_caja')
   async pagarFiado(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PagarCuentaPorCobrarDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const sucursalId = await this.sucursalScope.resolverEscritura(
       usuario,
       usuario.sucursal_id,
     );
-    return this.cajaService.pagarCuentaPorCobrar(id, sucursalId, usuario.sub);
+    return this.cajaService.pagarCuentaPorCobrar(
+      id,
+      sucursalId,
+      usuario.sub,
+      dto.metodo_pago ?? 'efectivo',
+    );
   }
 
   @Get(':caja_id/movimientos')
   @Permisos('ver_caja')
   async movimientos(
-    @Param('caja_id') cajaId: string,
+    @Param('caja_id', ParseUUIDPipe) cajaId: string,
+    @Query() query: PaginacionQueryDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const sucursalId = await this.sucursalScope.resolverLecturaOperativa(
       usuario,
       usuario.sucursal_id,
     );
-    return this.cajaService.listarMovimientos(cajaId, sucursalId);
+    return this.cajaService.listarMovimientos(
+      cajaId,
+      sucursalId,
+      query.page,
+      query.limit,
+    );
   }
 
   @Post('retiro-parcial')

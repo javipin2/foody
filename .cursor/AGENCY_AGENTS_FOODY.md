@@ -33,7 +33,7 @@ También puedes escribir: *«Actúa como @frontend-developer»* o *«Usa el agen
 | Git / PRs | `git-workflow-master` | Commits, branches, releases |
 | Incidentes prod | `incident-response-commander` | Caídas API, pedidos atascados |
 | Realidad / scope | `reality-checker` | Validar que no sobre-ingenieríes |
-| Sprint / prioridades | `sprint-prioritizer`, `project-shepherd` | Ordenar backlog vs `PLAN_COMPLETAR_FOODY.md` |
+| Sprint / prioridades | `sprint-prioritizer`, `project-shepherd` | Ordenar backlog vs `docs/ROADMAP_TERMINAR_FOODY.md` |
 
 ## Reglas Foody vs Agency
 

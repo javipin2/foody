@@ -10,6 +10,7 @@ exports.CosteoModule = void 0;
 const common_1 = require("@nestjs/common");
 const auth_module_1 = require("../../core/auth/auth.module");
 const alertas_module_1 = require("../alertas/alertas.module");
+const stock_movimiento_module_1 = require("../inventario/stock-movimiento.module");
 const costeo_controller_1 = require("./costeo.controller");
 const costeo_service_1 = require("./costeo.service");
 let CosteoModule = class CosteoModule {
@@ -17,7 +18,7 @@ let CosteoModule = class CosteoModule {
 exports.CosteoModule = CosteoModule;
 exports.CosteoModule = CosteoModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule, alertas_module_1.AlertasModule],
+        imports: [auth_module_1.AuthModule, alertas_module_1.AlertasModule, stock_movimiento_module_1.StockMovimientoModule],
         controllers: [costeo_controller_1.CosteoController],
         providers: [costeo_service_1.CosteoService],
         exports: [costeo_service_1.CosteoService],

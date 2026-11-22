@@ -20,18 +20,43 @@ class InventarioRepository {
     return _lista(r.data);
   }
 
-  Future<List<Map<String, dynamic>>> movimientos(String sucursalId) async {
-    final r = await _dio.get<Map<String, dynamic>>(
-      '/inventario/movimientos/$sucursalId',
-    );
-    return _lista(r.data);
+  Future<List<Map<String, dynamic>>> movimientos(
+    String sucursalId, {
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final r = await movimientosPaginados(sucursalId, page: page, limit: limit);
+    return r.items;
   }
 
-  Future<List<Map<String, dynamic>>> costosProductos(String sucursalId) async {
+  Future<({List<Map<String, dynamic>> items, int total, bool hayMas})>
+      movimientosPaginados(
+    String sucursalId, {
+    int page = 1,
+    int limit = 50,
+  }) async {
     final r = await _dio.get<Map<String, dynamic>>(
-      '/inventario/costos/$sucursalId',
+      '/inventario/movimientos/$sucursalId',
+      queryParameters: {'page': page, 'limit': limit},
     );
-    return _lista(r.data);
+    final data = r.data;
+    if (data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      data,
+      (raw) => Map<String, dynamic>.from(raw as Map),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    final d = env.datos!;
+    final raw = d['items'];
+    final items = raw is List
+        ? raw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+        : <Map<String, dynamic>>[];
+    final total = (d['total'] as num?)?.toInt() ?? items.length;
+    final pagina = (d['page'] as num?)?.toInt() ?? page;
+    final lim = (d['limit'] as num?)?.toInt() ?? limit;
+    final totalPages = (d['totalPages'] as num?)?.toInt() ??
+        (total == 0 ? 0 : (total / lim).ceil());
+    return (items: items, total: total, hayMas: pagina < totalPages);
   }
 
   Future<void> crearIngrediente({
@@ -115,9 +140,15 @@ class InventarioRepository {
     _validar(r.data);
   }
 
-  Future<Map<String, dynamic>> recetaProducto(String productoId) async {
+  Future<Map<String, dynamic>> recetaProducto(
+    String productoId, {
+    String tipoEntidad = 'producto',
+  }) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/inventario/producto-ingredientes/$productoId',
+      queryParameters: {
+        if (tipoEntidad != 'producto') 'tipo_entidad': tipoEntidad,
+      },
     );
     return _mapa(r.data);
   }
@@ -154,11 +185,13 @@ class InventarioRepository {
     required String productoId,
     required List<Map<String, dynamic>> items,
     double? margenError,
+    String tipoEntidad = 'producto',
   }) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/inventario/producto-ingredientes',
       data: <String, dynamic>{
         'producto_id': productoId,
+        if (tipoEntidad != 'producto') 'tipo_entidad': tipoEntidad,
         if (margenError != null) 'margen_error': margenError,
         'items': items.map((e) {
           final tipo = e['tipo_item'] as String? ?? 'ingrediente';
@@ -235,6 +268,13 @@ class InventarioRepository {
   Future<Map<String, dynamic>> recibirTraslado(String trasladoId) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/inventario/traslados/$trasladoId/recibir',
+    );
+    return _mapa(r.data);
+  }
+
+  Future<Map<String, dynamic>> cancelarTraslado(String trasladoId) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/inventario/traslados/$trasladoId/cancelar',
     );
     return _mapa(r.data);
   }

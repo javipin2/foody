@@ -15,7 +15,7 @@ SaaS POS multi-restaurante (LATAM). Base de referencia: **Tu Cancha Fácil** en 
 - **Supabase**: Auth (staff), Realtime (solo escuchar), Storage (imágenes)
 - **FCM**, impresión **Python** local (WebSocket), **Docker**
 
-Documentación maestra: `INFRAESTRUCTURA/`, memoria: `MEMORIA.md`, entorno: `docs/ENTORNO_LOCAL.md`, **avance vivo: `docs/AVANCE_PROYECTO.md`** (actualizar en cada tarea — regla `foody-avance-documentar.mdc`).
+Documentación maestra: `INFRAESTRUCTURA/`, memoria: `MEMORIA.md`, entorno: `docs/ENTORNO_LOCAL.md`, **estado oficial: `docs/MASTER_STATUS.md`**, refs técnicas: `docs/AVANCE_PROYECTO.md` (regla `foody-avance-documentar.mdc`).
 
 ## Flutter = solo UI (sin excepciones)
 

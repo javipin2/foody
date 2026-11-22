@@ -54,13 +54,13 @@ class MenuAdminDinamico {
       ),
       MenuAdminItem(
         permiso: 'editar_productos',
-        titulo: 'Cocinas e impresoras',
+        titulo: 'Config. cocinas e impresoras',
         icono: Icons.soup_kitchen_rounded,
         ruta: 'cocinas',
       ),
       MenuAdminItem(
         permiso: 'ver_cocina',
-        titulo: 'Panel de cocina',
+        titulo: 'Cocina en vivo (KDS)',
         icono: Icons.kitchen_rounded,
         ruta: 'cocina_kds',
       ),
@@ -96,7 +96,7 @@ class MenuAdminDinamico {
       ),
       MenuAdminItem(
         permiso: 'gestionar_domiciliarios',
-        titulo: 'Domiciliarios',
+        titulo: 'Gestionar repartidores',
         icono: Icons.delivery_dining_rounded,
         ruta: 'domiciliarios',
       ),
@@ -113,16 +113,35 @@ class MenuAdminDinamico {
         ruta: 'mesas',
       ),
       MenuAdminItem(
+        permiso: 'ver_analitica',
+        titulo: 'Análisis (insights)',
+        icono: Icons.insights_rounded,
+        ruta: 'analitica',
+      ),
+      MenuAdminItem(
+        permiso: 'ver_finanzas',
+        titulo: 'Gastos y nómina',
+        icono: Icons.account_balance_outlined,
+        ruta: 'finanzas',
+      ),
+      MenuAdminItem(
         permiso: 'ver_reportes',
-        titulo: 'Reportes',
+        titulo: 'Reportes (exportar)',
         icono: Icons.bar_chart_rounded,
         ruta: 'reportes',
       ),
       MenuAdminItem(
         permiso: 'ver_facturacion',
-        titulo: 'Facturación',
+        titulo: 'Facturas internas',
         icono: Icons.receipt_rounded,
         ruta: 'facturacion',
+      ),
+      // Visible siempre al admin: en Pro el banner gratis desaparece y sin esto no hay entrada.
+      MenuAdminItem(
+        permiso: 'gestionar_usuarios',
+        titulo: 'Plan y pagos',
+        icono: Icons.workspace_premium_outlined,
+        ruta: 'mejorar_plan',
       ),
       MenuAdminItem(
         permiso: 'ver_alertas',
@@ -160,13 +179,22 @@ class MenuAdminDinamico {
       'caja',
       'mesas',
       'reportes',
+      'analitica',
+      'finanzas',
       'facturacion',
+      'mejorar_plan',
       'alertas',
       'promociones',
       'usuarios',
     ];
 
-    final filtrados = catalogo.where((i) => permisos.contains(i.permiso)).map((i) {
+    final filtrados = catalogo.where((i) {
+      if (i.ruta == 'analitica') {
+        return permisos.contains('ver_analitica') ||
+            permisos.contains('ver_reportes');
+      }
+      return permisos.contains(i.permiso);
+    }).map((i) {
       if (PlanModulosFoody.rutaPermitidaPorPlan(i.ruta, modulosPlan)) {
         return i;
       }

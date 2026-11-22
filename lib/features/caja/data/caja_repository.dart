@@ -45,16 +45,30 @@ class CajaRepository {
   }
 
   Future<List<Map<String, dynamic>>> movimientos(String cajaId) async {
-    final r = await _dio.get<Map<String, dynamic>>('/caja/$cajaId/movimientos');
-    if (r.data == null) throw Exception('Respuesta vacía');
-    final env = RespuestaApi<List<dynamic>>.fromJson(
-      r.data!,
-      (raw) => raw as List<dynamic>,
-    );
-    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
-    return env.datos!
-        .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
-        .toList();
+    final all = <Map<String, dynamic>>[];
+    var page = 1;
+    const limit = 100;
+    while (page <= 50) {
+      final r = await _dio.get<Map<String, dynamic>>(
+        '/caja/$cajaId/movimientos',
+        queryParameters: {'page': page, 'limit': limit},
+      );
+      if (r.data == null) throw Exception('Respuesta vacía');
+      final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+        r.data!,
+        (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+      );
+      if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+      final d = env.datos!;
+      final items = (d['items'] as List<dynamic>? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
+          .toList();
+      all.addAll(items);
+      final totalPages = (d['totalPages'] as num?)?.toInt() ?? 1;
+      if (page >= totalPages) break;
+      page++;
+    }
+    return all;
   }
 
   Future<void> registrarGasto({
@@ -69,9 +83,14 @@ class CajaRepository {
     _validar(r.data);
   }
 
-  Future<List<Map<String, dynamic>>> cuentasPorCobrar(String sucursalId) async {
+  Future<List<Map<String, dynamic>>> cuentasPorCobrar(
+    String sucursalId, {
+    bool incluirPagadas = false,
+  }) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/caja/cuentas-por-cobrar/$sucursalId',
+      queryParameters:
+          incluirPagadas ? {'incluir_pagadas': 'true'} : null,
     );
     if (r.data == null) throw Exception('Respuesta vacía');
     final env = RespuestaApi<List<dynamic>>.fromJson(
@@ -82,6 +101,13 @@ class CajaRepository {
     return env.datos!
         .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> resumenCuentasPorCobrar(String sucursalId) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/caja/cuentas-por-cobrar/$sucursalId/resumen',
+    );
+    return _parsear(r.data)!;
   }
 
   Future<void> crearCuentaPorCobrar({
@@ -104,9 +130,10 @@ class CajaRepository {
     _validar(r.data);
   }
 
-  Future<void> pagarCuenta(String cuentaId) async {
+  Future<void> pagarCuenta(String cuentaId, {String metodoPago = 'efectivo'}) async {
     final r = await _dio.patch<Map<String, dynamic>>(
       '/caja/cuentas-por-cobrar/$cuentaId/pagar',
+      data: {'metodo_pago': metodoPago},
     );
     _validar(r.data);
   }

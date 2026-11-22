@@ -16,4 +16,10 @@ export declare class CategoriasController {
         id: string;
         activa: boolean;
     }>;
+    copiarDesde(destinoId: string, origenId: string, usuario: JwtPayload): Promise<{
+        categorias: number;
+        productos_nuevos: number;
+        toppings: number;
+        bebidas: number;
+    }>;
 }

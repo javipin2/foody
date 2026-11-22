@@ -79,6 +79,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="foody" android:host="login" />
             </intent-filter>
+
+            <!-- Retorno Wompi: AppLinkConfig.pagosHostPlan (foody://plan?pago_id=) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="foody" android:host="plan" />
+            </intent-filter>
             
         </activity>
         

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
+import 'package:reserva_canchas/core/preferencias/panel_favoritos_service.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_grupo.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_item.dart';
 
@@ -30,13 +34,48 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
   static const _fondo = Color(0xFF0F172A);
   static const _superficie = Color(0xFF1E293B);
   static const _borde = Color(0xFF334155);
+  // Activo neutro (sin naranja chrome); logo sigue con marca Foody.
+  static const _activoBarra = Color(0xFFF8FAFC);
+  static final _activoFondo = Colors.white.withValues(alpha: 0.10);
+  static final _activoBorde = Colors.white.withValues(alpha: 0.18);
+  static final _estrella = Colors.white.withValues(alpha: 0.55);
 
   late Set<String> _expandidos;
+  List<String> _favoritos = [];
 
   @override
   void initState() {
     super.initState();
     _expandidos = _expansionInicial();
+    unawaited(_cargarFavoritos());
+  }
+
+  Future<void> _cargarFavoritos() async {
+    final f = await PanelFavoritosService.listar();
+    if (mounted) setState(() => _favoritos = f);
+  }
+
+  Future<void> _toggleFavorito(String ruta) async {
+    final agregado = await PanelFavoritosService.alternar(ruta);
+    await _cargarFavoritos();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          agregado ? 'Añadido a favoritos' : 'Quitado de favoritos',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  MenuAdminItem? _itemPorRuta(String ruta) {
+    for (final g in widget.grupos) {
+      for (final item in g.items) {
+        if (item.ruta == ruta) return item;
+      }
+    }
+    return null;
   }
 
   @override
@@ -89,12 +128,16 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
-                compacto ? 8 : 12,
-                8,
-                compacto ? 8 : 12,
-                16,
+                compacto ? 8 : 10,
+                6,
+                compacto ? 8 : 10,
+                12,
               ),
               children: [
+                if (_favoritos.isNotEmpty)
+                  compacto
+                      ? _bloqueFavoritosCompacto()
+                      : _bloqueFavoritos(),
                 for (final g in widget.grupos)
                   _grupoAcordeon(
                     g.grupo,
@@ -111,13 +154,125 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
     );
   }
 
+  Widget _bloqueFavoritos() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.star_rounded,
+                  size: 14,
+                  color: _estrella,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Favoritos',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (final ruta in _favoritos)
+            if (_itemPorRuta(ruta) != null)
+              _itemHijo(
+                _itemPorRuta(ruta)!,
+                seleccionado: ruta == widget.seccionActiva,
+              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+            child: Text(
+              'Toca ★ en un módulo para fijarlo (máx. ${PanelFavoritosService.maxFavoritos})',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Rail tablet: solo iconos de favoritos (NAV-ADM-01).
+  Widget _bloqueFavoritosCompacto() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        children: [
+          Tooltip(
+            message: 'Favoritos — mantén pulsado para quitar',
+            child: Icon(
+              Icons.star_rounded,
+              size: 16,
+              color: _estrella,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final ruta in _favoritos)
+            if (_itemPorRuta(ruta) != null)
+              _favoritoCompacto(_itemPorRuta(ruta)!),
+          const SizedBox(height: 4),
+          Divider(color: _borde.withValues(alpha: 0.8), height: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _favoritoCompacto(MenuAdminItem item) {
+    final sel = item.ruta == widget.seccionActiva;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Tooltip(
+        message: '${item.titulo} — mantén pulsado para quitar',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _ir(item.ruta),
+            onLongPress: () => _toggleFavorito(item.ruta),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? _activoFondo : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: sel ? Border.all(color: _activoBorde) : null,
+              ),
+              child: Icon(
+                item.bloqueadoPorPlan ? Icons.lock_outline : item.icono,
+                size: 22,
+                color: sel
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.75),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _esFavorito(String ruta) => _favoritos.contains(ruta);
+
   Widget _cabecera(bool compacto) {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        compacto ? 12 : 16,
-        compacto ? 16 : 20,
-        compacto ? 12 : 16,
-        compacto ? 12 : 16,
+        compacto ? 10 : 14,
+        compacto ? 12 : 14,
+        compacto ? 10 : 14,
+        compacto ? 10 : 12,
       ),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _borde, width: 1)),
@@ -125,13 +280,13 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
       child: compacto
           ? Center(
               child: Container(
-                width: 40,
-                height: 40,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: ColoresFoody.primario,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: const Icon(Icons.restaurant, color: Colors.white, size: 22),
+                child: const Icon(Icons.restaurant, color: Colors.white, size: 20),
               ),
             )
           : Column(
@@ -140,21 +295,16 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                 Row(
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 32,
+                      height: 32,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            ColoresFoody.primario,
-                            ColoresFoody.primario.withValues(alpha: 0.85),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(9),
+                        color: ColoresFoody.primario,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
                         Icons.restaurant_rounded,
                         color: Colors.white,
-                        size: 20,
+                        size: 18,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -167,14 +317,15 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
-                              fontSize: 17,
+                              fontSize: 16,
                               letterSpacing: -0.3,
+                              height: 1.1,
                             ),
                           ),
                           Text(
                             'Panel restaurante',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.55),
+                              color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 11,
                             ),
                           ),
@@ -184,11 +335,11 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                   ],
                 ),
                 if (widget.nombreSucursal != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
-                      vertical: 6,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
                       color: _superficie,
@@ -200,7 +351,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                         Icon(
                           Icons.storefront_outlined,
                           size: 14,
-                          color: ColoresFoody.secundario.withValues(alpha: 0.9),
+                          color: Colors.white.withValues(alpha: 0.55),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -247,13 +398,11 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: tieneActivo
-              ? ColoresFoody.primario.withValues(alpha: 0.06)
+              ? _activoFondo
               : _superficie.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: tieneActivo
-                ? ColoresFoody.primario.withValues(alpha: 0.25)
-                : _borde.withValues(alpha: 0.6),
+            color: tieneActivo ? _activoBorde : _borde.withValues(alpha: 0.6),
           ),
         ),
         child: Column(
@@ -262,14 +411,14 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
               onTap: () => _toggleGrupo(grupo.id, soloUno: soloUnGrupo),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 child: Row(
                   children: [
                     Icon(
                       grupo.icono,
                       size: 20,
                       color: tieneActivo
-                          ? ColoresFoody.primario
+                          ? Colors.white
                           : Colors.white.withValues(alpha: 0.65),
                     ),
                     const SizedBox(width: 10),
@@ -352,57 +501,76 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
         side: const BorderSide(color: _borde),
       ),
       onSelected: _ir,
-      itemBuilder: (_) => items
+      itemBuilder: (menuCtx) => items
           .map(
-            (item) => PopupMenuItem<String>(
-              value: item.ruta,
-              child: Row(
-                children: [
-                  Icon(
-                    item.bloqueadoPorPlan ? Icons.lock_outline : item.icono,
-                    size: 18,
-                    color: item.ruta == widget.seccionActiva
-                        ? ColoresFoody.primario
-                        : item.bloqueadoPorPlan
-                            ? Colors.white38
-                            : Colors.white70,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      item.titulo,
-                      style: TextStyle(
-                        color: item.ruta == widget.seccionActiva
-                            ? ColoresFoody.primario
-                            : item.bloqueadoPorPlan
-                                ? Colors.white54
-                                : Colors.white,
-                        fontWeight: item.ruta == widget.seccionActiva
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+            (item) {
+              final fav = _esFavorito(item.ruta);
+              return PopupMenuItem<String>(
+                value: item.ruta,
+                child: Row(
+                  children: [
+                    Icon(
+                      item.bloqueadoPorPlan ? Icons.lock_outline : item.icono,
+                      size: 18,
+                      color: item.ruta == widget.seccionActiva
+                          ? Colors.white
+                          : item.bloqueadoPorPlan
+                              ? Colors.white38
+                              : Colors.white70,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        item.titulo,
+                        style: TextStyle(
+                          color: item.ruta == widget.seccionActiva
+                              ? Colors.white
+                              : item.bloqueadoPorPlan
+                                  ? Colors.white54
+                                  : Colors.white,
+                          fontWeight: item.ruta == widget.seccionActiva
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                    // Evita disparar onSelected al pinnear.
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(menuCtx);
+                        unawaited(_toggleFavorito(item.ruta));
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Icon(
+                          fav ? Icons.star_rounded : Icons.star_border_rounded,
+                          size: 20,
+                          color: fav
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : Colors.white.withValues(alpha: 0.45),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           )
           .toList(),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: tieneActivo
-              ? ColoresFoody.primario.withValues(alpha: 0.15)
-              : Colors.transparent,
+          color: tieneActivo ? _activoFondo : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
+          border: tieneActivo ? Border.all(color: _activoBorde) : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               grupo.icono,
-              color: tieneActivo ? ColoresFoody.primario : Colors.white60,
+              color: tieneActivo ? Colors.white : Colors.white60,
               size: 22,
             ),
             if (tieneActivo)
@@ -411,7 +579,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                 width: 4,
                 height: 4,
                 decoration: const BoxDecoration(
-                  color: ColoresFoody.primario,
+                  color: _activoBarra,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -455,10 +623,12 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
     bool indent = false,
   }) {
     final bloqueado = item.bloqueadoPorPlan;
+    final fav = _esFavorito(item.ruta);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: () => _toggleFavorito(item.ruta),
         borderRadius: BorderRadius.circular(10),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -468,14 +638,12 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
           ),
           decoration: BoxDecoration(
             color: seleccionado
-                ? ColoresFoody.primario.withValues(alpha: bloqueado ? 0.12 : 0.22)
+                ? (bloqueado
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : _activoFondo)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
-            border: seleccionado
-                ? Border.all(
-                    color: ColoresFoody.primario.withValues(alpha: 0.35),
-                  )
-                : null,
+            border: seleccionado ? Border.all(color: _activoBorde) : null,
           ),
           child: Row(
             children: [
@@ -485,7 +653,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                   height: 18,
                   margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
-                    color: ColoresFoody.primario,
+                    color: _activoBarra,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -495,7 +663,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                 color: bloqueado
                     ? Colors.white.withValues(alpha: 0.35)
                     : seleccionado
-                        ? ColoresFoody.primario
+                        ? Colors.white
                         : Colors.white.withValues(alpha: 0.6),
               ),
               if (!compacto) ...[
@@ -514,6 +682,25 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                       fontWeight:
                           seleccionado ? FontWeight.w600 : FontWeight.w500,
                       fontSize: indent ? 13 : 14,
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: fav
+                      ? 'Quitar de favoritos'
+                      : 'Añadir a favoritos',
+                  child: InkWell(
+                    onTap: () => _toggleFavorito(item.ruta),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        fav ? Icons.star_rounded : Icons.star_border_rounded,
+                        size: 18,
+                        color: fav
+                            ? Colors.white.withValues(alpha: 0.9)
+                            : Colors.white.withValues(alpha: 0.4),
+                      ),
                     ),
                   ),
                 ),
@@ -538,11 +725,11 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: ColoresFoody.secundario.withValues(alpha: 0.25),
+            backgroundColor: Colors.white.withValues(alpha: 0.12),
             child: Text(
               nombre.isNotEmpty ? nombre[0].toUpperCase() : '?',
-              style: const TextStyle(
-                color: ColoresFoody.secundario,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -566,14 +753,15 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
   }
 }
 
-/// Breakpoints del panel admin.
+/// Breakpoints del panel admin — delegan en [FoodyBreakpoints] (RS-20).
 class PanelLayoutBreakpoints {
-  static const movil = 720.0;
-  static const tablet = 1100.0;
+  static const movil = FoodyBreakpoints.expanded;
+  static const tablet = FoodyBreakpoints.large;
 
-  static bool esMovil(double ancho) => ancho < movil;
-  static bool esTablet(double ancho) => ancho >= movil && ancho < tablet;
-  static bool esEscritorio(double ancho) => ancho >= tablet;
+  static bool esMovil(double ancho) => FoodyBreakpoints.esCompact(ancho);
+  static bool esTablet(double ancho) =>
+      FoodyBreakpoints.esExpanded(ancho) && !FoodyBreakpoints.esLarge(ancho);
+  static bool esEscritorio(double ancho) => FoodyBreakpoints.esLarge(ancho);
 
   static double anchoSidebar(double ancho) {
     if (esMovil(ancho)) return ancho * 0.85;

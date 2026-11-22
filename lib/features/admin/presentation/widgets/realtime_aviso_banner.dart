@@ -1,8 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/red/salud_repository.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 
-/// Banner cuando Supabase Realtime no está operativo (P4.2 auditoría E2E).
+/// Banner cuando Supabase Realtime no está operativo (R9).
 class RealtimeAvisoBanner extends StatefulWidget {
   const RealtimeAvisoBanner({super.key});
 
@@ -14,11 +16,22 @@ class _RealtimeAvisoBannerState extends State<RealtimeAvisoBanner> {
   bool _oculto = false;
   bool? _conectado;
   String? _detalle;
+  Timer? _reverificacion;
 
   @override
   void initState() {
     super.initState();
     _verificar();
+    _reverificacion = Timer.periodic(
+      const Duration(minutes: 2),
+      (_) => _verificar(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _reverificacion?.cancel();
+    super.dispose();
   }
 
   Future<void> _verificar() async {
@@ -43,8 +56,8 @@ class _RealtimeAvisoBannerState extends State<RealtimeAvisoBanner> {
     if (_oculto || _conectado != false) return const SizedBox.shrink();
 
     final texto = _detalle != null && _detalle!.isNotEmpty
-        ? 'Realtime desactivado: $_detalle. Kanban y mesas no se actualizan solos.'
-        : 'Realtime desactivado. Kanban, mesas y cocina no se actualizan en vivo.';
+        ? 'Realtime desactivado: $_detalle. Kanban/mesas/cocina 45–90 s; Inicio ~75 s.'
+        : 'Realtime desactivado. Kanban, mesas y cocina se refrescan cada 45–90 s; Inicio (dashboard) cada ~75 s.';
 
     return Material(
       color: ColoresFoody.acento.withValues(alpha: 0.95),
@@ -66,6 +79,14 @@ class _RealtimeAvisoBannerState extends State<RealtimeAvisoBanner> {
                     height: 1.35,
                   ),
                 ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Icons.refresh, size: 18),
+                onPressed: _verificar,
+                tooltip: 'Reverificar Realtime',
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,

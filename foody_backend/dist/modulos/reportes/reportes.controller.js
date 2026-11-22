@@ -23,25 +23,28 @@ const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-a
 const plan_features_guard_1 = require("../../core/auth/guards/plan-features.guard");
 const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requiere-modulo.decorator");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const filtro_reporte_dto_1 = require("./dto/filtro-reporte.dto");
 const reportes_service_1 = require("./reportes.service");
 let ReportesController = class ReportesController {
     reportesService;
-    constructor(reportesService) {
+    sucursalScope;
+    constructor(reportesService, sucursalScope) {
         this.reportesService = reportesService;
+        this.sucursalScope = sucursalScope;
     }
-    financiero(usuario, query) {
-        const id = query.sucursal_id ?? usuario.sucursal_id;
+    async financiero(usuario, query) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
         const rango = this.reportesService.resolverRango(query.desde, query.hasta);
         return this.reportesService.financiero(id, rango);
     }
-    productos(usuario, query) {
-        const id = query.sucursal_id ?? usuario.sucursal_id;
+    async productos(usuario, query) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
         const rango = this.reportesService.resolverRango(query.desde, query.hasta);
         return this.reportesService.productos(id, rango);
     }
-    pedidos(usuario, query) {
-        const id = query.sucursal_id ?? usuario.sucursal_id;
+    async pedidos(usuario, query) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
         const rango = this.reportesService.resolverRango(query.desde, query.hasta);
         return this.reportesService.pedidos(id, rango);
     }
@@ -55,7 +58,7 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
         filtro_reporte_dto_1.FiltroReporteDto]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], ReportesController.prototype, "financiero", null);
 __decorate([
     (0, common_1.Get)('productos'),
@@ -65,7 +68,7 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
         filtro_reporte_dto_1.FiltroReporteDto]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], ReportesController.prototype, "productos", null);
 __decorate([
     (0, common_1.Get)('pedidos'),
@@ -75,12 +78,13 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
         filtro_reporte_dto_1.FiltroReporteDto]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], ReportesController.prototype, "pedidos", null);
 exports.ReportesController = ReportesController = __decorate([
     (0, common_1.Controller)('reportes'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, plan_features_guard_1.PlanFeaturesGuard, rol_guard_1.RolGuard),
     (0, requiere_modulo_decorator_1.RequiereModulo)('reportes'),
-    __metadata("design:paramtypes", [reportes_service_1.ReportesService])
+    __metadata("design:paramtypes", [reportes_service_1.ReportesService,
+        sucursal_scope_service_1.SucursalScopeService])
 ], ReportesController);
 //# sourceMappingURL=reportes.controller.js.map

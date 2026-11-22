@@ -1,0 +1,110 @@
+﻿{
+    "menu_samples_ms":  [
+                            45.4,
+                            18.6,
+                            17.9
+                        ],
+    "base":  "http://127.0.0.1:3000/api/v1",
+    "fecha":  "2026-08-06T03:18:51.7002072-05:00",
+    "metodo_carga":  "RunspacePool",
+    "carga":  [
+                  {
+                      "label":  "salud",
+                      "n":  10,
+                      "ok":  10,
+                      "fail":  0,
+                      "wall_ms":  478,
+                      "rps":  20.9,
+                      "min_ms":  231,
+                      "avg_ms":  359.2,
+                      "p50_ms":  386,
+                      "p95_ms":  394,
+                      "max_ms":  395
+                  },
+                  {
+                      "label":  "menu",
+                      "n":  10,
+                      "ok":  10,
+                      "fail":  0,
+                      "wall_ms":  605,
+                      "rps":  16.5,
+                      "min_ms":  204,
+                      "avg_ms":  487.1,
+                      "p50_ms":  531,
+                      "p95_ms":  543,
+                      "max_ms":  544
+                  },
+                  {
+                      "label":  "dashboard_resumen",
+                      "n":  10,
+                      "ok":  10,
+                      "fail":  0,
+                      "wall_ms":  479,
+                      "rps":  20.9,
+                      "min_ms":  136,
+                      "avg_ms":  352.1,
+                      "p50_ms":  376,
+                      "p95_ms":  388,
+                      "max_ms":  407
+                  }
+              ],
+    "latencia":  [
+                     {
+                         "endpoint":  "GET /salud",
+                         "med_ms":  15.3,
+                         "status":  200,
+                         "cache":  "n/a",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /ciudades",
+                         "med_ms":  14.9,
+                         "status":  200,
+                         "cache":  "NO",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /ciudades/valledupar/restaurantes",
+                         "med_ms":  14,
+                         "status":  200,
+                         "cache":  "NO",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /menu/:sucursal",
+                         "med_ms":  18.2,
+                         "status":  200,
+                         "cache":  "SI MenuCache",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /dashboard/resumen",
+                         "med_ms":  18.5,
+                         "status":  200,
+                         "cache":  "NO",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /dashboard/graficos",
+                         "med_ms":  20,
+                         "status":  200,
+                         "cache":  "NO",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /reportes/financiero",
+                         "med_ms":  23.8,
+                         "status":  200,
+                         "cache":  "NO",
+                         "ok":  true
+                     },
+                     {
+                         "endpoint":  "GET /analitica/resumen",
+                         "med_ms":  24.9,
+                         "status":  200,
+                         "cache":  "NO",
+                         "ok":  true
+                     }
+                 ],
+    "sucursal":  "c0000000-0000-4000-8000-000000000001"
+}

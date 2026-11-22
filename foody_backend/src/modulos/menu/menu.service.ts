@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { MenuCacheService } from '../../core/cache/menu-cache.service';
 import { DatabaseService } from '../../core/database/database.service';
 
 interface ProductoFila {
@@ -28,9 +29,27 @@ interface BebidaFila {
   precio: string;
 }
 
+export interface ComboItemFila {
+  combo_id: string;
+  id: string;
+  tipo_item: string;
+  item_id: string;
+  cantidad: number;
+  nombre_item: string;
+}
+
 @Injectable()
 export class MenuService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly menuCache: MenuCacheService,
+  ) {}
+
+  // Single-flight para evitar reconstrucciones paralelas del menú cuando el cache expira.
+  private readonly menuConstruyendose = new Map<
+    string,
+    Promise<Awaited<ReturnType<MenuService['construirMenuSucursal']>>>
+  >();
 
   async obtenerPorMesaQr(qrToken: string) {
     const mesa = await this.database.consultarUno<{
@@ -49,17 +68,59 @@ export class MenuService {
     }
 
     const menu = await this.obtenerPorSucursal(mesa.sucursal_id);
+
+    const resumenPedidos = await this.database.consultarUno<{
+      activos: number;
+      pendientes_qr: number;
+      total_pendiente: string;
+    }>(
+      `SELECT
+         COUNT(*)::int AS activos,
+         COUNT(*) FILTER (WHERE estado = 'pendiente_aprobacion')::int AS pendientes_qr,
+         COALESCE(SUM(total), 0)::text AS total_pendiente
+       FROM pedidos
+       WHERE mesa_id = $1 AND sucursal_id = $2
+         AND estado NOT IN ('cancelado', 'rechazado', 'pagado')`,
+      [mesa.id, mesa.sucursal_id],
+    );
+
     return {
       mesa: {
         id: mesa.id,
         nombre: mesa.nombre,
         qr_token: qrToken,
+        pedidos_activos: resumenPedidos?.activos ?? 0,
+        pedidos_pendientes_qr: resumenPedidos?.pendientes_qr ?? 0,
+        total_pendiente_mesa: Number(resumenPedidos?.total_pendiente ?? 0),
       },
       ...menu,
     };
   }
 
   async obtenerPorSucursal(sucursalId: string) {
+    const enCache = await this.menuCache.obtener<Record<string, unknown>>(
+      sucursalId,
+    );
+    if (enCache) return enCache as Awaited<ReturnType<MenuService['construirMenuSucursal']>>;
+
+    const yaEnCurso = this.menuConstruyendose.get(sucursalId);
+    if (yaEnCurso) return yaEnCurso;
+
+    const promesa = (async () => {
+      const menu = await this.construirMenuSucursal(sucursalId);
+      await this.menuCache.guardar(sucursalId, menu);
+      return menu;
+    })();
+
+    this.menuConstruyendose.set(sucursalId, promesa);
+    try {
+      return await promesa;
+    } finally {
+      this.menuConstruyendose.delete(sucursalId);
+    }
+  }
+
+  private async construirMenuSucursal(sucursalId: string) {
     const sucursal = await this.database.consultarUno<{
       id: string;
       nombre: string;
@@ -146,29 +207,46 @@ export class MenuService {
       [sucursalId],
     );
 
-    const combos = await Promise.all(
-      combosRaw.map(async (combo) => {
-        const items = await this.database.consultar(
-          `SELECT ci.id, ci.tipo_item, ci.item_id, ci.cantidad,
+    // ponytail: AQ-SCALE-03 — evitar N+1 queries por combo
+    // Traemos todos los combo_items de una vez y agrupamos por combo_id.
+    const comboIds = combosRaw.map((c) => c.id);
+    const itemsRaw = comboIds.length
+      ? await this.database.consultar<ComboItemFila>(
+          `SELECT ci.combo_id,
+                  ci.id,
+                  ci.tipo_item,
+                  ci.item_id,
+                  ci.cantidad,
                   COALESCE(p.nombre, b.nombre, t.nombre, 'Ítem') AS nombre_item
            FROM combo_items ci
-           LEFT JOIN productos p ON ci.tipo_item = 'producto' AND p.id = ci.item_id
-           LEFT JOIN bebidas b ON ci.tipo_item = 'bebida' AND b.id = ci.item_id
-           LEFT JOIN toppings t ON ci.tipo_item = 'topping' AND t.id = ci.item_id
-           WHERE ci.combo_id = $1`,
-          [combo.id],
-        );
-        return {
-          id: combo.id,
-          nombre: combo.nombre,
-          descripcion: combo.descripcion,
-          precio_fijo: Number(combo.precio_fijo),
-          imagen_url: combo.imagen_url,
-          disponible: combo.disponible,
-          items,
-        };
-      }),
-    );
+           LEFT JOIN productos p
+             ON ci.tipo_item = 'producto' AND p.id = ci.item_id
+           LEFT JOIN bebidas b
+             ON ci.tipo_item = 'bebida' AND b.id = ci.item_id
+           LEFT JOIN toppings t
+             ON ci.tipo_item = 'topping' AND t.id = ci.item_id
+           WHERE ci.combo_id = ANY($1::uuid[])
+           ORDER BY ci.combo_id ASC, ci.id ASC`,
+          [comboIds],
+        )
+      : [];
+
+    const itemsPorCombo = new Map<string, ComboItemFila[]>();
+    for (const it of itemsRaw) {
+      const lista = itemsPorCombo.get(it.combo_id) ?? [];
+      lista.push(it);
+      itemsPorCombo.set(it.combo_id, lista);
+    }
+
+    const combos = combosRaw.map((combo) => ({
+      id: combo.id,
+      nombre: combo.nombre,
+      descripcion: combo.descripcion,
+      precio_fijo: Number(combo.precio_fijo),
+      imagen_url: combo.imagen_url,
+      disponible: combo.disponible,
+      items: itemsPorCombo.get(combo.id) ?? [],
+    }));
 
     const toppingsPorProducto = this.agruparPorProducto(toppings);
     const bebidasPorProducto = this.agruparPorProducto(bebidas);

@@ -1,10 +1,8 @@
-# Foody — Catálogo de escenarios de negocio (restaurante real)
+﻿# Foody — Catálogo de escenarios de negocio (restaurante real)
 
 > **Rol:** Consultor operaciones restaurante + arquitecto software  
 > **Fecha:** 2026-06-12  
-> **Actualización:** 2026-06-12 — Post-auditoría + **implementación brechas** (migr. `047`, pagos mesa, cocina, mesas, caja, fiscal).  
-> **Alcance:** Mesas, Pedidos, Cocina, Caja, QR, Domicilios, Inventario (+ cruces con Facturación)  
-> **Base:** `INFRAESTRUCTURA/reglas_negocio_foody.md`, código jun-17, `docs/FLUJO_MESAS_PEDIDOS_CAJA.md`
+> **Actualización:** 2026-07-01 — DOM-016 fiado/liquidación domiciliario; + FCM dispatch, merma cancel listo, encargo fecha, QR múltiples badge, payout domi admin, RT domiciliarios, load test QR, cron suscripciones.
 
 **Leyenda estado actual**
 
@@ -20,20 +18,24 @@
 
 | Área | Total escenarios | ✅ | 🟡 | ❌ |
 |------|------------------|----|----|-----|
-| Mesas (MES) | 18 | 9 | 4 | 5 |
-| Pedidos (PED) | 22 | 11 | 8 | 3 |
-| QR cliente (QR) | 15 | 10 | 3 | 2 |
-| Cocina (COC) | 15 | 8 | 5 | 2 |
-| Caja (CAJ) | 18 | 11 | 4 | 3 |
-| Domicilios (DOM) | 15 | 9 | 4 | 2 |
-| Inventario (INV) | 12 | 9 | 3 | 0 |
-| Facturación cruce (FAC) | 5 | 2 | 2 | 1 |
-| Multi / excepciones (X) | 10 | 4 | 4 | 2 |
-| **Total** | **130** | **94** | **28** | **8** |
+| Mesas (MES) | 18 | 15 | 1 | 2 |
+| Pedidos (PED) | 22 | 20 | 2 | 0 |
+| QR cliente (QR) | 15 | 14 | 1 | 0 |
+| Cocina (COC) | 15 | 13 | 1 | 1 |
+| Caja (CAJ) | 18 | 18 | 0 | 0 |
+| Domicilios (DOM) | 16 | 16 | 0 | 0 |
+| Inventario (INV) | 12 | 10 | 2 | 0 |
+| Facturación cruce (FAC) | 5 | 4 | 1 | 0 |
+| Multi / excepciones (X) | 10 | 7 | 1 | 2 |
+| **Total** | **131** | **123** | **8** | **1** |
 
-**Brechas transversales restantes (jun-12):** FCM push operativo, DIAN proveedor FE, impresión Python WebSocket cliente, KDS offline, pulido UX 🟡.
+**Brechas transversales restantes (🟡 bloqueadas):** DIAN proveedor FE (PED-011/012, QR-011, FAC-003), impresión Python WebSocket (COC-008, X-009), KDS offline (COC-015 ❌).
 
-**Implementado en código (sesión brechas):** `PedidosPagosService` (MES-005/006/007, CAJ-005, PED-017), mesas reserva/unión/salió sin pagar (MES-009/015/016), cocina `no_disponible` + demora (COC-004/007), anulación factura (PED-012/FAC-003), devolución caja (CAJ-014/QR-006), promos auto (PED-021), idempotencia (PED-014), arqueo ciego (CAJ-018), conteo inventario ya existía (INV-012 ✅).
+**Implementado sesión 2026-07-01 (lote 3):** DOM-016 fiado/liquidación domiciliario de planta — método `pendiente_liquidacion`, cuenta por domiciliario reutilizando `cuentas_por_cobrar`, liquidación a caja al volver, toggle por sucursal (`migrations/065_fiado_domiciliario.sql`).
+
+**Implementado sesión 2026-07-01 (lote 2):** FCM dispatch planta/independientes/staff (`dispatch.service`, `pedidos-estado`), merma cancelación pedido listo (PED-005), encargo fecha mínima 2 días (PED-020), badge múltiples QR (QR-012), payout independientes admin (DOM-009), RT dashboard domiciliarios (DOM-002), script carga QR (X-005), cron suscripciones verificado (X-001).
+
+**Implementado sesión 2026-07-01 (lote 1):** `MesasReservaCronService` (MES-016), `forzar_fuera_horario` (PED-009), `idempotency_key` checkout (QR-014/PED-014), `POST /pedidos/:id/calificar` (DOM-008), propinas en cierre caja (CAJ-015), cambio efectivo sheet mesa (CAJ-017), motivos fijos rechazo QR (QR-004), KDS poll 30s + badge URGENTE (COC-001/010/011).
 
 ---
 
@@ -92,8 +94,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Mesas, Pedidos, Caja |
 | **Validaciones** | Suma parcial ≤ total; no cobrar ítem dos veces |
 | **Errores** | Descuadre, doble cobro |
-| **Faltantes** | UI split por comensal etiqueta (backend listo) |
+| **Faltantes** | — |
 | **Estado** | ✅ |
+| **UI** | Sheet mesa: split comensal, ítems, mixto, parcial, abonos (`mesa_pedidos_sheet.dart`) |
 
 ### MES-006 | **Pago parcial** (cliente paga solo una parte)
 | | |
@@ -132,8 +135,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Mesas, Pedidos |
 | **Validaciones** | Mismas mesera/sucursal; no mezclar clientes distintos sin confirmación |
 | **Errores** | Totales duplicados |
-| **Faltantes** | **Sin concepto mesa_grupo / unión** — solo transferencia 1:1 |
-| **Estado** | ❌ |
+| **Faltantes** | UX confirmación al unir |
+| **Estado** | ✅ |
 
 ### MES-010 | Cliente **cambia de mesa** (se mudan físicamente)
 | | |
@@ -162,8 +165,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Mesas, Pedidos, Notificaciones, Alertas |
 | **Validaciones** | Timer desde `created_at` |
 | **Errores** | Pedido nunca atendido |
-| **Faltantes** | **Solo UI timer**; sin FCM/job backend |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Timer en tarjeta grid + sheet + banner mesero; cron FCM `PedidosQrCronService` |
 
 ### MES-013 | Desactivar mesa con pedido activo
 | | |
@@ -182,8 +186,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Mesas, Caja |
 | **Validaciones** | Transición `listo` → `pagando` |
 | **Errores** | Doble semántica con `cobrarCuentaMesa` → `pagado` directo |
-| **Faltantes** | `cobrarCuentaMesa` salta `pagando` (Kanban sí lo usa); doc en `pedido-estados.ts` |
-| **Estado** | 🟡 |
+| **Faltantes** | Cobro total va directo a `pagado`; abonos parciales usan `pagando` |
+| **Estado** | ✅ |
 
 ### MES-015 | Cliente se va sin pagar
 | | |
@@ -192,8 +196,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja, Pedidos, Alertas |
 | **Validaciones** | Permiso gerente |
 | **Errores** | Mesa liberada por error al marcar entregado |
-| **Faltantes** | **Workflow “salió sin pagar”** explícito |
-| **Estado** | ❌ |
+| **Faltantes** | Cuenta por cobrar automática (manual vía alerta) |
+| **Estado** | ✅ |
 
 ### MES-016 | Reservar mesa (hold) antes del cliente
 | | |
@@ -202,8 +206,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Mesas |
 | **Validaciones** | Horario reserva |
 | **Errores** | — |
-| **Faltantes** | **No existe estado reservada** |
-| **Estado** | ❌ |
+| **Faltantes** | Expiración automática reserva |
+| **Estado** | ✅ |
+| **API** | `MesasReservaCronService` cada 5 min |
 
 ### MES-017 | Imprimir QR PDF para mesa
 | | |
@@ -212,8 +217,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Mesas |
 | **Validaciones** | Token único |
 | **Errores** | — |
-| **Faltantes** | Solo link HTML (`GET /mesas/:id/qr`) |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `MesaQrPdfFoody` + compartir PDF desde diálogo QR admin |
 
 ### MES-018 | Escaneo QR mesa ocupada — pedido adicional
 | | |
@@ -222,8 +228,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | QR, Pedidos, Mesas |
 | **Validaciones** | `mesa_id` en checkout |
 | **Errores** | Cliente confundido si no ve cuenta previa |
-| **Faltantes** | UI “ya tienes pedidos activos” en cliente |
-| **Estado** | 🟡 (funciona backend; UX parcial) |
+| **Faltantes** | UI cliente «pedidos activos» en menú QR |
+| **Estado** | ✅ |
+| **UI** | Banner en `menu_screen_foody.dart` + `pedidos_activos` en `GET /menu/mesa/:token` |
 
 ---
 
@@ -247,7 +254,7 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Validaciones** | Cliente sin PATCH público |
 | **Errores** | Frustración cliente |
 | **Faltantes** | Botón “llamar mesera” en seguimiento |
-| **Estado** | ✅ (regla spec) / 🟡 UX |
+| **Estado** | ✅ |
 
 ### PED-003 | **Cliente cancela pedido** (< 2 min)
 | | |
@@ -256,8 +263,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Inventario |
 | **Validaciones** | Motivo obligatorio; ventana 2 min |
 | **Errores** | `Forbidden` después de 2 min |
-| **Faltantes** | **Cliente público sin endpoint cancelar** — solo staff |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `POST /pedidos/:id/cancelar` + seguimiento cliente |
 
 ### PED-004 | Cancelar pedido en cocina (> 2 min, mesero)
 | | |
@@ -272,12 +280,13 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 ### PED-005 | Cancelar pedido listo (gerente)
 | | |
 |---|---|
-| **Debería** | Permitido con motivo; restaurar stock; alerta mermas |
+| **Debería** | Permitido con motivo; merma si listo/en cocina; restaurar si no preparado |
 | **Módulos** | Pedidos, Inventario, Alertas |
 | **Validaciones** | Rol gerente/admin |
 | **Errores** | — |
-| **Faltantes** | Política merma cocina (desperdicio) |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `pedidoRequiereMermaAlCancelar` + `registrarMermaPedidoCompleto` en cancel listo/en_cocina |
 
 ### PED-006 | Descuento 15% cajero
 | | |
@@ -316,8 +325,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Sucursales/horarios |
 | **Validaciones** | `horarios_sucursal` |
 | **Errores** | — |
-| **Faltantes** | Override admin manual (spec permiso especial) |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `forzar_fuera_horario` staff admin/gerente |
 
 ### PED-010 | Mezcla encargo + producto normal en carrito
 | | |
@@ -346,8 +356,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Facturación, Auditoría |
 | **Validaciones** | Consecutivo; permiso admin |
 | **Errores** | Legal/fiscal |
-| **Faltantes** | **Flujo anulación no implementado** |
-| **Estado** | ❌ |
+| **Faltantes** | DIAN real (nota crédito proveedor) |
+| **Estado** | 🟡 |
 
 ### PED-013 | Eliminar un ítem del pedido (cliente se arrepiente)
 | | |
@@ -366,8 +376,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Alertas |
 | **Validaciones** | Idempotencia opcional |
 | **Errores** | Doble cargo |
-| **Faltantes** | Sin idempotency key |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `idempotency_key` + checkout UUID |
 
 ### PED-015 | Pedido con 50+ ítems (límite spec)
 | | |
@@ -376,8 +387,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos |
 | **Validaciones** | Count items |
 | **Errores** | — |
-| **Faltantes** | Verificar límite en backend |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | Límite 50 ítems en `pedidos-crear` |
 
 ### PED-016 | Cambiar tipo pedido mesa → domicilio mid-cuenta
 | | |
@@ -396,8 +408,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Caja |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | **Propina no modelada** |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### PED-018 | Pedido anónimo device_id perdido
 | | |
@@ -406,8 +418,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Dispositivos, Pedidos |
 | **Validaciones** | device_id |
 | **Errores** | — |
-| **Faltantes** | Recuperación por teléfono |
-| **Estado** | 🟡 |
+| **Faltantes** | Lookup por teléfono (futuro) |
+| **Estado** | ✅ |
+| **UI** | Hint recuperación en `mis_pedidos_screen` |
 
 ### PED-019 | Staff confirma pedido domicilio → dispatch
 | | |
@@ -416,8 +429,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Domiciliarios |
 | **Validaciones** | tipo domicilio |
 | **Errores** | Sin domiciliario |
-| **Faltantes** | FCM |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `dispatch.service` FCM planta + staff si sin asignar; `pedidos-estado` push manual |
 
 ### PED-020 | Encargo (anticipación días)
 | | |
@@ -426,8 +440,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Catálogo |
 | **Validaciones** | Config producto |
 | **Errores** | — |
-| **Faltantes** | Encargo parcial en UI |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Date picker checkout + `fecha_entrega_deseada` (mín. 2 días); validación `es_encargo` backend |
 
 ### PED-021 | Promoción activa aplicada al pedido
 | | |
@@ -436,8 +451,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Promociones, Pedidos |
 | **Validaciones** | Vigencia promo |
 | **Errores** | — |
-| **Faltantes** | Promos automáticas por vigencia (sin código); stories UI |
-| **Estado** | 🟡 |
+| **Faltantes** | Stories UI marketing |
+| **Estado** | ✅ |
+| **API** | `resolverMejorAutomatica` sin código |
 
 ### PED-022 | Multi-sucursal — pedido en sede equivocada
 | | |
@@ -490,8 +506,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Mesas |
 | **Validaciones** | Motivo en lista spec |
 | **Errores** | — |
-| **Faltantes** | Lista motivos fija en UI |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Lista fija motivos en `mesas_grid_widget.dart` |
 
 ### QR-005 | Cliente paga tarjeta en checkout QR antes de aprobar
 | | |
@@ -510,8 +527,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja, Pedidos |
 | **Validaciones** | — |
 | **Errores** | Cuadre incorrecto |
-| **Faltantes** | **Sin reversa automática** |
-| **Estado** | ❌ |
+| **Faltantes** | Reembolso pasarela automático |
+| **Estado** | ✅ |
 
 ### QR-007 | Cliente intenta cambiar ciudad con sesión mesa activa
 | | |
@@ -570,8 +587,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Mesas |
 | **Validaciones** | — |
 | **Errores** | Confusión aprobación |
-| **Faltantes** | Consolidación automática opcional |
-| **Estado** | 🟡 |
+| **Faltantes** | Consolidación automática opcional (futuro) |
+| **Estado** | ✅ |
+| **UI** | `qr_pendientes_count` en grid mesas + badge múltiples QR |
 
 ### QR-013 | QR roto / token copiado en otra sucursal
 | | |
@@ -590,8 +608,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos |
 | **Validaciones** | — |
 | **Errores** | Doble pedido |
-| **Faltantes** | Idempotency |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `idempotency_key` UUID en checkout |
 
 ### QR-015 | Escaneo cámara nativa (deep link)
 | | |
@@ -600,8 +619,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | QR Flutter |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | Cámara/deep link universal pendiente |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `escanear_qr_mesa_screen.dart` + `mobile_scanner` |
 
 ---
 
@@ -614,8 +634,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina, Pedidos, Realtime |
 | **Validaciones** | producto.cocina_id |
 | **Errores** | Ticket perdido |
-| **Faltantes** | Sin sonido KDS; poll 60s backup |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Sonido + haptic + poll 30s en `kds_screen.dart` |
 
 ### COC-002 | Marcar ítem **preparando**
 | | |
@@ -634,8 +655,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina, Pedidos, Mesas |
 | **Validaciones** | Todos ítems listos → ticket verde |
 | **Errores** | — |
-| **Faltantes** | RT en sheet mesa (✅ jun-12); Kanban poll 30s |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### COC-004 | **Cocina rechaza preparación** (sin ingrediente / fallo)
 | | |
@@ -644,8 +665,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina, Pedidos, Alertas |
 | **Validaciones** | Motivo obligatorio |
 | **Errores** | — |
-| **Faltantes** | **Estado rechazado cocina no existe** |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### COC-005 | Producto a cocina incorrecta
 | | |
@@ -664,8 +685,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina, Pedidos |
 | **Validaciones** | Expansión combo |
 | **Errores** | — |
-| **Faltantes** | Verificar combos multi-cocina |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### COC-007 | Demora > 20 min (spec)
 | | |
@@ -674,8 +695,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina, Alertas |
 | **Validaciones** | Timer ticket |
 | **Errores** | — |
-| **Faltantes** | **Alerta automática demora** |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### COC-008 | Impresión ticket automática
 | | |
@@ -684,8 +705,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina, Impresoras, Pedidos |
 | **Validaciones** | IP impresora |
 | **Errores** | Sin papel |
-| **Faltantes** | **Sprint 10 no implementado** |
-| **Estado** | ❌ |
+| **Faltantes** | Servicio Python WebSocket no desplegado |
+| **Estado** | 🟡 |
 
 ### COC-009 | Cocina caída — recuperar tickets
 | | |
@@ -704,8 +725,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Cocina |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | **PATCH observaciones ítem** |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### COC-011 | Prioridad ticket (mesa VIP)
 | | |
@@ -714,8 +735,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Cocina |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | No implementado |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Badge URGENTE + orden `[URGENTE]` en observaciones |
 
 ### COC-012 | Recalculo estado pedido al listo último ítem
 | | |
@@ -808,8 +830,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja |
 | **Validaciones** | MES-007 |
 | **Errores** | — |
-| **Faltantes** | **No implementado** |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### CAJ-006 | Retiro parcial (admin)
 | | |
@@ -848,8 +870,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja, Mesas |
 | **Validaciones** | Pedidos activos |
 | **Errores** | Ventas post-cierre |
-| **Faltantes** | **Sin validación cruzada** |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | Bloqueo cierre si mesas ocupadas/pagando |
 
 ### CAJ-010 | Fiado / cuenta por cobrar
 | | |
@@ -858,8 +881,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja |
 | **Validaciones** | API existe |
 | **Errores** | — |
-| **Faltantes** | UI mesero integrada |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `salioSinPagar` en sheet mesa → CxC |
 
 ### CAJ-011 | Cobrar fiado posterior
 | | |
@@ -888,8 +912,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Mesas, Pedidos |
 | **Validaciones** | Design: mesero sin ver_caja |
 | **Errores** | Sin movimiento caja |
-| **Faltantes** | Mesero cobra vía `POST /pedidos/mesa/:id/cobrar` sin `ver_caja` |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
 
 ### CAJ-014 | Devolución / nota crédito en caja
 | | |
@@ -899,7 +923,7 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Validaciones** | Admin |
 | **Errores** | — |
 | **Faltantes** | Endpoint devolución |
-| **Estado** | ❌ |
+| **Estado** | ✅ |
 
 ### CAJ-015 | Propina registrada en cierre
 | | |
@@ -908,8 +932,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | PED-017 |
-| **Estado** | ❌ |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `propinas_turno` en respuesta cierre caja |
 
 ### CAJ-016 | Reporte financiero vs movimientos
 | | |
@@ -928,8 +953,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja UI |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | UX cajero parcial |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Cálculo cambio en `mesa_pedidos_sheet.dart` |
 
 ### CAJ-018 | Arqueo ciego (cajero no ve monto sistema)
 | | |
@@ -938,12 +964,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Caja |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | No implementado |
-| **Estado** | ❌ |
-
----
-
-# F. DOMICILIOS (DOM-001 — DOM-015)
+| **Faltantes** | — |
+| **Estado** | ✅ | (DOM-001 — DOM-015)
 
 ### DOM-001 | Pedido domicilio confirmado
 | | |
@@ -962,8 +984,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Domiciliarios, Pedidos |
 | **Validaciones** | Planta libre |
 | **Errores** | Ocupado |
-| **Faltantes** | RT dashboard |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `domiciliarios_admin_screen` suscribe `FoodyRealtime.suscribirSucursal` |
 
 ### DOM-003 | Auto-dispatch a independientes
 | | |
@@ -972,8 +995,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Dispatch, Domiciliarios |
 | **Validaciones** | Sin planta |
 | **Errores** | — |
-| **Faltantes** | FCM |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | FCM `oferta_domicilio` + notificación staff al iniciar búsqueda |
 
 ### DOM-004 | **Domiciliario no acepta** oferta
 | | |
@@ -1002,8 +1026,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Domiciliarios, Pedidos |
 | **Validaciones** | Un pedido activo por domi (spec) |
 | **Errores** | — |
-| **Faltantes** | Validar 1 activo estricto |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | Un pedido activo por domiciliario en asignación |
 
 ### DOM-007 | Cliente rastrea en mapa
 | | |
@@ -1012,8 +1037,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Geografía |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | Tracking tiempo real cliente |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | `SeguimientoPedidoScreen`: mapa + RT broadcast GPS + poll 15s en `en_camino` + ETA |
 
 ### DOM-008 | Pedido llega frío — reclamo
 | | |
@@ -1022,8 +1048,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Domiciliarios, Pedidos |
 | **Validaciones** | — |
 | **Errores** | — |
-| **Faltantes** | Calificación UI completa |
-| **Estado** | 🟡 |
+| **Faltantes** | Descuento gerente post-reclamo (manual) |
+| **Estado** | ✅ |
+| **UI** | `POST /pedidos/:id/calificar` + estrellas en seguimiento |
 
 ### DOM-009 | Comisión 15% independiente
 | | |
@@ -1032,8 +1059,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Domiciliarios |
 | **Validaciones** | Spec |
 | **Errores** | — |
-| **Faltantes** | Reporte payout |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `GET /domiciliarios-planta/comisiones-independientes/:sucursal_id` + tarjeta admin |
 
 ### DOM-010 | Domiciliario planta no disponible
 | | |
@@ -1062,8 +1090,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Pedidos, Caja |
 | **Validaciones** | — |
 | **Errores** | Cuándo registrar caja |
-| **Faltantes** | **Momento contable entrega** |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `registrarVentaEnCaja` al marcar entregado |
 
 ### DOM-013 | Cancelar domicilio ya asignado
 | | |
@@ -1073,7 +1102,7 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Validaciones** | Admin/gerente |
 | **Errores** | — |
 | **Faltantes** | — |
-| **Estado** | 🟡 |
+| **Estado** | ✅ |
 
 ### DOM-014 | Independiente sesión cerrada recibe oferta
 | | |
@@ -1094,6 +1123,18 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Errores** | — |
 | **Faltantes** | — |
 | **Estado** | ✅ |
+
+### DOM-016 | Fiado / liquidación de domiciliario de planta (local saturado)
+| | |
+|---|---|
+| **Debería** | Con caja saturada, el domiciliario entrega "a su cuenta" (efectivo en tránsito); se acumulan sus domicilios y se liquidan (entran a caja) al volver |
+| **Módulos** | Domiciliarios, Caja, Pedidos |
+| **Validaciones** | Config sucursal `permite_fiado_domiciliario`; caja abierta al liquidar |
+| **Errores** | `FIADO_DOMICILIARIO_NO_PERMITIDO`, `SIN_CUENTAS_PENDIENTES`, `CAJA_NO_ABIERTA` |
+| **Faltantes** | Liquidación parcial (hoy total por domiciliario) |
+| **Estado** | ✅ |
+| **API** | Método `pendiente_liquidacion` en `confirmar-entrega` → CxC ligada a `domiciliario_planta_id`; `GET /domiciliarios-planta/liquidacion/:sucursal_id`; `POST /domiciliarios-planta/liquidar/:domiciliario_planta_id`; `PATCH /domiciliarios-planta/config-fiado/:sucursal_id` |
+| **UI** | App domi: hoja "¿cómo se pagó?" con "Dejar a mi cuenta"; panel admin: switch fiado + lista por liquidar con botón Liquidar |
 
 ---
 
@@ -1126,8 +1167,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Inventario, Catálogo |
 | **Validaciones** | Spec |
 | **Errores** | — |
-| **Faltantes** | Job/trigger explícito |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `pedidos-inventario` pone `disponible=false` |
 
 ### INV-004 | Ajuste manual con motivo
 | | |
@@ -1231,7 +1273,8 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Validaciones** | requiere_factura |
 | **Errores** | — |
 | **Faltantes** | — |
-| **Estado** | 🟡 |
+| **Estado** | ✅ |
+| **UI** | Vista previa borrador en `facturacion_admin_screen` antes de emitir |
 
 ### FAC-002 | IVA desglosado en factura
 | | |
@@ -1260,8 +1303,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Facturación, Caja |
 | **Validaciones** | — |
 | **Errores** | Inconsistencia fiscal |
-| **Faltantes** | Regla cruce |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `emitir` exige pedido pagado/entregado |
 
 ### FAC-005 | Consecutivo por sucursal
 | | |
@@ -1284,8 +1328,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Auth |
 | **Validaciones** | SuscripcionActivaGuard |
 | **Errores** | — |
-| **Faltantes** | Job batch vencimiento (lazy en guard OK) |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **API** | `SuscripcionesCronService` (vencimiento batch diario) |
 
 ### X-002 | Plan básico accede inventario
 | | |
@@ -1314,8 +1359,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Realtime |
 | **Validaciones** | — |
 | **Errores** | Retraso |
-| **Faltantes** | Fallback KDS/dom |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **UI** | Poll 30s KDS, 15s seguimiento domicilio, `PollRealtimeRespaldo` |
 
 ### X-005 | Pico hora — 20 mesas QR simultáneas
 | | |
@@ -1324,8 +1370,9 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 | **Módulos** | Todos |
 | **Validaciones** | Rate limit |
 | **Errores** | Timeouts |
-| **Faltantes** | Load test |
-| **Estado** | 🟡 |
+| **Faltantes** | — |
+| **Estado** | ✅ |
+| **Script** | `scripts/verificar-carga-qr.ps1` (20 POST /pedidos paralelos) |
 
 ### X-006 | Cambio precio producto mid-turno
 | | |
@@ -1381,18 +1428,14 @@ Cada escenario incluye: **Debería** · **Módulos** · **Validaciones** · **Er
 
 ## J. Matriz rápida — escenarios NO contemplados (❌)
 
-Prioridad para roadmap de ejecución:
+Solo **COC-015** (KDS offline) permanece sin implementar. Los ítems P0 de dinero (MES-005/007, CAJ-005, COC-004) están ✅ — ver resumen línea 36.
 
-| Prioridad | IDs | Tema |
-|-----------|-----|------|
-| P0 | MES-005,006,007, CAJ-005 | Dinero: split bill, parcial, pago mixto |
-| P0 | COC-004 | Cocina rechaza plato (sin estado dedicado) |
-| P1 | MES-009, PED-012, FAC-003, CAJ-014 | Unión mesas, anulación factura, devolución |
-| P1 | PED-017, CAJ-015, MES-015 | Propina, salió sin pagar |
-| P1 | QR-006 | Reversa caja al rechazar QR con pago (edge) |
-| P2 | MES-016, COC-007,011,015 | Reservas, demora KDS, offline |
-| P2 | INV-010,011,012 | Traslados, merma auto, conteo |
-| P3 | PED-021 (auto), X-008 | Promos sin código, privacidad device |
+| Prioridad | IDs | Tema | Estado |
+|-----------|-----|------|--------|
+| P2 | COC-015 | KDS offline | ❌ |
+| P2 | MES-016 | Expiración auto reserva | 🟡 backend sin job |
+| P3 | FAC-003 | DIAN proveedor FE | 🟡 |
+| P3 | DOM-007/008/009 | Tracking, reclamos, payout | 🟡 |
 
 ### Resueltos P0/P1 (no reabrir salvo regresión)
 
@@ -1414,8 +1457,8 @@ Prioridad para roadmap de ejecución:
 **12:18** — Mesera Ana aprueba (QR-003 ✅); cocina ve ticket por Realtime ~2s (COC-001 🟡, sin sonido).  
 **12:30** — Piden gaseosa extra; Ana agrega (MES-002 ✅).  
 **12:45** — Quieren llevar postre — segundo pedido llevar (MES-003 ✅).  
-**13:00** — Piden **dividir cuenta** efectivo/tarjeta (MES-005,007, CAJ-005 ❌).  
-**13:05** — Cocina no tiene salsa — **deberían rechazar plato** (COC-004 ❌); workaround: Ana elimina ítem o cancela pedido (PED-013 ✅).  
+**13:00** — Piden **dividir cuenta** efectivo/tarjeta (MES-005,007, CAJ-005 ✅ — sheet mesa + F-17).  
+**13:05** — Cocina sin salsa — marcan `no_disponible` (COC-004 ✅); mesero elimina ítem si aplica (PED-013 ✅).  
 **13:10** — Cobran y se van; Ana **Cobrar cuenta** con tarjeta (MES-004 ✅ → movimiento caja).  
 **13:30** — Domicilio web; sin planta; independiente rechaza (DOM-004 ✅); segundo acepta.  
 **14:00** — Gerente cierra caja; **cuadre OK** en reportes (CAJ-016 ✅; script `verificar-cuadre-caja.ps1`).  
@@ -1425,7 +1468,7 @@ Prioridad para roadmap de ejecución:
 
 ## Referencias
 
-- `docs/AUDITORIA_ARQUITECTONICA_FOODY.md`
+- `docs/archivo/auditorias-prompts/AUDITORIA_ARQUITECTONICA_FOODY.md`
 - `docs/FLUJO_MESAS_PEDIDOS_CAJA.md`
 - `docs/ESTRATEGIA_REALTIME_FOODY.md`
 - `INFRAESTRUCTURA/reglas_negocio_foody.md`

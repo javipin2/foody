@@ -55,4 +55,14 @@ class CiudadPreferenceService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_ciudadKey) != null;
   }
+
+  /// Home del cliente: lugares de la ciudad guardada, o selector si aún no eligió.
+  static Future<String> rutaHomeCliente() async {
+    final ciudad = await getSelectedCiudad();
+    if (ciudad == null) return '/cliente';
+    final slug =
+        ciudad.codigo.isNotEmpty ? ciudad.codigo : 'valledupar';
+    return '/ciudades/$slug/restaurantes'
+        '?nombre=${Uri.encodeComponent(ciudad.nombre)}';
+  }
 }

@@ -49,12 +49,15 @@ export declare class MenuController {
             precio_fijo: number;
             imagen_url: string | null;
             disponible: boolean;
-            items: import("pg").QueryResultRow[];
+            items: import("./menu.service").ComboItemFila[];
         }[];
         mesa: {
             id: string;
             nombre: string;
             qr_token: string;
+            pedidos_activos: number;
+            pedidos_pendientes_qr: number;
+            total_pendiente_mesa: number;
         };
     }>;
     obtenerMenu(sucursalId: string): Promise<{
@@ -104,7 +107,7 @@ export declare class MenuController {
             precio_fijo: number;
             imagen_url: string | null;
             disponible: boolean;
-            items: import("pg").QueryResultRow[];
+            items: import("./menu.service").ComboItemFila[];
         }[];
     }>;
 }

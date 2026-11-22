@@ -1,0 +1,424 @@
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [NestFactory] Starting Nest application...
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CajaMovimientosModule dependencies initialized +71ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] PassportModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] StockMovimientoModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ConfigHostModule dependencies initialized +3ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] DatabaseModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] GeografiaModule dependencies initialized +41ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ConfigModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ConfigModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CacheModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CacheMenuModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ConfiguracionGlobalModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] OnboardingModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] RealtimeModule dependencies initialized +7ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CiudadesModule dependencies initialized +2ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] JwtModule dependencies initialized +3ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] AppModule dependencies initialized +3ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] SuscripcionesCronModule dependencies initialized +2ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] DispositivosModule dependencies initialized +3ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] SaludModule dependencies initialized +3ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] MenuModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] AuditoriaModule dependencies initialized +4ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ZonasModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ReportesModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] FinanzasModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] AnaliticaModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] RestaurantesModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] ImpresionModule dependencies initialized +2ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] AlmacenamientoModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] DashboardModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] FacturacionModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] NotificacionesModule dependencies initialized +2ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] PagosModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] SuperAdminModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] AlertasModule dependencies initialized +2ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] PromocionesModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] AuthModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] UsuariosModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CosteoModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] MesasModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CatalogoModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] DomiciliariosModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] InventarioModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CocinasModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] CajaModule dependencies initialized +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [InstanceLoader] PedidosModule dependencies initialized +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] AuthController {/api/v1/auth}: +9ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/login, POST} route +3ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/login-domiciliario, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/registro-domiciliario, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/registro-restaurante, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/login-google, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/refresh, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/logout, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/perfil, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/realtime-canales, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/registrar-fcm, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auth/desactivar-fcm, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] SaludController {/api/v1/salud}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/salud, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/salud/completo, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] HealthController {/api/v1/health}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/health, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/health/realtime, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/health/impresion, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] ImpresionController {/api/v1/impresion}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/impresion/jobs, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/impresion/procesar-cola, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CiudadesController {/api/v1}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/ciudades, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/ciudades/:slug/restaurantes, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] RestaurantesController {/api/v1/restaurantes}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/restaurantes/:id/sucursales, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] SucursalesStaffController {/api/v1/sucursales}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales/mi-restaurante, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales/marca, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales/marca, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales/:sucursalId/horarios, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales/horarios/:horarioId, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/sucursales/margenes/:sucursalId, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] MenuController {/api/v1/menu}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/menu/mesa/:qr_token, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/menu/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] DashboardController {/api/v1/dashboard}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/dashboard/resumen, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/dashboard/graficos, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/dashboard/consolidado, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] PedidosController {/api/v1/pedidos}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/cerrados-hoy, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/detalle, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/mesa/:mesaId, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/mesa/:mesaId/cobrar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/staff, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/items, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/items/:itemId, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/items/:itemId, DELETE} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/estado, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/descuento, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/cobrar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/items/:itemId/comensal, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/aprobar, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/rechazar, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] PedidosPublicController {/api/v1/pedidos}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/estimar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/mios, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/cancelar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/llamar-mesera, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/calificar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pedidos/:id/estado, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] AlertasController {/api/v1/alertas}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/alertas/evaluar/:sucursal_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/alertas/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/alertas/:id/revisar, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] AuditoriaController {/api/v1/auditoria}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/auditoria/timeline, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CosteoController {/api/v1/costeo}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/resumen/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/subrecetas/detalle/:id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/subrecetas/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/combos/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/recalcular/:sucursal_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/productos/:id/impacto-stock, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/productos/:id/recalcular, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/combos/:id/recalcular, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/subrecetas, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/subrecetas/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/subrecetas/:id/recalcular, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/popularidad/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/producciones/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/costeo/producciones, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CategoriasController {/api/v1/categorias}: +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/categorias/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/categorias, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/categorias/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/categorias/:id, DELETE} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/categorias/sucursal/:destino_id/copiar-desde/:origen_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] ProductosController {/api/v1/productos}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/sucursal/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/disponibilidad, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/toppings, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/toppings, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/toppings, PUT} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/bebidas, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/items-incluidos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id/items-incluidos, PUT} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/productos/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] ToppingsController {/api/v1/toppings}: +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/toppings/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/toppings, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/toppings/:id, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] BebidasController {/api/v1/bebidas}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/bebidas/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/bebidas, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/bebidas/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CombosController {/api/v1/combos}: +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/combos/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/combos, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/combos/:id/disponibilidad, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] FacturacionController {/api/v1/facturacion}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/facturacion/config/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/facturacion/config, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/facturacion/facturas/:id/pdf, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/facturacion/facturas/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/facturacion/emitir/:pedido_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/facturacion/anular/:factura_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] InventarioController {/api/v1/inventario}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/traslados, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/traslados, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/traslados/:id/recibir, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/traslados/:id/cancelar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/hermanas/resumen, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/conteos/iniciar/:sucursal_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/conteos/:conteo_id/cerrar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/movimientos/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/costos/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/producto-ingredientes/:producto_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/producto-ingredientes, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/compras, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/inventario/:id, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] ZonasController {/api/v1/zonas}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas/cotizar-domicilio, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas/sucursal/:sucursal_id/configuracion-mapa, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas/sucursal/:sucursal_id/ubicacion, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/zonas/:id, DELETE} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] PromocionesController {/api/v1/promociones}: +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/ciudad/:slug/stories, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/validar-codigo, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/:id/vista, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/admin/limpiar-expiradas, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/admin/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/promociones/:id, DELETE} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] AlmacenamientoController {/api/v1/almacenamiento}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/almacenamiento/imagen, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/almacenamiento/video, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/almacenamiento/productos/:productoId/imagen, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/almacenamiento/promociones/:promocionId/imagen, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/almacenamiento/combos/:comboId/imagen, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/almacenamiento/categorias/:categoriaId/imagen, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] NotificacionesController {/api/v1/notificaciones}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/notificaciones/diagnostico, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/notificaciones/procesar-cola, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/notificaciones/prueba, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/notificaciones/prueba-web, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] DispositivosController {/api/v1/dispositivos}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/dispositivos/registrar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/dispositivos/vincular-auth, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/dispositivos/anonimizar/:device_id, DELETE} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] MesasController {/api/v1/mesas}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/asignar-turno, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/transferir, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:id/reservar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:id/cancelar-reserva, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/unir, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:id/salio-sin-pagar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:id/qr, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/mesas/:id, DELETE} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] SuperAdminController {/api/v1/super}: +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/resumen, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/estadisticas, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/ciudades, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/ciudades, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/ciudades/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/restaurantes, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/restaurantes, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/restaurantes/:id, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/restaurantes/:restauranteId/sucursales, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/suscripciones, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/suscripciones/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/usuarios, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/usuarios, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/usuarios/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/usuarios/:id/cambiar-contrasena, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/usuarios/:id/estado, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/domiciliarios, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/domiciliarios/:id/estado, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/domiciliarios/documentos-pendientes, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/domiciliarios/:id/documentos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/domiciliarios/:id/aprobar-documento, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/domiciliarios/:id/rechazar-documento, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/configuracion, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/super/configuracion/:clave, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CajaController {/api/v1/caja}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/activa/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/abrir, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/cerrar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/cuentas-por-cobrar/:sucursal_id/resumen, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/cuentas-por-cobrar/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/cuentas-por-cobrar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/cuentas-por-cobrar/:id/pagar, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/:caja_id/movimientos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/retiro-parcial, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/devolucion, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/caja/gastos, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CocinasController {/api/v1/cocinas}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocinas/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocinas, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocinas/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocinas/:id, DELETE} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] ImpresorasController {/api/v1/impresoras}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/impresoras/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/impresoras, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/impresoras/:id, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/impresoras/:id, DELETE} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] CocinaTicketsController {/api/v1/cocina}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocina/cocinas, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocina/tickets/:cocina_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocina/items/:item_id/estado, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocina/items/:item_id/fallo-preparacion, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocina/items/:item_id/observaciones, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/cocina/items/:item_id/prioridad, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] DomiciliariosPlantaController {/api/v1/domiciliarios-planta}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/disponibles/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/comisiones-independientes/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/liquidacion/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/liquidar/:domiciliario_planta_id, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/config-fiado/:sucursal_id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/domicilios/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/config-domicilio-caja/:sucursal_id, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/asignar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/reasignar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios-planta/dispatch-independiente/:pedido_id, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] DomiciliarioPlantaController {/api/v1/domiciliario}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliario/pedidos-asignados, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliario/pedidos/:id/en-camino, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliario/pedidos/:id/confirmar-entrega, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliario/ubicacion, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliario/historial, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliario/estadisticas, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] DomiciliariosIndependientesController {/api/v1/domiciliarios}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/sesion/iniciar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/sesion/ubicacion, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/sesion/cerrar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/sesion/estado, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/ofertas-activas, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/ofertas/:id/responder, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/pedidos-activos, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/pedidos/:id/en-camino, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/pedidos/:id/confirmar-entrega, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/ganancias, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] DomiciliariosDocumentosController {/api/v1/domiciliarios}: +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/documentos/tipos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/documentos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/domiciliarios/documentos/:tipo, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] ReportesController {/api/v1/reportes}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/reportes/financiero, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/reportes/productos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/reportes/pedidos, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] AnaliticaController {/api/v1/analitica}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/resumen, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/ventas, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/productos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/cocinas, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/inventario, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/domiciliarios, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/caja, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/rentabilidad, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/riesgo, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/pedidos-recientes, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/export, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/analitica/comparativa-sedes, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] FinanzasController {/api/v1/finanzas}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/costos-fijos/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/costos-fijos, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/costos-fijos/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/costos-fijos/:id, DELETE} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/costos-fijos/:id/pagar, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/empleados/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/empleados, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/empleados/:id, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/empleados/:id/pagar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/resumen/:sucursal_id, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/gastos/:sucursal_id, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/finanzas/gastos, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] UsuariosController {/api/v1/usuarios}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios/meseros-activos, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios/catalogo-roles, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios/:id/permisos, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios/:id/estado, PATCH} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/usuarios/:id, PATCH} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] GeografiaController {/api/v1/geografia}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/geografia/buscar, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RoutesResolver] PagosController {/api/v1/pagos}: +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pagos/checkout, POST} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pagos/estado, GET} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pagos/sincronizar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pagos/renovar, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pagos/retorno-app, GET} route +1ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [RouterExplorer] Mapped {/api/v1/pagos/webhook-wompi, POST} route +0ms
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [ConfiguracionGlobalService] Config global cargada (12 claves)
+[Nest] 17900  - 11/08/2026, 5:43:31 a. m.     LOG [FcmService] Firebase Admin inicializado (archivo)
+[Nest] 17900  - 11/08/2026, 5:43:32 a. m.     LOG [RealtimeBroadcastService] Realtime broadcast operativo
+[Nest] 17900  - 11/08/2026, 5:43:32 a. m.     LOG [NestApplication] Nest application successfully started +292ms
+Foody API en http://localhost:3000/api/v1 (escucha en 0.0.0.0)
+[Nest] 17900  - 11/08/2026, 5:44:56 a. m.   DEBUG [NotificacionesService] FCM pedido_cliente: sin tokens registrados
+[Nest] 17900  - 11/08/2026, 5:45:04 a. m.    WARN [RealtimeBroadcastService] Broadcast sucursal_c0000000-0000-4000-8000-000000000001_3c7ef283a54f2463/pedido_actualizado: Error: Timeout suscripción Realtime
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 1/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.   DEBUG [NotificacionesService] FCM pedido_cliente: sin tokens registrados
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.   DEBUG [NotificacionesService] FCM pedido_cliente: sin tokens registrados
+[Nest] 17900  - 11/08/2026, 5:45:54 a. m.   DEBUG [NotificacionesService] FCM alerta_riesgo_fallo_preparacion: sin tokens registrados
+[Nest] 17900  - 11/08/2026, 5:45:57 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 2/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:45:57 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 1/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:02 a. m.    WARN [RealtimeBroadcastService] Broadcast cocina_d0000000-0000-4000-8000-000000000001_164995cb6b67fbf5/cocina_actualizada: Error: Timeout suscripción Realtime
+[Nest] 17900  - 11/08/2026, 5:46:02 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 3/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:02 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 2/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:07 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 4/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:07 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 3/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:12 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 5/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:12 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 4/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:17 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 6/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:17 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 5/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:22 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 7/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:22 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 6/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:27 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 8/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:27 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 7/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:46:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:46:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)
+[Nest] 17900  - 11/08/2026, 5:46:32 a. m.   DEBUG [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 reintento 9/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:32 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 8/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:37 a. m.    WARN [ImpresionService] Job impresión d3134a3b-67b2-42ef-926d-5d2c192308d4 agotó reintentos: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:37 a. m.   DEBUG [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e reintento 9/10: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:46:42 a. m.    WARN [ImpresionService] Job impresión f64fe1ef-34fc-4e4b-9a71-dccc1c174a3e agotó reintentos: connect ECONNREFUSED 127.0.0.1:8765
+[Nest] 17900  - 11/08/2026, 5:47:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:47:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:47:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)
+[Nest] 17900  - 11/08/2026, 5:48:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:48:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:48:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)
+[Nest] 17900  - 11/08/2026, 5:49:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:49:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:49:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)
+[Nest] 17900  - 11/08/2026, 5:50:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:50:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:50:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)
+[Nest] 17900  - 11/08/2026, 5:51:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:51:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:51:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)
+[Nest] 17900  - 11/08/2026, 5:52:32 a. m.     LOG [NotificacionesService] FCM pedido_cocina: 0 enviados, 1 fallos
+[Nest] 17900  - 11/08/2026, 5:52:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: todos los tokens fallaron (1) — se reintentará
+[Nest] 17900  - 11/08/2026, 5:52:32 a. m.    WARN [NotificacionesService] FCM pedido_cocina: abandonada tras 10 intentos (máx 10)
+[Nest] 17900  - 11/08/2026, 5:52:32 a. m.   DEBUG [NotificacionesCronService] Cola FCM: 1 procesadas, 0 enviados (fcm)

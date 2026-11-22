@@ -1,15 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
+import 'package:reserva_canchas/features/admin/presentation/widgets/banner_qr_pendientes.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/mesas_grid_widget.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/pedidos_kanban_widget.dart';
-import 'package:reserva_canchas/features/auth/data/auth_repository.dart';
 
-/// Flujo mesero (A-MES-1…4) — mesas como pantalla principal + pedidos activos.
+/// Flujo mesero — Mesas + Pedidos (NAV-MS shell paridad cajero).
 class PanelMeseroScreen extends StatefulWidget {
-  const PanelMeseroScreen({super.key});
+  const PanelMeseroScreen({
+    super.key,
+    this.mesaIdInicial,
+    this.pedidoIdInicial,
+    this.tabInicial = 0,
+  });
+
+  final String? mesaIdInicial;
+  final String? pedidoIdInicial;
+  final int tabInicial;
 
   @override
   State<PanelMeseroScreen> createState() => _PanelMeseroScreenState();
@@ -19,12 +31,23 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
   SesionStaff? _sesion;
   int _tab = 0;
   bool _cargando = true;
+  int _refreshTick = 0;
+  String? _mesaFocusId;
+  String? _pedidoFocusId;
 
   String? get _sucursalId => _sesion?.sucursalId;
 
   @override
   void initState() {
     super.initState();
+    _tab = widget.tabInicial.clamp(0, 1);
+    _mesaFocusId = widget.mesaIdInicial;
+    _pedidoFocusId = widget.pedidoIdInicial;
+    if (_pedidoFocusId != null && _pedidoFocusId!.isNotEmpty) {
+      _tab = 1;
+    } else if (_mesaFocusId != null && _mesaFocusId!.isNotEmpty) {
+      _tab = 0;
+    }
     _inicializar();
   }
 
@@ -42,8 +65,19 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
   }
 
   Future<void> _cerrarSesion() async {
-    await AuthRepository().logout();
-    if (mounted) context.go('/splash');
+    await cerrarSesionStaff(context);
+  }
+
+  void _irAMesa(String mesaId) {
+    setState(() {
+      _tab = 0;
+      _mesaFocusId = mesaId;
+      _refreshTick++;
+    });
+  }
+
+  void _seleccionarTab(int i) {
+    setState(() => _tab = i);
   }
 
   @override
@@ -57,6 +91,9 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
     final nombre = _sesion?.usuario['nombre'] as String? ?? 'Mesero';
     final meseraId = _sesion?.usuario['id'] as String?;
     final sid = _sucursalId;
+    final ancho = MediaQuery.sizeOf(context).width;
+    // NAV-MS-02: tabs arriba en tablet/PC (paridad NAV-CJ-06).
+    final navSuperior = FoodyBreakpoints.esExpanded(ancho);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -83,85 +120,119 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Actualizar',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => setState(() {
+              _mesaFocusId = null;
+              _pedidoFocusId = null;
+              _refreshTick++;
+            }),
+          ),
+          IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout_outlined),
             onPressed: _cerrarSesion,
           ),
         ],
       ),
-      body: sid == null
-          ? const Center(
-              child: Text('Sin sucursal asignada. Contacta al administrador.'),
-            )
-          : _tab == 0
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _leyendaMesas(),
-                    Expanded(
-                      child: MesasGridWidget(
-                        key: ValueKey('mesas-$sid'),
+      body: Column(
+        children: [
+          if (navSuperior)
+            Material(
+              color: Colors.white,
+              child: _navBar(),
+            ),
+          Expanded(
+            child: sid == null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.store_outlined,
+                              size: 48, color: Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Sin sucursal asignada. Contacta al administrador.',
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton(
+                            onPressed: _cerrarSesion,
+                            child: const Text('Cerrar sesión'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : _tab == 0
+                    ? MesasGridWidget(
+                        key: ValueKey('mesas-$sid-$_refreshTick-$_mesaFocusId'),
                         sucursalId: sid,
                         modoMesero: true,
                         meseraUsuarioId: meseraId,
+                        ocultarCabecera: true,
+                        mesaIdInicial: _mesaFocusId,
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          BannerQrPendientes(
+                            sucursalId: sid,
+                            onRevisar: () {
+                              setState(() {
+                                _tab = 0;
+                                _mesaFocusId = null;
+                                _refreshTick++;
+                              });
+                            },
+                          ),
+                          Expanded(
+                            child: PedidosKanbanWidget(
+                              key: ValueKey(
+                                'kanban-$sid-$_refreshTick-$_pedidoFocusId',
+                              ),
+                              sucursalId: sid,
+                              modoMesero: true,
+                              meseraUsuarioId: meseraId,
+                              ocultarCabecera: true,
+                              pedidoIdInicial: _pedidoFocusId,
+                              onPedidoAbierto: () {
+                                if (_pedidoFocusId != null) {
+                                  setState(() => _pedidoFocusId = null);
+                                }
+                              },
+                              onVerMesa: _irAMesa,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                )
-              : PedidosKanbanWidget(
-                  key: ValueKey('kanban-$sid'),
-                  sucursalId: sid,
-                  modoMesero: true,
-                ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        indicatorColor: ColoresFoody.primario.withValues(alpha: 0.15),
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.table_restaurant_outlined),
-            selectedIcon: Icon(Icons.table_restaurant),
-            label: 'Mesas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: 'Pedidos',
           ),
         ],
       ),
+      bottomNavigationBar: navSuperior ? null : _navBar(),
     );
   }
 
-  Widget _leyendaMesas() {
-    Widget chip(Color color, String texto) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 4),
-          Text(texto, style: const TextStyle(fontSize: 11)),
-        ],
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.white,
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 6,
-        children: [
-          chip(ColoresFoody.exito, 'Libre · toca para pedir'),
-          chip(ColoresFoody.primario, 'Ocupada'),
-          chip(const Color(0xFFFF9800), 'QR por confirmar'),
-          chip(ColoresFoody.secundario, 'Listo en cocina'),
-        ],
-      ),
+  Widget _navBar() {
+    return NavigationBar(
+      selectedIndex: _tab,
+      height: 64,
+      indicatorColor: ColoresFoody.primario.withValues(alpha: 0.15),
+      onDestinationSelected: _seleccionarTab,
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.table_restaurant_outlined),
+          selectedIcon: Icon(Icons.table_restaurant),
+          label: 'Mesas',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.receipt_long_outlined),
+          selectedIcon: Icon(Icons.receipt_long),
+          label: 'Pedidos',
+        ),
+      ],
     );
   }
 }

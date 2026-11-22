@@ -1,12 +1,29 @@
 "use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PedidosInventarioService = void 0;
 const common_1 = require("@nestjs/common");
-class PedidosInventarioService {
+const alertas_riesgo_service_1 = require("../alertas/alertas-riesgo.service");
+const catalogo_disponibilidad_service_1 = require("../catalogo/catalogo-disponibilidad.service");
+const costeo_service_1 = require("../costeo/costeo.service");
+const stock_movimiento_service_1 = require("../inventario/stock-movimiento.service");
+let PedidosInventarioService = class PedidosInventarioService {
     costeo;
+    catalogoDisponibilidad;
+    stockMovimiento;
     alertas;
-    constructor(costeo, alertas) {
+    constructor(costeo, catalogoDisponibilidad, stockMovimiento, alertas) {
         this.costeo = costeo;
+        this.catalogoDisponibilidad = catalogoDisponibilidad;
+        this.stockMovimiento = stockMovimiento;
         this.alertas = alertas;
     }
     async validarStockDisponible(client, sucursalId, lineas, opciones = {}, contextoAlerta) {
@@ -110,11 +127,27 @@ class PedidosInventarioService {
     fmtCantidad(n) {
         return Number.isInteger(n) ? String(n) : n.toFixed(1);
     }
+    async expandirLineaCompleta(client, sucursalId, linea, incluirEmpaques) {
+        const acumulador = new Map();
+        const sumar = (items) => {
+            for (const i of items) {
+                acumulador.set(i.ingrediente_id, (acumulador.get(i.ingrediente_id) ?? 0) + i.cantidad);
+            }
+        };
+        sumar(await this.costeo.expandirIngredientesProducto(client, linea.productoId, sucursalId, linea.cantidad, incluirEmpaques));
+        for (const extra of linea.extras ?? []) {
+            sumar(await this.costeo.expandirIngredientesExtra(client, extra.tipo, extra.id, sucursalId, extra.cantidad, incluirEmpaques));
+        }
+        return [...acumulador.entries()].map(([ingrediente_id, cantidad]) => ({
+            ingrediente_id,
+            cantidad,
+        }));
+    }
     async detectarFaltasStock(client, sucursalId, lineas, opciones = {}) {
         const incluirEmpaques = opciones.incluirEmpaques ?? false;
         const acumulado = new Map();
         for (const linea of lineas) {
-            const expandidos = await this.costeo.expandirIngredientesProducto(client, linea.productoId, sucursalId, linea.cantidad, incluirEmpaques);
+            const expandidos = await this.expandirLineaCompleta(client, sucursalId, linea, incluirEmpaques);
             if (expandidos.length === 0)
                 continue;
             const ingredientes = await this.cargarStockIngredientes(client, sucursalId, expandidos, { lanzarSiFaltaIngrediente: false });
@@ -130,24 +163,56 @@ class PedidosInventarioService {
             }
         }
         const faltas = [];
+        const considerarQr = opciones.considerarReservaQrPendiente !== false;
+        const comprometido = considerarQr
+            ? await this.ingredientesComprometidosQrPendiente(client, sucursalId, opciones.excluirPedidoIdReservaQr)
+            : new Map();
         for (const [ingredienteId, req] of acumulado) {
             const fila = await client.query(`SELECT stock_actual, descontar_stock FROM ingredientes
          WHERE id = $1 AND sucursal_id = $2 AND activo = true`, [ingredienteId, sucursalId]);
             const ing = fila.rows[0];
             if (!ing || ing.descontar_stock === false)
                 continue;
-            const disponible = Number(ing.stock_actual);
+            const disponible = Number(ing.stock_actual) - (comprometido.get(ingredienteId) ?? 0);
             if (disponible < req.cantidad) {
                 faltas.push({
                     ingrediente_id: ingredienteId,
                     nombre: req.nombre,
                     necesita: req.cantidad,
-                    disponible,
+                    disponible: Math.max(0, disponible),
                     unidad: req.unidad,
                 });
             }
         }
         return faltas;
+    }
+    async ingredientesComprometidosQrPendiente(client, sucursalId, excluirPedidoId) {
+        const params = [sucursalId];
+        let excluirSql = '';
+        if (excluirPedidoId) {
+            params.push(excluirPedidoId);
+            excluirSql = 'AND p.id <> $2';
+        }
+        const pendientes = await client.query(`SELECT p.id FROM pedidos p
+       WHERE p.sucursal_id = $1
+         AND p.estado = 'pendiente_aprobacion'
+         AND p.stock_descontado = false
+         ${excluirSql}`, params);
+        const mapa = new Map();
+        for (const row of pendientes.rows) {
+            const lineas = await this.lineasDesdePedido(client, row.id, sucursalId);
+            const acumulado = new Map();
+            for (const linea of lineas) {
+                const expandidos = await this.expandirLineaCompleta(client, sucursalId, linea, false);
+                for (const ing of expandidos) {
+                    acumulado.set(ing.ingrediente_id, (acumulado.get(ing.ingrediente_id) ?? 0) + ing.cantidad);
+                }
+            }
+            for (const [id, cant] of acumulado) {
+                mapa.set(id, (mapa.get(id) ?? 0) + cant);
+            }
+        }
+        return mapa;
     }
     lanzarStockInsuficiente(faltas) {
         const resumen = faltas
@@ -161,10 +226,11 @@ class PedidosInventarioService {
     }
     async descontarStockPedido(client, sucursalId, pedidoId, lineas, opciones = {}) {
         const costosPorProducto = new Map();
-        const catalogo = [];
+        const catalogoPorProducto = new Map();
+        const ingredientesTocados = new Set();
         const incluirEmpaques = opciones.incluirEmpaques ?? false;
         for (const linea of lineas) {
-            const expandidos = await this.costeo.expandirIngredientesProducto(client, linea.productoId, sucursalId, linea.cantidad, incluirEmpaques);
+            const expandidos = await this.expandirLineaCompleta(client, sucursalId, linea, incluirEmpaques);
             if (expandidos.length === 0) {
                 const costoProducto = await this.costoCalculadoProducto(client, linea.productoId);
                 costosPorProducto.set(linea.productoId, costoProducto);
@@ -194,41 +260,43 @@ class PedidosInventarioService {
                     continue;
                 const stockAnterior = ing.stock_actual;
                 const stockPosterior = stockAnterior - ing.cantidad;
-                await client.query(`UPDATE ingredientes
-           SET stock_actual = $1
-           WHERE id = $2 AND sucursal_id = $3`, [stockPosterior, ing.ingrediente_id, sucursalId]);
-                await client.query(`INSERT INTO movimientos_ingrediente (
-             sucursal_id, ingrediente_id, pedido_id, tipo,
-             cantidad, stock_anterior, stock_posterior, motivo
-           ) VALUES ($1,$2,$3,'venta',$4,$5,$6,$7)`, [
+                await this.stockMovimiento.aplicarMovimiento({
+                    client,
                     sucursalId,
-                    ing.ingrediente_id,
-                    pedidoId,
-                    ing.cantidad,
+                    ingredienteId: ing.ingrediente_id,
+                    tipo: 'venta',
+                    cantidad: ing.cantidad,
                     stockAnterior,
                     stockPosterior,
-                    'Venta pedido',
-                ]);
+                    pedidoId,
+                    motivo: 'Venta pedido',
+                });
                 await this.alertarStockBajo(client, sucursalId, ing.ingrediente_id, stockPosterior, ing.stock_minimo);
-                if (stockPosterior <= 0) {
-                    await client.query(`UPDATE productos SET disponible = false
-             WHERE id = $1 AND sucursal_id = $2`, [linea.productoId, sucursalId]);
-                    catalogo.push({
-                        producto_id: linea.productoId,
-                        disponible: false,
-                    });
-                }
+                ingredientesTocados.add(ing.ingrediente_id);
                 ing.stock_actual = stockPosterior;
             }
             costosPorProducto.set(linea.productoId, costoLinea / linea.cantidad);
         }
+        for (const ingredienteId of ingredientesTocados) {
+            const cambios = await this.catalogoDisponibilidad.sincronizarPorIngredienteEnTransaccion(client, sucursalId, ingredienteId);
+            for (const c of cambios) {
+                catalogoPorProducto.set(c.producto_id, c.disponible);
+            }
+        }
+        const catalogo = [
+            ...[...catalogoPorProducto.entries()].map(([producto_id, disponible]) => ({
+                producto_id,
+                disponible,
+            })),
+        ];
         return { costos: costosPorProducto, catalogo };
     }
     async restaurarStockPedido(client, sucursalId, pedidoId) {
-        const catalogo = [];
+        const catalogoPorProducto = new Map();
         const movs = await client.query(`SELECT ingrediente_id, cantidad
        FROM movimientos_ingrediente
        WHERE pedido_id = $1 AND sucursal_id = $2 AND tipo = 'venta'`, [pedidoId, sucursalId]);
+        const ingredientesTocados = new Set();
         for (const mov of movs.rows) {
             const cantidad = Number(mov.cantidad);
             const ing = await client.query(`SELECT stock_actual, stock_minimo FROM ingredientes
@@ -238,35 +306,26 @@ class PedidosInventarioService {
                 continue;
             const stockAnterior = Number(fila.stock_actual);
             const stockPosterior = stockAnterior + cantidad;
-            await client.query(`UPDATE ingredientes SET stock_actual = $1
-         WHERE id = $2 AND sucursal_id = $3`, [stockPosterior, mov.ingrediente_id, sucursalId]);
-            await client.query(`INSERT INTO movimientos_ingrediente (
-           sucursal_id, ingrediente_id, pedido_id, tipo,
-           cantidad, stock_anterior, stock_posterior, motivo
-         ) VALUES ($1,$2,$3,'ajuste',$4,$5,$6,$7)`, [
+            await this.stockMovimiento.aplicarMovimiento({
+                client,
                 sucursalId,
-                mov.ingrediente_id,
-                pedidoId,
+                ingredienteId: mov.ingrediente_id,
+                tipo: 'ajuste',
                 cantidad,
                 stockAnterior,
                 stockPosterior,
-                'Devolución por cancelación/rechazo de pedido',
-            ]);
-            if (stockPosterior > 0) {
-                const reactivados = await client.query(`UPDATE productos p SET disponible = true
-           FROM receta_items ri
-           INNER JOIN productos pr ON pr.receta_id = ri.receta_id
-           WHERE pr.sucursal_id = $1
-             AND ri.ingrediente_id = $2
-             AND p.id = pr.id
-             AND p.disponible = false
-           RETURNING p.id`, [sucursalId, mov.ingrediente_id]);
-                for (const row of reactivados.rows) {
-                    catalogo.push({ producto_id: row.id, disponible: true });
-                }
+                pedidoId,
+                motivo: 'Devolución por cancelación/rechazo de pedido',
+            });
+            ingredientesTocados.add(mov.ingrediente_id);
+        }
+        for (const ingredienteId of ingredientesTocados) {
+            const cambios = await this.catalogoDisponibilidad.sincronizarPorIngredienteEnTransaccion(client, sucursalId, ingredienteId);
+            for (const c of cambios) {
+                catalogoPorProducto.set(c.producto_id, c.disponible);
             }
         }
-        return catalogo;
+        return [...catalogoPorProducto.entries()].map(([producto_id, disponible]) => ({ producto_id, disponible }));
     }
     async registrarMermaLineaProducto(client, sucursalId, pedidoId, productoId, cantidad, motivo) {
         const expandidos = await this.costeo.expandirIngredientesProducto(client, productoId, sucursalId, cantidad, false);
@@ -277,17 +336,37 @@ class PedidosInventarioService {
             if (!ing.descontar_stock)
                 continue;
             const stock = ing.stock_actual;
-            await client.query(`INSERT INTO movimientos_ingrediente (
-           sucursal_id, ingrediente_id, pedido_id, tipo,
-           cantidad, stock_anterior, stock_posterior, motivo
-         ) VALUES ($1,$2,$3,'merma',$4,$5,$5,$6)`, [
+            await this.stockMovimiento.aplicarMovimiento({
+                client,
                 sucursalId,
-                ing.ingrediente_id,
+                ingredienteId: ing.ingrediente_id,
+                tipo: 'merma',
+                cantidad: ing.cantidad,
+                stockAnterior: stock,
+                stockPosterior: stock,
                 pedidoId,
-                ing.cantidad,
-                stock,
                 motivo,
-            ]);
+            });
+        }
+    }
+    async pedidoRequiereMermaAlCancelar(client, pedidoId, estadoAnterior) {
+        const estadosMerma = [
+            'en_cocina',
+            'listo',
+            'asignado',
+            'en_camino',
+            'entregado',
+        ];
+        if (estadosMerma.includes(estadoAnterior))
+            return true;
+        const items = await client.query(`SELECT COUNT(*)::text AS n FROM pedido_items
+       WHERE pedido_id = $1 AND estado_cocina IN ('preparando', 'listo')`, [pedidoId]);
+        return Number(items.rows[0]?.n ?? 0) > 0;
+    }
+    async registrarMermaPedidoCompleto(client, sucursalId, pedidoId, motivo) {
+        const items = await client.query(`SELECT producto_id, cantidad FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
+        for (const item of items.rows) {
+            await this.registrarMermaLineaProducto(client, sucursalId, pedidoId, item.producto_id, Number(item.cantidad), motivo);
         }
     }
     async restaurarStockLineaProducto(client, sucursalId, pedidoId, productoId, cantidad, opciones = {}) {
@@ -300,20 +379,17 @@ class PedidosInventarioService {
                 continue;
             const stockAnterior = ing.stock_actual;
             const stockPosterior = stockAnterior + ing.cantidad;
-            await client.query(`UPDATE ingredientes SET stock_actual = $1
-         WHERE id = $2 AND sucursal_id = $3`, [stockPosterior, ing.ingrediente_id, sucursalId]);
-            await client.query(`INSERT INTO movimientos_ingrediente (
-           sucursal_id, ingrediente_id, pedido_id, tipo,
-           cantidad, stock_anterior, stock_posterior, motivo
-         ) VALUES ($1,$2,$3,'ajuste',$4,$5,$6,$7)`, [
+            await this.stockMovimiento.aplicarMovimiento({
+                client,
                 sucursalId,
-                ing.ingrediente_id,
-                pedidoId,
-                ing.cantidad,
+                ingredienteId: ing.ingrediente_id,
+                tipo: 'ajuste',
+                cantidad: ing.cantidad,
                 stockAnterior,
                 stockPosterior,
-                'Devolución por ítem eliminado del pedido',
-            ]);
+                pedidoId,
+                motivo: 'Devolución por ítem eliminado del pedido',
+            });
             await this.alertarStockBajo(client, sucursalId, ing.ingrediente_id, stockPosterior, ing.stock_minimo);
         }
     }
@@ -333,15 +409,36 @@ class PedidosInventarioService {
                     lineas.set(ci.item_id, {
                         cantidad: (prev?.cantidad ?? 0) + cant,
                         precioVentaLinea: (prev?.precioVentaLinea ?? 0) + 1,
+                        extras: prev?.extras ?? [],
                     });
                 }
             }
             else {
+                const extras = [];
+                const tops = await client.query(`SELECT topping_id FROM pedido_item_toppings WHERE pedido_item_id = $1`, [row.item_id]);
+                for (const t of tops.rows) {
+                    extras.push({
+                        tipo: 'topping',
+                        id: t.topping_id,
+                        cantidad: row.cantidad,
+                    });
+                }
+                const bebs = await client.query(`SELECT bebida_id, cantidad::float AS cantidad
+           FROM pedido_item_bebidas WHERE pedido_item_id = $1`, [row.item_id]);
+                for (const b of bebs.rows) {
+                    extras.push({
+                        tipo: 'bebida',
+                        id: b.bebida_id,
+                        cantidad: Number(b.cantidad),
+                    });
+                }
                 const prev = lineas.get(row.producto_id);
                 const venta = Number(row.precio_unitario) * row.cantidad;
+                const extrasMerged = [...(prev?.extras ?? []), ...extras];
                 lineas.set(row.producto_id, {
                     cantidad: (prev?.cantidad ?? 0) + row.cantidad,
                     precioVentaLinea: (prev?.precioVentaLinea ?? 0) + venta,
+                    extras: extrasMerged,
                 });
             }
         }
@@ -349,6 +446,7 @@ class PedidosInventarioService {
             productoId,
             cantidad: v.cantidad,
             precioVentaLinea: v.precioVentaLinea,
+            extras: v.extras,
         }));
     }
     async validarYDescontarStock(client, sucursalId, pedidoId, lineas, opciones = {}) {
@@ -381,7 +479,8 @@ class PedidosInventarioService {
         const resultado = await client.query(`SELECT id, nombre, unidad_base, stock_actual, stock_minimo,
               costo_unitario_actual, descontar_stock
        FROM ingredientes
-       WHERE sucursal_id = $1 AND activo = true AND id = ANY($2::uuid[])`, [sucursalId, ids]);
+       WHERE sucursal_id = $1 AND activo = true AND id = ANY($2::uuid[])
+       FOR UPDATE`, [sucursalId, ids]);
         const porId = new Map(resultado.rows.map((r) => [r.id, r]));
         return expandidos.map((exp) => {
             const fila = porId.get(exp.ingrediente_id);
@@ -424,6 +523,13 @@ class PedidosInventarioService {
         const fila = await client.query(`SELECT costo_calculado AS costo FROM productos WHERE id = $1`, [productoId]);
         return Number(fila.rows[0]?.costo ?? 0);
     }
-}
+};
 exports.PedidosInventarioService = PedidosInventarioService;
+exports.PedidosInventarioService = PedidosInventarioService = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [costeo_service_1.CosteoService,
+        catalogo_disponibilidad_service_1.CatalogoDisponibilidadService,
+        stock_movimiento_service_1.StockMovimientoService,
+        alertas_riesgo_service_1.AlertasRiesgoService])
+], PedidosInventarioService);
 //# sourceMappingURL=pedidos-inventario.service.js.map

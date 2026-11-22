@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SucursalScopeService = exports.PERMISO_VER_INVENTARIO_HERMANAS = exports.PERMISO_OPERAR_MULTI_SUCURSAL = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../database/database.service");
+const roles_food_1 = require("./roles-food");
 exports.PERMISO_OPERAR_MULTI_SUCURSAL = 'gestionar_sucursales';
 exports.PERMISO_VER_INVENTARIO_HERMANAS = 'ver_inventario_otras_sucursales';
 let SucursalScopeService = class SucursalScopeService {
@@ -20,6 +21,8 @@ let SucursalScopeService = class SucursalScopeService {
         this.database = database;
     }
     esCorporativo(usuario) {
+        if (usuario.rol === roles_food_1.ROL_GERENTE_CADENA)
+            return true;
         return (usuario.permisos?.includes(exports.PERMISO_OPERAR_MULTI_SUCURSAL) ?? false);
     }
     puedeVerInventarioHermanas(usuario) {
@@ -27,7 +30,8 @@ let SucursalScopeService = class SucursalScopeService {
             (usuario.permisos?.includes(exports.PERMISO_VER_INVENTARIO_HERMANAS) ?? false));
     }
     resolverSucursalId(usuario, solicitada) {
-        const id = solicitada ?? usuario.sucursal_id;
+        const bruta = solicitada ?? usuario.sucursal_id;
+        const id = typeof bruta === 'string' ? bruta.trim().replace(/^=+/, '') : bruta;
         if (!id) {
             throw new common_1.UnauthorizedException('Usuario sin sucursal asignada');
         }

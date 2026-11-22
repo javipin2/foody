@@ -83,6 +83,9 @@ let SuperAdminController = class SuperAdminController {
     documentosPendientes() {
         return this.superAdminService.listarDocumentosPendientes();
     }
+    documentosDomiciliario(id) {
+        return this.superAdminService.listarDocumentosDomiciliario(id);
+    }
     aprobarDocumento(id, dto, usuario) {
         return this.superAdminService.aprobarDocumento(id, dto, usuario.sub);
     }
@@ -124,7 +127,7 @@ __decorate([
 ], SuperAdminController.prototype, "crearCiudad", null);
 __decorate([
     (0, common_1.Patch)('ciudades/:id'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.ActualizarCiudadDto]),
@@ -145,7 +148,7 @@ __decorate([
 ], SuperAdminController.prototype, "crearRestaurante", null);
 __decorate([
     (0, common_1.Patch)('restaurantes/:id'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.ActualizarRestauranteDto]),
@@ -153,7 +156,7 @@ __decorate([
 ], SuperAdminController.prototype, "actualizarRestaurante", null);
 __decorate([
     (0, common_1.Get)('restaurantes/:restauranteId/sucursales'),
-    __param(0, (0, common_1.Param)('restauranteId')),
+    __param(0, (0, common_1.Param)('restauranteId', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
@@ -166,7 +169,7 @@ __decorate([
 ], SuperAdminController.prototype, "suscripciones", null);
 __decorate([
     (0, common_1.Patch)('suscripciones/:id'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.ActualizarSuscripcionDto]),
@@ -187,7 +190,7 @@ __decorate([
 ], SuperAdminController.prototype, "crearUsuario", null);
 __decorate([
     (0, common_1.Patch)('usuarios/:id'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.ActualizarUsuarioSuperDto]),
@@ -195,7 +198,7 @@ __decorate([
 ], SuperAdminController.prototype, "actualizarUsuario", null);
 __decorate([
     (0, common_1.Post)('usuarios/:id/cambiar-contrasena'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.CambiarContrasenaSuperDto]),
@@ -203,7 +206,7 @@ __decorate([
 ], SuperAdminController.prototype, "cambiarContrasena", null);
 __decorate([
     (0, common_1.Patch)('usuarios/:id/estado'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.CambiarEstadoUsuarioSuperDto]),
@@ -217,7 +220,7 @@ __decorate([
 ], SuperAdminController.prototype, "domiciliarios", null);
 __decorate([
     (0, common_1.Patch)('domiciliarios/:id/estado'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, super_admin_dto_1.ActualizarDomiciliarioEstadoDto]),
@@ -230,8 +233,15 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SuperAdminController.prototype, "documentosPendientes", null);
 __decorate([
+    (0, common_1.Get)('domiciliarios/:id/documentos'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], SuperAdminController.prototype, "documentosDomiciliario", null);
+__decorate([
     (0, common_1.Post)('domiciliarios/:id/aprobar-documento'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -241,7 +251,7 @@ __decorate([
 ], SuperAdminController.prototype, "aprobarDocumento", null);
 __decorate([
     (0, common_1.Post)('domiciliarios/:id/rechazar-documento'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),

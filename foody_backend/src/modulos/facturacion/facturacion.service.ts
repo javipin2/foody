@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
+import { pedidoTerminalOperativo } from '../pedidos/pedido-estados';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { GuardarConfigFiscalDto } from './dto/guardar-config-fiscal.dto';
 
 export interface DesgloseIva {
@@ -28,7 +30,10 @@ export interface ConfigFiscalRow {
 
 @Injectable()
 export class FacturacionService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly auditoria: AuditoriaService,
+  ) {}
 
   calcularDesgloseIva(
     total: number,
@@ -166,6 +171,46 @@ export class FacturacionService {
     return facturaId;
   }
 
+  /**
+   * F-08: alinear borrador con `pedidos.total` tras agregar/eliminar ítems o descuento.
+   * No-op si no hay factura en borrador vinculada al pedido.
+   */
+  async sincronizarBorradorDesdePedidoEnTransaccion(
+    client: PoolClient,
+    sucursalId: string,
+    pedidoId: string,
+  ): Promise<boolean> {
+    const pedido = await this.consultarUnoCliente<{
+      factura_id: string | null;
+      total: string;
+    }>(
+      client,
+      `SELECT factura_id, total FROM pedidos
+       WHERE id = $1 AND sucursal_id = $2`,
+      [pedidoId, sucursalId],
+    );
+    if (!pedido?.factura_id) return false;
+
+    const factura = await this.consultarUnoCliente<{ id: string; estado: string }>(
+      client,
+      `SELECT id, estado FROM facturas
+       WHERE id = $1 AND sucursal_id = $2 AND pedido_id = $3`,
+      [pedido.factura_id, sucursalId, pedidoId],
+    );
+    if (!factura || factura.estado !== 'borrador') return false;
+
+    const total = Number(pedido.total);
+    const config = await this.consultarConfigCliente(client, sucursalId);
+    const desglose = this.calcularDesgloseIva(total, config);
+
+    await client.query(
+      `UPDATE facturas SET subtotal = $1, iva = $2, total = $3
+       WHERE id = $4 AND estado = 'borrador'`,
+      [desglose.subtotal, desglose.iva, desglose.total, factura.id],
+    );
+    return true;
+  }
+
   /** IVA incluido en precios — extrae desglose para guardar en el pedido. */
   async calcularIvaParaPedidoEnTransaccion(
     client: PoolClient,
@@ -219,6 +264,35 @@ export class FacturacionService {
         });
       }
 
+      const pedido = await this.consultarUnoCliente<{
+        estado: string;
+        tipo: string;
+        total: string;
+        monto_pagado: string | null;
+      }>(
+        client,
+        `SELECT estado, tipo, total, monto_pagado FROM pedidos
+         WHERE id = $1 AND sucursal_id = $2`,
+        [pedidoId, sucursalId],
+      );
+      if (!pedido) throw new NotFoundException('Pedido no encontrado');
+
+      if (!pedidoTerminalOperativo(pedido)) {
+        throw new BadRequestException({
+          error: 'PEDIDO_NO_FACTURABLE',
+          message:
+            pedido.tipo === 'domicilio'
+              ? 'Solo puedes emitir factura cuando el domicilio está entregado y cobrado.'
+              : 'Solo puedes emitir factura cuando el pedido está pagado en caja.',
+        });
+      }
+
+      await this.sincronizarBorradorDesdePedidoEnTransaccion(
+        client,
+        sucursalId,
+        pedidoId,
+      );
+
       const siguiente = (config.consecutivo_actual ?? 0) + 1;
       const prefijo = config.prefijo_factura ?? 'FE';
       const numeroFactura = `${prefijo}-${String(siguiente).padStart(8, '0')}`;
@@ -271,17 +345,17 @@ export class FacturacionService {
         [facturaId],
       );
 
-      await client.query(
-        `INSERT INTO auditoria_logs (
-           sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues
-         ) VALUES ($1,$2,'ANULAR_FACTURA','facturas',$3,$4::jsonb)`,
-        [
-          sucursalId,
-          usuarioId,
-          facturaId,
-          JSON.stringify({ motivo: motivo.trim(), pedido_id: factura.pedido_id }),
-        ],
-      );
+      await this.auditoria.registrarEnTransaccion(client, {
+        sucursalId,
+        accion: 'ANULAR_FACTURA',
+        tablaAfectada: 'facturas',
+        registroId: facturaId,
+        usuarioId,
+        datosDespues: {
+          motivo: motivo.trim(),
+          pedido_id: factura.pedido_id,
+        },
+      });
 
       return {
         factura_id: facturaId,
@@ -317,7 +391,10 @@ export class FacturacionService {
       });
     const emisor = config?.razon_social ?? 'Restaurante';
     const nitEmisor = config?.nit ?? '—';
-    const resolucion = config?.resolucion_dian ?? '—';
+    // Ponytail: actualmente la capa DIAN/CUFE/XML se mantiene pausada (FE interna).
+    // No mostramos "Resolución DIAN" en el documento informativo para evitar claim legal
+    // aunque exista valor guardado en BD.
+    const resolucion = '—';
     const estado = String(factura.estado ?? 'borrador');
     const titulo =
       estado === 'emitida' ? 'Factura electrónica' : 'Borrador de factura';
@@ -336,7 +413,7 @@ export class FacturacionService {
 <body>
   <h1>${titulo}</h1>
   <p class="muted">${emisor} · NIT ${nitEmisor}</p>
-  <p class="muted">Resolución DIAN: ${resolucion}</p>
+  <p class="muted">DIAN electrónico pausado (CUFE/XML no enviado)</p>
   <table>
     <tr><td>Número</td><td>${factura.numero_factura ?? 'Pendiente'}</td></tr>
     <tr><td>Pedido</td><td>${factura.numero_pedido ?? '—'}</td></tr>

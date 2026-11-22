@@ -43,7 +43,12 @@ sed -i 's|^[[:space:]]*# GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID:|      GOTRUE_EXTERNAL
 sed -i 's|^[[:space:]]*# GOTRUE_EXTERNAL_GOOGLE_SECRET:|      GOTRUE_EXTERNAL_GOOGLE_SECRET:|' "$COMPOSE"
 sed -i 's|^[[:space:]]*# GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:|      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI:|' "$COMPOSE"
 
-REDIRECTS="http://localhost:${WEB_PORT}/admin/login,http://localhost:${WEB_PORT}/admin/registro,foody://login"
+# Staff (8080) + cliente historial Google (8081) + deep link mÃƒÆ’Ã‚Â³vil.
+REDIRECTS="http://localhost:8080/admin/login,http://localhost:8080/admin/registro,http://localhost:8081/cliente/mis-pedidos,foody://login"
+# Si WEB_PORT no es 8080, aÃƒÆ’Ã‚Â±adir tambiÃƒÆ’Ã‚Â©n ese origen (DX).
+if [ "$WEB_PORT" != "8080" ] && [ "$WEB_PORT" != "8081" ]; then
+  REDIRECTS="${REDIRECTS},http://localhost:${WEB_PORT}/admin/login,http://localhost:${WEB_PORT}/admin/registro,http://localhost:${WEB_PORT}/cliente/mis-pedidos"
+fi
 
 set_env "API_EXTERNAL_URL" "http://localhost:8000"
 set_env "SUPABASE_PUBLIC_URL" "http://localhost:8000"

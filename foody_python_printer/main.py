@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Servidor WebSocket de impresión Foody (Sprint 10 — MVP)."""
+"""Servidor WebSocket de impresión Foody — NestJS → python-escpos / archivo."""
 import asyncio
 import json
 import logging
@@ -8,8 +8,10 @@ import os
 try:
     import websockets
 except ImportError:
-    print("Instala: pip install websockets")
+    print("Instala: pip install -r requirements.txt")
     raise
+
+from impresor import MODO, imprimir_ticket
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("foody_printer")
@@ -27,16 +29,40 @@ async def manejar_cliente(ws):
             except json.JSONDecodeError:
                 await ws.send(json.dumps({"exito": False, "error": "JSON inválido"}))
                 continue
-            ticket = datos.get("ticket") or datos.get("cuerpo") or str(datos)
-            logger.info("Ticket recibido (%s chars): %s", len(ticket), ticket[:120])
-            # TODO: python-escpos → impresora térmica local
-            await ws.send(json.dumps({"exito": True, "mensaje": "Ticket encolado (simulado)"}))
+
+            if datos.get("accion") == "ping":
+                await ws.send(
+                    json.dumps(
+                        {
+                            "exito": True,
+                            "pong": True,
+                            "modo": MODO,
+                            "mensaje": "foody_python_printer activo",
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                continue
+
+            ticket = datos.get("ticket") or datos.get("cuerpo") or ""
+            meta = {
+                "cocina_id": datos.get("cocina_id"),
+                "pedido_id": datos.get("pedido_id"),
+                "impresora": datos.get("impresora"),
+            }
+            resultado = imprimir_ticket(str(ticket), meta)
+            await ws.send(json.dumps(resultado, ensure_ascii=False))
     except websockets.ConnectionClosed:
         logger.info("Cliente desconectado")
 
 
 async def main():
-    logger.info("Foody Printer escuchando en ws://%s:%s", HOST, PORT)
+    logger.info(
+        "Foody Printer ws://%s:%s (modo=%s)",
+        HOST,
+        PORT,
+        MODO,
+    )
     async with websockets.serve(manejar_cliente, HOST, PORT):
         await asyncio.Future()
 

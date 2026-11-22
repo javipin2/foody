@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
 import { JwtPayload } from '../../core/auth/jwt-payload';
@@ -9,15 +9,20 @@ import { SuscripcionActivaGuard } from '../../core/auth/guards/suscripcion-activ
 import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { DispatchService } from './dispatch.service';
 import { DomiciliariosIndependientesService } from './domiciliarios-independientes.service';
 import { DomiciliariosService } from './domiciliarios.service';
 import { AsignarDomiciliarioDto } from './dto/asignar-domiciliario.dto';
 import { ConfirmarEntregaDto } from './dto/confirmar-entrega.dto';
 import {
+  ConfigDomicilioCajaDto,
+  ConfigFiadoDomiciliarioDto,
+} from './dto/config-domicilio.dto';
+import {
   IniciarSesionDto,
   ResponderOfertaDto,
-  UbicacionDto,
+  UbicacionEntregaDto,
 } from './dto/independiente.dto';
 
 @Controller('domiciliarios-planta')
@@ -27,31 +32,134 @@ export class DomiciliariosPlantaController {
   constructor(
     private readonly domiciliariosService: DomiciliariosService,
     private readonly dispatchService: DispatchService,
+    private readonly sucursalScope: SucursalScopeService,
   ) {}
 
   @Get('disponibles/:sucursal_id')
-  @Permisos('gestionar_domiciliarios', 'ver_pedidos')
-  listarDisponibles(@Param('sucursal_id') sucursalId: string) {
-    return this.domiciliariosService.listarPlantaDisponibles(sucursalId);
-  }
-
-  @Post('asignar')
-  @Permisos('gestionar_domiciliarios', 'ver_pedidos')
-  asignar(
-    @Body() dto: AsignarDomiciliarioDto,
+  @Permisos('gestionar_domiciliarios')
+  async listarDisponibles(
     @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
   ) {
-    return this.domiciliariosService.asignarPlanta(dto, usuario.sub);
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.domiciliariosService.listarPlantaDisponibles(id);
   }
 
-  @Post('dispatch-independiente/:pedido_id')
-  @Permisos('gestionar_domiciliarios', 'ver_pedidos')
-  dispatchIndependiente(
-    @Param('pedido_id') pedidoId: string,
+  @Get('comisiones-independientes/:sucursal_id')
+  @Permisos('gestionar_domiciliarios')
+  async resumenComisiones(
+    @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.domiciliariosService.resumenComisionesIndependientes(id);
+  }
+
+  @Get('liquidacion/:sucursal_id')
+  @Permisos('gestionar_domiciliarios', 'ver_caja')
+  async resumenLiquidacion(
+    @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.domiciliariosService.resumenLiquidacion(id);
+  }
+
+  @Post('liquidar/:domiciliario_planta_id')
+  @Permisos('gestionar_domiciliarios', 'ver_caja')
+  async liquidar(
+    @Param('domiciliario_planta_id', ParseUUIDPipe) domiciliarioPlantaId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {
-    const sid = sucursalId ?? usuario.sucursal_id!;
+    const sid = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.domiciliariosService.liquidarDomiciliario(
+      sid,
+      domiciliarioPlantaId,
+      usuario.sub,
+    );
+  }
+
+  @Patch('config-fiado/:sucursal_id')
+  @Permisos('gestionar_domiciliarios')
+  async configurarFiado(
+    @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
+    @Body() body: ConfigFiadoDomiciliarioDto,
+  ) {
+    const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.domiciliariosService.configurarFiadoDomiciliario(
+      id,
+      body.permitir === true,
+    );
+  }
+
+  @Get('domicilios/:sucursal_id')
+  @Permisos('gestionar_domiciliarios', 'ver_caja')
+  async resumenDomicilios(
+    @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.domiciliariosService.resumenDomicilios(id, desde, hasta);
+  }
+
+  @Patch('config-domicilio-caja/:sucursal_id')
+  @Permisos('gestionar_domiciliarios')
+  async configurarDomicilioCaja(
+    @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
+    @Body() body: ConfigDomicilioCajaDto,
+  ) {
+    const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.domiciliariosService.configurarDomicilioEnCaja(
+      id,
+      body.ingresa === true,
+    );
+  }
+
+  @Post('asignar')
+  @Permisos('gestionar_domiciliarios')
+  async asignar(
+    @Body() dto: AsignarDomiciliarioDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
+    return this.domiciliariosService.asignarPlanta(dto, usuario.sub);
+  }
+
+  @Post('reasignar')
+  @Permisos('gestionar_domiciliarios')
+  async reasignar(
+    @Body() dto: AsignarDomiciliarioDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
+    return this.domiciliariosService.reasignarPlanta(dto, usuario.sub);
+  }
+
+  @Post('dispatch-independiente/:pedido_id')
+  @Permisos('gestionar_domiciliarios')
+  async dispatchIndependiente(
+    @Param('pedido_id', ParseUUIDPipe) pedidoId: string,
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const sid = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
     return this.dispatchService.iniciarBusquedaIndependientes(pedidoId, sid);
   }
 }
@@ -71,7 +179,7 @@ export class DomiciliarioPlantaController {
   @Patch('pedidos/:id/en-camino')
   @Permisos('ver_pedidos')
   enCamino(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     return this.domiciliariosService.marcarEnCamino(pedidoId, usuario.sub);
@@ -80,23 +188,46 @@ export class DomiciliarioPlantaController {
   @Patch('pedidos/:id/confirmar-entrega')
   @Permisos('ver_pedidos')
   confirmarEntrega(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @Body() dto: ConfirmarEntregaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     return this.domiciliariosService.confirmarEntrega(pedidoId, usuario.sub, dto);
   }
 
+  @Post('ubicacion')
+  @Permisos('ver_pedidos')
+  ubicacion(
+    @Body() dto: UbicacionEntregaDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    return this.domiciliariosService.registrarUbicacionEntrega(usuario.sub, dto);
+  }
+
   @Get('historial')
   @Permisos('ver_pedidos')
-  historial(@UsuarioActual() usuario: JwtPayload) {
-    return this.domiciliariosService.historialEntregas(usuario.sub);
+  historial(
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+  ) {
+    return this.domiciliariosService.historialEntregas(usuario.sub, {
+      desde,
+      hasta,
+    });
   }
 
   @Get('estadisticas')
   @Permisos('ver_pedidos')
-  estadisticas(@UsuarioActual() usuario: JwtPayload) {
-    return this.domiciliariosService.estadisticasPlanta(usuario.sub);
+  estadisticas(
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+  ) {
+    return this.domiciliariosService.estadisticasPlanta(usuario.sub, {
+      desde,
+      hasta,
+    });
   }
 }
 
@@ -119,7 +250,7 @@ export class DomiciliariosIndependientesController {
   @Post('sesion/ubicacion')
   @Permisos('domiciliario_independiente')
   ubicacion(
-    @Body() dto: UbicacionDto,
+    @Body() dto: UbicacionEntregaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     return this.independientesService.actualizarUbicacion(usuario.sub, dto);
@@ -131,6 +262,12 @@ export class DomiciliariosIndependientesController {
     return this.independientesService.cerrarSesion(usuario.sub);
   }
 
+  @Get('sesion/estado')
+  @Permisos('domiciliario_independiente')
+  estadoSesion(@UsuarioActual() usuario: JwtPayload) {
+    return this.independientesService.estadoSesion(usuario.sub);
+  }
+
   @Get('ofertas-activas')
   @Permisos('domiciliario_independiente')
   ofertasActivas(@UsuarioActual() usuario: JwtPayload) {
@@ -140,7 +277,7 @@ export class DomiciliariosIndependientesController {
   @Post('ofertas/:id/responder')
   @Permisos('domiciliario_independiente')
   responderOferta(
-    @Param('id') ofertaId: string,
+    @Param('id', ParseUUIDPipe) ofertaId: string,
     @Body() dto: ResponderOfertaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
@@ -160,7 +297,7 @@ export class DomiciliariosIndependientesController {
   @Patch('pedidos/:id/en-camino')
   @Permisos('domiciliario_independiente')
   enCamino(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     return this.independientesService.marcarEnCamino(pedidoId, usuario.sub);
@@ -169,15 +306,24 @@ export class DomiciliariosIndependientesController {
   @Patch('pedidos/:id/confirmar-entrega')
   @Permisos('domiciliario_independiente')
   confirmarEntrega(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Body() dto: ConfirmarEntregaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
-    return this.independientesService.confirmarEntrega(pedidoId, usuario.sub);
+    return this.independientesService.confirmarEntrega(
+      pedidoId,
+      usuario.sub,
+      dto,
+    );
   }
 
   @Get('ganancias')
   @Permisos('domiciliario_independiente')
-  ganancias(@UsuarioActual() usuario: JwtPayload) {
-    return this.independientesService.ganancias(usuario.sub);
+  ganancias(
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+  ) {
+    return this.independientesService.ganancias(usuario.sub, { desde, hasta });
   }
 }

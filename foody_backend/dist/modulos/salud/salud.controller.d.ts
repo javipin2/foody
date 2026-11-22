@@ -7,6 +7,8 @@ export declare class SaludController {
         version: string;
         base_datos: boolean;
         entorno: string;
+        timestamp: string;
+    } | {
         modulos: {
             mesas: string[];
             menu_mesa_qr: string;
@@ -19,5 +21,32 @@ export declare class SaludController {
             super_admin: string[];
             sucursales_staff: string[];
         };
+        api: string;
+        version: string;
+        base_datos: boolean;
+        entorno: string;
+        timestamp: string;
+    }>;
+    verificarCompleto(): Promise<{
+        estado: string;
+        api: string;
+        version: string;
+        entorno: string;
+        timestamp: string;
+        base_datos: boolean;
+        realtime: import("../../core/realtime/realtime-broadcast.service").SaludRealtime;
+        impresion: {
+            agente: {
+                conectado: boolean;
+                url: string;
+                mensaje: string;
+            };
+            cola: {
+                pendientes: number;
+                error: number;
+                enviados_24h: number;
+            };
+        };
+        alertas: string[];
     }>;
 }

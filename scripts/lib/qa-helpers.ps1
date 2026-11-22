@@ -37,9 +37,13 @@ function Invoke-FoodyApi {
             try {
                 $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
                 $raw = $reader.ReadToEnd()
+                $reader.Close()
                 if ($raw) { $body = $raw | ConvertFrom-Json }
             }
             catch {}
+        }
+        if ($null -eq $body -and $_.ErrorDetails.Message) {
+            try { $body = $_.ErrorDetails.Message | ConvertFrom-Json } catch {}
         }
         return @{
             ok     = $false
@@ -65,12 +69,29 @@ function Get-FoodyToken {
     }
 }
 
+function Get-FoodyTokenDomiciliarioIndep {
+    param([string]$Email = 'repartidor@foody.demo')
+    $login = Invoke-FoodyApi -Method POST -Path '/auth/login-domiciliario' -Body @{
+        email      = $Email
+        contrasena = $script:FoodyQaPass
+    }
+    if (-not ($login.ok -and $login.json.exito)) {
+        throw "Login indep fallo ($Email): $($login.json.mensaje)"
+    }
+    return @{
+        token   = $login.json.datos.token
+        headers = @{ Authorization = "Bearer $($login.json.datos.token)" }
+    }
+}
+
 function Limpiar-PedidosActivosDemo {
     param([hashtable]$Headers)
     $sid = $script:FoodyQaSucursal
-    $lista = Invoke-FoodyApi -Path "/pedidos?sucursal_id=$sid&solo_activos=true" -Headers $Headers
+    $lista = Invoke-FoodyApi -Path "/pedidos?sucursal_id=$sid" -Headers $Headers
     if (-not ($lista.ok -and $lista.json.exito)) { return 0 }
-    $pedidos = @($lista.json.datos)
+    $pedidos = @($lista.json.datos | Where-Object {
+            $_.estado -notin @('cancelado', 'rechazado', 'pagado')
+        })
     $n = 0
     foreach ($p in $pedidos) {
         $id = $p.id
@@ -99,6 +120,21 @@ function Ensure-CajaAbierta {
     if ($abrir.ok -and $abrir.json.exito) { return $true }
     if ($abrir.json.error -eq 'CAJA_YA_ABIERTA') { return $true }
     return $false
+}
+
+function Limpiar-AsignacionesDomicilioDemo {
+    param([string]$DomiciliarioPlantaId = '92000000-0000-4000-8000-000000000001')
+    $null = docker exec supabase-db psql -U postgres -d postgres -c `
+        "UPDATE asignaciones_domicilio SET estado = 'cancelado'
+         WHERE domiciliario_planta_id = '$DomiciliarioPlantaId'
+           AND estado IN ('asignado', 'en_camino');" 2>&1
+}
+
+function Ensure-HorariosDemoAbiertos {
+  # ponytail: hora_cierre 23:59:00 excluye 23:59:30 — QA nocturno fallaba RESTAURANTE_CERRADO
+    $sid = $script:FoodyQaSucursal
+    $null = docker exec supabase-db psql -U postgres -d postgres -c `
+        "UPDATE horarios_sucursal SET hora_apertura='00:00', hora_cierre='23:59:59', activo=true WHERE sucursal_id='$sid';" 2>&1
 }
 
 function Get-ProductosMenuFlat {
@@ -153,4 +189,31 @@ function Assert-Qa {
     }
     Write-Host "  FALLO  $Msg" -ForegroundColor Red
     return $false
+}
+
+# ponytail: auto-dispatch al listo deja pedido en asignado — no re-asignar manual
+function Ensure-AsignacionDomiPlanta {
+    param(
+        [string]$PedidoId,
+        [hashtable]$Headers,
+        [string]$SucursalId = $script:FoodyQaSucursal,
+        [string]$DomiPlantaId = '92000000-0000-4000-8000-000000000001'
+    )
+    $lista = Invoke-FoodyApi -Path "/pedidos?sucursal_id=$SucursalId" -Headers $Headers
+    $est = ($lista.json.datos | Where-Object { $_.id -eq $PedidoId } | Select-Object -First 1).estado
+    if ($est -in @('asignado', 'en_camino')) {
+        return @{ ok = $true; auto = $true; estado = $est }
+    }
+    if ($est -ne 'listo') {
+        return @{ ok = $false; mensaje = "estado=$est (esperaba listo o asignado)" }
+    }
+    $asig = Invoke-FoodyApi -Method POST -Path '/domiciliarios-planta/asignar' -Headers $Headers -Body @{
+        pedido_id              = $PedidoId
+        sucursal_id            = $SucursalId
+        domiciliario_planta_id = $DomiPlantaId
+    }
+    if ($asig.ok -and $asig.json.exito) {
+        return @{ ok = $true; auto = $false; estado = 'asignado' }
+    }
+    return @{ ok = $false; mensaje = $asig.json.mensaje }
 }

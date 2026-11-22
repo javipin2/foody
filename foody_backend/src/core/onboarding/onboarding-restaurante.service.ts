@@ -44,11 +44,13 @@ export class OnboardingRestauranteService {
   constructor(private readonly database: DatabaseService) {}
 
   async crear(dto: OnboardingRestauranteInput): Promise<OnboardingRestauranteResult> {
-    const ciudad = await this.database.consultarUno<{ id: string }>(
-      `SELECT id FROM ciudades WHERE id = $1 AND activa = true`,
+    const ciudad = await this.database.consultarUno<{ id: string; slug: string }>(
+      `SELECT id, slug FROM ciudades WHERE id = $1 AND activa = true`,
       [dto.ciudad_id],
     );
     if (!ciudad) throw new BadRequestException('Ciudad no válida');
+
+    const centroCiudad = this.centroCiudadPorSlug(ciudad.slug);
 
     const email = dto.admin_email.trim().toLowerCase();
     const existeEmail = await this.database.consultarUno<{ id: string }>(
@@ -88,25 +90,21 @@ export class OnboardingRestauranteService {
 
       const suc = await client.query<{ id: string }>(
         `INSERT INTO sucursales (
-           restaurante_id, ciudad_id, nombre, direccion, activa
-         ) VALUES ($1, $2, $3, $4, true) RETURNING id`,
+           restaurante_id, ciudad_id, nombre, direccion, lat, lng, activa
+         ) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
         [
           restauranteId,
           dto.ciudad_id,
           dto.nombre_sucursal.trim(),
           dto.direccion_sucursal?.trim() ?? null,
+          centroCiudad?.lat ?? null,
+          centroCiudad?.lng ?? null,
         ],
       );
       const sucursalId = suc.rows[0].id;
 
       await client.query(
         `INSERT INTO cocinas (sucursal_id, nombre) VALUES ($1, 'Cocina principal')`,
-        [sucursalId],
-      );
-
-      await client.query(
-        `INSERT INTO horarios_sucursal (sucursal_id, dia_semana, hora_apertura, hora_cierre, activo)
-         SELECT $1, d, '08:00', '22:00', true FROM generate_series(0, 6) AS d`,
         [sucursalId],
       );
 
@@ -142,12 +140,53 @@ export class OnboardingRestauranteService {
         sucursal_id: sucursalId,
         admin_id: admin.rows[0].id,
         admin_email: email,
+        ciudad_slug: ciudad.slug,
         suscripcion: {
           estado,
           plan,
           ...(estado === 'prueba' ? { dias_prueba: diasPrueba } : {}),
         },
       };
+    }).then(async (resultado) => {
+      // VIRAL-FIX-03: zona + horarios×7 fuera del TX crítico (menos hold de pool).
+      await this.completarPostCommit(resultado.sucursal_id, resultado.ciudad_slug);
+      const { ciudad_slug: _slug, ...out } = resultado;
+      return out;
     });
+  }
+
+  /** ponytail: best-effort; alta ya committed si esto falla. */
+  private async completarPostCommit(sucursalId: string, ciudadSlug: string) {
+    try {
+      const centro = this.centroCiudadPorSlug(ciudadSlug);
+      if (centro) {
+        await this.database.consultar(
+          `INSERT INTO zonas_cobertura (sucursal_id, nombre, costo_domicilio, distancia_max_km, activa)
+           SELECT $1, 'Zona centro', 4000, 5, true
+           WHERE NOT EXISTS (
+             SELECT 1 FROM zonas_cobertura WHERE sucursal_id = $1
+           )`,
+          [sucursalId],
+        );
+      }
+      await this.database.consultar(
+        `INSERT INTO horarios_sucursal (sucursal_id, dia_semana, hora_apertura, hora_cierre, activo)
+         SELECT $1, d, '08:00', '22:00', true
+         FROM generate_series(0, 6) AS d
+         WHERE NOT EXISTS (
+           SELECT 1 FROM horarios_sucursal WHERE sucursal_id = $1
+         )`,
+        [sucursalId],
+      );
+    } catch {
+      // no tumbar alta; admin puede configurar sede después
+    }
+  }
+
+  private centroCiudadPorSlug(slug: string) {
+    const centros: Record<string, { lat: number; lng: number }> = {
+      valledupar: { lat: 10.463714, lng: -73.253222 },
+    };
+    return centros[slug.toLowerCase()] ?? null;
   }
 }

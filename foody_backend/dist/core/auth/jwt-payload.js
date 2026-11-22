@@ -9,7 +9,9 @@ class JwtPayload {
     restaurante_id;
     permisos;
     ciudad_id;
+    cocina_id;
     plan;
+    tv;
 }
 exports.JwtPayload = JwtPayload;
 //# sourceMappingURL=jwt-payload.js.map

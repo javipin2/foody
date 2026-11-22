@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ResponderOfertaDto = exports.UbicacionDto = exports.IniciarSesionDto = void 0;
+exports.ResponderOfertaDto = exports.UbicacionEntregaDto = exports.UbicacionDto = exports.IniciarSesionDto = void 0;
 const class_validator_1 = require("class-validator");
 class IniciarSesionDto {
     lat;
@@ -43,6 +43,15 @@ __decorate([
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], UbicacionDto.prototype, "lng", void 0);
+class UbicacionEntregaDto extends UbicacionDto {
+    pedido_id;
+}
+exports.UbicacionEntregaDto = UbicacionEntregaDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], UbicacionEntregaDto.prototype, "pedido_id", void 0);
 class ResponderOfertaDto {
     respuesta;
 }

@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
+import { SupabaseAuthService } from '../../core/auth/supabase-auth.service';
 
 @Injectable()
 export class DispositivosService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly supabaseAuth: SupabaseAuthService,
+  ) {}
 
   async registrar(datos: {
     device_id: string;
@@ -30,13 +34,94 @@ export class DispositivosService {
     return { device_id: datos.device_id, registrado: true };
   }
 
+  /**
+   * Vincula device_id → auth_uid (Google / Supabase) y reclama pedidos previos del device.
+   * No crea fila en `usuarios` (eso es staff).
+   */
+  async vincularAuth(datos: { device_id: string; access_token: string }) {
+    const deviceId = datos.device_id?.trim();
+    if (!deviceId) {
+      throw new BadRequestException('device_id es obligatorio');
+    }
+    const user = await this.supabaseAuth.usuarioDesdeAccessToken(datos.access_token);
+    const authUid = user.id;
+
+    await this.database.consultar(
+      `INSERT INTO dispositivos_cliente (device_id, auth_uid, ultimo_acceso, plataforma)
+       VALUES ($1, $2::uuid, now(), 'android')
+       ON CONFLICT (device_id) DO UPDATE SET
+         auth_uid = EXCLUDED.auth_uid,
+         ultimo_acceso = now()
+       WHERE dispositivos_cliente.anonimizado = false`,
+      [deviceId, authUid],
+    );
+
+    const reclamados = await this.database.consultarUno<{ n: string }>(
+      `WITH u AS (
+         UPDATE pedidos
+         SET cliente_auth_uid = $2::uuid
+         WHERE device_id = $1
+           AND (cliente_auth_uid IS NULL OR cliente_auth_uid = $2::uuid)
+         RETURNING id
+       )
+       SELECT count(*)::text AS n FROM u`,
+      [deviceId, authUid],
+    );
+
+    return {
+      device_id: deviceId,
+      auth_uid: authUid,
+      email: user.email ?? null,
+      nombre: (user.user_metadata?.['full_name'] as string | undefined) ??
+        (user.user_metadata?.['name'] as string | undefined) ??
+        null,
+      pedidos_vinculados: Number(reclamados?.n ?? 0),
+    };
+  }
+
+  /**
+   * Prueba de posesión: FCM token actual del device, o Supabase JWT del auth_uid vinculado.
+   */
+  async verificarPosesionParaAnonimizar(
+    deviceId: string,
+    prueba: { fcm_token?: string; access_token?: string },
+  ): Promise<boolean> {
+    const fila = await this.database.consultarUno<{
+      fcm_token: string | null;
+      auth_uid: string | null;
+      anonimizado: boolean;
+    }>(
+      `SELECT fcm_token, auth_uid, anonimizado FROM dispositivos_cliente
+       WHERE device_id = $1`,
+      [deviceId],
+    );
+    if (!fila || fila.anonimizado) return false;
+
+    if (prueba.fcm_token && fila.fcm_token && prueba.fcm_token === fila.fcm_token) {
+      return true;
+    }
+
+    if (prueba.access_token && fila.auth_uid) {
+      try {
+        const user = await this.supabaseAuth.usuarioDesdeAccessToken(
+          prueba.access_token,
+        );
+        return !!user?.id && user.id === fila.auth_uid;
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
   /** X-008 — GDPR: anonimiza device sin borrar fila (auditoría). */
   async anonimizar(deviceId: string) {
     const fila = await this.database.consultarUno<{ device_id: string }>(
       `UPDATE dispositivos_cliente
        SET fcm_token = NULL,
            ciudad_id = NULL,
-           plataforma = 'anonimo',
+           auth_uid = NULL,
            anonimizado = true,
            anonimizado_at = now()
        WHERE device_id = $1 AND anonimizado = false

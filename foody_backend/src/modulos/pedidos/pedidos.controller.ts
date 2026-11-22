@@ -3,12 +3,14 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -22,8 +24,18 @@ import { CambiarEstadoPedidoDto } from './dto/cambiar-estado-pedido.dto';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { AgregarItemsPedidoDto } from './dto/agregar-items-pedido.dto';
+import {
+  EliminarItemPedidoDto,
+  RechazarPedidoMesaDto,
+} from './dto/motivo-pedido.dto';
+import { ActualizarItemPedidoDto } from './dto/actualizar-item-pedido.dto';
 import { CobrarMesaDto } from './dto/cobrar-mesa.dto';
 import { ActualizarComensalDto } from './dto/actualizar-comensal.dto';
+import { AprobarPedidoMesaDto } from './dto/aprobar-pedido-mesa.dto';
+import {
+  ListarCerradosHoyQueryDto,
+  ListarPedidosQueryDto,
+} from './dto/listar-pedidos-query.dto';
 import { PedidosService } from './pedidos.service';
 
 @Controller('pedidos')
@@ -38,22 +50,59 @@ export class PedidosController {
   @Permisos('ver_pedidos')
   async listar(
     @UsuarioActual() usuario: JwtPayload,
+    @Query() query: ListarPedidosQueryDto,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      query.sucursal_id,
+    );
+    const paginar = query.page != null;
+    return this.pedidosService.listarPorSucursal(id, {
+      soloActivos: query.solo_activos !== false,
+      paginar,
+      page: paginar ? query.page : undefined,
+      limite: query.limit,
+      meseraId: query.mesera_id,
+    });
+  }
+
+  @Get('cerrados-hoy')
+  @Permisos('ver_pedidos')
+  async listarCerradosHoy(
+    @UsuarioActual() usuario: JwtPayload,
+    @Query() query: ListarCerradosHoyQueryDto,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      query.sucursal_id,
+    );
+    const paginar = query.page != null;
+    return this.pedidosService.listarCerradosHoy(id, {
+      meseraId: query.mesera_id,
+      paginar,
+      page: paginar ? query.page : undefined,
+      limite: query.limit,
+    });
+  }
+
+  @Get(':id/detalle')
+  @Permisos('ver_pedidos')
+  async detalle(
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
-    @Query('solo_activos') soloActivos?: string,
   ) {
     const id = await this.sucursalScope.resolverLecturaOperativa(
       usuario,
       sucursalId,
     );
-    return this.pedidosService.listarPorSucursal(id, {
-      soloActivos: soloActivos !== 'false',
-    });
+    return this.pedidosService.obtenerDetalleAdmin(pedidoId, id);
   }
 
   @Get('mesa/:mesaId')
   @Permisos('ver_pedidos')
   async listarPorMesa(
-    @Param('mesaId') mesaId: string,
+    @Param('mesaId', ParseUUIDPipe) mesaId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {
@@ -65,40 +114,37 @@ export class PedidosController {
   }
 
   @Post('mesa/:mesaId/cobrar')
-  @Permisos('ver_pedidos', 'crear_pedido')
+  @Permisos('cobrar_pedido')
   async cobrarMesa(
-    @Param('mesaId') mesaId: string,
+    @Param('mesaId', ParseUUIDPipe) mesaId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Body() dto: CobrarMesaDto,
     @Query('sucursal_id') sucursalId?: string,
   ) {
     const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
-    return this.pedidosService.cobrarCuentaMesa(id, mesaId, usuario.sub, dto);
+    return this.pedidosService.cobrarCuentaMesa(
+      id,
+      mesaId,
+      usuario.sub,
+      dto,
+      usuario.rol,
+    );
   }
 
   @Post('staff')
+  @HttpCode(HttpStatus.CREATED)
   @Permisos('crear_pedido')
   async crearStaff(
     @Body() dto: CrearPedidoDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
-    const sucursalId = await this.sucursalScope.resolverEscritura(
-      usuario,
-      dto.sucursal_id ?? usuario.sucursal_id,
-    );
-    if (!sucursalId) {
-      throw new BadRequestException('sucursal_id es obligatorio');
-    }
-    return this.pedidosService.crear(
-      { ...dto, sucursal_id: sucursalId },
-      { creadoPorStaff: true, usuarioId: usuario.sub, rol: usuario.rol },
-    );
+    return this.pedidosService.crearStaff(usuario, dto);
   }
 
   @Post(':id/items')
   @Permisos('crear_pedido')
   async agregarItems(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @Body() dto: AgregarItemsPedidoDto,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
@@ -111,13 +157,32 @@ export class PedidosController {
     });
   }
 
+  @Patch(':id/items/:itemId')
+  @Permisos('crear_pedido')
+  async actualizarItem(
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: ActualizarItemPedidoDto,
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.pedidosService.actualizarItemPedido(
+      pedidoId,
+      itemId,
+      id,
+      usuario.sub,
+      dto,
+    );
+  }
+
   @Delete(':id/items/:itemId')
   @Permisos('crear_pedido')
   async eliminarItem(
-    @Param('id') pedidoId: string,
-    @Param('itemId') itemId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
     @UsuarioActual() usuario: JwtPayload,
-    @Body() body: { motivo?: string },
+    @Body() body: EliminarItemPedidoDto,
     @Query('sucursal_id') sucursalId?: string,
   ) {
     const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -133,7 +198,7 @@ export class PedidosController {
   @Patch(':id/estado')
   @Permisos('ver_pedidos')
   async cambiarEstado(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Body() dto: CambiarEstadoPedidoDto,
     @Query('sucursal_id') sucursalId?: string,
@@ -152,7 +217,7 @@ export class PedidosController {
   @Post(':id/descuento')
   @Permisos('aplicar_descuento')
   async aplicarDescuento(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Body() dto: AplicarDescuentoDto,
     @Query('sucursal_id') sucursalId?: string,
@@ -168,9 +233,9 @@ export class PedidosController {
   }
 
   @Post(':id/cobrar')
-  @Permisos('crear_pedido', 'ver_pedidos')
+  @Permisos('cobrar_pedido')
   async cobrarPedido(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Body() dto: CobrarMesaDto,
     @Query('sucursal_id') sucursalId?: string,
@@ -181,14 +246,15 @@ export class PedidosController {
       id,
       usuario.sub,
       dto,
+      usuario.rol,
     );
   }
 
   @Patch(':id/items/:itemId/comensal')
   @Permisos('crear_pedido', 'ver_pedidos')
   async actualizarComensal(
-    @Param('id') pedidoId: string,
-    @Param('itemId') itemId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Body() dto: ActualizarComensalDto,
     @Query('sucursal_id') sucursalId?: string,
@@ -205,20 +271,24 @@ export class PedidosController {
   @Patch(':id/aprobar')
   @Permisos('aprobar_pedido_mesa')
   async aprobar(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
+    @Body() body: AprobarPedidoMesaDto,
     @Query('sucursal_id') sucursalId?: string,
   ) {
     const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
-    return this.pedidosService.aprobarMesa(pedidoId, id, usuario.sub);
+    return this.pedidosService.aprobarMesa(pedidoId, id, usuario.sub, {
+      meseraId: body?.mesera_id,
+      rolLlamador: usuario.rol,
+    });
   }
 
   @Patch(':id/rechazar')
   @Permisos('aprobar_pedido_mesa')
   async rechazar(
-    @Param('id') pedidoId: string,
+    @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,
-    @Body() body: { motivo: string },
+    @Body() body: RechazarPedidoMesaDto,
     @Query('sucursal_id') sucursalId?: string,
   ) {
     const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);

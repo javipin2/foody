@@ -78,7 +78,7 @@ $code = Get-ExpectStatus -Url "$base/zonas/$sidMesero" -Headers $hMesero -OkCode
 if ($code -eq 200) {
   Write-Host "OK mesero GET zonas propia ($code)" -ForegroundColor Green
 } else {
-  Write-Host "AVISO mesero sin permiso zonas ($code) — revisar permisos demo" -ForegroundColor Yellow
+  Write-Host "AVISO mesero sin permiso zonas ($code) - revisar permisos demo" -ForegroundColor Yellow
 }
 
 # Mesero: otra sede debe prohibir (403) si es distinta
@@ -89,8 +89,9 @@ if ($otraSid -ne $sidMesero) {
   $code = Get-ExpectStatus -Url "$base/alertas/$otraSid" -Headers $hMesero -OkCodes @(403)
   Write-Host "OK mesero bloqueado en otra sede alertas ($code)" -ForegroundColor Green
 } else {
-  Write-Host "AVISO demo con una sola sucursal — no se probó bloqueo cross-sede" -ForegroundColor Yellow
+  Write-Host "AVISO demo con una sola sucursal - no se probo bloqueo cross-sede" -ForegroundColor Yellow
 }
 
 Write-Host ""
-Write-Host "Verificación multi-sucursal OK" -ForegroundColor Green
+Write-Host "Verificacion multi-sucursal OK" -ForegroundColor Green
+exit 0

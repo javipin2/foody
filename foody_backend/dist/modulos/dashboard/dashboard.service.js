@@ -8,51 +8,217 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardService = void 0;
+const cache_manager_1 = require("@nestjs/cache-manager");
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
+const ventas_metricas_sql_1 = require("../../compartido/sql/ventas-metricas.sql");
+const pedido_estados_1 = require("../pedidos/pedido-estados");
+const ESTADOS_PEDIDO_ACTIVO = [
+    'pendiente_aprobacion',
+    'pendiente',
+    'confirmado',
+    'en_cocina',
+    'listo',
+    'pagando',
+    'asignado',
+    'en_camino',
+];
+const TTL_RESUMEN_MS = 30_000;
 let DashboardService = class DashboardService {
     database;
-    constructor(database) {
+    sucursalScope;
+    cache;
+    constructor(database, sucursalScope, cache) {
         this.database = database;
+        this.sucursalScope = sucursalScope;
+        this.cache = cache;
+    }
+    async consolidadoParaUsuario(usuario) {
+        if (!usuario.restaurante_id) {
+            throw new common_1.ForbiddenException('Usuario sin restaurante asignado');
+        }
+        if (!this.sucursalScope.esCorporativo(usuario)) {
+            throw new common_1.ForbiddenException('Solo usuarios corporativos pueden ver el dashboard consolidado');
+        }
+        return this.consolidado(usuario.restaurante_id);
     }
     async resumen(sucursalId) {
-        const ventasHoy = await this.database.consultarUno(`SELECT COALESCE(SUM(total), 0)::text AS total
+        const clave = `dash:resumen:${sucursalId}`;
+        const hit = await this.cache.get(clave);
+        if (hit)
+            return hit;
+        const fila = await this.resumenSucursalSql(sucursalId);
+        const datos = fila ?? this.resumenVacio();
+        await this.cache.set(clave, datos, TTL_RESUMEN_MS);
+        return datos;
+    }
+    async graficos(sucursalId) {
+        const ventas7d = await this.database.consultar(`SELECT ${ventas_metricas_sql_1.SQL_DIA_LOCAL}::text AS dia,
+              COUNT(*)::text AS pedidos,
+              COALESCE(SUM(total), 0)::text AS ventas
        FROM pedidos
        WHERE sucursal_id = $1
-         AND created_at::date = (NOW() AT TIME ZONE 'America/Bogota')::date
-         AND estado NOT IN ('cancelado', 'rechazado')`, [sucursalId]);
-        const pedidosActivos = await this.database.consultarUno(`SELECT COUNT(*)::text AS total
+         AND ${ventas_metricas_sql_1.SQL_PEDIDO_DESDE_7D}
+         AND ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
+       GROUP BY ${ventas_metricas_sql_1.SQL_DIA_LOCAL}
+       ORDER BY dia ASC`, [sucursalId]);
+        const porTipoHoy = await this.database.consultar(`SELECT tipo,
+              COUNT(*)::text AS pedidos,
+              COALESCE(SUM(total), 0)::text AS ventas
        FROM pedidos
        WHERE sucursal_id = $1
-         AND estado IN (
-           'pendiente_aprobacion', 'pendiente', 'confirmado',
-           'en_cocina', 'listo', 'en_camino'
-         )`, [sucursalId]);
-        const pendientesQr = await this.database.consultarUno(`SELECT COUNT(*)::text AS total
-       FROM pedidos
-       WHERE sucursal_id = $1 AND estado = 'pendiente_aprobacion'`, [sucursalId]);
-        const alertas = await this.database.consultarUno(`SELECT COUNT(*)::text AS total
-       FROM alertas_riesgo
-       WHERE sucursal_id = $1 AND revisada = false`, [sucursalId]);
-        const completadosHoy = await this.database.consultarUno(`SELECT COUNT(*)::text AS total
-       FROM pedidos
-       WHERE sucursal_id = $1
-         AND estado = 'entregado'
-         AND created_at::date = (NOW() AT TIME ZONE 'America/Bogota')::date`, [sucursalId]);
+         AND ${ventas_metricas_sql_1.SQL_PEDIDO_ES_HOY}
+         AND ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
+       GROUP BY tipo
+       ORDER BY ventas DESC`, [sucursalId]);
+        const topProductos = await this.database.consultar(`SELECT pr.nombre,
+              COALESCE(SUM(pi.cantidad), 0)::text AS cantidad,
+              COALESCE(
+                SUM(
+                  pi.cantidad * pi.precio_unitario
+                  + COALESCE(pit_ag.sum_topping, 0) * pi.cantidad
+                  + COALESCE(pib_ag.sum_bebida, 0)
+                ),
+                0
+              )::text AS ventas
+       FROM pedidos p
+       JOIN pedido_items pi ON pi.pedido_id = p.id
+       JOIN productos pr ON pr.id = pi.producto_id
+       LEFT JOIN (
+         SELECT
+           pedido_item_id,
+           SUM(precio_topping) AS sum_topping
+         FROM pedido_item_toppings
+         GROUP BY pedido_item_id
+       ) pit_ag ON pit_ag.pedido_item_id = pi.id
+       LEFT JOIN (
+         SELECT
+           pedido_item_id,
+           SUM(precio_bebida * cantidad) AS sum_bebida
+         FROM pedido_item_bebidas
+         GROUP BY pedido_item_id
+       ) pib_ag ON pib_ag.pedido_item_id = pi.id
+       WHERE p.sucursal_id = $1
+         AND ${ventas_metricas_sql_1.SQL_PEDIDO_DESDE_7D_P}
+         AND ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS_P}
+       GROUP BY pr.id, pr.nombre
+       ORDER BY cantidad DESC
+       LIMIT 5`, [sucursalId]);
         return {
-            ventas_hoy: Number(ventasHoy?.total ?? 0),
-            pedidos_activos: Number(pedidosActivos?.total ?? 0),
-            pedidos_pendientes_qr: Number(pendientesQr?.total ?? 0),
-            pedidos_completados_hoy: Number(completadosHoy?.total ?? 0),
-            alertas_pendientes: Number(alertas?.total ?? 0),
+            ventas_7_dias: ventas7d.map((f) => ({
+                dia: f.dia,
+                pedidos: Number(f.pedidos),
+                ventas: Number(f.ventas),
+            })),
+            pedidos_por_tipo_hoy: porTipoHoy.map((f) => ({
+                tipo: f.tipo,
+                pedidos: Number(f.pedidos),
+                ventas: Number(f.ventas),
+            })),
+            top_productos_7d: topProductos.map((f) => ({
+                nombre: f.nombre,
+                cantidad: Number(f.cantidad),
+                ventas: Number(f.ventas),
+            })),
+        };
+    }
+    async consolidado(restauranteId) {
+        const sucursales = await this.database.consultar(`SELECT id, nombre
+       FROM sucursales
+       WHERE restaurante_id = $1 AND activa = true
+       ORDER BY nombre ASC`, [restauranteId]);
+        const porSucursal = [];
+        for (const s of sucursales) {
+            const fila = await this.resumenSucursalSql(s.id);
+            porSucursal.push({
+                sucursal_id: s.id,
+                nombre: s.nombre,
+                ...(fila ?? this.resumenVacio()),
+            });
+        }
+        const totales = porSucursal.reduce((acc, s) => ({
+            ventas_hoy: acc.ventas_hoy + s.ventas_hoy,
+            pedidos_activos: acc.pedidos_activos + s.pedidos_activos,
+            pedidos_pendientes_qr: acc.pedidos_pendientes_qr + s.pedidos_pendientes_qr,
+            pedidos_completados_hoy: acc.pedidos_completados_hoy + s.pedidos_completados_hoy,
+            alertas_pendientes: acc.alertas_pendientes + s.alertas_pendientes,
+        }), {
+            ventas_hoy: 0,
+            pedidos_activos: 0,
+            pedidos_pendientes_qr: 0,
+            pedidos_completados_hoy: 0,
+            alertas_pendientes: 0,
+        });
+        return {
+            restaurante_id: restauranteId,
+            sucursales_activas: porSucursal.length,
+            totales,
+            por_sucursal: porSucursal,
+        };
+    }
+    resumenVacio() {
+        return {
+            ventas_hoy: 0,
+            pedidos_activos: 0,
+            pedidos_pendientes_qr: 0,
+            pedidos_completados_hoy: 0,
+            alertas_pendientes: 0,
+        };
+    }
+    async resumenSucursalSql(sucursalId) {
+        const fila = await this.database.consultarUno(`SELECT
+         COALESCE((
+           SELECT SUM(total)
+           FROM pedidos
+           WHERE sucursal_id = $1
+             AND ${ventas_metricas_sql_1.SQL_PEDIDO_ES_HOY}
+             AND ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
+         ), 0)::text AS ventas_hoy,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM pedidos
+           WHERE sucursal_id = $1
+             AND estado = ANY($2::text[])
+         ), 0)::text AS pedidos_activos,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM pedidos
+           WHERE sucursal_id = $1 AND estado = 'pendiente_aprobacion'
+         ), 0)::text AS pedidos_pendientes_qr,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM pedidos
+           WHERE sucursal_id = $1
+             AND ${pedido_estados_1.SQL_WHERE_PEDIDO_COMPLETADO}
+             AND ${ventas_metricas_sql_1.SQL_PEDIDO_ES_HOY}
+         ), 0)::text AS pedidos_completados_hoy,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM alertas_riesgo
+           WHERE sucursal_id = $1 AND revisada = false
+         ), 0)::text AS alertas_pendientes`, [sucursalId, ESTADOS_PEDIDO_ACTIVO]);
+        if (!fila)
+            return null;
+        return {
+            ventas_hoy: Number(fila.ventas_hoy ?? 0),
+            pedidos_activos: Number(fila.pedidos_activos ?? 0),
+            pedidos_pendientes_qr: Number(fila.pedidos_pendientes_qr ?? 0),
+            pedidos_completados_hoy: Number(fila.pedidos_completados_hoy ?? 0),
+            alertas_pendientes: Number(fila.alertas_pendientes ?? 0),
         };
     }
 };
 exports.DashboardService = DashboardService;
 exports.DashboardService = DashboardService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [database_service_1.DatabaseService])
+    __param(2, (0, common_1.Inject)(cache_manager_1.CACHE_MANAGER)),
+    __metadata("design:paramtypes", [database_service_1.DatabaseService,
+        sucursal_scope_service_1.SucursalScopeService, Object])
 ], DashboardService);
 //# sourceMappingURL=dashboard.service.js.map

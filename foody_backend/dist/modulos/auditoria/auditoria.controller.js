@@ -23,18 +23,23 @@ const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-a
 const plan_features_guard_1 = require("../../core/auth/guards/plan-features.guard");
 const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requiere-modulo.decorator");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const auditoria_service_1 = require("./auditoria.service");
+const timeline_auditoria_dto_1 = require("./dto/timeline-auditoria.dto");
 let AuditoriaController = class AuditoriaController {
     auditoria;
-    constructor(auditoria) {
+    sucursalScope;
+    constructor(auditoria, sucursalScope) {
         this.auditoria = auditoria;
+        this.sucursalScope = sucursalScope;
     }
-    timeline(usuario, desde, hasta, sucursalId) {
+    async timeline(usuario, query) {
         const hoy = new Date().toISOString().slice(0, 10);
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
         return this.auditoria.timelineTurno({
-            sucursal_id: sucursalId ?? usuario.sucursal_id,
-            desde: desde ?? hoy,
-            hasta: hasta ?? hoy,
+            sucursal_id: id,
+            desde: query.desde ?? hoy,
+            hasta: query.hasta ?? hoy,
         });
     }
 };
@@ -43,17 +48,17 @@ __decorate([
     (0, common_1.Get)('timeline'),
     (0, permisos_decorator_1.Permisos)('ver_reportes'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
-    __param(1, (0, common_1.Query)('desde')),
-    __param(2, (0, common_1.Query)('hasta')),
-    __param(3, (0, common_1.Query)('sucursal_id')),
+    __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
+        timeline_auditoria_dto_1.TimelineAuditoriaDto]),
+    __metadata("design:returntype", Promise)
 ], AuditoriaController.prototype, "timeline", null);
 exports.AuditoriaController = AuditoriaController = __decorate([
     (0, common_1.Controller)('auditoria'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, plan_features_guard_1.PlanFeaturesGuard, rol_guard_1.RolGuard),
     (0, requiere_modulo_decorator_1.RequiereModulo)('reportes'),
-    __metadata("design:paramtypes", [auditoria_service_1.AuditoriaService])
+    __metadata("design:paramtypes", [auditoria_service_1.AuditoriaService,
+        sucursal_scope_service_1.SucursalScopeService])
 ], AuditoriaController);
 //# sourceMappingURL=auditoria.controller.js.map

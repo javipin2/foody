@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -29,6 +30,10 @@ export class ActualizarSubrecetaDto {
   @IsNumber()
   @Min(0)
   margen_error?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  usa_produccion_lote?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

@@ -1,3 +1,4 @@
+import type { Cache } from 'cache-manager';
 import { DatabaseService } from '../../core/database/database.service';
 export interface CiudadDto {
     id: string;
@@ -7,7 +8,9 @@ export interface CiudadDto {
 }
 export declare class CiudadesService {
     private readonly database;
-    constructor(database: DatabaseService);
+    private readonly cache;
+    constructor(database: DatabaseService, cache: Cache);
     listarActivas(): Promise<CiudadDto[]>;
-    listarRestaurantesPorSlug(slug: string): Promise<import("pg").QueryResultRow[]>;
+    listarRestaurantesPorSlug(slug: string): Promise<unknown[]>;
+    invalidarCache(): Promise<void>;
 }

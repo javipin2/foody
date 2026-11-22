@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,7 +10,11 @@ import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast
 import { CobrarMesaDto, PagoLineaDto } from './dto/cobrar-mesa.dto';
 import { PedidosCajaAuditoriaService } from './pedidos-caja-auditoria.service';
 import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
-import { SQL_WHERE_PEDIDO_BLOQUEA_MESA } from './pedido-estados';
+import {
+  SQL_WHERE_PEDIDO_BLOQUEA_MESA,
+  pedidoCocinaCompleta,
+  puedeForzarPagadoSinCocinaCompleta,
+} from './pedido-estados';
 
 type PedidoActivo = {
   id: string;
@@ -18,6 +23,11 @@ type PedidoActivo = {
   total: string;
   monto_pagado: string;
   metodo_pago: string | null;
+};
+
+type ContextoCobro = {
+  usuarioId: string;
+  rol?: string | null;
 };
 
 /** Registro de pagos parciales, split por ítem y pago mixto en mesa. */
@@ -35,8 +45,20 @@ export class PedidosPagosService {
     mesaId: string,
     usuarioId: string,
     dto: CobrarMesaDto = {},
+    rol?: string | null,
   ) {
+    const cached = await this.leerCobroIdempotente(dto.idempotency_key);
+    if (cached) return cached;
+
+    const ctx: ContextoCobro = { usuarioId, rol };
+
     const result = await this.database.enTransaccion(async (client) => {
+      const again = await this.leerCobroIdempotenteEnTx(
+        client,
+        dto.idempotency_key,
+      );
+      if (again) return again;
+
       const mesa = await this.consultarUnoCliente<{
         id: string;
         nombre: string;
@@ -99,6 +121,7 @@ export class PedidosPagosService {
           montoCobrar > 0 ? propina * (asignado / montoCobrar) : 0;
 
         if (quedaPagado) {
+          await this.exigirCocinaCompletaParaPagado(client, p.id, ctx, dto.motivo);
           const anterior = p.estado;
           const metodoPrincipal = pagos[0]?.metodo_pago ?? 'efectivo';
           await client.query(
@@ -125,12 +148,25 @@ export class PedidosPagosService {
             total: totalPedido,
           });
         } else {
+          // VIE-05 C: abono → pagando (permitido con cocina incompleta)
           await client.query(
             `UPDATE pedidos
-             SET monto_pagado = $2, propina_acumulada = propina_acumulada + $3
+             SET monto_pagado = $2,
+                 propina_acumulada = propina_acumulada + $3,
+                 estado = CASE
+                   WHEN estado NOT IN ('pagando', 'pagado', 'cancelado', 'rechazado')
+                   THEN 'pagando' ELSE estado END
              WHERE id = $1`,
             [p.id, nuevoPagado, fraccionPropina],
           );
+          if (!['pagando', 'pagado', 'cancelado', 'rechazado'].includes(p.estado)) {
+            await client.query(
+              `INSERT INTO estados_pedido_historial
+                 (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
+               VALUES ($1, $2, 'pagando', $3, $4)`,
+              [p.id, p.estado, usuarioId, dto.motivo?.trim() || 'Abono cuenta mesa'],
+            );
+          }
         }
       }
 
@@ -213,7 +249,7 @@ export class PedidosPagosService {
         },
       );
 
-      return {
+      const payload = {
         mesa_id: mesa.id,
         mesa_nombre: mesa.nombre,
         total_cobrado: totalCobrado,
@@ -223,9 +259,25 @@ export class PedidosPagosService {
         pedidos_cobrados: cobrados,
         parcial: saldoRestante > 0.01,
       };
-    });
+      await this.guardarCobroIdempotente(
+        client,
+        dto.idempotency_key,
+        sucursalId,
+        payload,
+      );
+      return payload;
+    }) as {
+      mesa_id: string;
+      mesa_nombre: string;
+      total_cobrado: number;
+      propina: number;
+      pagos: PagoLineaDto[];
+      saldo_restante: number;
+      pedidos_cobrados: Array<{ id: string; numero_pedido: string }>;
+      parcial: boolean;
+    };
 
-    for (const p of result.pedidos_cobrados) {
+    for (const p of result.pedidos_cobrados ?? []) {
       void this.realtime.pedidoActualizado({
         pedido_id: p.id,
         sucursal_id: sucursalId,
@@ -247,8 +299,20 @@ export class PedidosPagosService {
     pedidoId: string,
     usuarioId: string,
     dto: CobrarMesaDto = {},
+    rol?: string | null,
   ) {
+    const cached = await this.leerCobroIdempotente(dto.idempotency_key);
+    if (cached) return cached;
+
+    const ctx: ContextoCobro = { usuarioId, rol };
+
     const result = await this.database.enTransaccion(async (client) => {
+      const again = await this.leerCobroIdempotenteEnTx(
+        client,
+        dto.idempotency_key,
+      );
+      if (again) return again;
+
       const pedido = await this.consultarUnoCliente<PedidoActivo & { mesa_id: string | null }>(client,
         `SELECT id, numero_pedido, estado, total, monto_pagado, metodo_pago, mesa_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
@@ -256,7 +320,7 @@ export class PedidosPagosService {
       );
       if (!pedido) throw new NotFoundException('Pedido no encontrado');
       if (['cancelado', 'rechazado', 'pagado'].includes(pedido.estado)) {
-        throw new BadRequestException({
+        throw new ConflictException({
           error: 'PEDIDO_CERRADO',
           message: 'El pedido ya está cerrado o pagado',
         });
@@ -283,6 +347,12 @@ export class PedidosPagosService {
       const anterior = pedido.estado;
 
       if (quedaPagado) {
+        await this.exigirCocinaCompletaParaPagado(
+          client,
+          pedidoId,
+          ctx,
+          dto.motivo,
+        );
         await client.query(
           `UPDATE pedidos
            SET estado = 'pagado', metodo_pago = $2,
@@ -299,10 +369,29 @@ export class PedidosPagosService {
       } else {
         await client.query(
           `UPDATE pedidos
-           SET monto_pagado = $2, propina_acumulada = propina_acumulada + $3
+           SET monto_pagado = $2,
+               propina_acumulada = propina_acumulada + $3,
+               estado = CASE
+                 WHEN estado NOT IN ('pagando', 'pagado', 'cancelado', 'rechazado')
+                 THEN 'pagando' ELSE estado END
            WHERE id = $1`,
           [pedidoId, nuevoPagado, propina],
         );
+        if (
+          !['pagando', 'pagado', 'cancelado', 'rechazado'].includes(anterior)
+        ) {
+          await client.query(
+            `INSERT INTO estados_pedido_historial
+               (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
+             VALUES ($1, $2, 'pagando', $3, $4)`,
+            [
+              pedidoId,
+              anterior,
+              usuarioId,
+              dto.motivo?.trim() || 'Abono en caja',
+            ],
+          );
+        }
       }
 
       for (const pago of pagos) {
@@ -340,7 +429,7 @@ export class PedidosPagosService {
         );
       }
 
-      return {
+      const payload = {
         pedido_id: pedidoId,
         numero_pedido: pedido.numero_pedido,
         total_cobrado: montoCobrar,
@@ -351,7 +440,24 @@ export class PedidosPagosService {
         pagado: quedaPagado,
         mesa_id: pedido.mesa_id,
       };
-    });
+      await this.guardarCobroIdempotente(
+        client,
+        dto.idempotency_key,
+        sucursalId,
+        payload,
+      );
+      return payload;
+    }) as {
+      pedido_id: string;
+      numero_pedido: string;
+      total_cobrado: number;
+      propina: number;
+      pagos: PagoLineaDto[];
+      saldo_restante: number;
+      parcial: boolean;
+      pagado: boolean;
+      mesa_id: string | null;
+    };
 
     if (result.pagado && result.mesa_id) {
       void this.realtime.mesasActualizadas(sucursalId);
@@ -368,6 +474,66 @@ export class PedidosPagosService {
       total_cobrado: result.total_cobrado,
     });
     return result;
+  }
+
+  /** VIE-05/13 C: no cerrar a pagado con ítems pendientes en cocina. */
+  private async exigirCocinaCompletaParaPagado(
+    client: PoolClient,
+    pedidoId: string,
+    ctx: ContextoCobro,
+    motivo?: string | null,
+  ): Promise<void> {
+    const completa = await pedidoCocinaCompleta(client, pedidoId);
+    if (completa) return;
+    if (puedeForzarPagadoSinCocinaCompleta(ctx.rol, motivo)) return;
+    throw new BadRequestException({
+      error: 'COCINA_INCOMPLETA_PARA_PAGADO',
+      message:
+        'Hay ítems aún en cocina. Registra un abono o espera cocina completa. Admin/gerente puede cerrar con motivo.',
+    });
+  }
+
+  private async leerCobroIdempotente(
+    clave?: string | null,
+  ): Promise<Record<string, unknown> | null> {
+    const k = clave?.trim();
+    if (!k) return null;
+    const prev = await this.database.consultarUno<{ resultado: unknown }>(
+      `SELECT resultado FROM cobros_idempotencia WHERE clave = $1`,
+      [k],
+    );
+    if (prev?.resultado == null) return null;
+    return prev.resultado as Record<string, unknown>;
+  }
+
+  private async leerCobroIdempotenteEnTx(
+    client: PoolClient,
+    clave?: string | null,
+  ): Promise<Record<string, unknown> | null> {
+    const k = clave?.trim();
+    if (!k) return null;
+    const prev = await client.query<{ resultado: unknown }>(
+      `SELECT resultado FROM cobros_idempotencia WHERE clave = $1 FOR UPDATE`,
+      [k],
+    );
+    if (prev.rows[0]?.resultado == null) return null;
+    return prev.rows[0].resultado as Record<string, unknown>;
+  }
+
+  private async guardarCobroIdempotente(
+    client: PoolClient,
+    clave: string | undefined | null,
+    sucursalId: string,
+    payload: unknown,
+  ): Promise<void> {
+    const k = clave?.trim();
+    if (!k) return;
+    await client.query(
+      `INSERT INTO cobros_idempotencia (clave, sucursal_id, resultado)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (clave) DO NOTHING`,
+      [k, sucursalId, JSON.stringify(payload)],
+    );
   }
 
   private async calcularMontoObjetivo(

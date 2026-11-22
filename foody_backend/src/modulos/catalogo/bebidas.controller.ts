@@ -6,6 +6,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -17,6 +18,7 @@ import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard'
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { CatalogoService } from './catalogo.service';
 import { CrearExtraDto } from './dto/crear-extra.dto';
+import { ActualizarExtraDto } from './dto/extras-mutacion.dto';
 
 @Controller('bebidas')
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, RolGuard)
@@ -46,8 +48,8 @@ export class BebidasController {
   @Patch(':id')
   @Permisos('editar_productos')
   async actualizar(
-    @Param('id') id: string,
-    @Body() body: { nombre?: string; precio?: number; disponible?: boolean },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ActualizarExtraDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const sid = await this.sucursalScope.resolverEscritura(usuario);

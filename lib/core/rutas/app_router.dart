@@ -6,6 +6,7 @@ import 'package:reserva_canchas/features/admin/presentation/panel_mesero_screen.
 import 'package:reserva_canchas/features/admin/presentation/panel_foody_control_screen.dart';
 import 'package:reserva_canchas/features/admin/presentation/panel_restaurante_screen.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/dashboard_domiciliario_screen.dart';
+import 'package:reserva_canchas/features/domiciliarios/presentation/domiciliario_documentos_screen.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/domiciliario_registro_screen.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/domiciliario_independiente_login_screen.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/dashboard_domiciliario_independiente_screen.dart';
@@ -14,6 +15,7 @@ import 'package:reserva_canchas/features/auth/presentation/restaurante_registro_
 import 'package:reserva_canchas/features/ciudades/presentation/ciudades_screen_foody.dart';
 import 'package:reserva_canchas/features/cocinas/presentation/kds_screen.dart';
 import 'package:reserva_canchas/features/mesa/presentation/mesa_qr_entrada_screen.dart';
+import 'package:reserva_canchas/features/mesa/presentation/escanear_qr_mesa_screen.dart';
 import 'package:reserva_canchas/features/menu/presentation/menu_screen_foody.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/carrito_screen.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/checkout_screen.dart';
@@ -24,6 +26,7 @@ import 'package:reserva_canchas/features/restaurantes/presentation/sucursales_sc
 import 'package:reserva_canchas/features/splash/presentation/foody_splash_screen.dart';
 import 'package:reserva_canchas/core/config/app_flavor.dart';
 import 'package:reserva_canchas/core/rutas/ruta_mesa_util.dart';
+import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/main.dart' show appNavigatorKey;
 import 'package:reserva_canchas/services/mesa_sesion_service.dart';
 
@@ -45,6 +48,11 @@ class AppRouter {
       final bloqueoFlavor = AppFlavor.actual.redirigirSiRutaProhibida(path);
       if (bloqueoFlavor != null) return bloqueoFlavor;
 
+      // Deep link OAuth (foody://login) a veces abre la app en "/" sin ruta.
+      if (path == '/' || path.isEmpty) {
+        return AppFlavor.actual.rutaInicial;
+      }
+
       // Deep link QR: /mesa/{token}/cliente u otra basura → /mesa/{token}
       final mesaLimpia = RutaMesaUtil.normalizar(path);
       if (mesaLimpia != null && path != mesaLimpia) {
@@ -54,6 +62,16 @@ class AppRouter {
       // Entrada mesa: no redirigir a ciudad/menú viejo; lo resuelve MesaQrEntradaScreen.
       if (RutaMesaUtil.esEntradaMesa(path)) {
         return null;
+      }
+
+      // Roles piso: shell dedicado (no panel admin).
+      if (path == '/admin/panel' || path.startsWith('/admin/panel/')) {
+        final staff = await SesionStaffService.cargar();
+        if (staff?.dashboard == 'cocina') return '/admin/cocina';
+        if (staff?.dashboard == 'mesero') return '/admin/mesero';
+        if (staff?.dashboard == 'cajero') return '/admin/cajero';
+        // NAV-DP-02
+        if (staff?.dashboard == 'domiciliario') return '/admin/domiciliario';
       }
 
       final sesion = await MesaSesionService.obtener();
@@ -107,6 +125,10 @@ class AppRouter {
         builder: (context, state) => const MisPedidosScreen(),
       ),
       GoRoute(
+        path: '/cliente/escanear-qr',
+        builder: (context, state) => const EscanearQrMesaScreen(),
+      ),
+      GoRoute(
         path: '/cliente',
         builder: (context, state) => const CiudadesScreenFoody(),
       ),
@@ -132,11 +154,14 @@ class AppRouter {
       GoRoute(
         path: '/admin/panel',
         builder: (context, state) {
-          final seccion = state.uri.queryParameters['seccion'];
-          final pagoId = state.uri.queryParameters['pago_id'];
+          final q = state.uri.queryParameters;
           return PanelRestauranteScreen(
-            seccionInicial: seccion,
-            pagoIdInicial: pagoId,
+            seccionInicial: q['seccion'],
+            pagoIdInicial: q['pago_id'],
+            mesaIdInicial: q['mesa_id'],
+            productoIdInicial: q['producto_id'],
+            pedidoIdInicial: q['pedido_id'] ?? q['pedido'],
+            ingredienteIdInicial: q['ingrediente_id'],
           );
         },
       ),
@@ -150,7 +175,15 @@ class AppRouter {
       ),
       GoRoute(
         path: '/admin/mesero',
-        builder: (context, state) => const PanelMeseroScreen(),
+        builder: (context, state) {
+          final q = state.uri.queryParameters;
+          final tab = q['tab'] == 'pedidos' ? 1 : 0;
+          return PanelMeseroScreen(
+            mesaIdInicial: q['mesa_id'],
+            pedidoIdInicial: q['pedido_id'] ?? q['pedido'],
+            tabInicial: tab,
+          );
+        },
       ),
       GoRoute(
         path: '/admin/foody-control',
@@ -158,7 +191,12 @@ class AppRouter {
       ),
       GoRoute(
         path: '/admin/domiciliario',
-        builder: (context, state) => const DashboardDomiciliarioScreen(),
+        builder: (context, state) {
+          final q = state.uri.queryParameters;
+          return DashboardDomiciliarioScreen(
+            pedidoIdInicial: q['pedido_id'] ?? q['pedido'],
+          );
+        },
       ),
       GoRoute(
         path: '/admin/cocina',
@@ -171,6 +209,10 @@ class AppRouter {
       GoRoute(
         path: '/domiciliario/registro',
         builder: (context, state) => const DomiciliarioRegistroScreen(),
+      ),
+      GoRoute(
+        path: '/domiciliario/documentos',
+        builder: (context, state) => const DomiciliarioDocumentosScreen(),
       ),
       GoRoute(
         path: '/domiciliario/espera',
@@ -215,11 +257,13 @@ class AppRouter {
           final nombre = state.uri.queryParameters['nombre'] ?? 'Menú';
           final mesaId = state.uri.queryParameters['mesa_id'];
           final mesaNombre = state.uri.queryParameters['mesa_nombre'];
+          final productoId = state.uri.queryParameters['producto_id'];
           return MenuScreenFoody(
             sucursalId: sucursalId,
             sucursalNombre: nombre,
             mesaId: mesaId,
             mesaNombre: mesaNombre,
+            productoIdDestino: productoId,
           );
         },
       ),
@@ -253,7 +297,11 @@ class AppRouter {
         path: '/pedidos/:pedidoId/seguimiento',
         builder: (context, state) {
           final pedidoId = state.pathParameters['pedidoId']!;
-          return SeguimientoPedidoScreen(pedidoId: pedidoId);
+          final token = state.uri.queryParameters['token'];
+          return SeguimientoPedidoScreen(
+            pedidoId: pedidoId,
+            seguimientoToken: token,
+          );
         },
       ),
     ],

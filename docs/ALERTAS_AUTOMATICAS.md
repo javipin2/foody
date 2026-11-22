@@ -1,4 +1,4 @@
-# Foody — Alertas automáticas (Paso 2)
+﻿# Foody — Alertas automáticas (Paso 2)
 
 > Fuente de umbrales: `INFRAESTRUCTURA/reglas_negocio_foody.md` § Alertas de riesgo.
 > Implementación: `foody_backend/src/modulos/alertas/alertas-riesgo.service.ts`
@@ -19,12 +19,19 @@
 
 ## Evaluación programada (batch)
 
-Endpoint: `POST /alertas/evaluar/:sucursal_id` (permiso `ver_alertas`).
+Endpoint: `POST /alertas/evaluar/:sucursal_id` (permiso `ver_alertas`).  
+Umbrales: `UMBRALES_ALERTA` en `alertas-riesgo.service.ts` (**hardcode**; no leen `configuracion_global_foody` — ver **CFG-GLOBAL-DEAD** en `AUDITORIA_CONFIGURACION.md`).  
+Auditoría cifras/umbrales: `docs/archivo/auditorias-prompts/AUDITORIA_REPORTES.md` (Prompt 20) · `scripts/verificar-reportes-analitica.ps1`.
 
 | Tipo | Regla | Nivel |
 |------|-------|-------|
 | `margen_bajo_prolongado` | Margen < 20% promedio 7 días (≥ 3 ventas) | bajo |
 | `caida_ventas_producto` | Caída > 40% vs semana anterior (≥ 5 uds previas) | bajo |
+| `producto_sin_venta` | Producto disponible sin ventas en 14 días | bajo |
+| `mesero_cancelacion_alta` | % cancelación mesero > 1.5× promedio sede (7d) | medio |
+| (prep cocina) | Tiempo prep +30% vs semana anterior (≥ 3 muestras) | bajo |
+
+> Stock bajo y cuadre de caja **no** van en este batch: se disparan por **evento** (descuento inventario / cierre caja).
 
 ## Pendiente / manual
 
@@ -37,6 +44,10 @@ Endpoint: `POST /alertas/evaluar/:sucursal_id` (permiso `ver_alertas`).
 ## UI Flutter
 
 `AlertasAdminScreen` — iconos por tipo, botón **Evaluar reglas** (llama POST evaluar).
+
+## Push FCM (P1-15)
+
+Alertas **nivel alto o crítico** → FCM a `admin` y `gerente` de la sucursal (`tipo: alerta_riesgo_*`, deep link `/admin/panel?seccion=alertas`). Se envía tras commit de la transacción que insertó la alerta (`TransactionHooksService`). Email: ⏳ pendiente.
 
 ## API existente
 

@@ -10,6 +10,7 @@ exports.SuperAdminModule = void 0;
 const common_1 = require("@nestjs/common");
 const auth_module_1 = require("../../core/auth/auth.module");
 const onboarding_module_1 = require("../../core/onboarding/onboarding.module");
+const notificaciones_module_1 = require("../notificaciones/notificaciones.module");
 const super_admin_controller_1 = require("./super-admin.controller");
 const super_admin_service_1 = require("./super-admin.service");
 let SuperAdminModule = class SuperAdminModule {
@@ -17,7 +18,7 @@ let SuperAdminModule = class SuperAdminModule {
 exports.SuperAdminModule = SuperAdminModule;
 exports.SuperAdminModule = SuperAdminModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule, onboarding_module_1.OnboardingModule],
+        imports: [auth_module_1.AuthModule, onboarding_module_1.OnboardingModule, notificaciones_module_1.NotificacionesModule],
         controllers: [super_admin_controller_1.SuperAdminController],
         providers: [super_admin_service_1.SuperAdminService],
     })

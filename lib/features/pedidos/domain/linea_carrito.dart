@@ -38,6 +38,8 @@ class LineaCarrito {
     this.observaciones,
     this.imagenUrl,
     this.esEncargo = false,
+    this.detalleIncluye,
+    this.etiquetaTipo,
   }) : assert(productoId.isNotEmpty || comboId != null);
 
   final String clave;
@@ -55,7 +57,20 @@ class LineaCarrito {
   final String? imagenUrl;
   final bool esEncargo;
 
+  /// Snapshot al agregar: ítems del combo o descripción del plato.
+  final String? detalleIncluye;
+
+  /// Badge UI: Combo / Plato / Encargo / Bebida.
+  final String? etiquetaTipo;
+
   bool get esCombo => comboId != null;
+
+  String get etiquetaTipoResuelta {
+    if (etiquetaTipo != null && etiquetaTipo!.isNotEmpty) return etiquetaTipo!;
+    if (esEncargo) return 'Encargo';
+    if (esCombo) return 'Combo';
+    return 'Plato';
+  }
 
   bool get tienePrecioLlevarDistinto {
     final llevar = precioUnitarioLlevar;
@@ -97,10 +112,20 @@ class LineaCarrito {
       observaciones: observaciones,
       imagenUrl: imagenUrl,
       esEncargo: esEncargo,
+      detalleIncluye: detalleIncluye,
+      etiquetaTipo: etiquetaTipo,
     );
   }
 
-  static String generarClaveCombo(String comboId) => 'combo:$comboId';
+  static String generarClaveCombo(
+    String comboId, {
+    List<String> toppingIds = const [],
+    List<String> bebidaIds = const [],
+  }) {
+    final tops = [...toppingIds]..sort();
+    final bebs = [...bebidaIds]..sort();
+    return 'combo:$comboId|${tops.join(',')}|${bebs.join(',')}';
+  }
 
   static String generarClave({
     required String productoId,

@@ -27,8 +27,15 @@ let PedidosPagosService = class PedidosPagosService {
         this.cuentaMesa = cuentaMesa;
         this.realtime = realtime;
     }
-    async cobrarCuentaMesa(sucursalId, mesaId, usuarioId, dto = {}) {
+    async cobrarCuentaMesa(sucursalId, mesaId, usuarioId, dto = {}, rol) {
+        const cached = await this.leerCobroIdempotente(dto.idempotency_key);
+        if (cached)
+            return cached;
+        const ctx = { usuarioId, rol };
         const result = await this.database.enTransaccion(async (client) => {
+            const again = await this.leerCobroIdempotenteEnTx(client, dto.idempotency_key);
+            if (again)
+                return again;
             const mesa = await this.consultarUnoCliente(client, `SELECT id, nombre, mesa_grupo_id FROM mesas
          WHERE id = $1 AND sucursal_id = $2 AND activa = true`, [mesaId, sucursalId]);
             if (!mesa)
@@ -62,6 +69,7 @@ let PedidosPagosService = class PedidosPagosService {
                 const quedaPagado = nuevoPagado >= totalPedido - 0.01;
                 const fraccionPropina = montoCobrar > 0 ? propina * (asignado / montoCobrar) : 0;
                 if (quedaPagado) {
+                    await this.exigirCocinaCompletaParaPagado(client, p.id, ctx, dto.motivo);
                     const anterior = p.estado;
                     const metodoPrincipal = pagos[0]?.metodo_pago ?? 'efectivo';
                     await client.query(`UPDATE pedidos
@@ -84,8 +92,17 @@ let PedidosPagosService = class PedidosPagosService {
                 }
                 else {
                     await client.query(`UPDATE pedidos
-             SET monto_pagado = $2, propina_acumulada = propina_acumulada + $3
+             SET monto_pagado = $2,
+                 propina_acumulada = propina_acumulada + $3,
+                 estado = CASE
+                   WHEN estado NOT IN ('pagando', 'pagado', 'cancelado', 'rechazado')
+                   THEN 'pagando' ELSE estado END
              WHERE id = $1`, [p.id, nuevoPagado, fraccionPropina]);
+                    if (!['pagando', 'pagado', 'cancelado', 'rechazado'].includes(p.estado)) {
+                        await client.query(`INSERT INTO estados_pedido_historial
+                 (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
+               VALUES ($1, $2, 'pagando', $3, $4)`, [p.id, p.estado, usuarioId, dto.motivo?.trim() || 'Abono cuenta mesa']);
+                    }
                 }
             }
             if (itemIds?.length) {
@@ -134,7 +151,7 @@ let PedidosPagosService = class PedidosPagosService {
                 saldo_restante: saldoRestante,
                 pedidos: cobrados,
             });
-            return {
+            const payload = {
                 mesa_id: mesa.id,
                 mesa_nombre: mesa.nombre,
                 total_cobrado: totalCobrado,
@@ -144,8 +161,10 @@ let PedidosPagosService = class PedidosPagosService {
                 pedidos_cobrados: cobrados,
                 parcial: saldoRestante > 0.01,
             };
+            await this.guardarCobroIdempotente(client, dto.idempotency_key, sucursalId, payload);
+            return payload;
         });
-        for (const p of result.pedidos_cobrados) {
+        for (const p of result.pedidos_cobrados ?? []) {
             void this.realtime.pedidoActualizado({
                 pedido_id: p.id,
                 sucursal_id: sucursalId,
@@ -160,14 +179,21 @@ let PedidosPagosService = class PedidosPagosService {
         });
         return result;
     }
-    async cobrarPedidoCaja(sucursalId, pedidoId, usuarioId, dto = {}) {
+    async cobrarPedidoCaja(sucursalId, pedidoId, usuarioId, dto = {}, rol) {
+        const cached = await this.leerCobroIdempotente(dto.idempotency_key);
+        if (cached)
+            return cached;
+        const ctx = { usuarioId, rol };
         const result = await this.database.enTransaccion(async (client) => {
+            const again = await this.leerCobroIdempotenteEnTx(client, dto.idempotency_key);
+            if (again)
+                return again;
             const pedido = await this.consultarUnoCliente(client, `SELECT id, numero_pedido, estado, total, monto_pagado, metodo_pago, mesa_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
             if (!pedido)
                 throw new common_1.NotFoundException('Pedido no encontrado');
             if (['cancelado', 'rechazado', 'pagado'].includes(pedido.estado)) {
-                throw new common_1.BadRequestException({
+                throw new common_1.ConflictException({
                     error: 'PEDIDO_CERRADO',
                     message: 'El pedido ya está cerrado o pagado',
                 });
@@ -190,6 +216,7 @@ let PedidosPagosService = class PedidosPagosService {
             const quedaPagado = nuevoPagado >= totalPedido - 0.01;
             const anterior = pedido.estado;
             if (quedaPagado) {
+                await this.exigirCocinaCompletaParaPagado(client, pedidoId, ctx, dto.motivo);
                 await client.query(`UPDATE pedidos
            SET estado = 'pagado', metodo_pago = $2,
                monto_pagado = $3, propina_acumulada = propina_acumulada + $4
@@ -200,8 +227,22 @@ let PedidosPagosService = class PedidosPagosService {
             }
             else {
                 await client.query(`UPDATE pedidos
-           SET monto_pagado = $2, propina_acumulada = propina_acumulada + $3
+           SET monto_pagado = $2,
+               propina_acumulada = propina_acumulada + $3,
+               estado = CASE
+                 WHEN estado NOT IN ('pagando', 'pagado', 'cancelado', 'rechazado')
+                 THEN 'pagando' ELSE estado END
            WHERE id = $1`, [pedidoId, nuevoPagado, propina]);
+                if (!['pagando', 'pagado', 'cancelado', 'rechazado'].includes(anterior)) {
+                    await client.query(`INSERT INTO estados_pedido_historial
+               (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
+             VALUES ($1, $2, 'pagando', $3, $4)`, [
+                        pedidoId,
+                        anterior,
+                        usuarioId,
+                        dto.motivo?.trim() || 'Abono en caja',
+                    ]);
+                }
             }
             for (const pago of pagos) {
                 await client.query(`INSERT INTO pagos_pedido (
@@ -221,7 +262,7 @@ let PedidosPagosService = class PedidosPagosService {
             if (quedaPagado && pedido.mesa_id) {
                 await this.cuentaMesa.liberarMesaSiSinPedidosActivos(client, pedido.mesa_id, sucursalId);
             }
-            return {
+            const payload = {
                 pedido_id: pedidoId,
                 numero_pedido: pedido.numero_pedido,
                 total_cobrado: montoCobrar,
@@ -232,6 +273,8 @@ let PedidosPagosService = class PedidosPagosService {
                 pagado: quedaPagado,
                 mesa_id: pedido.mesa_id,
             };
+            await this.guardarCobroIdempotente(client, dto.idempotency_key, sucursalId, payload);
+            return payload;
         });
         if (result.pagado && result.mesa_id) {
             void this.realtime.mesasActualizadas(sucursalId);
@@ -247,6 +290,43 @@ let PedidosPagosService = class PedidosPagosService {
             total_cobrado: result.total_cobrado,
         });
         return result;
+    }
+    async exigirCocinaCompletaParaPagado(client, pedidoId, ctx, motivo) {
+        const completa = await (0, pedido_estados_1.pedidoCocinaCompleta)(client, pedidoId);
+        if (completa)
+            return;
+        if ((0, pedido_estados_1.puedeForzarPagadoSinCocinaCompleta)(ctx.rol, motivo))
+            return;
+        throw new common_1.BadRequestException({
+            error: 'COCINA_INCOMPLETA_PARA_PAGADO',
+            message: 'Hay ítems aún en cocina. Registra un abono o espera cocina completa. Admin/gerente puede cerrar con motivo.',
+        });
+    }
+    async leerCobroIdempotente(clave) {
+        const k = clave?.trim();
+        if (!k)
+            return null;
+        const prev = await this.database.consultarUno(`SELECT resultado FROM cobros_idempotencia WHERE clave = $1`, [k]);
+        if (prev?.resultado == null)
+            return null;
+        return prev.resultado;
+    }
+    async leerCobroIdempotenteEnTx(client, clave) {
+        const k = clave?.trim();
+        if (!k)
+            return null;
+        const prev = await client.query(`SELECT resultado FROM cobros_idempotencia WHERE clave = $1 FOR UPDATE`, [k]);
+        if (prev.rows[0]?.resultado == null)
+            return null;
+        return prev.rows[0].resultado;
+    }
+    async guardarCobroIdempotente(client, clave, sucursalId, payload) {
+        const k = clave?.trim();
+        if (!k)
+            return;
+        await client.query(`INSERT INTO cobros_idempotencia (clave, sucursal_id, resultado)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (clave) DO NOTHING`, [k, sucursalId, JSON.stringify(payload)]);
     }
     async calcularMontoObjetivo(client, dto, pedidos, itemIds) {
         if (itemIds?.length) {

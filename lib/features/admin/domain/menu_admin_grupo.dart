@@ -66,9 +66,9 @@ class MenuAdminGrupoData {
     MenuAdminGrupo(
       id: 'finanzas',
       titulo: 'Finanzas',
-      subtitulo: 'Reportes y facturación',
+      subtitulo: 'Reportes, gastos, plan y facturación',
       icono: Icons.account_balance_wallet_outlined,
-      rutas: ['reportes', 'facturacion'],
+      rutas: ['reportes', 'analitica', 'finanzas', 'facturacion', 'mejorar_plan'],
     ),
     MenuAdminGrupo(
       id: 'equipo',
@@ -80,9 +80,9 @@ class MenuAdminGrupoData {
     MenuAdminGrupo(
       id: 'sistema',
       titulo: 'Sistema',
-      subtitulo: 'Alertas y plan',
+      subtitulo: 'Alertas',
       icono: Icons.notifications_outlined,
-      rutas: ['alertas', 'mejorar_plan'],
+      rutas: ['alertas'],
     ),
   ];
 
@@ -97,18 +97,9 @@ class MenuAdminGrupoData {
       permisos,
       modulosPlan: modulosPlan,
     );
-    final extras = <MenuAdminItem>[];
-    if (rol == 'admin' && planActual != 'enterprise') {
-      extras.add(
-        const MenuAdminItem(
-          permiso: 'gestionar_usuarios',
-          titulo: 'Mejorar plan',
-          icono: Icons.rocket_launch_outlined,
-          ruta: 'mejorar_plan',
-        ),
-      );
-    }
-    final todos = [...items, ...extras];
+    // Banner gratis = CTA urgente; «Plan y pagos» en Finanzas = entrada permanente
+    // (sin banner, en Pro/Enterprise no había forma de abrir la pantalla).
+    final todos = [...items];
     final porRuta = {for (final i in todos) i.ruta: i};
     final resultado =
         <({MenuAdminGrupo grupo, List<MenuAdminItem> items})>[];

@@ -8,6 +8,7 @@ export type OpcionesStaffPedido = {
     creadoPorStaff?: boolean;
     usuarioId?: string;
     rol?: string;
+    soloEstimar?: boolean;
 };
 export declare class PedidosSoporteService {
     private readonly database;
@@ -15,6 +16,9 @@ export declare class PedidosSoporteService {
     private readonly notificaciones;
     private readonly impresion;
     constructor(database: DatabaseService, realtime: RealtimeBroadcastService, notificaciones: NotificacionesService, impresion: ImpresionService);
+    obtenerSeguimientoToken(pedidoId: string): Promise<string | null>;
+    emitirSeguimientoPedido(pedidoId: string, payload: Record<string, unknown>): void;
+    emitirUbicacionRepartidor(pedidoId: string, payload: Record<string, unknown>): void;
     consultarUnoCliente<T extends QueryResultRow>(client: PoolClient, sql: string, parametros: unknown[]): Promise<T | null>;
     esRolMesero(rol?: string): boolean;
     assertMeseraPuedeTomarMesa(client: PoolClient, sucursalId: string, mesaId: string, meseraId: string): Promise<void>;
@@ -29,6 +33,16 @@ export declare class PedidosSoporteService {
         estado: string;
         created_at: Date;
     }, rol: string, _permisos: string[], motivo?: string): void;
+    validarCancelacionCliente(pedido: {
+        estado: string;
+        created_at: Date;
+    }, motivo?: string): void;
+    validarLlamadaMesera(pedido: {
+        mesa_id: string | null;
+        estado: string;
+    }): void;
+    notificarLlamadaMesera(sucursalId: string, pedidoId: string, numeroPedido: string, mesaId: string | null, mesaNombre?: string | null, mensajeCliente?: string): void;
+    notificarDesasignacionesDomicilio(usuarioIds: string[], pedidoId: string): void;
     notificarPedidoRealtime(sucursalId: string, pedidoId: string, estado: string, numeroPedido?: string, opciones?: {
         mesaId?: string | null;
         creadoAt?: Date | string;

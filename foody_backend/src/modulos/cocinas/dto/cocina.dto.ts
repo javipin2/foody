@@ -78,3 +78,9 @@ export class CambiarEstadoItemDto {
   @IsString()
   motivo?: string;
 }
+
+/** VIE-09 C: fallo de preparación (motivo obligatorio). */
+export class FalloPreparacionDto {
+  @IsString()
+  motivo: string;
+}

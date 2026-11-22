@@ -14,23 +14,30 @@ exports.PagosService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const database_service_1 = require("../../core/database/database.service");
+const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
+const roles_food_1 = require("../../core/auth/roles-food");
 const pagos_planes_config_1 = require("./pagos-planes.config");
 const wompi_service_1 = require("./wompi.service");
+const pagos_recurrentes_service_1 = require("./pagos-recurrentes.service");
 let PagosService = PagosService_1 = class PagosService {
     database;
     wompi;
     config;
+    recurrentes;
+    realtime;
     logger = new common_1.Logger(PagosService_1.name);
-    constructor(database, wompi, config) {
+    constructor(database, wompi, config, recurrentes, realtime) {
         this.database = database;
         this.wompi = wompi;
         this.config = config;
+        this.recurrentes = recurrentes;
+        this.realtime = realtime;
     }
     async crearCheckout(usuario, dto) {
         if (!usuario.restaurante_id) {
             throw new common_1.ForbiddenException('Solo dueños de restaurante pueden pagar un plan');
         }
-        if (usuario.rol !== 'admin') {
+        if (!(0, roles_food_1.esAdminRestaurante)(usuario.rol)) {
             throw new common_1.ForbiddenException('Solo el administrador del restaurante puede mejorar el plan');
         }
         if (!this.wompi.estaConfigurado()) {
@@ -50,7 +57,7 @@ let PagosService = PagosService_1 = class PagosService {
        ) VALUES ($1, $2, $3, $4, $5)
        RETURNING id`, [usuario.restaurante_id, usuario.sub, plan, monto, referencia]);
         const redirectBase = this.config.get('WOMPI_REDIRECT_URL')?.trim() ||
-            'http://localhost:8080/admin/panel?seccion=mejorar_plan';
+            'http://localhost:3000/api/v1/pagos/retorno-app';
         const separador = redirectBase.includes('?') ? '&' : '?';
         const redirect = `${redirectBase}${separador}pago_id=${pago.id}`;
         const enlace = await this.wompi.crearEnlacePago({
@@ -83,10 +90,52 @@ let PagosService = PagosService_1 = class PagosService {
        WHERE p.restaurante_id = $1
        ORDER BY p.created_at DESC
        LIMIT 1`, [restauranteId]);
+        const historial = await this.database.consultar(`SELECT id, plan, estado, monto_centavos, created_at
+       FROM pagos_suscripcion
+       WHERE restaurante_id = $1
+       ORDER BY created_at DESC
+       LIMIT 15`, [restauranteId]);
         return {
             suscripcion,
             ultimo_pago: ultimoPago,
+            historial,
+            fuente_pago: this.recurrentes.resumenFuente(await this.recurrentes.obtenerFuenteActiva(restauranteId)),
             precios: pagos_planes_config_1.PRECIO_PLAN_CENTAVOS,
+        };
+    }
+    async renovar(usuario) {
+        if (!usuario.restaurante_id) {
+            throw new common_1.ForbiddenException('Solo dueños de restaurante pueden renovar');
+        }
+        if (!(0, roles_food_1.esAdminRestaurante)(usuario.rol)) {
+            throw new common_1.ForbiddenException('Solo el administrador puede renovar el plan');
+        }
+        const suscripcion = await this.database.consultarUno(`SELECT plan FROM suscripciones_restaurante WHERE restaurante_id = $1`, [usuario.restaurante_id]);
+        const planActual = suscripcion?.plan;
+        if (!planActual || !(0, pagos_planes_config_1.esPlanPago)(planActual)) {
+            throw new common_1.BadRequestException('No hay un plan de pago activo para renovar. Elige un plan en la comparativa.');
+        }
+        const cobro = await this.recurrentes.intentarCobroRenovacion(usuario.restaurante_id, planActual);
+        if (cobro.iniciado) {
+            return {
+                modo: 'recurrente',
+                ...cobro,
+                plan: planActual,
+            };
+        }
+        if (cobro.motivo === 'sin_fuente_pago') {
+            const checkout = await this.crearCheckout(usuario, { plan: planActual });
+            return {
+                modo: 'checkout',
+                motivo: 'sin_fuente_pago',
+                ...checkout,
+                plan: planActual,
+            };
+        }
+        return {
+            modo: 'ninguno',
+            plan: planActual,
+            ...cobro,
         };
     }
     async sincronizarPago(restauranteId, dto) {
@@ -115,7 +164,30 @@ let PagosService = PagosService_1 = class PagosService {
             };
         }
         if (!dto.transaccion_wompi_id?.trim()) {
-            throw new common_1.BadRequestException('Indica el ID de transacción Wompi del comprobante (ej. 1969957-1782290934-46563)');
+            if (pago.estado === 'aprobado') {
+                return {
+                    sincronizado: true,
+                    motivo: 'ya_aprobado',
+                    plan: pago.plan,
+                    pago_id: pago.id,
+                };
+            }
+            const suscripcion = await this.database.consultarUno(`SELECT plan, estado FROM suscripciones_restaurante WHERE restaurante_id = $1`, [restauranteId]);
+            if (suscripcion?.plan === pago.plan &&
+                ['activa', 'prueba'].includes(suscripcion.estado)) {
+                return {
+                    sincronizado: true,
+                    motivo: 'suscripcion_activa',
+                    plan: pago.plan,
+                    pago_id: pago.id,
+                };
+            }
+            return {
+                sincronizado: false,
+                motivo: 'esperando_webhook',
+                pago_id: pago.id,
+                estado_pago: pago.estado,
+            };
         }
         const tx = await this.wompi.consultarTransaccion(dto.transaccion_wompi_id);
         if (tx.payment_link_id && pago.payment_link_id && tx.payment_link_id !== pago.payment_link_id) {
@@ -177,6 +249,23 @@ let PagosService = PagosService_1 = class PagosService {
          WHERE restaurante_id = $1`, [pago.restaurante_id]);
         });
         this.logger.log(`Pago aprobado restaurante=${pago.restaurante_id} plan=${pago.plan}`);
+        try {
+            await this.realtime.suscripcionActualizada(pago.restaurante_id, {
+                plan: pago.plan,
+                pago_id: pago.id,
+            });
+        }
+        catch (e) {
+            this.logger.warn(`Realtime suscripcion: ${e instanceof Error ? e.message : e}`);
+        }
+        try {
+            await this.recurrentes.registrarFuenteDesdeTransaccion(pago.restaurante_id, tx.transaccionId);
+            await this.database.consultar(`UPDATE fuentes_pago SET ultimo_cobro_at = now(), updated_at = now()
+         WHERE restaurante_id = $1 AND activa = true`, [pago.restaurante_id]);
+        }
+        catch (e) {
+            await this.registrarFalloFuentePago(pago.restaurante_id, pago.id, 'aprobar_pago', e);
+        }
     }
     async procesarWebhookWompi(eventoRaw, checksumHeader) {
         const evento = eventoRaw;
@@ -200,6 +289,9 @@ let PagosService = PagosService_1 = class PagosService {
         const metodo = tx['payment_method_type']
             ? String(tx['payment_method_type'])
             : null;
+        const paymentSourceId = tx['payment_source_id']
+            ? String(tx['payment_source_id'])
+            : null;
         if (!transaccionId) {
             return { procesado: false, motivo: 'sin_id_transaccion' };
         }
@@ -218,6 +310,14 @@ let PagosService = PagosService_1 = class PagosService {
                 metodo,
                 referenciaWompi: String(tx['reference'] ?? ''),
             });
+            if (paymentSourceId) {
+                try {
+                    await this.recurrentes.registrarFuenteDesdeTransaccion(pago.restaurante_id, transaccionId, paymentSourceId);
+                }
+                catch (e) {
+                    await this.registrarFalloFuentePago(pago.restaurante_id, pago.id, 'webhook', e);
+                }
+            }
             return { procesado: true };
         }
         if (['DECLINED', 'VOIDED', 'ERROR'].includes(estadoTx)) {
@@ -230,6 +330,26 @@ let PagosService = PagosService_1 = class PagosService {
             return { procesado: true, motivo: `transaccion_${estadoTx.toLowerCase()}` };
         }
         return { procesado: false, motivo: `estado_${estadoTx}` };
+    }
+    async registrarFalloFuentePago(restauranteId, pagoId, origen, err) {
+        const mensaje = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Fuente pago falló origen=${origen} restaurante=${restauranteId} pago=${pagoId}: ${mensaje}`);
+        try {
+            const sede = await this.database.consultarUno(`SELECT id FROM sucursales WHERE restaurante_id = $1 ORDER BY created_at ASC LIMIT 1`, [restauranteId]);
+            if (!sede)
+                return;
+            await this.database.consultar(`INSERT INTO auditoria_logs (
+           sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues
+         ) VALUES ($1, NULL, $2, 'fuentes_pago', $3, $4::jsonb)`, [
+                sede.id,
+                'wompi_fuente_fallo',
+                pagoId,
+                JSON.stringify({ origen, mensaje: mensaje.slice(0, 500) }),
+            ]);
+        }
+        catch (e2) {
+            this.logger.error(`No se pudo auditar fallo fuente: ${e2 instanceof Error ? e2.message : e2}`);
+        }
     }
     async buscarPagoPendiente(paymentLinkId, sku) {
         if (paymentLinkId) {
@@ -246,12 +366,68 @@ let PagosService = PagosService_1 = class PagosService {
         }
         return null;
     }
+    htmlRetornoApp(pagoId) {
+        const id = (pagoId ?? '').trim();
+        const equipo = this.config.get('WOMPI_EQUIPO_URL')?.trim()?.replace(/\/$/, '') ||
+            'https://equipo.foodyy.store';
+        const webQs = new URLSearchParams({ seccion: 'mejorar_plan' });
+        if (id)
+            webQs.set('pago_id', id);
+        const webUrl = `${equipo}/admin/panel?${webQs.toString()}`;
+        const deepQs = id ? `?pago_id=${encodeURIComponent(id)}` : '';
+        const deepLink = `foody://plan${deepQs}`;
+        const intentUrl = `intent://plan${deepQs}#Intent;scheme=foody;package=app.foody.equipo;` +
+            `S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+        return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Foody — volviendo a la app</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1.25rem;color:#0f172a;text-align:center}
+    a{color:#FF6B35;font-weight:600}
+    .btn{display:inline-block;margin:.75rem .35rem;padding:.7rem 1.1rem;border-radius:10px;background:#FF6B35;color:#fff;text-decoration:none}
+    .sec{background:#fff;color:#FF6B35;border:1px solid #FF6B35}
+  </style>
+</head>
+<body>
+  <h1>Pago recibido</h1>
+  <p>Abriendo Foody Equipo para activar tu plan…</p>
+  <p>
+    <a class="btn" id="abrir" href="${deepLink}">Abrir app</a>
+    <a class="btn sec" href="${webUrl}">Continuar en el navegador</a>
+  </p>
+  <p style="font-size:12px;color:#64748b">Si no se abre sola, usa «Abrir app». El plan se confirma en el servidor (no en esta página).</p>
+  <script>
+(function () {
+  var ua = navigator.userAgent || '';
+  var android = /android/i.test(ua);
+  var ios = /iphone|ipad|ipod/i.test(ua);
+  var deep = ${JSON.stringify(deepLink)};
+  var intent = ${JSON.stringify(intentUrl)};
+  var web = ${JSON.stringify(webUrl)};
+  function goApp() {
+    if (android) { location.href = intent; }
+    else { location.href = deep; }
+  }
+  goApp();
+  setTimeout(function () {
+    if (!document.hidden) location.replace(web);
+  }, ios || android ? 1800 : 400);
+})();
+  </script>
+</body>
+</html>`;
+    }
 };
 exports.PagosService = PagosService;
 exports.PagosService = PagosService = PagosService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         wompi_service_1.WompiService,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        pagos_recurrentes_service_1.PagosRecurrentesService,
+        realtime_broadcast_service_1.RealtimeBroadcastService])
 ], PagosService);
 //# sourceMappingURL=pagos.service.js.map

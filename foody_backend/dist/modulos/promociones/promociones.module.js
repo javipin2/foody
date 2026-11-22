@@ -9,16 +9,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PromocionesModule = void 0;
 const common_1 = require("@nestjs/common");
 const auth_module_1 = require("../../core/auth/auth.module");
+const almacenamiento_module_1 = require("../almacenamiento/almacenamiento.module");
 const promociones_controller_1 = require("./promociones.controller");
+const promociones_cron_service_1 = require("./promociones-cron.service");
 const promociones_service_1 = require("./promociones.service");
 let PromocionesModule = class PromocionesModule {
 };
 exports.PromocionesModule = PromocionesModule;
 exports.PromocionesModule = PromocionesModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule],
+        imports: [auth_module_1.AuthModule, almacenamiento_module_1.AlmacenamientoModule],
         controllers: [promociones_controller_1.PromocionesController],
-        providers: [promociones_service_1.PromocionesService],
+        providers: [promociones_service_1.PromocionesService, promociones_cron_service_1.PromocionesCronService],
         exports: [promociones_service_1.PromocionesService],
     })
 ], PromocionesModule);

@@ -8,6 +8,7 @@ import { SuscripcionActivaGuard } from '../../core/auth/guards/suscripcion-activ
 import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { FiltroReporteDto } from './dto/filtro-reporte.dto';
 import { ReportesService } from './reportes.service';
 
@@ -15,37 +16,49 @@ import { ReportesService } from './reportes.service';
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, PlanFeaturesGuard, RolGuard)
 @RequiereModulo('reportes')
 export class ReportesController {
-  constructor(private readonly reportesService: ReportesService) {}
+  constructor(
+    private readonly reportesService: ReportesService,
+    private readonly sucursalScope: SucursalScopeService,
+  ) {}
 
   @Get('financiero')
   @Permisos('ver_reportes')
-  financiero(
+  async financiero(
     @UsuarioActual() usuario: JwtPayload,
     @Query() query: FiltroReporteDto,
   ) {
-    const id = query.sucursal_id ?? usuario.sucursal_id!;
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      query.sucursal_id,
+    );
     const rango = this.reportesService.resolverRango(query.desde, query.hasta);
     return this.reportesService.financiero(id, rango);
   }
 
   @Get('productos')
   @Permisos('ver_reportes')
-  productos(
+  async productos(
     @UsuarioActual() usuario: JwtPayload,
     @Query() query: FiltroReporteDto,
   ) {
-    const id = query.sucursal_id ?? usuario.sucursal_id!;
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      query.sucursal_id,
+    );
     const rango = this.reportesService.resolverRango(query.desde, query.hasta);
     return this.reportesService.productos(id, rango);
   }
 
   @Get('pedidos')
   @Permisos('ver_reportes')
-  pedidos(
+  async pedidos(
     @UsuarioActual() usuario: JwtPayload,
     @Query() query: FiltroReporteDto,
   ) {
-    const id = query.sucursal_id ?? usuario.sucursal_id!;
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      query.sucursal_id,
+    );
     const rango = this.reportesService.resolverRango(query.desde, query.hasta);
     return this.reportesService.pedidos(id, rango);
   }

@@ -1,26 +1,48 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
+import 'package:reserva_canchas/core/realtime/poll_realtime_respaldo.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_ui.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/operacion_ui.dart';
+import 'package:reserva_canchas/features/admin/providers/operacion_sucursal_provider.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/caja/data/caja_repository.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Panel caja (Sprint 5) — abrir turno, movimientos, cerrar.
-class CajaAdminScreen extends StatefulWidget {
-  const CajaAdminScreen({super.key, this.sucursalId});
+class CajaAdminScreen extends ConsumerStatefulWidget {
+  const CajaAdminScreen({
+    super.key,
+    this.sucursalId,
+    this.onIrPedido,
+    this.onCajaEstadoCambiado,
+    this.ocultarCabecera = false,
+    this.permitirArqueoCiego = true,
+  });
 
   final String? sucursalId;
+  final ValueChanged<String>? onIrPedido;
+  /// NAV-CJ-02: notifica al shell cajero tras abrir/cerrar turno.
+  final ValueChanged<bool>? onCajaEstadoCambiado;
+  /// NAV-CJ-01: el shell ya tiene AppBar.
+  final bool ocultarCabecera;
+  /// NAV-CJ-14: el cajero no debería auto-activar arqueo ciego.
+  final bool permitirArqueoCiego;
 
   @override
-  State<CajaAdminScreen> createState() => _CajaAdminScreenState();
+  ConsumerState<CajaAdminScreen> createState() => _CajaAdminScreenState();
 }
 
-class _CajaAdminScreenState extends State<CajaAdminScreen> {
+class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
+    with WidgetsBindingObserver {
   final _repo = CajaRepository();
   final _montoApertura = TextEditingController(text: '0');
   final _montoCierre = TextEditingController();
@@ -34,9 +56,12 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
   Map<String, dynamic>? _caja;
   List<Map<String, dynamic>> _movimientos = [];
   List<Map<String, dynamic>> _fiados = [];
+  Map<String, dynamic>? _resumenCxC;
+  bool _verHistorialFiados = false;
   bool _cargando = true;
   String? _error;
   RealtimeChannel? _canal;
+  PollRealtimeRespaldo? _pollRespaldo;
 
   final _moneda = NumberFormat.currency(
     locale: 'es_CO',
@@ -47,8 +72,20 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _cargar();
     _suscribirRealtime();
+    _pollRespaldo = PollRealtimeRespaldo(onActualizar: () async {
+      if (mounted) await _cargar(silencioso: true);
+    });
+    unawaited(_pollRespaldo!.iniciar());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      unawaited(_cargar(silencioso: true));
+    }
   }
 
   void _suscribirRealtime() {
@@ -57,16 +94,19 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
     _canal = FoodyRealtime.suscribirSucursal(
       sid,
       onEvento: (evento) {
-        if (evento == 'caja_movimiento') {
-          _cargar();
+        if (evento == 'caja_movimiento' || evento == eventoSucursalCoalesced) {
+          _cargar(silencioso: true);
         }
       },
+      onReconectado: () => _cargar(silencioso: true),
     );
   }
 
   @override
   void dispose() {
-    _canal?.unsubscribe();
+    WidgetsBinding.instance.removeObserver(this);
+    FoodyRealtime.liberarCanal(_canal);
+    _pollRespaldo?.detener();
     _montoApertura.dispose();
     _montoCierre.dispose();
     _conceptoGasto.dispose();
@@ -77,7 +117,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
     super.dispose();
   }
 
-  Future<void> _cargar() async {
+  Future<void> _cargar({bool silencioso = false}) async {
     final sid = widget.sucursalId;
     if (sid == null) {
       setState(() {
@@ -86,16 +126,23 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       });
       return;
     }
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
+    if (!silencioso) {
+      setState(() {
+        _cargando = true;
+        _error = null;
+      });
+    }
     try {
       final caja = await _repo.cajaActiva(sid);
       List<Map<String, dynamic>> movs = [];
       List<Map<String, dynamic>> fiados = [];
+      Map<String, dynamic>? resumenCxC;
       try {
-        fiados = await _repo.cuentasPorCobrar(sid);
+        resumenCxC = await _repo.resumenCuentasPorCobrar(sid);
+        fiados = await _repo.cuentasPorCobrar(
+          sid,
+          incluirPagadas: _verHistorialFiados,
+        );
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -114,10 +161,12 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       if (mounted) {
         setState(() {
           _caja = caja;
-          _movimientos = movs;
+          _movimientos = movs.length > 80 ? movs.take(80).toList() : movs;
           _fiados = fiados;
+          _resumenCxC = resumenCxC;
           _cargando = false;
         });
+        ref.read(operacionSucursalProvider.notifier).publicarCaja(caja);
       }
     } catch (e) {
       if (mounted) {
@@ -136,9 +185,11 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       await _repo.abrir(
         sucursalId: sid,
         montoInicial: monto,
-        arqueoCiego: _arqueoCiego,
+        arqueoCiego: widget.permitirArqueoCiego ? _arqueoCiego : false,
       );
       await _cargar();
+      widget.onCajaEstadoCambiado?.call(true);
+      ref.read(operacionSucursalProvider.notifier).invalidarPedidos();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Caja abierta')),
@@ -146,7 +197,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'abrir caja');
       }
     }
   }
@@ -177,19 +228,19 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: ColoresFoody.error.withValues(alpha: 0.12),
+                    color: AnaliticaTokens.alertas.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: ColoresFoody.error),
+                    border: Border.all(color: AnaliticaTokens.alertas),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.warning_amber, color: ColoresFoody.error),
+                      Icon(Icons.warning_amber, color: AnaliticaTokens.alertas),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Diferencia superior a \$5.000. Informa al administrador.',
                           style: TextStyle(
-                            color: ColoresFoody.error,
+                            color: AnaliticaTokens.alertas,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -204,7 +255,8 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                       '(Arqueo ciego — saldo sistema oculto)'
                     : 'Sistema: ${_moneda.format(res['monto_final_sistema'])}\n'
                       'Contado: ${_moneda.format(res['monto_final_contado'])}\n'
-                      'Diferencia: ${_moneda.format(res['diferencia'])}',
+                      'Diferencia: ${_moneda.format(res['diferencia'])}\n'
+                      'Propinas turno: ${_moneda.format(res['propinas_turno'] ?? 0)}',
               ),
             ],
           ),
@@ -214,9 +266,11 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
         ),
       );
       await _cargar();
+      widget.onCajaEstadoCambiado?.call(false);
+      ref.read(operacionSucursalProvider.notifier).invalidarPedidos();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'cerrar caja');
       }
     }
   }
@@ -271,14 +325,64 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       await _cargar();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'registrar fiado');
       }
     }
   }
 
-  Future<void> _pagarFiado(String id) async {
+  Future<void> _pagarFiado(Map<String, dynamic> cuenta) async {
+    var metodo = 'efectivo';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('Cobrar cuenta por cobrar'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${cuenta['cliente_nombre']} · ${_moneda.format(_num(cuenta['monto']))}',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: metodo,
+                decoration: const InputDecoration(
+                  labelText: 'Método de pago',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'efectivo', child: Text('Efectivo')),
+                  DropdownMenuItem(value: 'tarjeta', child: Text('Tarjeta')),
+                  DropdownMenuItem(
+                    value: 'transferencia',
+                    child: Text('Transferencia'),
+                  ),
+                  DropdownMenuItem(value: 'nequi', child: Text('Nequi')),
+                ],
+                onChanged: (v) {
+                  if (v != null) setSt(() => metodo = v);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Confirmar cobro'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
     try {
-      await _repo.pagarCuenta(id);
+      await _repo.pagarCuenta(cuenta['id'] as String, metodoPago: metodo);
       await _cargar();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -287,7 +391,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'cobrar fiado');
       }
     }
   }
@@ -304,19 +408,55 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       await _cargar();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'registrar gasto');
       }
     }
   }
 
   Future<void> _devolucion() async {
+    final monto = double.tryParse(_montoDevolucion.text.replaceAll(',', '.')) ?? 0;
+    final motivo = _motivoDevolucion.text.trim();
+    if (monto < 0.01 || motivo.length < 3) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Indica monto y motivo (mín. 3 caracteres)'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Devolver efectivo'),
+        content: const Text(
+          'Usa esto solo para devolver dinero de una venta ya cobrada en este turno.\n\n'
+          'Si cancelaste un pedido que no estaba pagado, no registres devolución: '
+          'la caja no debe restar dinero que nunca entró.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Registrar devolución'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
     final sid = widget.sucursalId!;
     try {
       await _repo.registrarDevolucion(
         cajaId: _caja!['id'] as String,
         sucursalId: sid,
-        monto: double.tryParse(_montoDevolucion.text.replaceAll(',', '.')) ?? 0,
-        motivo: _motivoDevolucion.text.trim(),
+        monto: monto,
+        motivo: motivo,
       );
       _montoDevolucion.clear();
       _motivoDevolucion.clear();
@@ -328,7 +468,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'registrar devolución');
       }
     }
   }
@@ -344,7 +484,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       await _cargar();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        mostrarErrorSnackBar(context, e, contexto: 'retiro parcial');
       }
     }
   }
@@ -352,79 +492,209 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
-      return const Center(child: CircularProgressIndicator());
+      return ColoredBox(
+        color: AnaliticaTokens.canvas,
+        child: AnaliticaSkeleton.tab(),
+      );
     }
     if (_error != null) {
-      return Center(child: Text(_error!));
+      return ColoredBox(
+        color: AnaliticaTokens.canvas,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    color: AnaliticaTokens.inkMuted,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _cargar,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AnaliticaTokens.ink,
+                  ),
+                  child: const Text('Reintentar'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
 
     if (_caja == null) {
-      return _pantallaApertura();
+      return ColoredBox(
+        color: AnaliticaTokens.canvas,
+        child: _pantallaApertura(),
+      );
     }
 
-    final ancho = MediaQuery.sizeOf(context).width;
-    final dosColumnas = ancho >= 900;
+    final ancho = FoodyBreakpoints.widthOf(context);
+    final dosColumnas = FoodyBreakpoints.splitOperacion(ancho);
+    final compacto = FoodyBreakpoints.esCompact(ancho);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        OperacionPageHeader(
-          titulo: 'Caja',
-          subtitulo: 'Turno abierto',
-          acciones: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF3DE),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.schedule, size: 14, color: Color(0xFF3B6D11)),
-                  SizedBox(width: 4),
-                  Text(
-                    'Turno activo',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF3B6D11),
-                    ),
-                  ),
-                ],
+    final contenido = RefreshIndicator(
+      onRefresh: _cargar,
+      color: AnaliticaTokens.ink,
+      child: dosColumnas
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _panelPrincipalCaja()),
+                SizedBox(
+                  width: ancho >= 1200 ? 300 : 280,
+                  child: _panelLateralCaja(scrollPropio: true),
+                ),
+              ],
+            )
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _metricasCaja(),
+                const SizedBox(height: 12),
+                _listaMovimientos(),
+                const SizedBox(height: 16),
+                _panelLateralCaja(scrollPropio: false),
+              ],
+            ),
+    );
+
+    // NAV-CJ-01: shell cajero ya trae AppBar — sin NestedScrollView de cabecera.
+    if (widget.ocultarCabecera) {
+      return ColoredBox(
+        color: AnaliticaTokens.canvas,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: 'Actualizar',
+                onPressed: _cargar,
+                icon: const Icon(
+                  Icons.refresh,
+                  color: AnaliticaTokens.inkMuted,
+                ),
               ),
             ),
-            IconButton(
-              tooltip: 'Actualizar',
-              onPressed: _cargar,
-              icon: const Icon(Icons.refresh),
-            ),
+            Expanded(child: contenido),
           ],
         ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _cargar,
-            child: dosColumnas
-                ? Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+      );
+    }
+
+    return ColoredBox(
+      color: AnaliticaTokens.canvas,
+      child: SaasScrollableShell(
+        header: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              compacto ? 12 : 16,
+              8,
+              compacto ? 12 : 16,
+              4,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _panelPrincipalCaja()),
-                      SizedBox(width: 280, child: _panelLateralCaja()),
-                    ],
-                  )
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      _metricasCaja(),
-                      const SizedBox(height: 12),
-                      _listaMovimientos(),
-                      const SizedBox(height: 16),
-                      _panelLateralCaja(),
+                      const Text(
+                        'Admin / Operación',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AnaliticaTokens.inkSoft,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Caja',
+                        style: TextStyle(
+                          fontSize: compacto ? 18 : 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: AnaliticaTokens.ink,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_movimientos.length} movimientos · turno abierto',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AnaliticaTokens.inkMuted,
+                        ),
+                      ),
                     ],
                   ),
+                ),
+                Container(
+                  margin: const EdgeInsets.only(top: 4, right: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AnaliticaTokens.inventario.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: AnaliticaTokens.inventario.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.schedule,
+                        size: 14,
+                        color: AnaliticaTokens.inventario,
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Turno activo',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AnaliticaTokens.inventario,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Actualizar',
+                  onPressed: _cargar,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: AnaliticaTokens.inkMuted,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+        body: contenido,
+      ),
+    );
+  }
+
+  BoxDecoration _decoTarjeta() {
+    return BoxDecoration(
+      color: AnaliticaTokens.surface,
+      borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+      border: Border.all(color: AnaliticaTokens.border),
+      boxShadow: AnaliticaTokens.shadowSoft,
     );
   }
 
@@ -444,29 +714,52 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
     final gastos = _num(_caja!['total_gastos']);
     final saldo = _num(_caja!['saldo_sistema']);
     final ciego = _caja!['arqueo_ciego'] == true;
-    return Row(
+    final horas = _num(_caja!['horas_abierta']);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: OperacionMetricCard(
-            etiqueta: 'Saldo sistema',
-            valor: ciego ? '—' : _moneda.format(saldo),
+        if (horas >= 12) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AnaliticaTokens.alertas.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              'Turno abierto ${horas.toStringAsFixed(1)} h. Cierra caja o haz arqueo.',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AnaliticaTokens.alertas,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: OperacionMetricCard(
-            etiqueta: 'Ventas',
-            valor: _moneda.format(ventas),
-            colorValor: const Color(0xFF3B6D11),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: OperacionMetricCard(
-            etiqueta: 'Gastos',
-            valor: _moneda.format(gastos),
-            colorValor: const Color(0xFFA32D2D),
-          ),
+          const SizedBox(height: 12),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: OperacionMetricCard(
+                etiqueta: 'Saldo sistema',
+                valor: ciego ? '—' : _moneda.format(saldo),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OperacionMetricCard(
+                etiqueta: 'Ventas',
+                valor: _moneda.format(ventas),
+                colorValor: AnaliticaTokens.inventario,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OperacionMetricCard(
+                etiqueta: 'Gastos',
+                valor: _moneda.format(gastos),
+                colorValor: AnaliticaTokens.alertas,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -474,7 +767,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
 
   Widget _listaMovimientos() {
     return Container(
-      decoration: OperacionUi.tarjeta(),
+      decoration: _decoTarjeta(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -484,50 +777,68 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
               children: [
                 const Text(
                   'Movimientos',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AnaliticaTokens.ink,
+                  ),
                 ),
                 const Spacer(),
                 Text(
                   '${_movimientos.length} registros',
-                  style: const TextStyle(fontSize: 11, color: OperacionUi.textoTerciario),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AnaliticaTokens.inkSoft,
+                  ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: AnaliticaTokens.borderSoft),
           if (_movimientos.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Center(child: Text('Sin movimientos aún')),
+              child: Center(
+                child: Text(
+                  'Sin movimientos aún',
+                  style: TextStyle(color: AnaliticaTokens.inkSoft),
+                ),
+              ),
             )
           else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _movimientos.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) => _filaMovimiento(_movimientos[i]),
+            ConstrainedBox(
+              // PERF-FL-LIST-07: evita ListView shrinkWrap unbounded en scroll padre.
+              constraints: const BoxConstraints(maxHeight: 420),
+              child: ListView.separated(
+                itemCount: _movimientos.length,
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 1, color: AnaliticaTokens.borderSoft),
+                itemBuilder: (_, i) => _filaMovimiento(_movimientos[i]),
+              ),
             ),
+          // PERF-FL-MEM-06: la lista en memoria ya está topeada a 80 al cargar.
         ],
       ),
     );
   }
 
-  Widget _panelLateralCaja() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 0, 16, 16),
-      children: [
+  Widget _panelLateralCaja({bool scrollPropio = true}) {
+    final kids = <Widget>[
         _seccionFiados(),
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: OperacionUi.tarjeta(),
+          decoration: _decoTarjeta(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
                 'Registrar gasto',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AnaliticaTokens.ink,
+                ),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -535,7 +846,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                 decoration: InputDecoration(
                   hintText: 'Concepto',
                   filled: true,
-                  fillColor: OperacionUi.fondoPagina,
+                  fillColor: AnaliticaTokens.surfaceMuted,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide.none,
@@ -550,7 +861,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                 decoration: InputDecoration(
                   hintText: 'Monto',
                   filled: true,
-                  fillColor: OperacionUi.fondoPagina,
+                  fillColor: AnaliticaTokens.surfaceMuted,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide.none,
@@ -561,7 +872,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: _gasto,
-                style: FilledButton.styleFrom(backgroundColor: ColoresFoody.primario),
+                style: FilledButton.styleFrom(backgroundColor: AnaliticaTokens.ink),
                 child: const Text('Guardar gasto'),
               ),
             ],
@@ -570,13 +881,17 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: OperacionUi.tarjeta(),
+          decoration: _decoTarjeta(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
                 'Retiro parcial',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AnaliticaTokens.ink,
+                ),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -585,7 +900,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                 decoration: InputDecoration(
                   hintText: 'Monto retiro',
                   filled: true,
-                  fillColor: OperacionUi.fondoPagina,
+                  fillColor: AnaliticaTokens.surfaceMuted,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide.none,
@@ -604,13 +919,22 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: OperacionUi.tarjeta(),
+          decoration: _decoTarjeta(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
                 'Devolución',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AnaliticaTokens.ink,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Solo efectivo ya cobrado en este turno. Cancelar pedido no cobrado no requiere esto.',
+                style: TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -619,7 +943,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                 decoration: InputDecoration(
                   hintText: 'Monto',
                   filled: true,
-                  fillColor: OperacionUi.fondoPagina,
+                  fillColor: AnaliticaTokens.surfaceMuted,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide.none,
@@ -633,7 +957,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                 decoration: InputDecoration(
                   hintText: 'Motivo',
                   filled: true,
-                  fillColor: OperacionUi.fondoPagina,
+                  fillColor: AnaliticaTokens.surfaceMuted,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide.none,
@@ -644,7 +968,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: _devolucion,
-                style: FilledButton.styleFrom(backgroundColor: ColoresFoody.secundario),
+                style: FilledButton.styleFrom(backgroundColor: AnaliticaTokens.inventario),
                 child: const Text('Registrar devolución'),
               ),
             ],
@@ -653,13 +977,17 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: OperacionUi.tarjeta(),
+          decoration: _decoTarjeta(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
                 'Cerrar turno',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AnaliticaTokens.ink,
+                ),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -669,7 +997,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                   labelText: 'Monto contado',
                   prefixText: r'$ ',
                   filled: true,
-                  fillColor: OperacionUi.fondoPagina,
+                  fillColor: AnaliticaTokens.surfaceMuted,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                     borderSide: BorderSide.none,
@@ -679,7 +1007,7 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
               ),
               const SizedBox(height: 8),
               Material(
-                color: const Color(0xFFFCEBEB),
+                color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
                 child: InkWell(
                   onTap: _cerrar,
@@ -687,11 +1015,17 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AnaliticaTokens.alertas.withValues(alpha: 0.35),
+                      ),
+                    ),
                     child: const Text(
                       'Cerrar caja',
                       style: TextStyle(
-                        color: Color(0xFFA32D2D),
-                        fontWeight: FontWeight.w600,
+                        color: AnaliticaTokens.alertas,
+                        fontWeight: FontWeight.w700,
                         fontSize: 13,
                       ),
                     ),
@@ -701,126 +1035,278 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
             ],
           ),
         ),
-      ],
+    ];
+    if (!scrollPropio) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: kids,
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(0, 0, 16, 16),
+      children: kids,
     );
   }
 
   Widget _filaMovimiento(Map<String, dynamic> m) {
     final tipo = m['tipo'] as String? ?? '';
     final monto = _num(m['monto']);
+    final metodo = m['metodo_pago'] as String?;
+    final responsable = m['responsable'] as String?;
+    final pedidoId = m['pedido_id']?.toString();
     final esNeg = tipo == 'gasto' || tipo == 'retiro';
     final iconData = _iconoTipo(tipo);
     final iconBg = tipo == 'venta'
-        ? const Color(0xFFEAF3DE)
+        ? AnaliticaTokens.inventario.withValues(alpha: 0.12)
         : tipo == 'gasto'
-            ? const Color(0xFFFCEBEB)
-            : const Color(0xFFFAEEDA);
+            ? AnaliticaTokens.alertas.withValues(alpha: 0.12)
+            : const Color(0xFFD97706).withValues(alpha: 0.12);
     final iconColor = tipo == 'venta'
-        ? const Color(0xFF3B6D11)
+        ? AnaliticaTokens.inventario
         : tipo == 'gasto'
-            ? const Color(0xFFA32D2D)
-            : const Color(0xFF854F0B);
+            ? AnaliticaTokens.alertas
+            : const Color(0xFFD97706);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(8),
+    return InkWell(
+      onTap: pedidoId != null &&
+              pedidoId.isNotEmpty &&
+              pedidoId != 'null' &&
+              widget.onIrPedido != null
+          ? () => widget.onIrPedido!(pedidoId)
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(iconData, size: 16, color: iconColor),
             ),
-            child: Icon(iconData, size: 16, color: iconColor),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tipo,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tipo,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  Text(
+                    m['descripcion'] as String? ?? '',
+                    style: const TextStyle(fontSize: 11, color: AnaliticaTokens.inkSoft),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (responsable != null && responsable.isNotEmpty ||
+                      metodo != null && metodo.isNotEmpty)
+                    Text(
+                      [
+                        if (responsable != null && responsable.isNotEmpty)
+                          responsable,
+                        if (metodo != null && metodo.isNotEmpty) metodo,
+                      ].join(' · '),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AnaliticaTokens.inkSoft,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            if (pedidoId != null &&
+                pedidoId.isNotEmpty &&
+                pedidoId != 'null' &&
+                widget.onIrPedido != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Icon(
+                  Icons.receipt_long_outlined,
+                  size: 16,
+                  color: AnaliticaTokens.inkSoft,
                 ),
-                Text(
-                  m['descripcion'] as String? ?? '',
-                  style: const TextStyle(fontSize: 11, color: OperacionUi.textoTerciario),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              ),
+            Text(
+              _moneda.format(monto),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: esNeg
+                    ? AnaliticaTokens.alertas
+                    : AnaliticaTokens.inventario,
+              ),
             ),
-          ),
-          Text(
-            _moneda.format(monto),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: esNeg ? const Color(0xFFA32D2D) : const Color(0xFF3B6D11),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _pantallaApertura() {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Icon(Icons.point_of_sale, size: 48, color: ColoresFoody.primario),
-                const SizedBox(height: 16),
-                Text(
-                  'Abrir turno de caja',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Indica el monto inicial en efectivo para comenzar.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 20),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Arqueo ciego'),
-                  subtitle: const Text('El cajero no verá el saldo del sistema'),
-                  value: _arqueoCiego,
-                  onChanged: (v) => setState(() => _arqueoCiego = v),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _montoApertura,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Monto inicial',
-                    prefixText: r'$ ',
-                    border: OutlineInputBorder(),
+    final compacto = FoodyBreakpoints.esCompact(
+      FoodyBreakpoints.widthOf(context),
+    );
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        compacto ? 12 : 20,
+        8,
+        compacto ? 12 : 20,
+        32,
+      ),
+      children: [
+        if (!widget.ocultarCabecera) ...[
+          const Text(
+            'Admin / Operación',
+            style: TextStyle(
+              fontSize: 11,
+              color: AnaliticaTokens.inkSoft,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Caja',
+            style: TextStyle(
+              fontSize: compacto ? 18 : 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.4,
+              color: AnaliticaTokens.ink,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Sin turno abierto · indica el efectivo inicial',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: AnaliticaTokens.inkMuted,
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Container(
+              padding: const EdgeInsets.all(22),
+              decoration: _decoTarjeta(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AnaliticaTokens.surfaceMuted,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.point_of_sale,
+                      size: 26,
+                      color: AnaliticaTokens.inkMuted,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _abrir,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: ColoresFoody.primario,
-                    minimumSize: const Size.fromHeight(48),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Abrir turno de caja',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AnaliticaTokens.ink,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  child: const Text('Abrir caja'),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Indica el monto inicial en efectivo para comenzar.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.35,
+                      color: AnaliticaTokens.inkMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  if (widget.permitirArqueoCiego)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Arqueo ciego',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: AnaliticaTokens.ink,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'El cajero no verá el saldo del sistema',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AnaliticaTokens.inkMuted,
+                        ),
+                      ),
+                      activeTrackColor: AnaliticaTokens.ink,
+                      value: _arqueoCiego,
+                      onChanged: (v) => setState(() => _arqueoCiego = v),
+                    ),
+                  if (widget.permitirArqueoCiego) const SizedBox(height: 8),
+                  TextField(
+                    controller: _montoApertura,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: AnaliticaTokens.ink),
+                    decoration: InputDecoration(
+                      labelText: 'Monto inicial',
+                      labelStyle: const TextStyle(
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                      prefixText: r'$ ',
+                      filled: true,
+                      fillColor: AnaliticaTokens.surfaceMuted,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: AnaliticaTokens.border,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: AnaliticaTokens.border,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                          color: AnaliticaTokens.ink,
+                          width: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: _abrir,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AnaliticaTokens.ink,
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    child: const Text('Abrir caja'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -828,58 +1314,234 @@ class _CajaAdminScreenState extends State<CajaAdminScreen> {
       v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 
   Widget _seccionFiados() {
-    final pendientes =
-        _fiados.where((f) => f['estado'] == 'pendiente').toList();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    final resumen = _resumenCxC;
+    final lista = _verHistorialFiados
+        ? _fiados
+        : _fiados.where((f) => f['estado'] == 'pendiente').toList();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: _decoTarjeta(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             Row(
               children: [
-                const Text('Cuentas por cobrar', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                TextButton.icon(
+                const Expanded(
+                  child: Text(
+                    'Cuentas por cobrar',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AnaliticaTokens.ink,
+                    ),
+                  ),
+                ),
+                IconButton(
                   onPressed: _nuevoFiado,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Fiado'),
+                  tooltip: 'Registrar fiado',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.add, color: AnaliticaTokens.inkMuted),
                 ),
               ],
             ),
-            if (pendientes.isEmpty)
-              Text('Sin fiados pendientes', style: TextStyle(color: Colors.grey.shade600)),
-            for (final f in pendientes)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text(f['cliente_nombre'] as String? ?? ''),
-                subtitle: Text(
-                  f['numero_pedido'] != null
-                      ? 'Pedido #${f['numero_pedido']}'
-                      : f['cliente_telefono'] as String? ?? '',
+            if (resumen != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AnaliticaTokens.inventario.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AnaliticaTokens.inventario.withValues(alpha: 0.25),
+                  ),
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      _moneda.format(_num(f['monto'])),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () => _pagarFiado(f['id'] as String),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: ColoresFoody.secundario,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                      'Pendiente: ${_moneda.format(_num(resumen['total_pendiente']))}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AnaliticaTokens.ink,
                       ),
-                      child: const Text('Cobrar'),
                     ),
+                    Text(
+                      '${resumen['cantidad_pendiente'] ?? 0} cuenta(s)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                    ),
+                    if ((_num(resumen['antiguas_7d'])) > 0) ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Chip(
+                          label: Text(
+                            '${resumen['antiguas_7d']} +7 días',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AnaliticaTokens.alertas,
+                            ),
+                          ),
+                          backgroundColor:
+                              AnaliticaTokens.alertas.withValues(alpha: 0.12),
+                          side: BorderSide(
+                            color:
+                                AnaliticaTokens.alertas.withValues(alpha: 0.3),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-          ],
-        ),
+              const SizedBox(height: 8),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                ChoiceChip(
+                  label: const Text('Pendientes'),
+                  selected: !_verHistorialFiados,
+                  selectedColor: AnaliticaTokens.ink,
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: !_verHistorialFiados
+                        ? Colors.white
+                        : AnaliticaTokens.inkMuted,
+                  ),
+                  side: BorderSide(
+                    color: !_verHistorialFiados
+                        ? AnaliticaTokens.ink
+                        : AnaliticaTokens.border,
+                  ),
+                  onSelected: (_) {
+                    setState(() => _verHistorialFiados = false);
+                    _cargar(silencioso: true);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Historial'),
+                  selected: _verHistorialFiados,
+                  selectedColor: AnaliticaTokens.ink,
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _verHistorialFiados
+                        ? Colors.white
+                        : AnaliticaTokens.inkMuted,
+                  ),
+                  side: BorderSide(
+                    color: _verHistorialFiados
+                        ? AnaliticaTokens.ink
+                        : AnaliticaTokens.border,
+                  ),
+                  onSelected: (_) {
+                    setState(() => _verHistorialFiados = true);
+                    _cargar(silencioso: true);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (lista.isEmpty)
+              Text(
+                _verHistorialFiados
+                    ? 'Sin cuentas registradas'
+                    : 'Sin cuentas pendientes',
+                style: const TextStyle(color: AnaliticaTokens.inkSoft),
+              ),
+            for (final f in lista)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        f['cliente_nombre'] as String? ?? '',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AnaliticaTokens.ink,
+                        ),
+                      ),
+                    ),
+                    if (f['estado'] == 'pagada')
+                      Chip(
+                        label: const Text(
+                          'Pagada',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AnaliticaTokens.inventario,
+                          ),
+                        ),
+                        backgroundColor:
+                            AnaliticaTokens.inventario.withValues(alpha: 0.12),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                      ),
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      [
+                        _moneda.format(_num(f['monto'])),
+                        if (f['numero_pedido'] != null)
+                          'Pedido #${f['numero_pedido']}',
+                        if (f['creada_por'] != null &&
+                            '${f['creada_por']}'.isNotEmpty)
+                          'Registró: ${f['creada_por']}',
+                        if (f['estado'] == 'pagada' &&
+                            f['pagada_por'] != null &&
+                            '${f['pagada_por']}'.isNotEmpty)
+                          'Cobró: ${f['pagada_por']}',
+                        if (f['estado'] == 'pendiente' &&
+                            (f['dias_pendiente'] as num? ?? 0) > 0)
+                          '${f['dias_pendiente']} días pendiente',
+                        if (f['cliente_telefono'] != null &&
+                            '${f['cliente_telefono']}'.isNotEmpty)
+                          '${f['cliente_telefono']}',
+                      ].where((s) => s.isNotEmpty).join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: f['alerta_antigua'] == true
+                            ? AnaliticaTokens.alertas
+                            : AnaliticaTokens.inkMuted,
+                      ),
+                    ),
+                    if (f['estado'] == 'pendiente') ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FilledButton(
+                          onPressed: () => _pagarFiado(f),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AnaliticaTokens.ink,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Cobrar'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                isThreeLine: f['estado'] == 'pendiente',
+              ),
+        ],
       ),
     );
   }

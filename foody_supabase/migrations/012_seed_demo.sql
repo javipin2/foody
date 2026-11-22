@@ -60,6 +60,17 @@ INSERT INTO productos (id, sucursal_id, categoria_id, cocina_id, nombre, descrip
     8000,
     true,
     2
+  ),
+  (
+    'f0000000-0000-4000-8000-000000000003',
+    'c0000000-0000-4000-8000-000000000001',
+    'e0000000-0000-4000-8000-000000000002',
+    'd0000000-0000-4000-8000-000000000001',
+    'Gaseosa 400ml',
+    'Bebida lista para vender sola o en combo',
+    4000,
+    true,
+    1
   )
 ON CONFLICT DO NOTHING;
 

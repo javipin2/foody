@@ -3,6 +3,10 @@
 
 > **Copia activa en la raíz del repo.** Fuente editable: `INFRAESTRUCTURA/memoria_foody.md` (sincronizar si actualizas allí).
 > Entorno VPS/Supabase: `docs/ENTORNO_LOCAL.md`
+> **Estado del proyecto (oficial):** `docs/MASTER_STATUS.md` · Checklist: `docs/ROADMAP_TERMINAR_FOODY.md`
+> **Prioridades (tachar avance A→F):** `docs/PRIORIDADES_FOODY.md`
+> **Lote Nest/Auth 2026-08-07 (cerrado + a pulir):** `docs/REMEDIACION_NEST_AUTH_2026-08-07.md`
+> **Multi-negocio (solo plan, post-P0):** `docs/multinegocio/README.md` · hub `docs/PLAN_MULTINEGOCIO_FOODY.md`
 
 > Este archivo se adjunta SIEMPRE al inicio de cualquier sesión con Cursor.
 > Contiene las conexiones críticas, variables globales y decisiones irreversibles del sistema.

@@ -10,13 +10,14 @@ exports.SuscripcionesCronModule = void 0;
 const common_1 = require("@nestjs/common");
 const database_module_1 = require("../database/database.module");
 const notificaciones_module_1 = require("../../modulos/notificaciones/notificaciones.module");
+const pagos_module_1 = require("../../modulos/pagos/pagos.module");
 const suscripciones_cron_service_1 = require("./suscripciones-cron.service");
 let SuscripcionesCronModule = class SuscripcionesCronModule {
 };
 exports.SuscripcionesCronModule = SuscripcionesCronModule;
 exports.SuscripcionesCronModule = SuscripcionesCronModule = __decorate([
     (0, common_1.Module)({
-        imports: [database_module_1.DatabaseModule, notificaciones_module_1.NotificacionesModule],
+        imports: [database_module_1.DatabaseModule, notificaciones_module_1.NotificacionesModule, pagos_module_1.PagosModule],
         providers: [suscripciones_cron_service_1.SuscripcionesCronService],
     })
 ], SuscripcionesCronModule);

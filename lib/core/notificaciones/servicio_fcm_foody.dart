@@ -12,6 +12,8 @@ import 'package:reserva_canchas/core/notificaciones/manejador_fcm_segundo_plano.
 import 'package:reserva_canchas/core/notificaciones/navegador_fcm_foody.dart';
 import 'package:reserva_canchas/core/notificaciones/notificacion_navegador_web_stub.dart'
     if (dart.library.html) 'package:reserva_canchas/core/notificaciones/notificacion_navegador_web.dart';
+import 'package:reserva_canchas/core/notificaciones/fcm_click_web_stub.dart'
+    if (dart.library.html) 'package:reserva_canchas/core/notificaciones/fcm_click_web.dart';
 import 'package:reserva_canchas/core/red/cliente_dio.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
@@ -41,6 +43,9 @@ class ServicioFcmFoody {
     await _pedirPermisos();
     await _initNotificacionesLocales();
     _escucharMensajes();
+    if (kIsWeb) {
+      escucharClicksFcmWeb(NavegadorFcmFoody.manejar);
+    }
 
     _messaging.onTokenRefresh.listen((token) async {
       await _registrarToken(token);
@@ -60,6 +65,24 @@ class ServicioFcmFoody {
     if (!AppFlavor.actual.esEquipo || !AppBackend.firebaseReady) return;
     final token = await _obtenerToken();
     if (token != null) await _registrarToken(token);
+  }
+
+  /// Tras elegir/cambiar ciudad: actualiza device + FCM con `ciudad_id`.
+  Future<void> sincronizarTrasCambioCiudad() async {
+    if (!AppFlavor.actual.esCliente) return;
+    try {
+      final ciudad = await CiudadPreferenceService.getSelectedCiudad();
+      String? token;
+      if (AppBackend.firebaseReady) {
+        token = await _obtenerToken();
+      }
+      await DispositivoService.registrarEnBackend(
+        ciudadId: ciudad?.id,
+        fcmToken: token,
+      );
+    } catch (e) {
+      debugPrint('ServicioFcmFoody sincronizar ciudad: $e');
+    }
   }
 
   Future<void> _pedirPermisos() async {

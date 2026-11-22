@@ -32,19 +32,20 @@ Si no paga: estado `bloqueada` (NO se borra, datos 30 días) → siente el vací
 
 ## 2. Estado actual vs objetivo
 
-| Pieza | Hoy en código | Falta para self-service |
-|-------|---------------|--------------------------|
-| Tabla `suscripciones_restaurante` (estado/plan/vencimiento) | ✅ `011_super_admin.sql` | Añadir plan `gratis` al CHECK |
-| Onboarding restaurante (crea rest + sucursal + cocina + horarios + suscripción + usuario) | ✅ `super-admin.service.ts → crearRestaurante()` **solo lo ejecuta super_admin** | Endpoint **público** que reutilice esa lógica |
-| Login | ✅ correo/clave (`auth.service.ts → login`) | Login con **Google (OAuth)** |
-| Plan en JWT + módulos | ✅ `PlanFeaturesService`, `plan-features.config.ts` | Añadir tier `gratis` con sus límites/módulos |
-| Guard de módulos por plan | ✅ `PlanFeaturesGuard` + `@RequiereModulo` | — (ya sirve; solo definir matriz `gratis`) |
-| Límites numéricos (sucursales/usuarios) | ✅ `LIMITES_POR_PLAN` | Fila `gratis` |
-| Vencimiento automático | ✅ existe (`suscripciones-cron.service.ts`, cada hora `activa`/`prueba`→`vencida`) | Solo faltan **avisos previos** (3 días antes) y bloqueo-no-borra a 30 días |
-| Cobro / upgrade solo | ❌ | Pasarela **Wompi** + webhook + tabla de pagos |
-| UI registro / upgrade / candados | ❌ | Pantallas Flutter |
+> **Actualizado 2026-06-28.** Fases F1–F7 implementadas en código. Pendiente principal: **despliegue prod** (webhook Wompi HTTPS). Ver `docs/MASTER_STATUS.md` módulo 22 y `docs/WOMPI_PRODUCCION.md`.
 
-**Resumen:** la base operativa, de planes y el **cron de vencimiento ya existen**. Faltan **3 piezas nuevas**: auto-registro público, login Google, y cobro Wompi (+ avisos de vencimiento).
+| Pieza | Estado en código | Pendiente prod |
+|-------|------------------|----------------|
+| Plan `gratis` + límites numéricos | ✅ migr. 052, `plan-features.config.ts` | — |
+| Auto-registro público `POST /auth/registro-restaurante` | ✅ F1 | — |
+| Login Google OAuth | ✅ F2 | — |
+| Wompi checkout + webhook + poll UI | ✅ F4–F5 | Registrar webhook en dashboard Wompi (P0-06) |
+| Paywall 403 + UI Mejorar plan | ✅ P1-09 | — |
+| Cobro recurrente + cron renovación | ✅ P1-10 | Tokenización tarjeta en primer pago (mejora) |
+| Avisos vencimiento + bloqueo escalonado | ✅ F7 | — |
+| Historial pagos en panel dueño | ✅ P1-11 | — |
+
+**Resumen:** self-service **operativo en dev**. Falta VPS + dominio HTTPS para monetización real (P0-05–07).
 
 ---
 
@@ -257,7 +258,7 @@ El diseño ya conserva datos 30 días al bloquear — **aprovecharlo**:
 | **Bienvenida / registro** | Botón «Continuar con Google» + «Usar correo»; un solo paso para crear restaurante (nombre, ciudad). |
 | **Selección de plan** | Tarjetas Gratis/Básico/Pro/Enterprise con qué incluye cada una; CTA «Empezar gratis». |
 | **Mejorar plan (upgrade)** | Comparativa + botón pago Wompi; muestra qué se desbloquea. |
-| **Módulo bloqueado (candado)** | En vez de ocultar, mostrar el módulo en gris con candado + «Requiere plan Pro» + preview del beneficio. |
+| **Módulo bloqueado (candado)** | Preview: **esqueleto estático** borroso (ilegible, sin API) + card «sesión no incluida» + CTA Mejorar plan. Sidebar y búsqueda listan todos los módulos del rol (candado si aplica). API sigue bloqueando si alguien fuerza el endpoint. |
 | **Banner vencimiento** | Aviso “Tu prueba termina en X días” / “Plan vencido — reactiva”. |
 | **Estado de suscripción** | En ajustes del dueño: plan actual, vencimiento, historial de pagos, cambiar plan. |
 
@@ -333,4 +334,4 @@ Notas:
 
 ## 16. Próximo paso recomendado
 
-Empezar por **F1 (auto-registro público)**: es lo que elimina tu cuello de botella manual y reutiliza la transacción de onboarding que ya está probada. Luego F2 (Google) y F3 (plan gratis) para tener el freemium completo antes de tocar Wompi.
+Empezar por **F1 (auto-registro público)**: ✅ hecho. Siguiente bloqueo real: **desplegar API en VPS** y registrar webhook Wompi (P0-05–07). Ver `docs/WOMPI_PRODUCCION.md`.

@@ -3,5 +3,5 @@ export declare class CiudadesController {
     private readonly ciudadesService;
     constructor(ciudadesService: CiudadesService);
     listarCiudades(): Promise<import("./ciudades.service").CiudadDto[]>;
-    listarRestaurantes(slug: string): Promise<import("pg").QueryResultRow[]>;
+    listarRestaurantes(slug: string): Promise<unknown[]>;
 }

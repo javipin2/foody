@@ -7,6 +7,17 @@ export declare class PedidosCuentaMesaService {
         mesa_id: string;
         mesa_nombre: string;
         total_acumulado: number;
+        cuenta: {
+            modo: string;
+            cantidad_tickets: number;
+            mesa_grupo: {
+                mesas: {
+                    id: string;
+                    nombre: string;
+                    es_actual: boolean;
+                }[];
+            } | null;
+        };
         pagos_abonos: {
             id: string;
             monto: number;
@@ -14,6 +25,7 @@ export declare class PedidosCuentaMesaService {
             metodo_pago: string;
             created_at: Date;
             referencia: string | null;
+            responsable_nombre: string | null;
         }[];
         pedidos: {
             id: string;
@@ -24,6 +36,9 @@ export declare class PedidosCuentaMesaService {
             monto_pagado: number;
             saldo_pendiente: number;
             created_at: Date;
+            cliente_nombre: string | null;
+            mesera_nombre: string | null;
+            observaciones: string | null;
             items: any[];
         }[];
     }>;

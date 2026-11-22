@@ -2,28 +2,50 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:flutter/services.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:go_router/go_router.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
+import 'package:reserva_canchas/core/red/manejo_error_plan.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/admin/data/pedidos_repository.dart';
+import 'package:reserva_canchas/features/admin/providers/operacion_sucursal_provider.dart';
 import 'package:reserva_canchas/features/mesa/data/mesas_api_capacidades.dart';
 import 'package:reserva_canchas/features/mesa/presentation/mesa_pedidos_sheet.dart';
 import 'package:reserva_canchas/features/mesa/data/mesas_repository.dart';
-import 'package:reserva_canchas/features/admin/presentation/widgets/operacion_ui.dart';
+import 'package:reserva_canchas/features/mesa/utils/mesa_qr_pdf.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/pedido_cajero_screen.dart';
 import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
+import 'package:reserva_canchas/core/realtime/poll_realtime_respaldo.dart';
 import 'package:reserva_canchas/features/usuarios/data/usuarios_repository.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Grid de mesas (Sprint 4) — colores por estado + aprobar/rechazar QR.
-class MesasGridWidget extends StatefulWidget {
+
+const _motivosRechazoQr = [
+  'Cliente se equivocó',
+  'Producto no disponible',
+  'Mesa incorrecta',
+  'Pedido duplicado',
+  'Otro',
+];
+class MesasGridWidget extends ConsumerStatefulWidget {
   const MesasGridWidget({
     super.key,
     this.sucursalId,
     this.modoMesero = false,
     this.modoCajero = false,
+    this.ocultarCabecera = false,
     this.meseraUsuarioId,
+    this.mesaIdInicial,
+    this.onMesaAbierta,
   }) : assert(
           !(modoMesero && modoCajero),
           'modoMesero y modoCajero son mutuamente excluyentes',
@@ -33,13 +55,18 @@ class MesasGridWidget extends StatefulWidget {
   final bool modoMesero;
   /// Cajero: pedir/cobrar en cualquier mesa sin turno ni asignación de mesera.
   final bool modoCajero;
+  /// NAV-CJ-01: shell cajero ya tiene AppBar.
+  final bool ocultarCabecera;
   final String? meseraUsuarioId;
+  final String? mesaIdInicial;
+  final VoidCallback? onMesaAbierta;
 
   @override
-  State<MesasGridWidget> createState() => _MesasGridWidgetState();
+  ConsumerState<MesasGridWidget> createState() => _MesasGridWidgetState();
 }
 
-class _MesasGridWidgetState extends State<MesasGridWidget> {
+class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
+    with WidgetsBindingObserver {
   final _pedidosRepo = PedidosRepository();
   final _mesasRepo = MesasRepository();
   final _usuariosRepo = UsuariosRepository();
@@ -48,28 +75,55 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
   RealtimeChannel? _canal;
   bool _pulso = true;
   Timer? _pulsoTimer;
+  PollRealtimeRespaldo? _pollRespaldo;
   bool? _apiMesasOk;
+  bool _avisoApiDescartado = false;
+  bool _mesaInicialAbierta = false;
+  /// NAV-CJ-08: todas | por_cobrar | libres
+  String _filtroMesas = 'todas';
 
   bool get _operacionPiso => widget.modoMesero || widget.modoCajero;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _future = _cargarMesas();
     _comprobarApiMesas();
-    _pulsoTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
-      if (mounted) setState(() => _pulso = !_pulso);
+    _pulsoTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      // PERF-FL-MEM-03: no rebuild si no hay mesas que pulsen.
+      if (!mounted) return;
+      final cache = _mesasCache;
+      final hayPulso = cache != null &&
+          cache.any((m) {
+            final e = (m['estado'] ?? m['estado_mesa'] ?? '').toString();
+            return e == 'ocupada' || e == 'cuenta' || e == 'reservada';
+          });
+      if (hayPulso) setState(() => _pulso = !_pulso);
     });
     _suscribirRealtime();
+    _pollRespaldo = PollRealtimeRespaldo(onActualizar: () async {
+      if (mounted) _recargarMesas();
+    });
+    unawaited(_pollRespaldo!.iniciar());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _recargarMesas();
+    }
   }
 
   @override
   void didUpdateWidget(MesasGridWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.sucursalId != widget.sucursalId) {
-      _canal?.unsubscribe();
+    if (oldWidget.sucursalId != widget.sucursalId ||
+        oldWidget.mesaIdInicial != widget.mesaIdInicial) {
+      FoodyRealtime.liberarCanal(_canal);
       _canal = null;
       _mesasCache = null;
+      _mesaInicialAbierta = false;
       _future = _cargarMesas();
       _suscribirRealtime();
     }
@@ -77,8 +131,10 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
 
   @override
   void dispose() {
-    _canal?.unsubscribe();
+    WidgetsBinding.instance.removeObserver(this);
+    FoodyRealtime.liberarCanal(_canal);
     _pulsoTimer?.cancel();
+    _pollRespaldo?.detener();
     super.dispose();
   }
 
@@ -92,12 +148,24 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Pedido QR pendiente de aprobacion en mesa'),
-              backgroundColor: ColoresFoody.primario,
+              backgroundColor: AnaliticaTokens.ink,
               duration: Duration(seconds: 4),
             ),
           );
         }
+        if (evento == 'llamar_mesera' && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cliente pide atencion en mesa'),
+              backgroundColor: AnaliticaTokens.inventario,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
         _recargarMesas();
+      },
+      onReconectado: () {
+        if (mounted) _recargarMesas();
       },
     );
   }
@@ -111,6 +179,23 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     if (widget.sucursalId == null) return [];
     final lista = await _mesasRepo.listar(widget.sucursalId!);
     _mesasCache = lista;
+    if (!_mesaInicialAbierta && widget.mesaIdInicial != null) {
+      Map<String, dynamic>? mesa;
+      for (final m in lista) {
+        if ('${m['id']}' == widget.mesaIdInicial) {
+          mesa = m;
+          break;
+        }
+      }
+      if (mesa != null) {
+        _mesaInicialAbierta = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _mostrarDetalleMesa(mesa!);
+          widget.onMesaAbierta?.call();
+        });
+      }
+    }
     return lista;
   }
 
@@ -124,7 +209,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     final sid = widget.sucursalId;
     if (sid == null) return;
     final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Nueva mesa'),
@@ -159,9 +244,11 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'crear mesa'))),
-        );
+        if (!ManejoErrorPlan.manejarEnPantalla(context, e)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'crear mesa'))),
+          );
+        }
       }
     }
     ctrl.dispose();
@@ -228,34 +315,98 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
       );
       final url = datos['url'] as String? ?? '';
       if (!mounted) return;
-      await showDialog<void>(
+      final nombre = mesa['nombre'] as String? ?? 'Mesa';
+      await FoodyDialogo.mostrar<void>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('QR ${mesa['nombre']}'),
-          content: SelectableText(url),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: url));
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Enlace copiado')),
-                );
-              },
-              child: const Text('Copiar enlace'),
+        barrierDismissible: true,
+        builder: (ctx) {
+          return Dialog(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'QR — $nombre',
+                      style: Theme.of(ctx).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: SizedBox(
+                        width: 200,
+                        height: 200,
+                        child: QrImageView(
+                          data: url,
+                          size: 200,
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 72),
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          url,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        try {
+                          final bytes = await MesaQrPdfFoody.generar(
+                            nombreMesa: nombre,
+                            urlQr: url,
+                          );
+                          await _compartirPdfQr(bytes, nombre);
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            mostrarErrorSnackBar(
+                              context,
+                              e,
+                              contexto: 'generar PDF del QR',
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                      label: const Text('PDF / Imprimir'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: url));
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Enlace copiado')),
+                        );
+                      },
+                      icon: const Icon(Icons.link, size: 18),
+                      label: const Text('Copiar enlace'),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cerrar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        ),
+          );
+        },
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'QR'))),
-        );
+        mostrarErrorSnackBar(context, e, contexto: 'obtener QR de mesa');
       }
     }
   }
@@ -264,7 +415,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     final sid = widget.sucursalId;
     if (sid == null) return;
     final ctrl = TextEditingController(text: '${mesa['nombre']}');
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Renombrar mesa'),
@@ -292,7 +443,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
   Future<void> _desactivarMesa(Map<String, dynamic> mesa) async {
     final sid = widget.sucursalId;
     if (sid == null) return;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Desactivar mesa'),
@@ -325,7 +476,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     final hastaCtrl = TextEditingController(
       text: DateTime.now().add(const Duration(hours: 2)).toString().substring(0, 16),
     );
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Reservar ${mesa['nombre']}'),
@@ -416,7 +567,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     if (otras.isEmpty) return;
 
     final seleccionadas = <String>{};
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
@@ -478,17 +629,103 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
 
   Color _bordeMesa(Map<String, dynamic> mesa) {
     if (mesa['estado_operativo'] == 'reservada') {
-      return const Color(0xFF5C6BC0);
+      return AnaliticaTokens.clientes;
     }
     final estado = mesa['pedido_estado'] as String?;
     if (estado == 'pendiente_aprobacion') {
-      return _pulso ? const Color(0xFFFF9800) : const Color(0xFFFFB74D);
+      return _pulso ? const Color(0xFFD97706) : const Color(0xFFFBBF24);
     }
-    if (estado != null) return ColoresFoody.primario;
-    return const Color(0xFF639922);
+    if (estado != null) return AnaliticaTokens.pedidos;
+    return AnaliticaTokens.inventario;
   }
 
-  Color _puntoEstado(Map<String, dynamic> mesa) => _bordeMesa(mesa);
+  String _etiquetaEstado(Map<String, dynamic> mesa) {
+    if (mesa['estado_operativo'] == 'reservada') return 'Reservada';
+    final estado = mesa['pedido_estado'] as String?;
+    if (estado == 'pendiente_aprobacion') return 'QR pendiente';
+    if (mesa['pedido_id'] != null) {
+      if (widget.modoMesero) return 'En mesa';
+      return 'Por cobrar';
+    }
+    return 'Libre';
+  }
+
+  String _ctaMesa(Map<String, dynamic> mesa) {
+    final ocupada = mesa['pedido_id'] != null;
+    final qr = mesa['pedido_estado'] == 'pendiente_aprobacion';
+    if (_operacionPiso && !ocupada) {
+      return widget.modoMesero ? 'Pedir' : 'Registrar';
+    }
+    if (qr) {
+      return widget.modoCajero ? 'Esperando mesero' : 'Aprobar QR';
+    }
+    if (_operacionPiso && ocupada) {
+      return widget.modoMesero ? 'Cuenta · agregar' : 'Cobrar';
+    }
+    if (ocupada) return 'Ver cuenta';
+    return mesa['estado_operativo'] == 'reservada' ? 'Reservada' : 'Libre';
+  }
+
+  IconData _iconoCta(Map<String, dynamic> mesa) {
+    final ocupada = mesa['pedido_id'] != null;
+    final qr = mesa['pedido_estado'] == 'pendiente_aprobacion';
+    if (qr) return Icons.qr_code_scanner;
+    if (!ocupada) return Icons.add_shopping_cart_outlined;
+    if (widget.modoMesero) return Icons.receipt_long_outlined;
+    return Icons.payments_outlined;
+  }
+
+  /// MES-012: tiempo visible en tarjeta sin abrir el sheet.
+  Widget _badgeTimerQr(dynamic creadoRaw) {
+    final creado =
+        creadoRaw != null ? DateTime.tryParse('$creadoRaw')?.toLocal() : null;
+    if (creado == null) return const SizedBox.shrink();
+    final seg = DateTime.now().difference(creado).inSeconds;
+    final minutos = seg ~/ 60;
+    final segundos = seg % 60;
+    final urgente = minutos >= 5;
+    final advertencia = minutos >= 3 && minutos < 5;
+    final texto =
+        '${minutos.toString().padLeft(2, '0')}:${segundos.toString().padLeft(2, '0')}';
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: urgente
+            ? AnaliticaTokens.alertas.withValues(alpha: 0.15)
+            : advertencia
+                ? Color(0xFFD97706).withValues(alpha: 0.4)
+                : const Color(0xFF185FA5).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: urgente
+            ? Border.all(color: AnaliticaTokens.alertas, width: 1)
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.timer_outlined,
+            size: 12,
+            color: urgente
+                ? AnaliticaTokens.alertas
+                : advertencia
+                    ? AnaliticaTokens.ink
+                    : const Color(0xFF185FA5),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            urgente ? '$texto · urgente' : texto,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: urgente ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _mostrarDetalleMesa(Map<String, dynamic> mesa) async {
     final estado = mesa['pedido_estado'] as String?;
@@ -500,6 +737,19 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     }
 
     if (estado == 'pendiente_aprobacion' && pedidoId != null) {
+      // NAV-CJ-09: cajero no aprueba QR.
+      if (widget.modoCajero) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Pedido QR pendiente: un mesero o admin debe aprobarlo',
+              ),
+            ),
+          );
+        }
+        return;
+      }
       final creadoRaw = mesa['pedido_creado_at'];
       final creado = creadoRaw != null ? DateTime.tryParse('$creadoRaw') : null;
       await showModalBottomSheet<void>(
@@ -552,13 +802,17 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
           mesaNombre: mesa['nombre'] as String? ?? 'Mesa',
           sucursalId: sid,
           onActualizado: _recargarMesas,
+          modoMesero: widget.modoMesero,
           onAgregarProductos: _operacionPiso
               ? (pedidoId) => _abrirPedidoMesa(mesa, pedidoIdAgregar: pedidoId)
               : null,
-          onTransferir: () {
-            Navigator.pop(ctx);
-            _transferirMesa(mesa, pedidoId);
-          },
+          // MES-XFER-UI-01: admin y cajero; mesero de piso no.
+          onTransferir: (!widget.modoMesero)
+              ? () {
+                  Navigator.pop(ctx);
+                  _transferirMesa(mesa, pedidoId);
+                }
+              : null,
         ),
       );
     }
@@ -594,7 +848,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     final motivoCtrl = TextEditingController();
 
     if (!mounted) return;
-    destino = await showDialog<Map<String, dynamic>>(
+    destino = await FoodyDialogo.mostrar<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Transferir pedido'),
@@ -701,6 +955,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
             mesaNombreFija: mesa['nombre'] as String? ?? 'Mesa',
             modoMesero: widget.modoMesero,
             pedidoIdAgregar: pedidoIdAgregar,
+            ocultarCabecera: true,
           ),
         ),
       ),
@@ -747,7 +1002,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.add_shopping_cart, color: ColoresFoody.primario),
+                leading: const Icon(Icons.add_shopping_cart, color: AnaliticaTokens.ink),
                 title: Text('Crear pedido · ${mesa['nombre']}'),
                 subtitle: Text(
                   widget.modoMesero
@@ -805,7 +1060,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
         m['id'] as String: m['mesera_asignada_id'] as String?,
     };
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialog) {
@@ -893,31 +1148,93 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     }
   }
 
-  Future<void> _rechazarConMotivo(String pedidoId) async {
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Motivo de rechazo'),
-        content: TextField(controller: ctrl, maxLines: 2),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim().isNotEmpty),
-            child: const Text('Rechazar'),
+  Future<void> _compartirPdfQr(Uint8List bytes, String nombreMesa) async {
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile.fromData(
+            bytes,
+            mimeType: 'application/pdf',
+            name:
+                'foody-qr-${nombreMesa.replaceAll(' ', '-').toLowerCase()}.pdf',
           ),
         ],
+        text: 'QR mesa $nombreMesa — Foody',
+      ),
+    );
+  }
+
+  Future<void> _rechazarConMotivo(String pedidoId) async {
+    var motivoSel = _motivosRechazoQr.first;
+    final otroCtrl = TextEditingController();
+    final ok = await FoodyDialogo.mostrar<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSt) => AlertDialog(
+          title: const Text('Motivo de rechazo'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: motivoSel,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo',
+                  border: OutlineInputBorder(),
+                ),
+                items: _motivosRechazoQr
+                    .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setSt(() => motivoSel = v);
+                },
+              ),
+              if (motivoSel == 'Otro') ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: otroCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Detalle',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (motivoSel == 'Otro' && otroCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Rechazar'),
+            ),
+          ],
+        ),
       ),
     );
     if (ok == true) {
+      final motivo = motivoSel == 'Otro'
+          ? otroCtrl.text.trim()
+          : motivoSel;
       await _pedidosRepo.rechazarMesa(
         pedidoId,
-        motivo: ctrl.text.trim(),
+        motivo: motivo,
         sucursalId: widget.sucursalId,
       );
       _recargarMesas();
     }
-    ctrl.dispose();
+    otroCtrl.dispose();
+  }
+
+  int _contarQrPendientes(List<Map<String, dynamic>> mesas) {
+    return mesas
+        .where((m) => m['pedido_estado'] == 'pendiente_aprobacion')
+        .length;
   }
 
   int _contarQrUrgentes(List<Map<String, dynamic>> mesas) {
@@ -933,79 +1250,286 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     return n;
   }
 
-  Widget? _bannerQrUrgente(List<Map<String, dynamic>> mesas) {
+  /// Prioriza QR &gt;3 min; si no, la primera pendiente (NAV-ADM-04).
+  Map<String, dynamic>? _mesaQrPrioritaria(List<Map<String, dynamic>> mesas) {
+    final ahora = DateTime.now();
+    Map<String, dynamic>? primeraPendiente;
+    for (final m in mesas) {
+      if (m['pedido_estado'] != 'pendiente_aprobacion') continue;
+      primeraPendiente ??= m;
+      final raw = m['pedido_creado_at'];
+      final creado = raw != null ? DateTime.tryParse('$raw') : null;
+      if (creado != null &&
+          ahora.difference(creado.toLocal()).inMinutes >= 3) {
+        return m;
+      }
+    }
+    return primeraPendiente;
+  }
+
+  Widget? _bannerQrPendientes(List<Map<String, dynamic>> mesas) {
+    final pendientes = _contarQrPendientes(mesas);
+    if (pendientes == 0) return null;
+
     final urgentes = _contarQrUrgentes(mesas);
-    if (urgentes == 0) return null;
-    return MaterialBanner(
-      content: Text(
-        urgentes == 1
-            ? 'Hay 1 pedido QR esperando aprobacion (+3 min)'
-            : 'Hay $urgentes pedidos QR esperando aprobacion (+3 min)',
+    final mesaPrioritaria = _mesaQrPrioritaria(mesas);
+
+    void abrirPrioritaria() {
+      if (mesaPrioritaria != null) {
+        unawaited(_mostrarDetalleMesa(mesaPrioritaria));
+      }
+    }
+
+    // Mesero y admin: mismo patrón con CTA Revisar (NAV-ADM-04).
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: abrirPrioritaria,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: urgentes > 0
+                ? AnaliticaTokens.alertas.withValues(alpha: 0.1)
+                : const Color(0xFFD97706).withValues(alpha: 0.1),
+            border: Border.all(
+              color: urgentes > 0
+                  ? AnaliticaTokens.alertas
+                  : const Color(0xFFD97706),
+              width: 1.5,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: AnaliticaTokens.shadowSoft,
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: urgentes > 0
+                    ? AnaliticaTokens.alertas
+                    : const Color(0xFFD97706),
+                foregroundColor: Colors.white,
+                child: Text(
+                  '$pendientes',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pendientes == 1
+                          ? '1 pedido QR por aprobar'
+                          : '$pendientes pedidos QR por aprobar',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    Text(
+                      urgentes > 0
+                          ? (urgentes == 1
+                              ? '1 lleva más de 3 min — toca para revisar'
+                              : '$urgentes llevan más de 3 min — toca para revisar')
+                          : 'Toca para abrir la mesa',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: urgentes > 0
+                            ? Colors.red.shade700
+                            : Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: abrirPrioritaria,
+                child: const Text('Revisar'),
+              ),
+              IconButton(
+                tooltip: 'Actualizar',
+                onPressed: _recargarMesas,
+                icon: const Icon(Icons.refresh, color: AnaliticaTokens.ink),
+              ),
+            ],
+          ),
+        ),
       ),
-      leading: const Icon(Icons.qr_code_scanner, color: ColoresFoody.primario),
-      backgroundColor: ColoresFoody.acento.withValues(alpha: 0.35),
-      actions: [
-        TextButton(onPressed: _recargarMesas, child: const Text('Actualizar')),
-      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            OperacionPageHeader(
-              titulo: 'Mesas',
-              subtitulo: widget.sucursalId != null ? 'Salón' : null,
-              acciones: [
-                _leyenda(),
-                if (!widget.modoMesero && !widget.modoCajero) ...[
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: _asignarTurnoMesas,
-                    icon: const Icon(Icons.people_outline, size: 18),
-                    label: const Text('Turno mesas'),
+    ref.listen<int>(
+      operacionSucursalProvider.select((s) => s.epochPedidos),
+      (prev, next) {
+        if (prev != null && prev != next && mounted) _recargarMesas();
+      },
+    );
+    final ancho = FoodyBreakpoints.widthOf(context);
+    final compacto = FoodyBreakpoints.esCompact(ancho);
+
+    return ColoredBox(
+      color: AnaliticaTokens.canvas,
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!widget.ocultarCabecera)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    compacto ? 12 : 16,
+                    8,
+                    compacto ? 12 : 16,
+                    4,
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _crearMesa,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: ColoresFoody.primario,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Mesa'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.modoMesero
+                            ? 'Piso / Mesero'
+                            : widget.modoCajero
+                                ? 'Piso / Cajero'
+                                : 'Admin / Operación',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AnaliticaTokens.inkSoft,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Mesas',
+                                  style: TextStyle(
+                                    fontSize: compacto ? 18 : 22,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.5,
+                                    color: AnaliticaTokens.ink,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  widget.modoMesero
+                                      ? 'Toca una mesa para pedir, agregar o presentar cuenta'
+                                      : widget.modoCajero
+                                          ? 'Toca para cobrar o registrar en mesa'
+                                          : 'Salón en vivo · filtros por estado',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: AnaliticaTokens.inkMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (!compacto) _leyenda(),
+                        ],
+                      ),
+                      if (!widget.modoMesero && !widget.modoCajero) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => context.push('/admin/cajero'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AnaliticaTokens.ink,
+                                side: const BorderSide(
+                                  color: AnaliticaTokens.border,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: const Icon(
+                                Icons.point_of_sale_outlined,
+                                size: 18,
+                              ),
+                              label: const Text('Modo caja'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _asignarTurnoMesas,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AnaliticaTokens.ink,
+                                side: const BorderSide(
+                                  color: AnaliticaTokens.border,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: const Icon(Icons.people_outline, size: 18),
+                              label: const Text('Turno mesas'),
+                            ),
+                            FilledButton.icon(
+                              onPressed: _crearMesa,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AnaliticaTokens.ink,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Nueva mesa'),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (compacto) ...[
+                        const SizedBox(height: 8),
+                        _leyenda(),
+                      ],
+                    ],
                   ),
-                ],
-              ],
-            ),
-            if (_apiMesasOk == false)
-              MaterialBanner(
-                content: const Text(
-                  'El API en ejecución es antiguo (falta crear mesa, QR, transferir). '
-                  'Cierra la ventana del backend y ejecuta scripts\\iniciar-backend-wsl.bat hasta ver '
-                  '"Nest application successfully started", luego recarga esta página.',
+                )
+              else if (!widget.modoMesero && !widget.modoCajero)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _leyenda(),
+                  ),
                 ),
-                leading: const Icon(Icons.warning_amber, color: Colors.orange),
-                backgroundColor: Colors.orange.shade50,
-                actions: [
-                  TextButton(
-                    onPressed: _comprobarApiMesas,
-                    child: const Text('Revisar de nuevo'),
+              if (_apiMesasOk == false && !_avisoApiDescartado)
+                MaterialBanner(
+                  content: const Text(
+                    'El API en ejecución parece antiguo (faltan acciones de mesa). '
+                    'Reinicia el backend y pulsa Revisar.',
                   ),
-                ],
-              ),
-            if (_mesasCache != null) ...[
-              if (_bannerQrUrgente(_mesasCache!) != null)
-                _bannerQrUrgente(_mesasCache!)!,
+                  leading: const Icon(
+                    Icons.warning_amber,
+                    color: Color(0xFFD97706),
+                  ),
+                  backgroundColor:
+                      const Color(0xFFD97706).withValues(alpha: 0.12),
+                  actions: [
+                    TextButton(
+                      onPressed: _comprobarApiMesas,
+                      child: const Text('Revisar'),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => _avisoApiDescartado = true),
+                      child: const Text('Ocultar'),
+                    ),
+                  ],
+                ),
+              if (_mesasCache != null && !widget.modoCajero) ...[
+                if (_bannerQrPendientes(_mesasCache!) != null)
+                  _bannerQrPendientes(_mesasCache!)!,
+              ],
+              Expanded(child: _grid()),
             ],
-            Expanded(child: _grid()),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1022,44 +1546,153 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
       }
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _statMesa('$libres', 'Libres', const Color(0xFF639922)),
+          Row(
+            children: [
+              Expanded(
+                child: _statMesa(
+                  '$libres',
+                  'Libres',
+                  AnaliticaTokens.inventario,
+                  icono: Icons.event_available_outlined,
+                  seleccionado: _filtroMesas == 'libres',
+                  onTap: () => setState(
+                    () => _filtroMesas =
+                        _filtroMesas == 'libres' ? 'todas' : 'libres',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _statMesa(
+                  '$ocupadas',
+                  widget.modoMesero ? 'Ocupadas' : 'Por cobrar',
+                  AnaliticaTokens.pedidos,
+                  icono: Icons.table_restaurant_outlined,
+                  seleccionado: _filtroMesas == 'por_cobrar',
+                  onTap: () => setState(
+                    () => _filtroMesas =
+                        _filtroMesas == 'por_cobrar' ? 'todas' : 'por_cobrar',
+                  ),
+                ),
+              ),
+              if (!widget.modoCajero) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _statMesa(
+                    '$qr',
+                    'QR',
+                    const Color(0xFFD97706),
+                    icono: Icons.qr_code_2_outlined,
+                    seleccionado: _filtroMesas == 'qr',
+                    urgente: qr > 0,
+                    onTap: () => setState(
+                      () =>
+                          _filtroMesas = _filtroMesas == 'qr' ? 'todas' : 'qr',
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _statMesa('$ocupadas', 'Ocupadas', ColoresFoody.primario),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _statMesa('$qr', 'QR pendiente', const Color(0xFF185FA5)),
-          ),
+          if (_filtroMesas != 'todas')
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _filtroMesas = 'todas'),
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 16),
+                label: const Text('Ver todas'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AnaliticaTokens.inkMuted,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _statMesa(String num, String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-      decoration: OperacionUi.tarjeta(),
-      child: Column(
-        children: [
-          Text(
-            num,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: color,
+  Widget _statMesa(
+    String num,
+    String label,
+    Color color, {
+    required IconData icono,
+    bool seleccionado = false,
+    bool urgente = false,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 10),
+          decoration: BoxDecoration(
+            color: AnaliticaTokens.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: seleccionado
+                  ? AnaliticaTokens.ink
+                  : (urgente
+                      ? color.withValues(alpha: 0.4)
+                      : AnaliticaTokens.border),
+              width: seleccionado ? 1.4 : 1,
             ),
+            boxShadow: seleccionado ? AnaliticaTokens.shadowSoft : null,
           ),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11, color: OperacionUi.textoTerciario),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Icon(icono, size: 14, color: AnaliticaTokens.inkSoft),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                num,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: seleccionado
+                      ? AnaliticaTokens.ink
+                      : AnaliticaTokens.ink,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+                  color: seleccionado
+                      ? AnaliticaTokens.ink
+                      : AnaliticaTokens.inkSoft,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1069,25 +1702,94 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return AnaliticaSkeleton.tab();
         }
         if (snapshot.hasError) {
-          return Center(child: Text('${snapshot.error}'));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    size: 40,
+                    color: AnaliticaTokens.inkSoft,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    mensajeErrorHttp(snapshot.error!, contexto: 'cargar mesas'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AnaliticaTokens.inkMuted),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _recargarMesas,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AnaliticaTokens.ink,
+                    ),
+                    child: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
         final mesas = snapshot.data ?? [];
         if (mesas.isEmpty) {
           return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text('Sin mesas configuradas'),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _crearMesa,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Crear primera mesa'),
-                ),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: AnaliticaTokens.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AnaliticaTokens.border),
+                    ),
+                    child: const Icon(
+                      Icons.table_restaurant_outlined,
+                      size: 32,
+                      color: AnaliticaTokens.inkSoft,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Sin mesas en el salón',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AnaliticaTokens.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.modoMesero || widget.modoCajero
+                        ? 'Pide al administrador que cree las mesas del salón.'
+                        : 'Crea la primera mesa para empezar a operar.',
+                    style: const TextStyle(
+                      color: AnaliticaTokens.inkMuted,
+                      fontSize: 13,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (!widget.modoMesero && !widget.modoCajero) ...[
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _crearMesa,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AnaliticaTokens.ink,
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Crear primera mesa'),
+                    ),
+                  ],
+                ],
+              ),
             ),
           );
         }
@@ -1096,7 +1798,7 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _resumenMesas(mesas),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: () async {
@@ -1104,115 +1806,84 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
                   setState(() => _future = f);
                   await f;
                 },
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: MediaQuery.sizeOf(context).width >= 900 ? 4 : 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.15,
-                  ),
-                  itemCount: mesas.length,
-                  itemBuilder: (context, index) {
-                    final mesa = mesas[index];
-                    final borde = _bordeMesa(mesa);
-                    final ocupada = mesa['pedido_id'] != null;
-                    return OperacionTarjeta(
-                      acentoIzquierdo: borde,
-                      onTap: () => _mostrarDetalleMesa(mesa),
-                      onLongPress: _operacionPiso
-                          ? null
-                          : () => _opcionesMesa(mesa),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                color: AnaliticaTokens.ink,
+                child: Builder(
+                  builder: (context) {
+                    final filtradas = mesas.where((m) {
+                      final e = m['pedido_estado'] as String?;
+                      final ocupada = m['pedido_id'] != null &&
+                          e != 'pendiente_aprobacion';
+                      final libre = m['pedido_id'] == null;
+                      final qr = e == 'pendiente_aprobacion';
+                      switch (_filtroMesas) {
+                        case 'por_cobrar':
+                          return ocupada;
+                        case 'libres':
+                          return libre;
+                        case 'qr':
+                          return qr;
+                        default:
+                          return true;
+                      }
+                    }).toList();
+                    // ponytail: orden visual piso — QR → ocupadas → libres.
+                    filtradas.sort((a, b) {
+                      int peso(Map<String, dynamic> m) {
+                        if (m['pedido_estado'] == 'pendiente_aprobacion') {
+                          return 0;
+                        }
+                        if (m['pedido_id'] != null) return 1;
+                        if (m['estado_operativo'] == 'reservada') return 2;
+                        return 3;
+                      }
+
+                      final c = peso(a).compareTo(peso(b));
+                      if (c != 0) return c;
+                      return '${a['nombre']}'.compareTo('${b['nombre']}');
+                    });
+                    if (filtradas.isEmpty) {
+                      return ListView(
                         children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      mesa['nombre'] as String? ?? 'Mesa',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: _puntoEstado(mesa),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                ],
+                          const SizedBox(height: 48),
+                          Center(
+                            child: Text(
+                              _filtroMesas == 'por_cobrar'
+                                  ? 'No hay mesas por cobrar'
+                                  : _filtroMesas == 'libres'
+                                      ? 'No hay mesas libres'
+                                      : 'Sin mesas en este filtro',
+                              style: const TextStyle(
+                                color: AnaliticaTokens.inkSoft,
                               ),
-                              if (mesa['numero_pedido'] != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  mesa['numero_pedido'] as String,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: ColoresFoody.primario,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                              if (mesa['mesera_nombre'] != null && ocupada)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.person_outline, size: 12),
-                                      const SizedBox(width: 3),
-                                      Expanded(
-                                        child: Text(
-                                          mesa['mesera_nombre'] as String,
-                                          style: const TextStyle(fontSize: 10),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              const Spacer(),
-                              if (_operacionPiso && !ocupada)
-                                Text(
-                                  widget.modoMesero
-                                      ? 'Toca para pedir'
-                                      : 'Toca para registrar',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                )
-                              else if (!ocupada)
-                                Text(
-                                  mesa['estado_operativo'] == 'reservada'
-                                      ? 'Reservada · ${mesa['reserva_cliente_nombre'] ?? ''}'
-                                      : 'Libre',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: mesa['estado_operativo'] == 'reservada'
-                                        ? const Color(0xFF5C6BC0)
-                                        : Colors.grey.shade600,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              else
-                                OutlinedButton(
-                                  onPressed: () => _mostrarDetalleMesa(mesa),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text('Ver pedido', style: TextStyle(fontSize: 11)),
-                                ),
+                            ),
+                          ),
                         ],
+                      );
+                    }
+                    final w = MediaQuery.sizeOf(context).width;
+                    final cols = FoodyBreakpoints.esLarge(w)
+                        ? 5
+                        : FoodyBreakpoints.esExpanded(w)
+                            ? 4
+                            : w < 400
+                                ? 2
+                                : 3;
+                    return GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cols,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        // Más alto = mejor hit target para meseros en tablet/móvil.
+                        childAspectRatio: w < 400
+                            ? 0.82
+                            : w < 700
+                                ? 0.9
+                                : 1.05,
                       ),
+                      itemCount: filtradas.length,
+                      itemBuilder: (context, index) =>
+                          _tarjetaMesaPiso(filtradas[index]),
                     );
                   },
                 ),
@@ -1224,15 +1895,205 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     );
   }
 
+  Widget _tarjetaMesaPiso(Map<String, dynamic> mesa) {
+    final borde = _bordeMesa(mesa);
+    final ocupada = mesa['pedido_id'] != null;
+    final qr = mesa['pedido_estado'] == 'pendiente_aprobacion';
+    final nombre = mesa['nombre'] as String? ?? 'Mesa';
+    final etiqueta = _etiquetaEstado(mesa);
+    final cta = _ctaMesa(mesa);
+
+    return Material(
+      color: AnaliticaTokens.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => _mostrarDetalleMesa(mesa),
+        onLongPress: _operacionPiso ? null : () => _opcionesMesa(mesa),
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: AnaliticaTokens.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: qr
+                  ? borde.withValues(alpha: 0.55)
+                  : AnaliticaTokens.border,
+            ),
+            boxShadow: AnaliticaTokens.shadowSoft,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                  Container(width: 3, color: borde),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: borde,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  etiqueta,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AnaliticaTokens.inkMuted,
+                                  ),
+                                ),
+                              ),
+                              if (!_operacionPiso)
+                                IconButton(
+                                  tooltip: 'Opciones (QR, unir, renombrar…)',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 28,
+                                    minHeight: 28,
+                                  ),
+                                  iconSize: 18,
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(
+                                    Icons.more_vert,
+                                    color: AnaliticaTokens.inkSoft,
+                                  ),
+                                  onPressed: () => _opcionesMesa(mesa),
+                                ),
+                            ],
+                          ),
+                          const Spacer(),
+                          Text(
+                            nombre,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              letterSpacing: -0.3,
+                              color: AnaliticaTokens.ink,
+                              height: 1.15,
+                            ),
+                          ),
+                          if (mesa['numero_pedido'] != null) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              '${mesa['numero_pedido']}',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AnaliticaTokens.inkSoft,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                          if (qr) _badgeTimerQr(mesa['pedido_creado_at']),
+                          if ((mesa['qr_pendientes_count'] as int? ?? 0) > 1)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '${mesa['qr_pendientes_count']} QR pendientes',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AnaliticaTokens.inkMuted,
+                                ),
+                              ),
+                            ),
+                          if (mesa['mesera_nombre'] != null && ocupada)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.person_outline,
+                                    size: 13,
+                                    color: AnaliticaTokens.inkSoft,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Expanded(
+                                    child: Text(
+                                      mesa['mesera_nombre'] as String,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AnaliticaTokens.inkMuted,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: ocupada || qr
+                                  ? AnaliticaTokens.ink
+                                  : AnaliticaTokens.surfaceMuted,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _iconoCta(mesa),
+                                  size: 14,
+                                  color: ocupada || qr
+                                      ? Colors.white
+                                      : AnaliticaTokens.inkMuted,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    cta,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: ocupada || qr
+                                          ? Colors.white
+                                          : AnaliticaTokens.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _leyenda() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 4,
       children: [
-        _puntoLeyenda(const Color(0xFF639922), 'Libre'),
-        const SizedBox(width: 8),
-        _puntoLeyenda(ColoresFoody.primario, 'Ocupada'),
-        const SizedBox(width: 8),
-        _puntoLeyenda(const Color(0xFF185FA5), 'QR'),
+        _puntoLeyenda(AnaliticaTokens.inventario, 'Libre'),
+        _puntoLeyenda(AnaliticaTokens.pedidos, 'Ocupada'),
+        _puntoLeyenda(const Color(0xFFD97706), 'QR'),
       ],
     );
   }
@@ -1241,9 +2102,20 @@ class _MesasGridWidgetState extends State<MesasGridWidget> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 4),
-        Text(t, style: const TextStyle(fontSize: 11)),
+        Text(
+          t,
+          style: const TextStyle(
+            fontSize: 11,
+            color: AnaliticaTokens.inkMuted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ],
     );
   }
@@ -1323,20 +2195,20 @@ class _SheetAprobacionQrState extends State<_SheetAprobacionQr> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: urgente
-                    ? ColoresFoody.error.withValues(alpha: 0.15)
+                    ? AnaliticaTokens.alertas.withValues(alpha: 0.15)
                     : advertencia
-                        ? ColoresFoody.acento.withValues(alpha: 0.35)
-                        : ColoresFoody.grisSuave,
+                        ? Color(0xFFD97706).withValues(alpha: 0.35)
+                        : AnaliticaTokens.surfaceMuted,
                 borderRadius: BorderRadius.circular(12),
                 border: urgente
-                    ? Border.all(color: ColoresFoody.error, width: 2)
+                    ? Border.all(color: AnaliticaTokens.alertas, width: 2)
                     : null,
               ),
               child: Row(
                 children: [
                   Icon(
                     Icons.timer_outlined,
-                    color: urgente ? ColoresFoody.error : ColoresFoody.primario,
+                    color: urgente ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1348,7 +2220,7 @@ class _SheetAprobacionQrState extends State<_SheetAprobacionQr> {
                               : 'Esperando $_textoTiempo',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: urgente ? ColoresFoody.error : ColoresFoody.texto,
+                        color: urgente ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
                       ),
                     ),
                   ),

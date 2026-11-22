@@ -25,24 +25,33 @@ const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requie
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const cocinas_service_1 = require("./cocinas.service");
 const cocina_dto_1 = require("./dto/cocina.dto");
+const item_kds_mutacion_dto_1 = require("./dto/item-kds-mutacion.dto");
 let CocinaTicketsController = class CocinaTicketsController {
     cocinas;
     constructor(cocinas) {
         this.cocinas = cocinas;
     }
     listarCocinas(usuario) {
-        return this.cocinas.listarCocinas(usuario.sucursal_id);
+        return this.cocinas.listarCocinasParaKds(usuario);
     }
-    tickets(cocinaId, usuario) {
+    async tickets(cocinaId, usuario) {
+        await this.cocinas.exigirAccesoCocinaKds(usuario, cocinaId);
         return this.cocinas.listarTickets(cocinaId, usuario.sucursal_id);
     }
-    cambiarEstadoItem(itemId, dto, usuario) {
+    async cambiarEstadoItem(itemId, dto, usuario) {
+        await this.cocinas.exigirAccesoItemKds(usuario, itemId);
         return this.cocinas.cambiarEstadoItem(itemId, usuario.sucursal_id, dto.estado_cocina, usuario.sub ?? null, dto.motivo);
     }
-    actualizarObservaciones(itemId, body, usuario) {
+    async falloPreparacion(itemId, dto, usuario) {
+        await this.cocinas.exigirAccesoItemKds(usuario, itemId);
+        return this.cocinas.falloPreparacion(itemId, usuario.sucursal_id, usuario.sub ?? null, dto.motivo);
+    }
+    async actualizarObservaciones(itemId, body, usuario) {
+        await this.cocinas.exigirAccesoItemKds(usuario, itemId);
         return this.cocinas.actualizarObservacionesItem(itemId, usuario.sucursal_id, body.observaciones ?? '');
     }
-    prioridad(itemId, body, usuario) {
+    async prioridad(itemId, body, usuario) {
+        await this.cocinas.exigirAccesoItemKds(usuario, itemId);
         return this.cocinas.marcarPrioridadItem(itemId, usuario.sucursal_id, body.urgente === true);
     }
 };
@@ -58,42 +67,55 @@ __decorate([
 __decorate([
     (0, common_1.Get)('tickets/:cocina_id'),
     (0, permisos_decorator_1.Permisos)('ver_cocina'),
-    __param(0, (0, common_1.Param)('cocina_id')),
+    __param(0, (0, common_1.Param)('cocina_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], CocinaTicketsController.prototype, "tickets", null);
 __decorate([
     (0, common_1.Patch)('items/:item_id/estado'),
     (0, permisos_decorator_1.Permisos)('ver_cocina'),
-    __param(0, (0, common_1.Param)('item_id')),
+    __param(0, (0, common_1.Param)('item_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, cocina_dto_1.CambiarEstadoItemDto,
         jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], CocinaTicketsController.prototype, "cambiarEstadoItem", null);
 __decorate([
-    (0, common_1.Patch)('items/:item_id/observaciones'),
+    (0, common_1.Post)('items/:item_id/fallo-preparacion'),
     (0, permisos_decorator_1.Permisos)('ver_cocina'),
-    __param(0, (0, common_1.Param)('item_id')),
+    __param(0, (0, common_1.Param)('item_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [String, cocina_dto_1.FalloPreparacionDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], CocinaTicketsController.prototype, "falloPreparacion", null);
+__decorate([
+    (0, common_1.Patch)('items/:item_id/observaciones'),
+    (0, permisos_decorator_1.Permisos)('ver_cocina'),
+    __param(0, (0, common_1.Param)('item_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, item_kds_mutacion_dto_1.ActualizarObservacionesItemDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
 ], CocinaTicketsController.prototype, "actualizarObservaciones", null);
 __decorate([
     (0, common_1.Patch)('items/:item_id/prioridad'),
     (0, permisos_decorator_1.Permisos)('ver_cocina'),
-    __param(0, (0, common_1.Param)('item_id')),
+    __param(0, (0, common_1.Param)('item_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [String, item_kds_mutacion_dto_1.PrioridadItemCocinaDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
 ], CocinaTicketsController.prototype, "prioridad", null);
 exports.CocinaTicketsController = CocinaTicketsController = __decorate([
     (0, common_1.Controller)('cocina'),

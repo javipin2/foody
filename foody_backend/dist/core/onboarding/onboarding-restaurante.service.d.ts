@@ -34,4 +34,6 @@ export declare class OnboardingRestauranteService {
     private readonly database;
     constructor(database: DatabaseService);
     crear(dto: OnboardingRestauranteInput): Promise<OnboardingRestauranteResult>;
+    private completarPostCommit;
+    private centroCiudadPorSlug;
 }

@@ -5,8 +5,11 @@ import 'package:reserva_canchas/core/modelos/respuesta_api.dart';
 import 'package:reserva_canchas/core/red/cliente_dio.dart';
 import 'package:reserva_canchas/core/notificaciones/servicio_fcm_foody.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
+import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
 import 'package:reserva_canchas/features/auth/domain/login_resultado.dart';
+import 'package:reserva_canchas/features/auth/domain/google_oauth_staff_service.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthRepository {
   AuthRepository({Dio? dio}) : _dio = dio ?? ClienteDio.instancia();
@@ -62,6 +65,26 @@ class AuthRepository {
       },
     );
     return _guardarSesionDesdeRespuesta(respuesta.data);
+  }
+
+  /// Cupo / waitlist antispike (VIRAL).
+  Future<({bool abierto, String mensaje})> estadoRegistroRestaurante() async {
+    final respuesta = await _dio.get<Map<String, dynamic>>(
+      '/auth/registro-estado',
+    );
+    final data = respuesta.data;
+    if (data == null) {
+      return (abierto: true, mensaje: '');
+    }
+    final envoltura = RespuestaApi<Map<String, dynamic>>.fromJson(
+      data,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    final d = envoltura.datos ?? {};
+    return (
+      abierto: d['abierto'] == true,
+      mensaje: (d['mensaje'] as String?) ?? envoltura.mensaje ?? '',
+    );
   }
 
   /// Login con token de Supabase (Google OAuth). Si no hay cuenta, devuelve [necesitaRegistro].
@@ -137,6 +160,7 @@ class AuthRepository {
     final usuario = Map<String, dynamic>.from(
       d['usuario'] as Map<String, dynamic>? ?? {},
     );
+    final canales = _parseRealtimeCanales(d['realtime_canales']);
 
     await SesionStaffService.guardar(
       token: token,
@@ -146,7 +170,9 @@ class AuthRepository {
       usuario: usuario,
       plan: plan,
       modulos: modulos,
+      realtimeCanales: canales,
     );
+    FoodyRealtime.aplicarCanalesStaff(canales);
 
     await ServicioFcmFoody.instancia.registrarTrasLoginStaff();
 
@@ -158,6 +184,45 @@ class AuthRepository {
       plan: plan,
       modulos: modulos,
     );
+  }
+
+  static Map<String, String> _parseRealtimeCanales(dynamic raw) {
+    final out = <String, String>{};
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (v != null && v.toString().isNotEmpty) {
+          out[k.toString()] = v.toString();
+        }
+      });
+    }
+    return out;
+  }
+
+  /// Al cambiar de sede: refresca topic `sucursal` HMAC.
+  Future<Map<String, String>> refrescarRealtimeCanales({
+    String? sucursalId,
+  }) async {
+    final dio = ClienteDio.instancia(conAuthStaff: true);
+    final respuesta = await dio.get<Map<String, dynamic>>(
+      '/auth/realtime-canales',
+      queryParameters: {
+        if (sucursalId != null && sucursalId.isNotEmpty)
+          'sucursal_id': sucursalId,
+      },
+    );
+    final data = respuesta.data;
+    if (data == null) throw Exception('Respuesta vacía');
+    final envoltura = RespuestaApi<Map<String, dynamic>>.fromJson(
+      data,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    if (!envoltura.exito || envoltura.datos == null) {
+      throw Exception(envoltura.mensaje);
+    }
+    final canales = _parseRealtimeCanales(envoltura.datos!['realtime_canales']);
+    await SesionStaffService.actualizarRealtimeCanales(canales);
+    FoodyRealtime.aplicarCanalesStaff(canales);
+    return canales;
   }
 
   /// Sincroniza permisos del JWT con la BD (tras migraciones o cambios de rol).
@@ -243,6 +308,7 @@ class AuthRepository {
   }
 
   Future<void> logout() async {
+    // FCM primero: logout server sube token_version y deja el JWT inválido.
     if (AppFlavor.actual.esEquipo && AppBackend.firebaseReady) {
       try {
         final token = await FirebaseMessaging.instance.getToken();
@@ -253,6 +319,18 @@ class AuthRepository {
         );
       } catch (_) {}
     }
+    // AUTH-FLOW-02: revocar JWT en servidor antes de limpiar local.
+    try {
+      final dio = ClienteDio.instancia(conAuthStaff: true);
+      await dio.post<Map<String, dynamic>>('/auth/logout');
+    } catch (_) {}
     await SesionStaffService.cerrar();
+    FoodyRealtime.limpiarCanalesStaff();
+    await GoogleOAuthStaffService.limpiarMarcadoresOAuth();
+    if (AppBackend.supabaseReady) {
+      try {
+        await Supabase.instance.client.auth.signOut();
+      } catch (_) {}
+    }
   }
 }

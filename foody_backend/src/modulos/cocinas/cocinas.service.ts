@@ -1,17 +1,31 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
+import { MenuCacheService } from '../../core/cache/menu-cache.service';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
+import { JwtPayload } from '../../core/auth/jwt-payload';
+import { esRolCocina } from '../../core/auth/roles-food';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
+import { DispatchService } from '../domiciliarios/dispatch.service';
 import {
   ActualizarCocinaDto,
   ActualizarImpresoraDto,
   CrearCocinaDto,
   CrearImpresoraDto,
 } from './dto/cocina.dto';
+import { PedidosEstadoCommandService } from '../pedidos/pedidos-estado-command.service';
+import { PedidosInventarioService } from '../pedidos/pedidos-inventario.service';
+import { PedidosSoporteService } from '../pedidos/pedidos-soporte.service';
+import {
+  ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA,
+  pedidoCobradoCompletamente,
+} from '../pedidos/pedido-estados';
 
 type EstadoItem = 'pendiente' | 'preparando' | 'listo' | 'no_disponible';
 
@@ -20,7 +34,14 @@ export class CocinasService {
   constructor(
     private readonly database: DatabaseService,
     private readonly realtime: RealtimeBroadcastService,
+    private readonly menuCache: MenuCacheService,
     private readonly alertasRiesgo: AlertasRiesgoService,
+    private readonly dispatch: DispatchService,
+    private readonly pedidosEstadoCommand: PedidosEstadoCommandService,
+    @Inject(forwardRef(() => PedidosSoporteService))
+    private readonly pedidosSoporte: PedidosSoporteService,
+    @Inject(forwardRef(() => PedidosInventarioService))
+    private readonly pedidosInventario: PedidosInventarioService,
   ) {}
 
   // ----------------------------- Cocinas -----------------------------
@@ -38,6 +59,69 @@ export class CocinasService {
        ORDER BY c.nombre ASC`,
       [sucursalId],
     );
+  }
+
+  /** KDS: staff cocina solo ve su estación; admin/gerente ven todas. */
+  async listarCocinasParaKds(usuario: JwtPayload) {
+    const sucursalId = usuario.sucursal_id;
+    if (!sucursalId) {
+      throw new BadRequestException('Sin sucursal en sesión');
+    }
+    const todas = await this.listarCocinas(sucursalId);
+    if (!esRolCocina(usuario.rol)) {
+      return todas;
+    }
+    const cocinaId = await this.cocinaAsignadaUsuario(usuario);
+    if (!cocinaId) {
+      throw new ForbiddenException(
+        'Tu usuario de cocina no tiene estación asignada. Pide al admin que te asigne una.',
+      );
+    }
+    return todas.filter((c) => c.id === cocinaId);
+  }
+
+  async exigirAccesoCocinaKds(usuario: JwtPayload, cocinaId: string) {
+    const sucursalId = usuario.sucursal_id;
+    if (!sucursalId) {
+      throw new BadRequestException('Sin sucursal en sesión');
+    }
+    await this.exigirCocina(cocinaId, sucursalId);
+    if (!esRolCocina(usuario.rol)) return;
+    const asignada = await this.cocinaAsignadaUsuario(usuario);
+    if (asignada !== cocinaId) {
+      throw new ForbiddenException('No puedes operar otra cocina distinta a la tuya');
+    }
+  }
+
+  async exigirAccesoItemKds(usuario: JwtPayload, itemId: string) {
+    if (!esRolCocina(usuario.rol)) return;
+    const sucursalId = usuario.sucursal_id;
+    if (!sucursalId) {
+      throw new BadRequestException('Sin sucursal en sesión');
+    }
+    const item = await this.database.consultarUno<{ cocina_id: string | null }>(
+      `SELECT pi.cocina_id
+       FROM pedido_items pi
+       JOIN pedidos p ON p.id = pi.pedido_id
+       WHERE pi.id = $1 AND p.sucursal_id = $2`,
+      [itemId, sucursalId],
+    );
+    if (!item) {
+      throw new NotFoundException('Ítem de pedido no encontrado');
+    }
+    if (!item.cocina_id) {
+      throw new ForbiddenException('Ítem sin cocina asignada');
+    }
+    await this.exigirAccesoCocinaKds(usuario, item.cocina_id);
+  }
+
+  private async cocinaAsignadaUsuario(usuario: JwtPayload): Promise<string | null> {
+    if (usuario.cocina_id) return usuario.cocina_id;
+    const fila = await this.database.consultarUno<{ cocina_id: string | null }>(
+      `SELECT cocina_id FROM usuarios WHERE id = $1`,
+      [usuario.sub],
+    );
+    return fila?.cocina_id ?? null;
   }
 
   crearCocina(dto: CrearCocinaDto) {
@@ -186,6 +270,7 @@ export class CocinasService {
       `SELECT p.id AS pedido_id, p.numero_pedido, p.tipo, p.estado,
               p.mesa_id, m.nombre AS mesa_nombre, p.cliente_nombre,
               p.observaciones, p.created_at,
+              MIN(pi.created_at) AS cocina_desde,
               COALESCE(
                 json_agg(
                   json_build_object(
@@ -194,6 +279,7 @@ export class CocinasService {
                     'cantidad', pi.cantidad,
                     'observaciones', pi.observaciones,
                     'estado_cocina', pi.estado_cocina,
+                    'created_at', pi.created_at,
                     'incluidos', COALESCE(
                       (
                         SELECT json_agg(
@@ -218,7 +304,18 @@ export class CocinasService {
        JOIN pedido_items pi ON pi.pedido_id = p.id AND pi.cocina_id = $1
        LEFT JOIN productos pr ON pr.id = pi.producto_id
        WHERE p.sucursal_id = $2
-         AND p.estado IN ('confirmado', 'en_cocina', 'listo')
+         AND (
+           p.estado IN ('confirmado', 'en_cocina', 'listo', 'pagando')
+           OR (
+             p.estado = 'pagado'
+             AND EXISTS (
+               SELECT 1 FROM pedido_items pi_pend
+               WHERE pi_pend.pedido_id = p.id
+                 AND pi_pend.cocina_id = $1
+                 AND pi_pend.estado_cocina NOT IN ('listo', 'no_disponible')
+             )
+           )
+         )
        GROUP BY p.id, m.nombre
        ORDER BY p.created_at ASC`,
       [cocinaId, sucursalId],
@@ -227,8 +324,10 @@ export class CocinasService {
 
   /**
    * Cambia el estado de cocina de un ítem y recalcula el estado global del pedido.
-   * - algún ítem preparando/listo (no todos listos) → pedido en_cocina
-   * - todos los ítems listos → pedido listo
+   * - ítems pendientes (no listo ni no_disponible) → pedido en_cocina
+   * - todos resueltos (listo | no_disponible) → pedido listo (COC-NODISP-01)
+   * - listo + cobrado completo → pagado (PED-PREPAGO-01)
+   * - no_disponible / fallo: motivo + merma si stock_descontado (VIE-09 C)
    */
   async cambiarEstadoItem(
     itemId: string,
@@ -236,17 +335,41 @@ export class CocinasService {
     estado: EstadoItem,
     usuarioId: string | null,
     motivo?: string,
+    opciones?: { falloPreparacion?: boolean },
   ) {
-    return this.database.enTransaccion(async (client) => {
+    if (estado === 'no_disponible' && !motivo?.trim()) {
+      throw new BadRequestException({
+        error: 'FALLO_PREPARACION_MOTIVO',
+        message: 'Indica el motivo del fallo de preparación (obligatorio).',
+      });
+    }
+
+    const result = await this.database.enTransaccion(async (client) => {
+      let catalogoOffProductoId: string | null = null;
       const item = await client.query<{
         pedido_id: string;
         estado: string;
+        tipo: string;
         cocina_id: string | null;
         numero_pedido: string;
+        total: string;
+        monto_pagado: string;
+        producto_id: string;
+        cantidad: number;
+        stock_descontado: boolean;
+        nombre_producto: string;
+        estado_cocina: string;
       }>(
-        `SELECT pi.pedido_id, p.estado, pi.cocina_id, p.numero_pedido
+        `SELECT pi.pedido_id, p.estado, p.tipo, pi.cocina_id, p.numero_pedido,
+                p.total::text AS total,
+                COALESCE(p.monto_pagado, 0)::text AS monto_pagado,
+                pi.producto_id, pi.cantidad,
+                COALESCE(p.stock_descontado, false) AS stock_descontado,
+                pr.nombre AS nombre_producto,
+                pi.estado_cocina
          FROM pedido_items pi
          JOIN pedidos p ON p.id = pi.pedido_id
+         JOIN productos pr ON pr.id = pi.producto_id
          WHERE pi.id = $1 AND p.sucursal_id = $2
          FOR UPDATE OF p`,
         [itemId, sucursalId],
@@ -254,53 +377,96 @@ export class CocinasService {
       if (!item.rows[0]) {
         throw new NotFoundException('Ítem de pedido no encontrado');
       }
-      const pedidoId = item.rows[0].pedido_id;
-      const estadoPedidoActual = item.rows[0].estado;
+      const fila = item.rows[0];
+      const pedidoId = fila.pedido_id;
+      const estadoPedidoActual = fila.estado;
+      const estadoCocinaAnterior = fila.estado_cocina;
 
       await client.query(
         `UPDATE pedido_items SET estado_cocina = $1 WHERE id = $2`,
         [estado, itemId],
       );
 
-      if (estado === 'no_disponible') {
+      if (
+        estado === 'no_disponible' &&
+        estadoCocinaAnterior !== 'no_disponible'
+      ) {
+        const descMotivo = motivo!.trim();
         await this.alertasRiesgo.registrarEnTransaccion(client, {
           sucursalId,
-          tipo: 'item_no_disponible_cocina',
+          tipo: opciones?.falloPreparacion
+            ? 'fallo_preparacion'
+            : 'item_no_disponible_cocina',
           nivel: 'alto',
-          descripcion:
-            motivo?.trim() ||
-            `Cocina marcó ítem no disponible (pedido ${item.rows[0].numero_pedido})`,
+          descripcion: opciones?.falloPreparacion
+            ? `${fila.numero_pedido}: fallo de preparación «${fila.nombre_producto}». Motivo: ${descMotivo}`
+            : descMotivo ||
+              `Cocina marcó ítem no disponible (pedido ${fila.numero_pedido})`,
           referenciaId: pedidoId,
           referenciaTipo: 'pedido',
           deduplicar: false,
         });
+
+        if (fila.stock_descontado) {
+          await this.pedidosInventario.registrarMermaLineaProducto(
+            client,
+            sucursalId,
+            pedidoId,
+            fila.producto_id,
+            fila.cantidad,
+            descMotivo || `Fallo preparación (${fila.nombre_producto})`,
+          );
+        }
+
         await client.query(
           `INSERT INTO impresion_cocina_jobs (sucursal_id, cocina_id, pedido_id, payload)
            VALUES ($1, $2, $3, $4::jsonb)`,
           [
             sucursalId,
-            item.rows[0].cocina_id,
+            fila.cocina_id,
             pedidoId,
-            JSON.stringify({ accion: 'item_no_disponible', item_id: itemId }),
+            JSON.stringify({
+              accion: opciones?.falloPreparacion
+                ? 'fallo_preparacion'
+                : 'item_no_disponible',
+              item_id: itemId,
+              motivo: descMotivo,
+            }),
           ],
         );
+
+        // CONS-NODISP-STOCK-01 / VIE-09 C: merma ya hecha; off menú del producto.
+        const off = await client.query<{ id: string }>(
+          `UPDATE productos
+           SET disponible = false
+           WHERE id = $1 AND sucursal_id = $2
+             AND disponible IS DISTINCT FROM false
+           RETURNING id`,
+          [fila.producto_id, sucursalId],
+        );
+        if (off.rows[0]) {
+          catalogoOffProductoId = fila.producto_id;
+        }
       }
 
       const conteo = await client.query<{
-        total: string;
-        listos: string;
+        pendientes: string;
         en_proceso: string;
       }>(
-        `SELECT COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE estado_cocina = 'listo') AS listos,
-                COUNT(*) FILTER (WHERE estado_cocina IN ('preparando', 'listo')) AS en_proceso
+        `SELECT
+           COUNT(*) FILTER (
+             WHERE estado_cocina NOT IN ('listo', 'no_disponible')
+           ) AS pendientes,
+           COUNT(*) FILTER (
+             WHERE estado_cocina IN ('preparando', 'listo')
+           ) AS en_proceso
          FROM pedido_items WHERE pedido_id = $1`,
         [pedidoId],
       );
-      const { total, listos, en_proceso } = conteo.rows[0];
+      const { pendientes, en_proceso } = conteo.rows[0];
 
       let nuevoEstadoPedido = estadoPedidoActual;
-      if (Number(total) > 0 && Number(listos) === Number(total)) {
+      if (Number(pendientes) === 0) {
         nuevoEstadoPedido = 'listo';
       } else if (Number(en_proceso) > 0) {
         nuevoEstadoPedido = 'en_cocina';
@@ -308,23 +474,42 @@ export class CocinasService {
         nuevoEstadoPedido = 'en_cocina';
       }
 
+      if (ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA.has(estadoPedidoActual)) {
+        nuevoEstadoPedido = estadoPedidoActual;
+      }
+
       if (nuevoEstadoPedido !== estadoPedidoActual) {
-        await client.query(`UPDATE pedidos SET estado = $1 WHERE id = $2`, [
-          nuevoEstadoPedido,
+        await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
           pedidoId,
-        ]);
-        await client.query(
-          `INSERT INTO estados_pedido_historial
-             (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [
-            pedidoId,
-            estadoPedidoActual,
-            nuevoEstadoPedido,
-            usuarioId,
-            'Cambio automático desde cocina',
-          ],
-        );
+          sucursalId,
+          nuevoEstado: nuevoEstadoPedido,
+          origen: 'cocina',
+          usuarioId,
+          estadoAnterior: estadoPedidoActual,
+          tipo: item.rows[0].tipo,
+        });
+      }
+
+      // PED-PREPAGO-01: cocina terminó y ya está cobrado → cerrar como pagado
+      if (
+        nuevoEstadoPedido === 'listo' &&
+        !ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA.has(estadoPedidoActual) &&
+        pedidoCobradoCompletamente(
+          Number(item.rows[0].total),
+          item.rows[0].monto_pagado,
+        )
+      ) {
+        await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
+          pedidoId,
+          sucursalId,
+          nuevoEstado: 'pagado',
+          origen: 'sistema',
+          usuarioId,
+          motivo: 'Cocina lista — pedido ya cobrado (prepago)',
+          estadoAnterior: 'listo',
+          tipo: item.rows[0].tipo,
+        });
+        nuevoEstadoPedido = 'pagado';
       }
 
       return {
@@ -333,34 +518,112 @@ export class CocinasService {
         pedido_id: pedidoId,
         estado_pedido: nuevoEstadoPedido,
         estado_pedido_anterior: estadoPedidoActual,
+        tipo_pedido: item.rows[0].tipo,
         cocina_id: item.rows[0].cocina_id,
         numero_pedido: item.rows[0].numero_pedido,
         sucursal_id: sucursalId,
+        catalogo_off_producto_id: catalogoOffProductoId,
       };
-    }).then((result) => {
-      if (result.cocina_id) {
-        void this.realtime.cocinaActualizada(result.cocina_id, {
-          pedido_id: result.pedido_id,
-          item_id: result.item_id,
-          sucursal_id: result.sucursal_id,
-          accion: 'item_estado',
-        });
-      }
-      if (result.estado_pedido !== result.estado_pedido_anterior) {
-        void this.realtime.pedidoActualizado({
-          pedido_id: result.pedido_id,
-          sucursal_id: result.sucursal_id,
-          estado: result.estado_pedido,
-          numero_pedido: result.numero_pedido,
-        });
-        void this.realtime.pedidoSeguimiento(result.pedido_id, {
-          pedido_id: result.pedido_id,
-          estado: result.estado_pedido,
-        });
-      }
-      const { estado_pedido_anterior: _, ...respuesta } = result;
-      return respuesta;
     });
+
+    if (result.catalogo_off_producto_id) {
+      void this.menuCache.invalidar(result.sucursal_id);
+      this.pedidosSoporte.notificarCatalogoDisponibilidad(result.sucursal_id, [
+        {
+          producto_id: result.catalogo_off_producto_id,
+          disponible: false,
+        },
+      ]);
+    }
+
+    if (result.cocina_id) {
+      void this.realtime.cocinaActualizada(result.cocina_id, {
+        pedido_id: result.pedido_id,
+        item_id: result.item_id,
+        sucursal_id: result.sucursal_id,
+        accion: 'item_estado',
+      });
+    }
+    if (result.estado_pedido !== result.estado_pedido_anterior) {
+      void this.realtime.pedidoActualizado({
+        pedido_id: result.pedido_id,
+        sucursal_id: result.sucursal_id,
+        estado: result.estado_pedido,
+        numero_pedido: result.numero_pedido,
+      });
+      this.pedidosSoporte.emitirSeguimientoPedido(result.pedido_id, {
+        pedido_id: result.pedido_id,
+        estado: result.estado_pedido,
+      });
+    }
+
+    await this.intentarDispatchDomicilioSiListo(
+      result.pedido_id,
+      result.sucursal_id,
+      result.tipo_pedido,
+      result.estado_pedido,
+      result.estado_pedido_anterior,
+    );
+
+    const { estado_pedido_anterior: _, tipo_pedido: __, ...respuesta } = result;
+    return respuesta;
+  }
+
+  /** VIE-09 C: fallo de preparación → N/D + merma + alerta. */
+  async falloPreparacion(
+    itemId: string,
+    sucursalId: string,
+    usuarioId: string | null,
+    motivo: string,
+  ) {
+    return this.cambiarEstadoItem(
+      itemId,
+      sucursalId,
+      'no_disponible',
+      usuarioId,
+      motivo,
+      { falloPreparacion: true },
+    );
+  }
+
+  /** F-02: mismo hook que PedidosEstadoService al pasar domicilio a listo. */
+  private async intentarDispatchDomicilioSiListo(
+    pedidoId: string,
+    sucursalId: string,
+    tipo: string,
+    estadoNuevo: string,
+    estadoAnterior: string,
+  ) {
+    if (
+      tipo !== 'domicilio' ||
+      estadoNuevo !== 'listo' ||
+      estadoAnterior === 'listo'
+    ) {
+      return;
+    }
+    try {
+      const dispatchResult = await this.dispatch.intentarDispatchAutomatico(
+        pedidoId,
+        sucursalId,
+      );
+      const asignado =
+        dispatchResult.iniciado &&
+        (dispatchResult.motivo === 'planta_asignada_auto' ||
+          dispatchResult.motivo === 'ya_asignado');
+      if (!asignado) {
+        void this.alertasRiesgo.registrar({
+          sucursalId,
+          tipo: 'domicilio_listo_sin_asignar',
+          nivel: 'medio',
+          descripcion: `Pedido listo — asignar domiciliario (${pedidoId})`,
+          referenciaId: pedidoId,
+          referenciaTipo: 'pedido',
+          deduplicar: true,
+        });
+      }
+    } catch {
+      // Dispatch no debe bloquear el cambio de estado desde cocina
+    }
   }
 
   async actualizarObservacionesItem(
@@ -412,7 +675,7 @@ export class CocinasService {
        WHERE pi.cocina_id = $1 AND p.sucursal_id = $2
          AND pi.estado_cocina IN ('pendiente', 'preparando')
          AND pi.created_at < now() - interval '20 minutes'
-         AND p.estado IN ('confirmado', 'en_cocina')`,
+         AND p.estado IN ('confirmado', 'en_cocina', 'pagando', 'pagado')`,
       [cocinaId, sucursalId],
     );
     for (const d of demorados) {

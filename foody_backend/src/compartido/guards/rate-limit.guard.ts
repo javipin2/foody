@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { esProduccion } from '../../core/config/validar-config-produccion';
+import { DatabaseService } from '../../core/database/database.service';
 
 export const RATE_LIMIT_META = 'rate_limit';
 
@@ -27,14 +29,21 @@ type Entrada = { cuenta: number; reinicio: number };
 export class RateLimitGuard implements CanActivate {
   private static readonly store = new Map<string, Entrada>();
 
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly database: DatabaseService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const opts = this.reflector.get<RateLimitOptions | undefined>(
       RATE_LIMIT_META,
       context.getHandler(),
     );
     if (!opts) return true;
+    // ponytail: rate limit en prod; CI local hace decenas de logins/minuto.
+    // RATE_LIMIT_FORZAR=1 fuerza el límite también en desarrollo (QA SEC-RLIMIT).
+    const forzar = process.env.RATE_LIMIT_FORZAR === '1';
+    if (!esProduccion() && !forzar) return true;
 
     const req = context.switchToHttp().getRequest<Request>();
     const ip =
@@ -44,6 +53,52 @@ export class RateLimitGuard implements CanActivate {
     const clave = `${ip}:${req.method}:${req.path}`;
     const ahora = Date.now();
 
+    // Prod: rate-limit multi-réplica usando Postgres (no Map en memoria).
+    // dev/CI: Map en memoria, salvo forzar para QA SEC-RLIMIT.
+    if (esProduccion() || forzar) {
+      try {
+        const r = await this.database.consultarUno<{ cuenta: number }>(
+          `INSERT INTO rate_limit_entries (clave, ventana_ms, reinicio_at, cuenta)
+           VALUES (
+             $1,
+             $2,
+             now() + ($2::text || ' milliseconds')::interval,
+             1
+           )
+           ON CONFLICT (clave) DO UPDATE
+             SET ventana_ms = EXCLUDED.ventana_ms,
+                 reinicio_at = CASE
+                   WHEN now() >= rate_limit_entries.reinicio_at
+                     THEN now() + (EXCLUDED.ventana_ms::text || ' milliseconds')::interval
+                   ELSE rate_limit_entries.reinicio_at
+                 END,
+                 cuenta = CASE
+                   WHEN now() >= rate_limit_entries.reinicio_at
+                     THEN 1
+                   ELSE rate_limit_entries.cuenta + 1
+                 END
+           RETURNING cuenta`,
+          [clave, opts.ventanaMs],
+        );
+
+        const cuenta = Number(r?.cuenta ?? 1);
+        if (cuenta > opts.maximo) {
+          throw new HttpException(
+            {
+              error: 'RATE_LIMIT',
+              message:
+                'Demasiadas peticiones. Intenta de nuevo en un momento.',
+            },
+            HttpStatus.TOO_MANY_REQUESTS,
+          );
+        }
+        return true;
+      } catch {
+        // fallback (si falla BD) para no romper el servicio
+      }
+    }
+
+    // Fallback (no prod / DB falló): rate limit en memoria.
     let entrada = RateLimitGuard.store.get(clave);
     if (!entrada || ahora >= entrada.reinicio) {
       entrada = { cuenta: 0, reinicio: ahora + opts.ventanaMs };

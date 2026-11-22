@@ -9,13 +9,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ImpresionModule = void 0;
 const common_1 = require("@nestjs/common");
 const database_module_1 = require("../database/database.module");
+const auth_module_1 = require("../auth/auth.module");
+const impresion_controller_1 = require("./impresion.controller");
 const impresion_service_1 = require("./impresion.service");
 let ImpresionModule = class ImpresionModule {
 };
 exports.ImpresionModule = ImpresionModule;
 exports.ImpresionModule = ImpresionModule = __decorate([
     (0, common_1.Module)({
-        imports: [database_module_1.DatabaseModule],
+        imports: [database_module_1.DatabaseModule, auth_module_1.AuthModule],
+        controllers: [impresion_controller_1.ImpresionController],
         providers: [impresion_service_1.ImpresionService],
         exports: [impresion_service_1.ImpresionService],
     })

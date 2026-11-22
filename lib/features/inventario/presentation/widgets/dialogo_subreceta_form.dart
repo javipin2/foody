@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/tema/foody_formulario.dart';
 import 'package:reserva_canchas/features/costeo/domain/unidad_costeo_util.dart';
 
 /// Resultado del diálogo crear/editar subreceta.
@@ -12,6 +13,7 @@ class SubrecetaFormResultado {
     required this.margenError,
     required this.items,
     this.recetaId,
+    this.usaProduccionLote = false,
   });
 
   final String? recetaId;
@@ -20,6 +22,7 @@ class SubrecetaFormResultado {
   final String unidadResultado;
   final double margenError;
   final List<Map<String, dynamic>> items;
+  final bool usaProduccionLote;
 }
 
 Future<SubrecetaFormResultado?> mostrarDialogoSubreceta({
@@ -63,6 +66,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
   late final TextEditingController _margenPct;
   late String _unidadRes;
   late List<Map<String, dynamic>> _filas;
+  bool _usaProduccionLote = false;
 
   final _moneda = NumberFormat.currency(
     locale: 'es_CO',
@@ -86,11 +90,14 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
     _cantidadRes = TextEditingController(
       text: sr != null ? '${sr['cantidad_resultado']}' : '2700',
     );
-    _unidadRes = sr?['unidad_resultado'] as String? ?? 'g';
+    _unidadRes = normalizarUnidadCosteo(
+      sr?['unidad_resultado'] as String? ?? 'g',
+    );
     final margen = sr != null
         ? (num.tryParse('${sr['margen_error']}') ?? 0.05) * 100
         : 5.0;
     _margenPct = TextEditingController(text: margen.toStringAsFixed(1));
+    _usaProduccionLote = sr?['usa_produccion_lote'] == true;
 
     if (widget.itemsExistentes != null && widget.itemsExistentes!.isNotEmpty) {
       _filas = widget.itemsExistentes!.map((e) {
@@ -202,7 +209,11 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
   void _vincularInsumo(Map<String, dynamic> fila, Map<String, dynamic> ing) {
     fila['ingrediente_id'] = ing['id'] as String;
     fila['nombre_insumo'] = ing['nombre'] as String? ?? '';
-    fila['unidad'] = ing['unidad_base'] as String? ?? 'g';
+    final base = ing['unidad_base'] as String? ?? 'g';
+    final actual = fila['unidad'] as String?;
+    if (actual == null || !unidadesCosteoCompatibles(actual, base)) {
+      fila['unidad'] = base;
+    }
   }
 
   double _costoLinea(Map<String, dynamic> fila) {
@@ -273,7 +284,16 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
           return false;
         }
         final sr = _subrecetaPorId(fila['subreceta_id'] as String)!;
-        fila['unidad'] = sr['unidad_resultado'] as String? ?? 'g';
+        final uRes = sr['unidad_resultado'] as String? ?? 'g';
+        final uLinea = fila['unidad'] as String? ?? uRes;
+        if (!unidadesCosteoCompatibles(uLinea, uRes)) {
+          _snack(
+            'Unidad «$uLinea» incompatible con la subreceta («$uRes»). '
+            'Usa g/kg o ml/L según corresponda.',
+          );
+          return false;
+        }
+        fila['unidad'] = normalizarUnidadCosteo(uLinea);
         continue;
       }
       final nombre = (fila['nombre_insumo'] as String? ?? '').trim();
@@ -290,7 +310,16 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
         return false;
       }
       final ing = _ingredientePorId(fila['ingrediente_id'] as String)!;
-      fila['unidad'] = ing['unidad_base'] as String? ?? 'g';
+      final uBase = ing['unidad_base'] as String? ?? 'g';
+      final uLinea = fila['unidad'] as String? ?? uBase;
+      if (!unidadesCosteoCompatibles(uLinea, uBase)) {
+        _snack(
+          '«${ing['nombre']}» está en $uBase; no puedes usar «$uLinea». '
+          'Elige g/kg o ml/L de la misma familia.',
+        );
+        return false;
+      }
+      fila['unidad'] = normalizarUnidadCosteo(uLinea);
     }
     return true;
   }
@@ -328,6 +357,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
         unidadResultado: _unidadRes,
         margenError: _margenDecimal,
         items: items,
+        usaProduccionLote: _usaProduccionLote,
       ),
     );
   }
@@ -335,172 +365,296 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
   @override
   Widget build(BuildContext context) {
     final costoPorUnidad = _costoPorUnidad;
+    final margenTxt = _margenPct.text;
 
-    return AlertDialog(
-      title: Text(_esEdicion ? 'Editar subreceta' : 'Nueva subreceta'),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Preparación intermedia (salsa, base, marinado). '
-                'El costo de cada insumo viene de «Lista de mercado».',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _nombre,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  hintText: 'Ej. Salsa Maquia',
+    return FoodyDialogoShell(
+      titulo: _esEdicion ? 'Editar subreceta' : 'Nueva subreceta',
+      subtitulo:
+          'Preparación intermedia (salsa, base, arroz…). '
+          'El costo sale de tu lista de mercado.',
+      contenido: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FoodyFormSeccion(
+            titulo: 'Datos del preparado',
+            icono: Icons.soup_kitchen_outlined,
+            acento: ColoresFoody.primario,
+            hijo: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _nombre,
+                  decoration: FoodyFormEstilo.campo(
+                    label: 'Nombre',
+                    hint: 'Ej. Arroz cocido, salsa Maquia',
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
+                const SizedBox(height: 12),
+                FoodyFormCamposAdaptativos(
+                  breakpoint: 420,
+                  campos: [
+                    TextField(
                       controller: _cantidadRes,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Cantidad obtenida',
-                        hintText: '2700',
+                      decoration: FoodyFormEstilo.campo(
+                        label: 'Cantidad obtenida',
+                        hint: '2700',
                       ),
                       onChanged: (_) => setState(() {}),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
+                    DropdownButtonFormField<String>(
                       initialValue: _unidadRes,
-                      decoration: const InputDecoration(labelText: 'Unidad'),
+                      decoration: FoodyFormEstilo.campo(label: 'Unidad'),
                       items: const [
                         DropdownMenuItem(value: 'g', child: Text('g')),
                         DropdownMenuItem(value: 'ml', child: Text('ml')),
                         DropdownMenuItem(value: 'kg', child: Text('kg')),
-                        DropdownMenuItem(value: 'l', child: Text('l')),
+                        DropdownMenuItem(value: 'L', child: Text('L')),
                         DropdownMenuItem(value: 'und', child: Text('und')),
                       ],
                       onChanged: (v) {
                         if (v != null) setState(() => _unidadRes = v);
                       },
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
+                    TextField(
                       controller: _margenPct,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
-                      decoration: const InputDecoration(
-                        labelText: 'Margen error %',
-                        suffixText: '%',
+                      decoration: FoodyFormEstilo.campo(
+                        label: 'Margen error',
+                        suffix: '%',
                       ),
                       onChanged: (_) => setState(() {}),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: ColoresFoody.primario.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: ColoresFoody.primario.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Vista previa (estimada)',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: ColoresFoody.primario,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Costo insumos: ${_moneda.format(_costoInsumos)}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    Text(
-                      'Con margen ${_margenPct.text}%: ${_moneda.format(_costoConMargen)}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    if (costoPorUnidad != null)
-                      Text(
-                        'Costo por $_unidadRes: ${_moneda.format(costoPorUnidad)}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    else
-                      const Text(
-                        'Indica cantidad obtenida para ver costo/unidad',
-                        style: TextStyle(fontSize: 12, color: Colors.orange),
-                      ),
-                    if (_cantidadResultado <= 1 &&
-                        _costoInsumos > 100 &&
-                        _filas.length >= 2)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          '¿Estas cantidades son de un lote grande? '
-                          'Pon en «Cantidad obtenida» cuántas $_unidadRes '
-                          'salen de ese lote (ej. 20), no 1.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.orange.shade800,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Insumos de la subreceta',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                const SizedBox(height: 12),
+                Text(
+                  '¿Cuándo se mueve el inventario?',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800,
+                  ),
                 ),
-              ),
-              for (var i = 0; i < _filas.length; i++) ...[
                 const SizedBox(height: 8),
-                _filaEditor(i),
+                _modoStockOpcion(
+                  seleccionado: !_usaProduccionLote,
+                  titulo: 'Al vender el plato',
+                  detalle:
+                      'Recomendado. Al enviar a cocina se descuentan '
+                      'los insumos de la lista de mercado (limón, azúcar…). '
+                      'No hace falta «preparar» stock aparte.',
+                  onTap: () => setState(() => _usaProduccionLote = false),
+                ),
+                const SizedBox(height: 8),
+                _modoStockOpcion(
+                  seleccionado: _usaProduccionLote,
+                  titulo: 'Preparo un lote y lo guardo',
+                  detalle:
+                      'Cocinas de antemano. Registras producción: baja '
+                      'insumos y entra stock de «Prep: ${_nombre.text.trim().isEmpty ? '…' : _nombre.text.trim()}». '
+                      'Al vender solo baja el preparado.',
+                  onTap: () => setState(() => _usaProduccionLote = true),
+                ),
+                if (_usaProduccionLote) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: Text(
+                      'Al guardar, el preparado empieza en 0. '
+                      'Luego usa «Preparar lote» en la lista de subrecetas '
+                      'para cocinar y tener stock. Hasta entonces no es '
+                      '«stock bajo» de mercado: es «sin preparar».',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-              TextButton.icon(
-                onPressed: () => setState(() => _filas.add(_filaVacia())),
-                icon: const Icon(Icons.add),
-                label: const Text('Añadir línea'),
-              ),
-            ],
+            ),
           ),
-        ),
+          FoodyFormSeccion(
+            titulo: 'Vista previa de costo',
+            icono: Icons.insights_outlined,
+            acento: ColoresFoody.secundario,
+            trailing: FoodyFormBadge(
+              texto: 'Estimado',
+              color: ColoresFoody.secundario,
+            ),
+            hijo: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FoodyFormMetricas(
+                  items: [
+                    FoodyMetricaItem(
+                      etiqueta: 'Insumos',
+                      valor: _moneda.format(_costoInsumos),
+                      color: ColoresFoody.texto,
+                    ),
+                    FoodyMetricaItem(
+                      etiqueta: 'Con margen $margenTxt%',
+                      valor: _moneda.format(_costoConMargen),
+                      color: ColoresFoody.primario,
+                    ),
+                    FoodyMetricaItem(
+                      etiqueta: 'Por $_unidadRes',
+                      valor: costoPorUnidad != null
+                          ? _moneda.format(costoPorUnidad)
+                          : '—',
+                      color: ColoresFoody.secundario,
+                    ),
+                  ],
+                ),
+                if (costoPorUnidad == null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Indica la cantidad obtenida para ver costo por unidad',
+                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                  ),
+                ],
+                if (_cantidadResultado <= 1 &&
+                    _costoInsumos > 100 &&
+                    _filas.length >= 2) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '¿Es un lote grande? Pon cuántas $_unidadRes salen '
+                    '(ej. 2700), no 1.',
+                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          FoodyFormSeccion(
+            titulo: 'Insumos de la subreceta',
+            subtitulo: '${_filas.length} línea${_filas.length == 1 ? '' : 's'}',
+            icono: Icons.playlist_add_check_outlined,
+            acento: ColoresFoody.primario,
+            hijo: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < _filas.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 10),
+                  _filaEditor(i),
+                ],
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _filas.add(_filaVacia())),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Añadir línea'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ColoresFoody.primario,
+                    side: BorderSide(
+                      color: ColoresFoody.primario.withValues(alpha: 0.4),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
-      actions: [
+      acciones: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
         FilledButton(
           onPressed: _guardar,
+          style: FilledButton.styleFrom(
+            backgroundColor: ColoresFoody.primario,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
           child: Text(_esEdicion ? 'Guardar' : 'Crear'),
         ),
       ],
+    );
+  }
+
+  Widget _modoStockOpcion({
+    required bool seleccionado,
+    required String titulo,
+    required String detalle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: seleccionado
+          ? ColoresFoody.secundario.withValues(alpha: 0.1)
+          : Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: seleccionado
+                  ? ColoresFoody.secundario
+                  : Colors.grey.shade300,
+              width: seleccionado ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                seleccionado
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_off,
+                size: 22,
+                color: seleccionado
+                    ? ColoresFoody.secundario
+                    : Colors.grey.shade500,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titulo,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      detalle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -513,157 +667,235 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
         ing != null &&
         (num.tryParse('${ing['costo_unitario_actual']}') ?? 0) == 0;
 
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: tipo,
-                    decoration: const InputDecoration(
-                      labelText: 'Qué es',
-                      isDense: true,
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'ingrediente',
-                        child: Text('Insumo'),
-                      ),
-                      if (_subrecetasDisponibles.isNotEmpty)
-                        const DropdownMenuItem(
-                          value: 'subreceta',
-                          child: Text('Otra subreceta'),
-                        ),
-                    ],
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _filas[i] = _filaVacia(tipo: v));
-                    },
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ColoresFoody.grisSuave,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: costoCero ? Colors.orange.shade200 : Colors.grey.shade200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ColoresFoody.primario.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${i + 1}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: ColoresFoody.primario,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: _filas.length > 1
-                      ? () => setState(() => _filas.removeAt(i))
-                      : null,
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            if (tipo == 'subreceta')
-              DropdownButtonFormField<String>(
-                initialValue: fila['subreceta_id'] as String?,
-                decoration: const InputDecoration(
-                  labelText: 'Preparación previa',
-                  isDense: true,
-                ),
-                items: _subrecetasDisponibles
-                    .map(
-                      (sr) => DropdownMenuItem(
-                        value: sr['id'] as String,
-                        child: Text(sr['nombre'] as String? ?? ''),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: tipo,
+                  decoration: FoodyFormEstilo.campo(label: 'Tipo'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'ingrediente',
+                      child: Text('Insumo'),
+                    ),
+                    if (_subrecetasDisponibles.isNotEmpty)
+                      const DropdownMenuItem(
+                        value: 'subreceta',
+                        child: Text('Otra subreceta'),
                       ),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _filas[i] = _filaVacia(tipo: v));
+                  },
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.delete_outline, color: Colors.red.shade400),
+                tooltip: 'Quitar',
+                onPressed: _filas.length > 1
+                    ? () => setState(() => _filas.removeAt(i))
+                    : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (tipo == 'subreceta')
+            DropdownButtonFormField<String>(
+              initialValue: fila['subreceta_id'] as String?,
+              decoration: FoodyFormEstilo.campo(label: 'Preparación previa'),
+              items: _subrecetasDisponibles
+                  .map(
+                    (sr) => DropdownMenuItem(
+                      value: sr['id'] as String,
+                      child: Text(sr['nombre'] as String? ?? ''),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                if (v == null) return;
+                final sr = _subrecetaPorId(v)!;
+                setState(() {
+                  fila['subreceta_id'] = v;
+                  final uRes = sr['unidad_resultado'] as String? ?? 'g';
+                  final actual = fila['unidad'] as String?;
+                  if (actual == null ||
+                      !unidadesCosteoCompatibles(actual, uRes)) {
+                    fila['unidad'] = uRes;
+                  }
+                });
+              },
+            )
+          else
+            Autocomplete<Map<String, dynamic>>(
+              initialValue: TextEditingValue(
+                text: fila['nombre_insumo'] as String? ?? '',
+              ),
+              displayStringForOption: (o) => o['nombre'] as String? ?? '',
+              optionsBuilder: (text) {
+                final q = text.text.trim().toLowerCase();
+                if (q.isEmpty) return widget.ingredientes;
+                return widget.ingredientes.where(
+                  (ing) => (ing['nombre'] as String? ?? '')
+                      .toLowerCase()
+                      .contains(q),
+                );
+              },
+              onSelected: (ing) {
+                setState(() => _vincularInsumo(fila, ing));
+              },
+              fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
+                return TextField(
+                  controller: ctrl,
+                  focusNode: focus,
+                  decoration: FoodyFormEstilo.campo(
+                    label: 'Insumo',
+                    suffixIcon: costoCero
+                        ? const Icon(
+                            Icons.warning_amber,
+                            color: Colors.orange,
+                            size: 18,
+                          )
+                        : null,
+                  ),
+                  onChanged: (v) {
+                    fila['nombre_insumo'] = v;
+                    fila['ingrediente_id'] = null;
+                    setState(() {});
+                  },
+                );
+              },
+            ),
+          const SizedBox(height: 10),
+          FoodyFormCamposAdaptativos(
+            breakpoint: 280,
+            campos: [
+              TextFormField(
+                initialValue: '${fila['cantidad']}',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: FoodyFormEstilo.campo(
+                  label: 'Cantidad',
+                ),
+                onChanged: (v) {
+                  fila['cantidad'] =
+                      double.tryParse(v.replaceAll(',', '.')) ?? 1;
+                  setState(() {});
+                },
+              ),
+              DropdownButtonFormField<String>(
+                key: ValueKey(
+                  'u-$i-${fila['ingrediente_id']}-${fila['subreceta_id']}',
+                ),
+                initialValue: _unidadLineaValida(fila),
+                decoration: FoodyFormEstilo.campo(label: 'Unidad'),
+                items: _opcionesUnidadLinea(fila)
+                    .map(
+                      (u) => DropdownMenuItem(value: u, child: Text(u)),
                     )
                     .toList(),
                 onChanged: (v) {
                   if (v == null) return;
-                  final sr = _subrecetaPorId(v)!;
-                  setState(() {
-                    fila['subreceta_id'] = v;
-                    fila['unidad'] = sr['unidad_resultado'] as String? ?? 'g';
-                  });
-                },
-              )
-            else
-              Autocomplete<Map<String, dynamic>>(
-                initialValue: TextEditingValue(
-                  text: fila['nombre_insumo'] as String? ?? '',
-                ),
-                displayStringForOption: (o) => o['nombre'] as String? ?? '',
-                optionsBuilder: (text) {
-                  final q = text.text.trim().toLowerCase();
-                  if (q.isEmpty) return widget.ingredientes;
-                  return widget.ingredientes.where(
-                    (ing) => (ing['nombre'] as String? ?? '')
-                        .toLowerCase()
-                        .contains(q),
-                  );
-                },
-                onSelected: (ing) {
-                  setState(() => _vincularInsumo(fila, ing));
-                },
-                fieldViewBuilder: (ctx, ctrl, focus, onSubmit) {
-                  return TextField(
-                    controller: ctrl,
-                    focusNode: focus,
-                    decoration: InputDecoration(
-                      labelText: 'Insumo',
-                      isDense: true,
-                      suffixIcon: costoCero
-                          ? const Icon(
-                              Icons.warning_amber,
-                              color: Colors.orange,
-                              size: 18,
-                            )
-                          : null,
-                    ),
-                    onChanged: (v) {
-                      fila['nombre_insumo'] = v;
-                      fila['ingrediente_id'] = null;
-                      setState(() {});
-                    },
-                  );
+                  setState(() => fila['unidad'] = v);
                 },
               ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: '${fila['cantidad']}',
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Cantidad',
-                      suffixText: fila['unidad'] as String? ?? 'g',
-                      isDense: true,
-                    ),
-                    onChanged: (v) {
-                      fila['cantidad'] =
-                          double.tryParse(v.replaceAll(',', '.')) ?? 1;
-                      setState(() {});
-                    },
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Subtotal',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      Text(
+                        _moneda.format(valor),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: costoCero
+                              ? Colors.orange.shade800
+                              : ColoresFoody.primario,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  _moneda.format(valor),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: costoCero ? Colors.orange : null,
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+          if (costoCero)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Sin costo en mercado — revisa Lista de mercado',
+                style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
+              ),
             ),
-            if (costoCero)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  'Insumo sin costo en mercado — revisa «Lista de mercado»',
-                  style: TextStyle(fontSize: 11, color: Colors.orange),
-                ),
-              ),
-          ],
-        ),
+        ],
       ),
     );
+  }
+
+  List<String> _opcionesUnidadLinea(Map<String, dynamic> fila) {
+    final tipo = fila['tipo_item'] as String? ?? 'ingrediente';
+    if (tipo == 'subreceta') {
+      final sr = _subrecetaPorId(fila['subreceta_id'] as String?);
+      final base = sr?['unidad_resultado'] as String? ?? 'g';
+      return unidadesDeFamiliaCosteo(base);
+    }
+    final ing = _ingredientePorId(fila['ingrediente_id'] as String?);
+    final base = ing?['unidad_base'] as String? ??
+        (fila['unidad'] as String? ?? 'g');
+    return unidadesDeFamiliaCosteo(base);
+  }
+
+  String _unidadLineaValida(Map<String, dynamic> fila) {
+    final opciones = _opcionesUnidadLinea(fila);
+    final actual = normalizarUnidadCosteo(fila['unidad'] as String? ?? '');
+    if (opciones.contains(actual)) return actual;
+    return opciones.first;
   }
 }

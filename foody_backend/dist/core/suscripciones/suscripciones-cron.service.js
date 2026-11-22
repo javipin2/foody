@@ -14,23 +14,56 @@ exports.SuscripcionesCronService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../database/database.service");
 const notificaciones_service_1 = require("../../modulos/notificaciones/notificaciones.service");
+const pagos_recurrentes_service_1 = require("../../modulos/pagos/pagos-recurrentes.service");
 let SuscripcionesCronService = SuscripcionesCronService_1 = class SuscripcionesCronService {
     database;
     notificaciones;
+    pagosRecurrentes;
     logger = new common_1.Logger(SuscripcionesCronService_1.name);
-    constructor(database, notificaciones) {
+    LOCK_SUSCRIPCIONES_CRON = 9200002;
+    constructor(database, notificaciones, pagosRecurrentes) {
         this.database = database;
         this.notificaciones = notificaciones;
+        this.pagosRecurrentes = pagosRecurrentes;
     }
     onModuleInit() {
-        void this.ejecutar();
-        setInterval(() => void this.ejecutar(), 60 * 60 * 1000);
+        void this.database.intentarAdvisoryLock(this.LOCK_SUSCRIPCIONES_CRON, () => this.ejecutar());
+        setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_SUSCRIPCIONES_CRON, () => this.ejecutar()), 60 * 60 * 1000);
     }
     async ejecutar() {
+        const renov = await this.procesarRenovacionesAutomaticas();
         const avisos = await this.enviarAvisosVencimiento();
         const vencidas = await this.marcarVencidas();
         const bloqueadas = await this.bloquearTrasGracia();
-        return { vencidas, bloqueadas, ...avisos };
+        return {
+            vencidas,
+            bloqueadas,
+            renovaciones: renov.ok,
+            renovaciones_fallos: renov.fallos,
+            ...avisos,
+        };
+    }
+    async procesarRenovacionesAutomaticas() {
+        const candidatas = await this.pagosRecurrentes.listarCandidatasRenovacionAutomatica();
+        let ok = 0;
+        let fallos = 0;
+        for (const c of candidatas) {
+            try {
+                const resultado = await this.pagosRecurrentes.intentarCobroRenovacion(c.restaurante_id, c.plan);
+                if (resultado.iniciado) {
+                    ok++;
+                    this.logger.log(`Renovación automática restaurante=${c.restaurante_id} plan=${c.plan} → ${resultado.motivo}`);
+                }
+            }
+            catch (e) {
+                fallos++;
+                this.logger.error(`Renovación automática falló restaurante=${c.restaurante_id}: ${e instanceof Error ? e.message : e}`);
+            }
+        }
+        if (ok > 0 || fallos > 0) {
+            this.logger.log(`Renovaciones automáticas: iniciadas=${ok} fallos=${fallos}`);
+        }
+        return { ok, fallos };
     }
     async marcarVencidas() {
         const filas = await this.database.consultar(`UPDATE suscripciones_restaurante
@@ -114,8 +147,8 @@ let SuscripcionesCronService = SuscripcionesCronService_1 = class SuscripcionesC
               (
                 SELECT u.sucursal_id FROM usuarios u
                 WHERE u.restaurante_id = s.restaurante_id
-                  AND u.rol = 'admin' AND u.activo = true
-                ORDER BY u.created_at ASC
+                  AND u.rol IN ('admin', 'gerente_cadena') AND u.activo = true
+                ORDER BY CASE WHEN u.rol = 'admin' THEN 0 ELSE 1 END, u.created_at ASC
                 LIMIT 1
               ) AS sucursal_id
        FROM suscripciones_restaurante s
@@ -131,8 +164,8 @@ let SuscripcionesCronService = SuscripcionesCronService_1 = class SuscripcionesC
               (
                 SELECT u.sucursal_id FROM usuarios u
                 WHERE u.restaurante_id = s.restaurante_id
-                  AND u.rol = 'admin' AND u.activo = true
-                ORDER BY u.created_at ASC
+                  AND u.rol IN ('admin', 'gerente_cadena') AND u.activo = true
+                ORDER BY CASE WHEN u.rol = 'admin' THEN 0 ELSE 1 END, u.created_at ASC
                 LIMIT 1
               ) AS sucursal_id
        FROM suscripciones_restaurante s
@@ -177,6 +210,7 @@ exports.SuscripcionesCronService = SuscripcionesCronService;
 exports.SuscripcionesCronService = SuscripcionesCronService = SuscripcionesCronService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
-        notificaciones_service_1.NotificacionesService])
+        notificaciones_service_1.NotificacionesService,
+        pagos_recurrentes_service_1.PagosRecurrentesService])
 ], SuscripcionesCronService);
 //# sourceMappingURL=suscripciones-cron.service.js.map

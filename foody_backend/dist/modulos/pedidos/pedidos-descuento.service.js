@@ -13,18 +13,25 @@ exports.PedidosDescuentoService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
 const facturacion_service_1 = require("../facturacion/facturacion.service");
+const roles_food_1 = require("../../core/auth/roles-food");
 const alertas_riesgo_service_1 = require("../alertas/alertas-riesgo.service");
+const auditoria_service_1 = require("../auditoria/auditoria.service");
+const caja_movimientos_service_1 = require("../../core/caja/caja-movimientos.service");
 const pedidos_soporte_service_1 = require("./pedidos-soporte.service");
 let PedidosDescuentoService = class PedidosDescuentoService {
     database;
     facturacion;
     alertasRiesgo;
     soporte;
-    constructor(database, facturacion, alertasRiesgo, soporte) {
+    auditoria;
+    cajaMovimientos;
+    constructor(database, facturacion, alertasRiesgo, soporte, auditoria, cajaMovimientos) {
         this.database = database;
         this.facturacion = facturacion;
         this.alertasRiesgo = alertasRiesgo;
         this.soporte = soporte;
+        this.auditoria = auditoria;
+        this.cajaMovimientos = cajaMovimientos;
     }
     async aplicarDescuento(pedidoId, sucursalId, usuarioId, dto, contexto) {
         if (!contexto.permisos.includes('aplicar_descuento')) {
@@ -40,7 +47,8 @@ let PedidosDescuentoService = class PedidosDescuentoService {
             throw new common_1.BadRequestException('El motivo del descuento es obligatorio');
         }
         const result = await this.database.enTransaccion(async (client) => {
-            const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, estado, subtotal, costo_domicilio, descuento, total
+            const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, estado, subtotal, costo_domicilio, descuento, total,
+                COALESCE(monto_pagado, 0) AS monto_pagado, numero_pedido
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
             if (!pedido)
                 throw new common_1.NotFoundException('Pedido no encontrado');
@@ -51,16 +59,49 @@ let PedidosDescuentoService = class PedidosDescuentoService {
             let descuento = dto.monto ?? Math.round((base * dto.porcentaje) / 100);
             descuento = Math.min(Math.max(descuento, 0), base);
             const pctBase = base > 0 ? (descuento / base) * 100 : 0;
-            const esElevado = contexto.rol === 'admin' || contexto.rol === 'gerente';
+            const esElevado = (0, roles_food_1.esAdminRestaurante)(contexto.rol) || contexto.rol === 'gerente';
             if (pctBase > 20 && !esElevado) {
                 throw new common_1.BadRequestException('Descuentos mayores al 20% requieren admin o gerente');
             }
             const total = base - descuento;
+            const pagadoAntes = Number(pedido.monto_pagado);
+            const nuevoPagado = Math.min(pagadoAntes, total);
+            const excesoCaja = pagadoAntes - nuevoPagado;
             const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(client, sucursalId, total);
+            if (excesoCaja > 0.01) {
+                const cajaId = await this.cajaMovimientos.obtenerCajaAbiertaId(client, sucursalId);
+                if (!cajaId) {
+                    throw new common_1.BadRequestException({
+                        error: 'CAJA_NO_ABIERTA',
+                        message: 'Abre la caja para aplicar el descuento y registrar la devolución del exceso cobrado',
+                    });
+                }
+                await this.cajaMovimientos.insertar(client, {
+                    cajaId,
+                    sucursalId,
+                    pedidoId,
+                    tipo: 'devolucion',
+                    monto: excesoCaja,
+                    metodoPago: null,
+                    descripcion: `Ajuste descuento ${pedido.numero_pedido}`,
+                    usuarioId,
+                });
+            }
             await client.query(`UPDATE pedidos SET
            descuento = $1, motivo_descuento = $2, total = $3,
-           iva_porcentaje = $4, iva_valor = $5
-         WHERE id = $6`, [descuento, dto.motivo.trim(), total, iva.iva_porcentaje, iva.iva_valor, pedidoId]);
+           monto_pagado = $4,
+           iva_porcentaje = $5, iva_valor = $6,
+           promocion_id = NULL
+         WHERE id = $7`, [
+                descuento,
+                dto.motivo.trim(),
+                total,
+                nuevoPagado,
+                iva.iva_porcentaje,
+                iva.iva_valor,
+                pedidoId,
+            ]);
+            await this.facturacion.sincronizarBorradorDesdePedidoEnTransaccion(client, sucursalId, pedidoId);
             if (pctBase > alertas_riesgo_service_1.UMBRALES_ALERTA.descuentoPorcentajeAlto) {
                 await this.alertasRiesgo.registrarEnTransaccion(client, {
                     sucursalId,
@@ -72,25 +113,24 @@ let PedidosDescuentoService = class PedidosDescuentoService {
                     deduplicar: true,
                 });
             }
-            await client.query(`INSERT INTO auditoria_logs (
-           sucursal_id, usuario_id, accion, tabla_afectada, registro_id,
-           datos_antes, datos_despues
-         ) VALUES ($1,$2,'APLICAR_DESCUENTO','pedidos',$3,$4::jsonb,$5::jsonb)`, [
+            await this.auditoria.registrarEnTransaccion(client, {
                 sucursalId,
+                accion: 'APLICAR_DESCUENTO',
+                tablaAfectada: 'pedidos',
+                registroId: pedidoId,
                 usuarioId,
-                pedidoId,
-                JSON.stringify({
+                datosAntes: {
                     descuento_anterior: Number(pedido.descuento),
                     total_anterior: Number(pedido.total),
-                }),
-                JSON.stringify({
+                },
+                datosDespues: {
                     descuento,
                     porcentaje: Math.round(pctBase * 100) / 100,
                     motivo: dto.motivo.trim(),
                     total,
                     iva_valor: iva.iva_valor,
-                }),
-            ]);
+                },
+            });
             return {
                 id: pedidoId,
                 estado: pedido.estado,
@@ -110,6 +150,8 @@ exports.PedidosDescuentoService = PedidosDescuentoService = __decorate([
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         facturacion_service_1.FacturacionService,
         alertas_riesgo_service_1.AlertasRiesgoService,
-        pedidos_soporte_service_1.PedidosSoporteService])
+        pedidos_soporte_service_1.PedidosSoporteService,
+        auditoria_service_1.AuditoriaService,
+        caja_movimientos_service_1.CajaMovimientosService])
 ], PedidosDescuentoService);
 //# sourceMappingURL=pedidos-descuento.service.js.map

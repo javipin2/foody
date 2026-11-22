@@ -12,20 +12,38 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CajaService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const alertas_riesgo_service_1 = require("../alertas/alertas-riesgo.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
+const caja_movimientos_service_1 = require("../../core/caja/caja-movimientos.service");
+const pedidos_estado_service_1 = require("../pedidos/pedidos-estado.service");
+const pedido_estados_1 = require("../pedidos/pedido-estados");
+const auditoria_service_1 = require("../auditoria/auditoria.service");
+const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 let CajaService = class CajaService {
     database;
     alertasRiesgo;
     realtime;
-    constructor(database, alertasRiesgo, realtime) {
+    pedidosEstado;
+    cajaMovimientos;
+    auditoria;
+    sucursalScope;
+    constructor(database, alertasRiesgo, realtime, pedidosEstado, cajaMovimientos, auditoria, sucursalScope) {
         this.database = database;
         this.alertasRiesgo = alertasRiesgo;
         this.realtime = realtime;
+        this.pedidosEstado = pedidosEstado;
+        this.cajaMovimientos = cajaMovimientos;
+        this.auditoria = auditoria;
+        this.sucursalScope = sucursalScope;
     }
     async obtenerActiva(sucursalId, opciones = {}) {
         const caja = await this.database.consultarUno(`SELECT c.*,
-              u.nombre AS usuario_apertura_nombre
+              u.nombre AS usuario_apertura_nombre,
+              ROUND(
+                (EXTRACT(EPOCH FROM (NOW() - c.apertura_at)) / 3600.0)::numeric,
+                2
+              ) AS horas_abierta
        FROM cajas c
        LEFT JOIN usuarios u ON u.id = c.usuario_apertura_id
        WHERE c.sucursal_id = $1 AND c.estado = 'abierta'
@@ -34,7 +52,23 @@ let CajaService = class CajaService {
         if (!caja)
             return null;
         const resumen = await this.calcularResumenTurno(caja.id);
-        const base = { ...caja, ...resumen };
+        const horas = Number(caja.horas_abierta ?? 0);
+        const base = { ...caja, ...resumen, horas_abierta: horas };
+        if (horas >= alertas_riesgo_service_1.UMBRALES_ALERTA.cajaTurnoHoras) {
+            try {
+                await this.alertasRiesgo.registrar({
+                    sucursalId,
+                    tipo: 'caja_turno_longevo',
+                    nivel: 'medio',
+                    descripcion: `Turno abierto ${horas} h (umbral ${alertas_riesgo_service_1.UMBRALES_ALERTA.cajaTurnoHoras} h). Cierra caja o haz arqueo.`,
+                    referenciaId: caja.id,
+                    referenciaTipo: 'caja',
+                    deduplicar: true,
+                });
+            }
+            catch {
+            }
+        }
         if (opciones.ocultarSaldo && caja.arqueo_ciego) {
             const { saldo_sistema: _, total_ventas: __, ...rest } = base;
             return { ...rest, arqueo_ciego: true };
@@ -42,49 +76,86 @@ let CajaService = class CajaService {
         return base;
     }
     async abrir(dto, usuarioId) {
-        const activa = await this.database.consultarUno(`SELECT id FROM cajas WHERE sucursal_id = $1 AND estado = 'abierta' LIMIT 1`, [dto.sucursal_id]);
-        if (activa) {
-            throw new common_1.BadRequestException({
-                error: 'CAJA_YA_ABIERTA',
-                message: 'Ya hay una caja abierta en esta sucursal',
+        try {
+            const caja = await this.database.enTransaccion(async (client) => {
+                const insert = await client.query(`INSERT INTO cajas (
+             sucursal_id, usuario_apertura_id, monto_inicial, estado, arqueo_ciego
+           ) VALUES ($1,$2,$3,'abierta',$4)
+           RETURNING id`, [dto.sucursal_id, usuarioId, dto.monto_inicial, dto.arqueo_ciego ?? false]);
+                const cajaId = insert.rows[0].id;
+                await this.cajaMovimientos.insertar(client, {
+                    cajaId,
+                    sucursalId: dto.sucursal_id,
+                    tipo: 'apertura',
+                    monto: dto.monto_inicial,
+                    descripcion: 'Apertura de caja',
+                    usuarioId,
+                });
+                await this.auditoria.registrarEnTransaccion(client, {
+                    sucursalId: dto.sucursal_id,
+                    accion: 'ABRIR_CAJA',
+                    tablaAfectada: 'cajas',
+                    registroId: cajaId,
+                    usuarioId,
+                });
+                return this.obtenerActiva(dto.sucursal_id);
             });
+            void this.realtime.cajaMovimiento(dto.sucursal_id, { tipo: 'apertura' });
+            return caja;
         }
-        const caja = await this.database.enTransaccion(async (client) => {
-            const insert = await client.query(`INSERT INTO cajas (
-           sucursal_id, usuario_apertura_id, monto_inicial, estado, arqueo_ciego
-         ) VALUES ($1,$2,$3,'abierta',$4)
-         RETURNING id`, [dto.sucursal_id, usuarioId, dto.monto_inicial, dto.arqueo_ciego ?? false]);
-            const cajaId = insert.rows[0].id;
-            await client.query(`INSERT INTO movimientos_caja (
-           caja_id, sucursal_id, tipo, monto, descripcion, usuario_id
-         ) VALUES ($1,$2,'apertura',$3,$4,$5)`, [
-                cajaId,
-                dto.sucursal_id,
-                dto.monto_inicial,
-                'Apertura de caja',
-                usuarioId,
-            ]);
-            await client.query(`INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id)
-         VALUES ($1,$2,'ABRIR_CAJA','cajas',$3)`, [dto.sucursal_id, usuarioId, cajaId]);
-            return this.obtenerActiva(dto.sucursal_id);
-        });
-        void this.realtime.cajaMovimiento(dto.sucursal_id, { tipo: 'apertura' });
-        return caja;
+        catch (e) {
+            const code = e && typeof e === 'object' && 'code' in e
+                ? String(e.code)
+                : '';
+            if (code === '23505') {
+                throw new common_1.ConflictException({
+                    error: 'CAJA_YA_ABIERTA',
+                    mensaje: 'Ya hay una caja abierta en esta sucursal',
+                });
+            }
+            throw e;
+        }
     }
-    async cerrar(dto, usuarioId) {
-        return this.database.enTransaccion(async (client) => {
+    async cerrar(dto, usuario) {
+        const usuarioId = usuario.sub;
+        const result = await this.database.enTransaccion(async (client) => {
             const caja = await client.query(`SELECT id, sucursal_id, estado, monto_inicial FROM cajas
          WHERE id = $1 FOR UPDATE`, [dto.caja_id]);
             const fila = caja.rows[0];
             if (!fila)
                 throw new common_1.NotFoundException('Caja no encontrada');
+            await this.sucursalScope.resolverEscritura(usuario, fila.sucursal_id);
             if (fila.estado !== 'abierta') {
-                throw new common_1.BadRequestException('La caja ya está cerrada');
+                throw new common_1.ConflictException({
+                    error: 'CAJA_YA_CERRADA',
+                    mensaje: 'La caja ya está cerrada',
+                });
             }
+            await this.pedidosEstado.expirarQrPendientesAlCierreEnTransaccion(client, fila.sucursal_id, usuarioId);
             const pedidosAbiertos = await client.query(`SELECT COUNT(*)::text AS n FROM pedidos
          WHERE sucursal_id = $1
-           AND estado IN ('pendiente_aprobacion', 'pendiente', 'confirmado', 'en_cocina', 'listo', 'pagando', 'asignado', 'en_camino')`, [fila.sucursal_id]);
+           AND ${pedido_estados_1.SQL_WHERE_PEDIDO_OPERACION_ABIERTA}`, [fila.sucursal_id]);
             const operacionAbierta = Number(pedidosAbiertos.rows[0]?.n ?? 0);
+            const entregadosSinCobrar = await client.query(`SELECT COUNT(*)::text AS n FROM pedidos
+         WHERE sucursal_id = $1
+           AND ${pedido_estados_1.SQL_WHERE_DOMICILIO_ENTREGADO_IMPAGO}`, [fila.sucursal_id]);
+            const domiciliosImpagos = Number(entregadosSinCobrar.rows[0]?.n ?? 0);
+            const mesasConOperacion = await client.query(`SELECT COUNT(*)::text AS n FROM mesas
+         WHERE sucursal_id = $1
+           AND activa = true
+           AND estado_operativo IN ('ocupada', 'pagando')`, [fila.sucursal_id]);
+            const mesasActivas = Number(mesasConOperacion.rows[0]?.n ?? 0);
+            if (operacionAbierta > 0 || mesasActivas > 0 || domiciliosImpagos > 0) {
+                const mensaje = operacionAbierta > 0
+                    ? `No puedes cerrar la caja: hay ${operacionAbierta} pedido(s) en cocina, listos, pagando o domicilio. Ciérralos o cobra antes de cerrar el turno.`
+                    : domiciliosImpagos > 0
+                        ? `No puedes cerrar la caja: hay ${domiciliosImpagos} domicilio(s) entregados sin cobro completo. Registra el pago antes de cerrar.`
+                        : `No puedes cerrar la caja: hay ${mesasActivas} mesa(s) ocupadas o en cobro. Libera el salón antes de cerrar.`;
+                throw new common_1.BadRequestException({
+                    error: 'CAJA_CIERRE_OPERACION_ABIERTA',
+                    mensaje,
+                });
+            }
             const movs = await client.query(`SELECT COALESCE(SUM(
            CASE
              WHEN tipo IN ('venta', 'ingreso_extra', 'apertura') THEN monto
@@ -95,6 +166,13 @@ let CajaService = class CajaService {
          FROM movimientos_caja WHERE caja_id = $1`, [dto.caja_id]);
             const montoSistema = Number(movs.rows[0]?.total ?? 0);
             const diferencia = dto.monto_final_contado - montoSistema;
+            const propinasRow = await client.query(`SELECT COALESCE(SUM(p.propina_acumulada), 0)::text AS total
+         FROM pedidos p
+         INNER JOIN cajas c ON c.id = $2
+         WHERE p.sucursal_id = $1
+           AND COALESCE(p.propina_acumulada, 0) > 0
+           AND p.created_at >= c.apertura_at`, [fila.sucursal_id, dto.caja_id]);
+            const propinasTurno = Number(propinasRow.rows[0]?.total ?? 0);
             await client.query(`UPDATE cajas SET
            estado = 'cerrada',
            usuario_cierre_id = $1,
@@ -111,17 +189,18 @@ let CajaService = class CajaService {
                 dto.observaciones_cierre ?? null,
                 dto.caja_id,
             ]);
-            await client.query(`INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues)
-         VALUES ($1,$2,'CERRAR_CAJA','cajas',$3,$4::jsonb)`, [
-                fila.sucursal_id,
+            await this.auditoria.registrarEnTransaccion(client, {
+                sucursalId: fila.sucursal_id,
+                accion: 'CERRAR_CAJA',
+                tablaAfectada: 'cajas',
+                registroId: dto.caja_id,
                 usuarioId,
-                dto.caja_id,
-                JSON.stringify({
+                datosDespues: {
                     monto_final_contado: dto.monto_final_contado,
                     monto_final_sistema: montoSistema,
                     diferencia,
-                }),
-            ]);
+                },
+            });
             if (Math.abs(diferencia) > alertas_riesgo_service_1.UMBRALES_ALERTA.cuadreCajaCOP) {
                 await this.alertasRiesgo.registrarEnTransaccion(client, {
                     sucursalId: fila.sucursal_id,
@@ -135,51 +214,97 @@ let CajaService = class CajaService {
             }
             return {
                 caja_id: dto.caja_id,
+                sucursal_id: fila.sucursal_id,
                 monto_final_sistema: montoSistema,
                 monto_final_contado: dto.monto_final_contado,
                 diferencia,
+                propinas_turno: propinasTurno,
                 estado: 'cerrada',
-                advertencias: operacionAbierta > 0
-                    ? [
-                        `${operacionAbierta} pedido(s) aún en operación (cocina, listo, pagando o domicilio).`,
-                    ]
-                    : [],
             };
         });
+        void this.realtime.cajaMovimiento(result.sucursal_id, {
+            tipo: 'cierre',
+            caja_id: result.caja_id,
+        });
+        return result;
     }
-    async listarMovimientos(cajaId, sucursalId) {
+    async listarMovimientos(cajaId, sucursalId, page, limit) {
         const caja = await this.database.consultarUno(`SELECT id FROM cajas WHERE id = $1 AND sucursal_id = $2`, [cajaId, sucursalId]);
         if (!caja)
             throw new common_1.NotFoundException('Caja no encontrada');
-        return this.database.consultar(`SELECT id, tipo, monto, metodo_pago, descripcion, pedido_id, created_at
-       FROM movimientos_caja
-       WHERE caja_id = $1
-       ORDER BY created_at DESC`, [cajaId]);
+        const pag = (0, paginacion_dto_1.resolverPaginacion)(page, limit, 50);
+        const [items, totalRow] = await Promise.all([
+            this.database.consultar(`SELECT m.id, m.tipo, m.monto, m.metodo_pago, m.descripcion, m.pedido_id,
+                m.created_at, u.nombre AS responsable
+         FROM movimientos_caja m
+         LEFT JOIN usuarios u ON u.id = m.usuario_id
+         WHERE m.caja_id = $1
+         ORDER BY m.created_at DESC
+         LIMIT $2 OFFSET $3`, [cajaId, pag.limit, pag.offset]),
+            this.database.consultarUno(`SELECT COUNT(*)::int AS count FROM movimientos_caja WHERE caja_id = $1`, [cajaId]),
+        ]);
+        return (0, paginacion_dto_1.envolverPaginado)(items, totalRow?.count ?? 0, pag.page, pag.limit);
     }
     async retiroParcial(dto, usuarioId, sucursalId) {
         await this.exigirCajaAbierta(dto.caja_id, sucursalId);
-        return this.database.enTransaccion(async (client) => {
-            await client.query(`INSERT INTO movimientos_caja (
-           caja_id, sucursal_id, tipo, monto, descripcion, usuario_id
-         ) VALUES ($1,$2,'retiro',$3,$4,$5)`, [
-                dto.caja_id,
+        const result = await this.database.enTransaccion(async (client) => {
+            await this.cajaMovimientos.insertar(client, {
+                cajaId: dto.caja_id,
                 sucursalId,
-                dto.monto,
-                dto.descripcion ?? 'Retiro parcial',
+                tipo: 'retiro',
+                monto: dto.monto,
+                descripcion: dto.descripcion ?? 'Retiro parcial',
                 usuarioId,
-            ]);
+            });
             return { ok: true };
         });
+        void this.realtime.cajaMovimiento(sucursalId, {
+            tipo: 'retiro',
+            caja_id: dto.caja_id,
+            monto: dto.monto,
+        });
+        return result;
     }
-    listarCuentasPorCobrar(sucursalId, soloPendientes = true) {
-        const filtro = soloPendientes ? `AND c.estado = 'pendiente'` : '';
+    listarCuentasPorCobrar(sucursalId, incluirPagadas = false) {
+        const filtro = incluirPagadas ? '' : `AND c.estado = 'pendiente'`;
         return this.database.consultar(`SELECT c.id, c.pedido_id, c.cliente_nombre, c.cliente_telefono,
               c.monto, c.estado, c.created_at, c.pagada_at,
-              p.numero_pedido
+              p.numero_pedido,
+              uc.nombre AS creada_por,
+              (SELECT u.nombre FROM auditoria_logs al
+                 JOIN usuarios u ON u.id = al.usuario_id
+                 WHERE al.tabla_afectada = 'cuentas_por_cobrar'
+                   AND al.registro_id = c.id AND al.accion = 'PAGAR_CUENTA'
+                 ORDER BY al.created_at DESC LIMIT 1) AS pagada_por,
+              GREATEST(0, EXTRACT(day FROM (now() - c.created_at)))::int AS dias_pendiente,
+              (c.estado = 'pendiente'
+                AND c.created_at < now() - interval '7 days') AS alerta_antigua
        FROM cuentas_por_cobrar c
        LEFT JOIN pedidos p ON p.id = c.pedido_id
+       LEFT JOIN usuarios uc ON uc.id = c.usuario_id
        WHERE c.sucursal_id = $1 ${filtro}
        ORDER BY c.created_at DESC`, [sucursalId]);
+    }
+    async resumenCuentasPorCobrar(sucursalId) {
+        const filas = await this.database.consultar(`SELECT
+         COALESCE(SUM(monto), 0) AS total_pendiente,
+         COUNT(*)::int AS cantidad_pendiente,
+         COUNT(*) FILTER (
+           WHERE created_at < now() - interval '7 days'
+         )::int AS antiguas_7d
+       FROM cuentas_por_cobrar
+       WHERE sucursal_id = $1 AND estado = 'pendiente'`, [sucursalId]);
+        const r = filas[0] ?? {
+            total_pendiente: '0',
+            cantidad_pendiente: '0',
+            antiguas_7d: '0',
+        };
+        return {
+            total_pendiente: Number(r.total_pendiente),
+            cantidad_pendiente: Number(r.cantidad_pendiente),
+            antiguas_7d: Number(r.antiguas_7d),
+            dias_alerta: 7,
+        };
     }
     async crearCuentaPorCobrar(dto, usuarioId) {
         if (dto.pedido_id) {
@@ -201,7 +326,7 @@ let CajaService = class CajaService {
         ]);
         return fila;
     }
-    pagarCuentaPorCobrar(cuentaId, sucursalId, usuarioId) {
+    pagarCuentaPorCobrar(cuentaId, sucursalId, usuarioId, metodoPago = 'efectivo') {
         return this.database.enTransaccion(async (client) => {
             const cuenta = await client.query(`SELECT id, pedido_id, monto, estado FROM cuentas_por_cobrar
          WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [cuentaId, sucursalId]);
@@ -209,63 +334,114 @@ let CajaService = class CajaService {
             if (!fila)
                 throw new common_1.NotFoundException('Cuenta no encontrada');
             if (fila.estado === 'pagada') {
-                throw new common_1.BadRequestException('La cuenta ya está pagada');
+                throw new common_1.BadRequestException({
+                    error: 'CUENTA_YA_PAGADA',
+                    mensaje: 'La cuenta ya está pagada',
+                });
             }
             const monto = Number(fila.monto);
             await client.query(`UPDATE cuentas_por_cobrar
          SET estado = 'pagada', pagada_at = now()
          WHERE id = $1`, [cuentaId]);
-            const caja = await client.query(`SELECT id FROM cajas
-         WHERE sucursal_id = $1 AND estado = 'abierta'
-         ORDER BY apertura_at DESC LIMIT 1`, [sucursalId]);
-            const cajaId = caja.rows[0]?.id;
-            if (cajaId) {
-                await client.query(`INSERT INTO movimientos_caja (
-             caja_id, sucursal_id, pedido_id, tipo, monto,
-             metodo_pago, descripcion, usuario_id
-           ) VALUES ($1,$2,$3,'venta',$4,'efectivo',$5,$6)`, [
-                    cajaId,
-                    sucursalId,
-                    fila.pedido_id,
-                    monto,
-                    `Cobro fiado · ${cuentaId}`,
-                    usuarioId,
-                ]);
+            const cajaId = await this.cajaMovimientos.obtenerCajaAbiertaId(client, sucursalId);
+            if (!cajaId) {
+                throw new common_1.BadRequestException({
+                    error: 'CAJA_NO_ABIERTA',
+                    message: 'Abre la caja antes de cobrar una cuenta por cobrar',
+                });
             }
-            await client.query(`INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id)
-         VALUES ($1,$2,'PAGAR_CUENTA','cuentas_por_cobrar',$3)`, [sucursalId, usuarioId, cuentaId]);
-            return { id: cuentaId, estado: 'pagada', monto, caja_registrada: !!cajaId };
+            await this.cajaMovimientos.insertar(client, {
+                cajaId,
+                sucursalId,
+                pedidoId: fila.pedido_id,
+                tipo: 'venta',
+                monto,
+                metodoPago: metodoPago,
+                descripcion: `Cobro fiado · ${cuentaId}`,
+                usuarioId,
+            });
+            await this.auditoria.registrarEnTransaccion(client, {
+                sucursalId,
+                accion: 'PAGAR_CUENTA',
+                tablaAfectada: 'cuentas_por_cobrar',
+                registroId: cuentaId,
+                usuarioId,
+            });
+            return {
+                id: cuentaId,
+                estado: 'pagada',
+                monto,
+                metodo_pago: metodoPago,
+                caja_registrada: true,
+            };
         });
     }
     async registrarDevolucion(params, usuarioId) {
         await this.exigirCajaAbierta(params.caja_id, params.sucursal_id);
-        return this.database.enTransaccion(async (client) => {
-            await client.query(`INSERT INTO movimientos_caja (
-           caja_id, sucursal_id, pedido_id, tipo, monto, metodo_pago, descripcion, usuario_id
-         ) VALUES ($1,$2,$3,'devolucion',$4,$5,$6,$7)`, [
-                params.caja_id,
-                params.sucursal_id,
-                params.pedido_id ?? null,
-                params.monto,
-                params.metodo_pago ?? 'efectivo',
-                params.motivo.trim(),
+        const result = await this.database.enTransaccion(async (client) => {
+            const monto = Number(params.monto);
+            if (monto < 0.01) {
+                throw new common_1.BadRequestException({
+                    error: 'MONTO_INVALIDO',
+                    mensaje: 'El monto de devolución debe ser mayor a cero',
+                });
+            }
+            const disponibleTurno = await this.cajaMovimientos.netoVentasDisponiblesTurno(client, params.caja_id);
+            if (monto > disponibleTurno + 0.01) {
+                throw new common_1.BadRequestException({
+                    error: 'DEVOLUCION_EXCEDE_VENTAS_TURNO',
+                    mensaje: 'La devolución supera las ventas cobradas en este turno. Si cancelaste un pedido no cobrado, no registres devolución: cancelar ya ajusta la caja automáticamente cuando hubo cobro.',
+                });
+            }
+            if (params.pedido_id) {
+                const netoPedido = await this.cajaMovimientos.netoCobradoPedidoEnCaja(client, params.pedido_id, params.caja_id);
+                if (netoPedido < 0.01) {
+                    throw new common_1.BadRequestException({
+                        error: 'PEDIDO_SIN_COBRO_CAJA',
+                        mensaje: 'Este pedido no tiene cobro registrado en caja. Cancelar el pedido es suficiente; no hace falta devolución manual.',
+                    });
+                }
+                if (monto > netoPedido + 0.01) {
+                    throw new common_1.BadRequestException({
+                        error: 'DEVOLUCION_EXCEDE_COBRO_PEDIDO',
+                        mensaje: `La devolución no puede superar lo cobrado en caja para este pedido (${netoPedido.toFixed(0)}).`,
+                    });
+                }
+            }
+            await this.cajaMovimientos.insertar(client, {
+                cajaId: params.caja_id,
+                sucursalId: params.sucursal_id,
+                pedidoId: params.pedido_id ?? null,
+                tipo: 'devolucion',
+                monto: params.monto,
+                metodoPago: params.metodo_pago ?? 'efectivo',
+                descripcion: params.motivo.trim(),
                 usuarioId,
-            ]);
-            await client.query(`INSERT INTO auditoria_logs (sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_despues)
-         VALUES ($1,$2,'DEVOLUCION_CAJA','movimientos_caja',$3,$4::jsonb)`, [
-                params.sucursal_id,
+            });
+            await this.auditoria.registrarEnTransaccion(client, {
+                sucursalId: params.sucursal_id,
+                accion: 'DEVOLUCION_CAJA',
+                tablaAfectada: 'movimientos_caja',
+                registroId: params.pedido_id ?? params.caja_id,
                 usuarioId,
-                params.pedido_id ?? params.caja_id,
-                JSON.stringify(params),
-            ]);
+                datosDespues: params,
+            });
             return { registrado: true, monto: params.monto };
         });
+        void this.realtime.cajaMovimiento(params.sucursal_id, {
+            tipo: 'devolucion',
+            caja_id: params.caja_id,
+            monto: params.monto,
+            pedido_id: params.pedido_id ?? null,
+        });
+        return result;
     }
     async registrarGasto(dto, usuarioId, sucursalId) {
         await this.exigirCajaAbierta(dto.caja_id, sucursalId);
-        return this.database.enTransaccion(async (client) => {
-            await client.query(`INSERT INTO gastos (sucursal_id, caja_id, concepto, monto, categoria, usuario_id)
-         VALUES ($1,$2,$3,$4,$5,$6)`, [
+        const result = await this.database.enTransaccion(async (client) => {
+            await client.query(`INSERT INTO gastos
+           (sucursal_id, caja_id, concepto, monto, categoria, usuario_id, origen, fecha)
+         VALUES ($1,$2,$3,$4,$5,$6,'caja', CURRENT_DATE)`, [
                 sucursalId,
                 dto.caja_id,
                 dto.concepto,
@@ -273,17 +449,22 @@ let CajaService = class CajaService {
                 dto.categoria ?? null,
                 usuarioId,
             ]);
-            await client.query(`INSERT INTO movimientos_caja (
-           caja_id, sucursal_id, tipo, monto, descripcion, usuario_id
-         ) VALUES ($1,$2,'gasto',$3,$4,$5)`, [
-                dto.caja_id,
+            await this.cajaMovimientos.insertar(client, {
+                cajaId: dto.caja_id,
                 sucursalId,
-                dto.monto,
-                dto.concepto,
+                tipo: 'gasto',
+                monto: dto.monto,
+                descripcion: dto.concepto,
                 usuarioId,
-            ]);
+            });
             return { ok: true };
         });
+        void this.realtime.cajaMovimiento(sucursalId, {
+            tipo: 'gasto',
+            caja_id: dto.caja_id,
+            monto: dto.monto,
+        });
+        return result;
     }
     async exigirCajaAbierta(cajaId, sucursalId) {
         const caja = await this.database.consultarUno(`SELECT id FROM cajas
@@ -291,14 +472,20 @@ let CajaService = class CajaService {
         if (!caja) {
             throw new common_1.BadRequestException({
                 error: 'CAJA_NO_ABIERTA',
-                message: 'No hay caja abierta para esta operación',
+                mensaje: 'No hay caja abierta para esta operación',
             });
         }
     }
     async calcularResumenTurno(cajaId) {
-        const ventas = await this.database.consultarUno(`SELECT COALESCE(SUM(monto), 0)::text AS total
+        const ventas = await this.database.consultarUno(`SELECT COALESCE(SUM(
+         CASE
+           WHEN tipo = 'venta' THEN monto
+           WHEN tipo = 'devolucion' THEN -monto
+           ELSE 0
+         END
+       ), 0)::text AS total
        FROM movimientos_caja
-       WHERE caja_id = $1 AND tipo = 'venta'`, [cajaId]);
+       WHERE caja_id = $1 AND tipo IN ('venta', 'devolucion')`, [cajaId]);
         const gastos = await this.database.consultarUno(`SELECT COALESCE(SUM(monto), 0)::text AS total
        FROM movimientos_caja
        WHERE caja_id = $1 AND tipo = 'gasto'`, [cajaId]);
@@ -326,6 +513,10 @@ exports.CajaService = CajaService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         alertas_riesgo_service_1.AlertasRiesgoService,
-        realtime_broadcast_service_1.RealtimeBroadcastService])
+        realtime_broadcast_service_1.RealtimeBroadcastService,
+        pedidos_estado_service_1.PedidosEstadoService,
+        caja_movimientos_service_1.CajaMovimientosService,
+        auditoria_service_1.AuditoriaService,
+        sucursal_scope_service_1.SucursalScopeService])
 ], CajaService);
 //# sourceMappingURL=caja.service.js.map

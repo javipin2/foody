@@ -5,10 +5,15 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PedidosCajaAuditoriaService = exports.METODOS_CON_CAJA = void 0;
 exports.esPagoDiferidoMesa = esPagoDiferidoMesa;
 const common_1 = require("@nestjs/common");
+const caja_movimientos_service_1 = require("../../core/caja/caja-movimientos.service");
+const auditoria_service_1 = require("../auditoria/auditoria.service");
 exports.METODOS_CON_CAJA = [
     'efectivo',
     'tarjeta',
@@ -19,6 +24,12 @@ function esPagoDiferidoMesa(tipo, mesaId) {
     return tipo === 'mesa' || mesaId != null;
 }
 let PedidosCajaAuditoriaService = class PedidosCajaAuditoriaService {
+    cajaMovimientos;
+    auditoria;
+    constructor(cajaMovimientos, auditoria) {
+        this.cajaMovimientos = cajaMovimientos;
+        this.auditoria = auditoria;
+    }
     debeRegistrarVentaAlCrear(estadoInicial, tipo, mesaId, metodoPago) {
         if (!exports.METODOS_CON_CAJA.includes(metodoPago)) {
             return false;
@@ -27,74 +38,53 @@ let PedidosCajaAuditoriaService = class PedidosCajaAuditoriaService {
             return false;
         if (esPagoDiferidoMesa(tipo, mesaId))
             return false;
+        if (tipo === 'domicilio')
+            return false;
         return true;
     }
-    async obtenerCajaAbiertaId(client, sucursalId) {
-        const caja = await client.query(`SELECT id FROM cajas
-       WHERE sucursal_id = $1 AND estado = 'abierta'
-       ORDER BY apertura_at DESC
-       LIMIT 1`, [sucursalId]);
-        return caja.rows[0]?.id ?? null;
+    obtenerCajaAbiertaId(client, sucursalId) {
+        return this.cajaMovimientos.obtenerCajaAbiertaId(client, sucursalId);
     }
     async registrarVentaEnCaja(client, sucursalId, pedidoId, total, metodoPago, opciones) {
         if (!exports.METODOS_CON_CAJA.includes(metodoPago)) {
             return;
         }
-        const cajaId = await this.obtenerCajaAbiertaId(client, sucursalId);
-        if (!cajaId) {
-            if (opciones?.exigirCaja) {
-                throw new common_1.BadRequestException({
-                    error: 'CAJA_NO_ABIERTA',
-                    message: 'No hay caja abierta en la sucursal. Abre caja antes de registrar la venta.',
-                });
-            }
-            return;
-        }
-        await client.query(`INSERT INTO movimientos_caja (
-         caja_id, sucursal_id, pedido_id, tipo, monto, metodo_pago, descripcion
-       ) VALUES ($1,$2,$3,'venta',$4,$5,$6)`, [
-            cajaId,
+        await this.cajaMovimientos.registrarVentaPedido(client, {
             sucursalId,
             pedidoId,
-            total,
+            monto: total,
             metodoPago,
-            opciones?.descripcion ?? 'Venta automática por pedido',
-        ]);
+            descripcion: opciones?.descripcion ?? 'Venta automática por pedido',
+            usuarioId: opciones?.usuarioId ?? null,
+        }, { exigirCaja: opciones?.exigirCaja ?? true });
     }
-    async revertirVentasPedido(client, pedidoId, sucursalId, usuarioId, motivo) {
-        const ventas = await client.query(`SELECT id, monto, metodo_pago, caja_id FROM movimientos_caja
-       WHERE pedido_id = $1 AND tipo = 'venta'`, [pedidoId]);
-        let n = 0;
-        for (const v of ventas.rows) {
-            await client.query(`INSERT INTO movimientos_caja (
-           caja_id, sucursal_id, pedido_id, tipo, monto, metodo_pago, descripcion, usuario_id
-         ) VALUES ($1,$2,$3,'devolucion',$4,$5,$6,$7)`, [
-                v.caja_id,
-                sucursalId,
-                pedidoId,
-                Number(v.monto),
-                v.metodo_pago,
-                motivo?.trim() || 'Reversa venta pedido',
-                usuarioId ?? null,
-            ]);
-            await client.query(`DELETE FROM movimientos_caja WHERE id = $1`, [v.id]);
-            n++;
-        }
-        return n;
+    revertirVentasPedido(client, pedidoId, sucursalId, usuarioId, motivo) {
+        return this.cajaMovimientos.revertirVentasPedido(client, pedidoId, sucursalId, usuarioId, motivo);
     }
     async registrarAuditoria(client, sucursalId, pedidoId, datos) {
-        await client.query(`INSERT INTO auditoria_logs (
-         sucursal_id, accion, tabla_afectada, registro_id, datos_despues
-       ) VALUES ($1,'CREAR_PEDIDO','pedidos',$2,$3::jsonb)`, [sucursalId, pedidoId, JSON.stringify(datos)]);
+        await this.auditoria.registrarEnTransaccion(client, {
+            sucursalId,
+            accion: 'CREAR_PEDIDO',
+            tablaAfectada: 'pedidos',
+            registroId: pedidoId,
+            datosDespues: datos,
+        });
     }
     async registrarAuditoriaCobroMesa(client, sucursalId, mesaId, usuarioId, datos) {
-        await client.query(`INSERT INTO auditoria_logs (
-         sucursal_id, accion, tabla_afectada, registro_id, usuario_id, datos_despues
-       ) VALUES ($1,'COBRAR_CUENTA_MESA','mesas',$2,$3,$4::jsonb)`, [sucursalId, mesaId, usuarioId, JSON.stringify(datos)]);
+        await this.auditoria.registrarEnTransaccion(client, {
+            sucursalId,
+            accion: 'COBRAR_CUENTA_MESA',
+            tablaAfectada: 'mesas',
+            registroId: mesaId,
+            usuarioId,
+            datosDespues: datos,
+        });
     }
 };
 exports.PedidosCajaAuditoriaService = PedidosCajaAuditoriaService;
 exports.PedidosCajaAuditoriaService = PedidosCajaAuditoriaService = __decorate([
-    (0, common_1.Injectable)()
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [caja_movimientos_service_1.CajaMovimientosService,
+        auditoria_service_1.AuditoriaService])
 ], PedidosCajaAuditoriaService);
 //# sourceMappingURL=pedidos-caja-auditoria.service.js.map

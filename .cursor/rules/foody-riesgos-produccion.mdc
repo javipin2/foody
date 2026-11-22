@@ -1,0 +1,43 @@
+---
+description: Detectar riesgos de producción (API/DB/crash), corregirlos y documentarlos
+alwaysApply: true
+---
+
+# Foody — riesgos de producción
+
+Cuando aparezca un fallo en local o CI, **clasificar** si puede afectar producción (API NestJS, Postgres, auth, pagos, stock, caja, impresión, despliegue). Si sí: **arreglar en esta sesión**, **dejar evidencia** y **documentar**.
+
+## Qué SÍ es riesgo de producción
+
+- API que se cae, cuelga, OOM, fuga de conexiones DB, transacciones a medias
+- Migraciones destructivas / datos corruptos / race conditions en pedidos-caja-stock
+- Secretos en logs, auth rota, rate-limit ausente en endpoints sensibles
+- Scripts/deploy que matan el proceso sin healthcheck / sin restart seguro
+- Comportamiento que en VPS dejaría el SaaS inaccesible para todos los restaurantes
+
+Ante estos: root cause → fix mínimo → `verificar-*` o smoke API → anotar en `docs/AVANCE_PROYECTO.md` + `docs/MASTER_STATUS.md` (y `docs/ENTORNO_LOCAL.md` / `docs/PREPARACION_VPS.md` si es ops).
+
+## Qué NO es riesgo de producción (DX local)
+
+| Síntoma local | Por qué no es prod |
+|---------------|--------------------|
+| `dartvm` / `flutter run` puerto 8080 ocupado (errno 10048) | Solo el servidor de **hot-reload** de Flutter web. Prod = build estático/APK + API detrás de nginx/Caddy. |
+| Dos terminals con el mismo `--web-port` | Conflicto de máquina del desarrollador |
+| Chrome/web-port distinto entre flavors | Convención local (`equipo` 8080, `cliente` 8081/8082) |
+
+Aun así: **mejorar DX** (script que detecta puerto, doc clara) para no perder tiempo — sin tratarlo como incidente de prod.
+
+## Obligatorio para el agente
+
+1. Si el usuario reporta un error, decir en 1 frase si es **prod-risk** o **solo local**.
+2. Si es prod-risk: no cerrar con “reinicia y ya”; corregir causa, verificar, documentar.
+3. Si es solo local: explicar + endurecer script/doc si se repite (p. ej. `scripts/flutter-run-flavor.ps1`).
+4. Nunca matar procesos ajenos en la máquina del usuario salvo PID claro del propio Foody/Flutter/API de esta sesión, o tras confirmar.
+
+## Puertos web locales (referencia)
+
+- `equipo` → preferir `:8080`
+- `cliente` → preferir `:8081` o `:8082` (el script ya evita chocar con 8080)
+- API NestJS → `:3000` (salud: `GET /api/v1/salud`)
+
+Liberar 8080 ocupado por Flutter viejo: el script `flutter-run-flavor.ps1` puede liberar `dartvm` en ese puerto (`-LiberarPuerto`).

@@ -11,12 +11,16 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MenuService = void 0;
 const common_1 = require("@nestjs/common");
+const menu_cache_service_1 = require("../../core/cache/menu-cache.service");
 const database_service_1 = require("../../core/database/database.service");
 let MenuService = class MenuService {
     database;
-    constructor(database) {
+    menuCache;
+    constructor(database, menuCache) {
         this.database = database;
+        this.menuCache = menuCache;
     }
+    menuConstruyendose = new Map();
     async obtenerPorMesaQr(qrToken) {
         const mesa = await this.database.consultarUno(`SELECT m.id, m.nombre, m.sucursal_id
        FROM mesas m
@@ -26,16 +30,46 @@ let MenuService = class MenuService {
             throw new common_1.NotFoundException('MESA_NO_ENCONTRADA');
         }
         const menu = await this.obtenerPorSucursal(mesa.sucursal_id);
+        const resumenPedidos = await this.database.consultarUno(`SELECT
+         COUNT(*)::int AS activos,
+         COUNT(*) FILTER (WHERE estado = 'pendiente_aprobacion')::int AS pendientes_qr,
+         COALESCE(SUM(total), 0)::text AS total_pendiente
+       FROM pedidos
+       WHERE mesa_id = $1 AND sucursal_id = $2
+         AND estado NOT IN ('cancelado', 'rechazado', 'pagado')`, [mesa.id, mesa.sucursal_id]);
         return {
             mesa: {
                 id: mesa.id,
                 nombre: mesa.nombre,
                 qr_token: qrToken,
+                pedidos_activos: resumenPedidos?.activos ?? 0,
+                pedidos_pendientes_qr: resumenPedidos?.pendientes_qr ?? 0,
+                total_pendiente_mesa: Number(resumenPedidos?.total_pendiente ?? 0),
             },
             ...menu,
         };
     }
     async obtenerPorSucursal(sucursalId) {
+        const enCache = await this.menuCache.obtener(sucursalId);
+        if (enCache)
+            return enCache;
+        const yaEnCurso = this.menuConstruyendose.get(sucursalId);
+        if (yaEnCurso)
+            return yaEnCurso;
+        const promesa = (async () => {
+            const menu = await this.construirMenuSucursal(sucursalId);
+            await this.menuCache.guardar(sucursalId, menu);
+            return menu;
+        })();
+        this.menuConstruyendose.set(sucursalId, promesa);
+        try {
+            return await promesa;
+        }
+        finally {
+            this.menuConstruyendose.delete(sucursalId);
+        }
+    }
+    async construirMenuSucursal(sucursalId) {
         const sucursal = await this.database.consultarUno(`SELECT s.id, s.nombre,
               r.id AS restaurante_id, r.nombre AS restaurante_nombre,
               c.id AS ciudad_id, c.nombre AS ciudad_nombre, c.slug AS ciudad_slug
@@ -75,23 +109,38 @@ let MenuService = class MenuService {
        FROM combos
        WHERE sucursal_id = $1 AND disponible = true
        ORDER BY nombre ASC`, [sucursalId]);
-        const combos = await Promise.all(combosRaw.map(async (combo) => {
-            const items = await this.database.consultar(`SELECT ci.id, ci.tipo_item, ci.item_id, ci.cantidad,
+        const comboIds = combosRaw.map((c) => c.id);
+        const itemsRaw = comboIds.length
+            ? await this.database.consultar(`SELECT ci.combo_id,
+                  ci.id,
+                  ci.tipo_item,
+                  ci.item_id,
+                  ci.cantidad,
                   COALESCE(p.nombre, b.nombre, t.nombre, 'Ítem') AS nombre_item
            FROM combo_items ci
-           LEFT JOIN productos p ON ci.tipo_item = 'producto' AND p.id = ci.item_id
-           LEFT JOIN bebidas b ON ci.tipo_item = 'bebida' AND b.id = ci.item_id
-           LEFT JOIN toppings t ON ci.tipo_item = 'topping' AND t.id = ci.item_id
-           WHERE ci.combo_id = $1`, [combo.id]);
-            return {
-                id: combo.id,
-                nombre: combo.nombre,
-                descripcion: combo.descripcion,
-                precio_fijo: Number(combo.precio_fijo),
-                imagen_url: combo.imagen_url,
-                disponible: combo.disponible,
-                items,
-            };
+           LEFT JOIN productos p
+             ON ci.tipo_item = 'producto' AND p.id = ci.item_id
+           LEFT JOIN bebidas b
+             ON ci.tipo_item = 'bebida' AND b.id = ci.item_id
+           LEFT JOIN toppings t
+             ON ci.tipo_item = 'topping' AND t.id = ci.item_id
+           WHERE ci.combo_id = ANY($1::uuid[])
+           ORDER BY ci.combo_id ASC, ci.id ASC`, [comboIds])
+            : [];
+        const itemsPorCombo = new Map();
+        for (const it of itemsRaw) {
+            const lista = itemsPorCombo.get(it.combo_id) ?? [];
+            lista.push(it);
+            itemsPorCombo.set(it.combo_id, lista);
+        }
+        const combos = combosRaw.map((combo) => ({
+            id: combo.id,
+            nombre: combo.nombre,
+            descripcion: combo.descripcion,
+            precio_fijo: Number(combo.precio_fijo),
+            imagen_url: combo.imagen_url,
+            disponible: combo.disponible,
+            items: itemsPorCombo.get(combo.id) ?? [],
         }));
         const toppingsPorProducto = this.agruparPorProducto(toppings);
         const bebidasPorProducto = this.agruparPorProducto(bebidas);
@@ -160,6 +209,7 @@ let MenuService = class MenuService {
 exports.MenuService = MenuService;
 exports.MenuService = MenuService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [database_service_1.DatabaseService])
+    __metadata("design:paramtypes", [database_service_1.DatabaseService,
+        menu_cache_service_1.MenuCacheService])
 ], MenuService);
 //# sourceMappingURL=menu.service.js.map

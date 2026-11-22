@@ -43,4 +43,9 @@ export class CobrarMesaDto {
   @IsNumber()
   @Min(0)
   propina?: number;
+
+  /** API-IDEM-02: reintento seguro tras timeout / doble tap. */
+  @IsOptional()
+  @IsString()
+  idempotency_key?: string;
 }

@@ -25,6 +25,7 @@ const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requie
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const guardar_config_fiscal_dto_1 = require("./dto/guardar-config-fiscal.dto");
+const anular_factura_dto_1 = require("./dto/anular-factura.dto");
 const facturacion_service_1 = require("./facturacion.service");
 let FacturacionController = class FacturacionController {
     facturacionService;
@@ -62,7 +63,7 @@ exports.FacturacionController = FacturacionController;
 __decorate([
     (0, common_1.Get)('config/:sucursal_id'),
     (0, permisos_decorator_1.Permisos)('ver_facturacion', 'gestionar_facturacion'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
@@ -81,7 +82,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)('facturas/:id/pdf'),
     (0, permisos_decorator_1.Permisos)('ver_facturacion', 'gestionar_facturacion'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
@@ -91,7 +92,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)('facturas/:sucursal_id'),
     (0, permisos_decorator_1.Permisos)('ver_facturacion', 'gestionar_facturacion'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)('estado')),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -101,7 +102,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('emitir/:pedido_id'),
     (0, permisos_decorator_1.Permisos)('gestionar_facturacion'),
-    __param(0, (0, common_1.Param)('pedido_id')),
+    __param(0, (0, common_1.Param)('pedido_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
@@ -111,12 +112,13 @@ __decorate([
 __decorate([
     (0, common_1.Post)('anular/:factura_id'),
     (0, permisos_decorator_1.Permisos)('gestionar_facturacion'),
-    __param(0, (0, common_1.Param)('factura_id')),
+    __param(0, (0, common_1.Param)('factura_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload, String]),
+    __metadata("design:paramtypes", [String, anular_factura_dto_1.AnularFacturaDto,
+        jwt_payload_1.JwtPayload, String]),
     __metadata("design:returntype", Promise)
 ], FacturacionController.prototype, "anular", null);
 exports.FacturacionController = FacturacionController = __decorate([

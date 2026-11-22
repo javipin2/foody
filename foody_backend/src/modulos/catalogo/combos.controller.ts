@@ -6,6 +6,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -17,6 +18,7 @@ import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard'
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { CatalogoService } from './catalogo.service';
 import { CrearComboDto } from './dto/crear-combo.dto';
+import { CambiarDisponibilidadDto } from './dto/extras-mutacion.dto';
 
 @Controller('combos')
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, RolGuard)
@@ -46,8 +48,8 @@ export class CombosController {
   @Patch(':id/disponibilidad')
   @Permisos('editar_productos')
   async disponibilidad(
-    @Param('id') id: string,
-    @Body() body: { disponible: boolean },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CambiarDisponibilidadDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const sid = await this.sucursalScope.resolverEscritura(usuario);

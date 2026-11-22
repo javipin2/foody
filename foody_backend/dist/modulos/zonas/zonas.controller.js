@@ -33,8 +33,8 @@ let ZonasController = class ZonasController {
         this.zonas = zonas;
         this.sucursalScope = sucursalScope;
     }
-    cotizar(sucursalId, lat, lng) {
-        return this.zonas.cotizarDomicilio(sucursalId, lat != null ? Number(lat) : undefined, lng != null ? Number(lng) : undefined);
+    cotizar(dto) {
+        return this.zonas.cotizarDomicilio(dto.sucursal_id, dto.lat, dto.lng);
     }
     async configuracionMapa(sucursalId, usuario) {
         await this.sucursalScope.validarLecturaOperativa(usuario, sucursalId);
@@ -66,11 +66,9 @@ let ZonasController = class ZonasController {
 exports.ZonasController = ZonasController;
 __decorate([
     (0, common_1.Get)('cotizar-domicilio'),
-    __param(0, (0, common_1.Query)('sucursal_id')),
-    __param(1, (0, common_1.Query)('lat')),
-    __param(2, (0, common_1.Query)('lng')),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [zona_dto_1.CotizarDomicilioDto]),
     __metadata("design:returntype", void 0)
 ], ZonasController.prototype, "cotizar", null);
 __decorate([
@@ -124,7 +122,7 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, plan_features_guard_1.PlanFeaturesGuard, rol_guard_1.RolGuard),
     (0, requiere_modulo_decorator_1.RequiereModulo)('zonas_domicilio'),
     (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
@@ -138,7 +136,7 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, plan_features_guard_1.PlanFeaturesGuard, rol_guard_1.RolGuard),
     (0, requiere_modulo_decorator_1.RequiereModulo)('zonas_domicilio'),
     (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),

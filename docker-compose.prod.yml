@@ -1,0 +1,45 @@
+# Foody — producción (VPS Ubuntu)
+# Uso: copiar .env.prod → foody_backend/.env y ajustar valores.
+#       docker compose -f docker-compose.prod.yml up -d --build
+#
+# Supabase self-hosted: desplegar aparte (ver docs/ENTORNO_LOCAL.md).
+# Este compose asume DATABASE_URL y SUPABASE_* apuntan al stack ya levantado.
+#
+# CAP-INFRA-01: un solo proceso Nest (piloto OK). Escala horizontal → réplicas
+# detrás de proxy + DB_POOL_MAX / rate-limit Postgres (ya multi-réplica ready).
+# No hace falta PM2 si usas `deploy.replicas` o varios containers con healthcheck.
+
+
+services:
+  backend:
+    build:
+      context: ./foody_backend
+      dockerfile: Dockerfile
+    container_name: foody_backend
+    restart: unless-stopped
+    env_file:
+      - ./foody_backend/.env
+    environment:
+      ENTORNO: produccion
+      HOST: 0.0.0.0
+      PUERTO: 3000
+    ports:
+      - '3000:3000'
+    # DK-LOG / INF-DISK: evita que logs Docker crezcan indefinidamente.
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>r.json()).then(j=>process.exit(j.datos?.base_datos?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

@@ -32,6 +32,30 @@ export class NotificacionesService {
     private readonly fcm: FcmService,
   ) {}
 
+  /** Push de prueba — rama por rol (BN-CTRL-10). */
+  async enviarPrueba(usuario: {
+    sub: string;
+    rol: string;
+  }) {
+    const base = {
+      tipo: 'prueba_foody',
+      titulo: 'Foody — prueba FCM',
+      cuerpo: 'Si ves esto, push operativo ✅',
+    };
+    if (usuario.rol === 'domiciliario_independiente') {
+      return this.enviar({
+        ...base,
+        destinatario_domiciliario_id: usuario.sub,
+        datos: { ruta: '/domiciliario/independiente' },
+      });
+    }
+    return this.enviar({
+      ...base,
+      destinatario_usuario_id: usuario.sub,
+      datos: { ruta: '/admin/panel' },
+    });
+  }
+
   /** Encola y envía push de inmediato (eventos operativos). */
   async enviar(dto: EnviarPushDto) {
     const payload: Record<string, unknown> = {
@@ -72,7 +96,14 @@ export class NotificacionesService {
     return { id: fila!.id, encolada: true };
   }
 
+  /** Tope de reintentos FCM (FCM-02). Env: FCM_MAX_INTENTOS. */
+  private maxIntentosFcm(): number {
+    const n = Number(process.env.FCM_MAX_INTENTOS);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 10;
+  }
+
   async procesarPendientes(limite = 50) {
+    const maxIntentos = this.maxIntentosFcm();
     const pendientes = await this.database.consultar<{
       id: string;
       sucursal_id: string | null;
@@ -80,16 +111,19 @@ export class NotificacionesService {
       destinatario_rol: string | null;
       destinatario_usuario_id: string | null;
       payload: Record<string, unknown>;
+      intentos: number;
     }>(
-      `SELECT id, sucursal_id, tipo, destinatario_rol, destinatario_usuario_id, payload
+      `SELECT id, sucursal_id, tipo, destinatario_rol, destinatario_usuario_id,
+              payload, intentos
        FROM notificaciones_pendientes
-       WHERE enviada = false
+       WHERE enviada = false AND abandonada = false
        ORDER BY created_at ASC
        LIMIT $1`,
       [limite],
     );
 
     let enviados = 0;
+    let abandonadas = 0;
     for (const n of pendientes) {
       const tokens = await this._resolverTokens(n);
       const titulo =
@@ -114,10 +148,16 @@ export class NotificacionesService {
           { title: titulo, body: cuerpo },
           data,
         );
+        marcarEnviada = res.enviados > 0;
         enviados += res.enviados;
         this.log.log(
           `FCM ${n.tipo}: ${res.enviados} enviados, ${res.fallos} fallos`,
         );
+        if (!marcarEnviada && res.fallos > 0) {
+          this.log.warn(
+            `FCM ${n.tipo}: todos los tokens fallaron (${res.fallos}) — se reintentará`,
+          );
+        }
       } else if (!tokens.length) {
         this.log.debug(`FCM ${n.tipo}: sin tokens registrados`);
       } else {
@@ -132,19 +172,44 @@ export class NotificacionesService {
           `UPDATE notificaciones_pendientes SET enviada = true WHERE id = $1`,
           [n.id],
         );
+      } else {
+        const fila = await this.database.consultarUno<{
+          intentos: number;
+          abandonada: boolean;
+        }>(
+          `UPDATE notificaciones_pendientes
+           SET intentos = intentos + 1,
+               abandonada = (intentos + 1 >= $2)
+           WHERE id = $1
+           RETURNING intentos, abandonada`,
+          [n.id, maxIntentos],
+        );
+        if (fila?.abandonada) {
+          abandonadas += 1;
+          this.log.warn(
+            `FCM ${n.tipo}: abandonada tras ${fila.intentos} intentos (máx ${maxIntentos})`,
+          );
+        }
       }
     }
 
     return {
       procesadas: pendientes.length,
       enviados,
+      abandonadas,
       modo: this.fcm.estaListo() ? 'fcm' : 'sin_admin',
     };
   }
 
   async diagnostico() {
     const fila = await this.database.consultarUno<{ n: string }>(
-      `SELECT COUNT(*)::text AS n FROM notificaciones_pendientes WHERE enviada = false`,
+      `SELECT COUNT(*)::text AS n FROM notificaciones_pendientes
+       WHERE enviada = false AND abandonada = false`,
+    );
+    const aband = await this.database.consultarUno<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM notificaciones_pendientes
+       WHERE abandonada = true
+         AND created_at > now() - interval '24 hours'`,
     );
     const webStaff = await this.database.consultarUno<{ n: string }>(
       `SELECT COUNT(*)::text AS n FROM tokens_push_admin
@@ -161,9 +226,46 @@ export class NotificacionesService {
     return {
       firebase_admin: this.fcm.estaListo(),
       pendientes: Number(fila?.n ?? 0),
+      abandonadas_24h: Number(aband?.n ?? 0),
+      max_intentos: this.maxIntentosFcm(),
       tokens_web_staff: Number(webStaff?.n ?? 0),
       tokens_web_cliente: Number(webCliente?.n ?? 0),
       tokens_web_domiciliario: Number(webDomi?.n ?? 0),
+    };
+  }
+
+  /**
+   * CAP-GROW-01/02: limpia cola FCM vieja + auditoría antigua.
+   * ponytail: techo = DELETE masivo; upgrade = partición / archive R2.
+   */
+  async purgarHistorialCrecimiento(opciones?: {
+    diasCola?: number;
+    diasAuditoria?: number;
+  }): Promise<{ cola: number; auditoria: number }> {
+    const diasCola = opciones?.diasCola ?? 14;
+    const diasAuditoria = opciones?.diasAuditoria ?? 90;
+    const cola = await this.database.consultarUno<{ n: string }>(
+      `WITH borradas AS (
+         DELETE FROM notificaciones_pendientes
+         WHERE (enviada = true OR abandonada = true)
+           AND created_at < now() - make_interval(days => $1)
+         RETURNING 1
+       )
+       SELECT COUNT(*)::text AS n FROM borradas`,
+      [diasCola],
+    );
+    const auditoria = await this.database.consultarUno<{ n: string }>(
+      `WITH borradas AS (
+         DELETE FROM auditoria_logs
+         WHERE created_at < now() - make_interval(days => $1)
+         RETURNING 1
+       )
+       SELECT COUNT(*)::text AS n FROM borradas`,
+      [diasAuditoria],
+    );
+    return {
+      cola: Number(cola?.n ?? 0),
+      auditoria: Number(auditoria?.n ?? 0),
     };
   }
 
@@ -191,9 +293,15 @@ export class NotificacionesService {
         );
         for (const f of filas) tokens.add(f.fcm_token);
       }
-    }
-
-    if (!tokens.size || opciones?.todos_web) {
+      // RBAC-GUARD-02: sin tokens propios no hacer blast global
+      if (!tokens.size) {
+        return {
+          enviados: 0,
+          tokens_web: 0,
+          mensaje: 'Sin tokens web propios para prueba',
+        };
+      }
+    } else if (opciones?.todos_web) {
       const staff = await this.database.consultar<{ fcm_token: string }>(
         `SELECT fcm_token FROM tokens_push_admin
          WHERE activo = true AND plataforma = 'web'`,

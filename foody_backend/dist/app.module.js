@@ -9,11 +9,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const cache_manager_1 = require("@nestjs/cache-manager");
 const core_1 = require("@nestjs/core");
 const http_exception_filter_1 = require("./compartido/filtros/http-exception.filter");
 const rate_limit_guard_1 = require("./compartido/guards/rate-limit.guard");
 const respuesta_interceptor_1 = require("./compartido/interceptores/respuesta.interceptor");
 const auth_module_1 = require("./core/auth/auth.module");
+const cache_menu_module_1 = require("./core/cache/cache-menu.module");
+const configuracion_global_module_1 = require("./core/config/configuracion-global.module");
 const database_module_1 = require("./core/database/database.module");
 const realtime_module_1 = require("./core/realtime/realtime.module");
 const ciudades_module_1 = require("./modulos/ciudades/ciudades.module");
@@ -31,6 +34,8 @@ const cocinas_module_1 = require("./modulos/cocinas/cocinas.module");
 const inventario_module_1 = require("./modulos/inventario/inventario.module");
 const domiciliarios_module_1 = require("./modulos/domiciliarios/domiciliarios.module");
 const reportes_module_1 = require("./modulos/reportes/reportes.module");
+const analitica_module_1 = require("./modulos/analitica/analitica.module");
+const finanzas_module_1 = require("./modulos/finanzas/finanzas.module");
 const alertas_module_1 = require("./modulos/alertas/alertas.module");
 const usuarios_module_1 = require("./modulos/usuarios/usuarios.module");
 const facturacion_module_1 = require("./modulos/facturacion/facturacion.module");
@@ -40,8 +45,10 @@ const costeo_module_1 = require("./modulos/costeo/costeo.module");
 const geografia_module_1 = require("./modulos/geografia/geografia.module");
 const notificaciones_module_1 = require("./modulos/notificaciones/notificaciones.module");
 const auditoria_module_1 = require("./modulos/auditoria/auditoria.module");
+const caja_movimientos_module_1 = require("./core/caja/caja-movimientos.module");
 const suscripciones_cron_module_1 = require("./core/suscripciones/suscripciones-cron.module");
 const pagos_module_1 = require("./modulos/pagos/pagos.module");
+const almacenamiento_module_1 = require("./modulos/almacenamiento/almacenamiento.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -49,7 +56,15 @@ exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
             config_1.ConfigModule.forRoot({ isGlobal: true }),
+            cache_manager_1.CacheModule.register({
+                isGlobal: true,
+                ttl: 900_000,
+                max: 200,
+            }),
+            cache_menu_module_1.CacheMenuModule,
             database_module_1.DatabaseModule,
+            configuracion_global_module_1.ConfiguracionGlobalModule,
+            caja_movimientos_module_1.CajaMovimientosModule,
             realtime_module_1.RealtimeModule,
             auth_module_1.AuthModule,
             salud_module_1.SaludModule,
@@ -67,6 +82,8 @@ exports.AppModule = AppModule = __decorate([
             inventario_module_1.InventarioModule,
             domiciliarios_module_1.DomiciliariosModule,
             reportes_module_1.ReportesModule,
+            analitica_module_1.AnaliticaModule,
+            finanzas_module_1.FinanzasModule,
             alertas_module_1.AlertasModule,
             usuarios_module_1.UsuariosModule,
             facturacion_module_1.FacturacionModule,
@@ -78,6 +95,7 @@ exports.AppModule = AppModule = __decorate([
             auditoria_module_1.AuditoriaModule,
             suscripciones_cron_module_1.SuscripcionesCronModule,
             pagos_module_1.PagosModule,
+            almacenamiento_module_1.AlmacenamientoModule,
         ],
         providers: [
             {

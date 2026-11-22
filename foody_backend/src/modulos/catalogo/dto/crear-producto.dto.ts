@@ -41,4 +41,8 @@ export class CrearProductoDto {
   @IsNumber()
   @Min(0)
   precio_para_llevar?: number;
+
+  @IsOptional()
+  @IsString()
+  imagen_url?: string;
 }

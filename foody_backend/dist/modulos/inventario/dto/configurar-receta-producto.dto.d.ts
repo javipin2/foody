@@ -7,6 +7,7 @@ export declare class RecetaItemDto {
 }
 export declare class ConfigurarRecetaProductoDto {
     producto_id: string;
+    tipo_entidad?: 'producto' | 'bebida' | 'topping';
     items: RecetaItemDto[];
     margen_error?: number;
 }

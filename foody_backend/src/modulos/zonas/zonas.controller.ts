@@ -8,6 +8,7 @@ import {
   Post,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -21,6 +22,7 @@ import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard'
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import {
   ActualizarZonaDto,
+  CotizarDomicilioDto,
   CrearZonaDto,
   UbicacionSucursalDto,
 } from './dto/zona.dto';
@@ -35,16 +37,8 @@ export class ZonasController {
 
   /** Público: cotizar domicilio antes del checkout. */
   @Get('cotizar-domicilio')
-  cotizar(
-    @Query('sucursal_id') sucursalId: string,
-    @Query('lat') lat?: string,
-    @Query('lng') lng?: string,
-  ) {
-    return this.zonas.cotizarDomicilio(
-      sucursalId,
-      lat != null ? Number(lat) : undefined,
-      lng != null ? Number(lng) : undefined,
-    );
+  cotizar(@Query() dto: CotizarDomicilioDto) {
+    return this.zonas.cotizarDomicilio(dto.sucursal_id, dto.lat, dto.lng);
   }
 
   @Get('sucursal/:sucursal_id/configuracion-mapa')
@@ -98,7 +92,7 @@ export class ZonasController {
   @RequiereModulo('zonas_domicilio')
   @Permisos('gestionar_sucursales')
   async actualizar(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarZonaDto,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalIdQuery?: string,
@@ -113,7 +107,7 @@ export class ZonasController {
   @RequiereModulo('zonas_domicilio')
   @Permisos('gestionar_sucursales')
   async desactivar(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalIdQuery?: string,
   ) {

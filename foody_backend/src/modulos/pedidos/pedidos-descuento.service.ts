@@ -6,8 +6,11 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
 import { FacturacionService } from '../facturacion/facturacion.service';
+import { esAdminRestaurante } from '../../core/auth/roles-food';
 import { AlertasRiesgoService, UMBRALES_ALERTA } from '../alertas/alertas-riesgo.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
+import { CajaMovimientosService } from '../../core/caja/caja-movimientos.service';
 import { PedidosSoporteService } from './pedidos-soporte.service';
 
 /** Subdominio: descuentos manuales en pedidos abiertos. */
@@ -18,6 +21,8 @@ export class PedidosDescuentoService {
     private readonly facturacion: FacturacionService,
     private readonly alertasRiesgo: AlertasRiesgoService,
     private readonly soporte: PedidosSoporteService,
+    private readonly auditoria: AuditoriaService,
+    private readonly cajaMovimientos: CajaMovimientosService,
   ) {}
 
   async aplicarDescuento(
@@ -48,9 +53,12 @@ export class PedidosDescuentoService {
         costo_domicilio: string;
         descuento: string;
         total: string;
+        monto_pagado: string;
+        numero_pedido: string;
       }>(
         client,
-        `SELECT id, estado, subtotal, costo_domicilio, descuento, total
+        `SELECT id, estado, subtotal, costo_domicilio, descuento, total,
+                COALESCE(monto_pagado, 0) AS monto_pagado, numero_pedido
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
         [pedidoId, sucursalId],
       );
@@ -67,7 +75,8 @@ export class PedidosDescuentoService {
       descuento = Math.min(Math.max(descuento, 0), base);
       const pctBase = base > 0 ? (descuento / base) * 100 : 0;
 
-      const esElevado = contexto.rol === 'admin' || contexto.rol === 'gerente';
+      const esElevado =
+        esAdminRestaurante(contexto.rol) || contexto.rol === 'gerente';
       if (pctBase > 20 && !esElevado) {
         throw new BadRequestException(
           'Descuentos mayores al 20% requieren admin o gerente',
@@ -75,18 +84,62 @@ export class PedidosDescuentoService {
       }
 
       const total = base - descuento;
+      const pagadoAntes = Number(pedido.monto_pagado);
+      const nuevoPagado = Math.min(pagadoAntes, total);
+      const excesoCaja = pagadoAntes - nuevoPagado;
+
       const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(
         client,
         sucursalId,
         total,
       );
 
+      if (excesoCaja > 0.01) {
+        const cajaId = await this.cajaMovimientos.obtenerCajaAbiertaId(
+          client,
+          sucursalId,
+        );
+        if (!cajaId) {
+          throw new BadRequestException({
+            error: 'CAJA_NO_ABIERTA',
+            message:
+              'Abre la caja para aplicar el descuento y registrar la devolución del exceso cobrado',
+          });
+        }
+        await this.cajaMovimientos.insertar(client, {
+          cajaId,
+          sucursalId,
+          pedidoId,
+          tipo: 'devolucion',
+          monto: excesoCaja,
+          metodoPago: null,
+          descripcion: `Ajuste descuento ${pedido.numero_pedido}`,
+          usuarioId,
+        });
+      }
+
       await client.query(
         `UPDATE pedidos SET
            descuento = $1, motivo_descuento = $2, total = $3,
-           iva_porcentaje = $4, iva_valor = $5
-         WHERE id = $6`,
-        [descuento, dto.motivo.trim(), total, iva.iva_porcentaje, iva.iva_valor, pedidoId],
+           monto_pagado = $4,
+           iva_porcentaje = $5, iva_valor = $6,
+           promocion_id = NULL
+         WHERE id = $7`,
+        [
+          descuento,
+          dto.motivo.trim(),
+          total,
+          nuevoPagado,
+          iva.iva_porcentaje,
+          iva.iva_valor,
+          pedidoId,
+        ],
+      );
+
+      await this.facturacion.sincronizarBorradorDesdePedidoEnTransaccion(
+        client,
+        sucursalId,
+        pedidoId,
       );
 
       if (pctBase > UMBRALES_ALERTA.descuentoPorcentajeAlto) {
@@ -101,28 +154,24 @@ export class PedidosDescuentoService {
         });
       }
 
-      await client.query(
-        `INSERT INTO auditoria_logs (
-           sucursal_id, usuario_id, accion, tabla_afectada, registro_id,
-           datos_antes, datos_despues
-         ) VALUES ($1,$2,'APLICAR_DESCUENTO','pedidos',$3,$4::jsonb,$5::jsonb)`,
-        [
-          sucursalId,
-          usuarioId,
-          pedidoId,
-          JSON.stringify({
-            descuento_anterior: Number(pedido.descuento),
-            total_anterior: Number(pedido.total),
-          }),
-          JSON.stringify({
-            descuento,
-            porcentaje: Math.round(pctBase * 100) / 100,
-            motivo: dto.motivo.trim(),
-            total,
-            iva_valor: iva.iva_valor,
-          }),
-        ],
-      );
+      await this.auditoria.registrarEnTransaccion(client, {
+        sucursalId,
+        accion: 'APLICAR_DESCUENTO',
+        tablaAfectada: 'pedidos',
+        registroId: pedidoId,
+        usuarioId,
+        datosAntes: {
+          descuento_anterior: Number(pedido.descuento),
+          total_anterior: Number(pedido.total),
+        },
+        datosDespues: {
+          descuento,
+          porcentaje: Math.round(pctBase * 100) / 100,
+          motivo: dto.motivo.trim(),
+          total,
+          iva_valor: iva.iva_valor,
+        },
+      });
 
       return {
         id: pedidoId,

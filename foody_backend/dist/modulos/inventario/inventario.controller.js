@@ -31,6 +31,7 @@ const cerrar_conteo_dto_1 = require("./dto/cerrar-conteo.dto");
 const registrar_compra_dto_1 = require("./dto/registrar-compra.dto");
 const crear_traslado_dto_1 = require("./dto/crear-traslado.dto");
 const inventario_service_1 = require("./inventario.service");
+const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 let InventarioController = class InventarioController {
     inventario;
     sucursalScope;
@@ -44,28 +45,18 @@ let InventarioController = class InventarioController {
     }
     async crearTraslado(dto, usuario) {
         await this.sucursalScope.resolverEscritura(usuario, dto.sucursal_origen_id);
-        if (!this.sucursalScope.puedeVerInventarioHermanas(usuario)) {
-            throw new common_1.ForbiddenException({
-                error: 'TRASLADOS_REQUIERE_ADMIN_MULTI_SUCURSAL',
-                message: 'Los traslados entre sedes requieren permiso corporativo (gestionar sucursales).',
-            });
-        }
-        return this.inventario.crearTraslado(usuario.restaurante_id, usuario.sub, dto);
+        return this.inventario.crearTraslado(usuario, dto);
     }
     async recibirTraslado(id, usuario) {
         const sucursalId = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
         return this.inventario.recibirTraslado(id, usuario.restaurante_id, sucursalId, usuario.sub);
     }
+    async cancelarTraslado(id, usuario) {
+        const sucursalId = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
+        return this.inventario.cancelarTraslado(id, usuario, sucursalId);
+    }
     async resumenHermanas(usuario) {
-        if (!this.sucursalScope.puedeVerInventarioHermanas(usuario)) {
-            await this.sucursalScope.validarLecturaInventario(usuario, usuario.sucursal_id);
-            return {
-                sucursal_propia: usuario.sucursal_id,
-                puede_ver_hermanas: false,
-                sucursales: [],
-            };
-        }
-        return this.inventario.resumenInventarioHermanas(usuario.restaurante_id, usuario.sucursal_id);
+        return this.inventario.resumenInventarioHermanas(usuario);
     }
     async iniciarConteo(sucursalId, usuario) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -75,17 +66,25 @@ let InventarioController = class InventarioController {
         const id = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
         return this.inventario.cerrarConteo(conteoId, id, usuario.sub, dto);
     }
-    async movimientos(sucursalId, usuario) {
+    async movimientos(sucursalId, usuario, page, limit) {
         const id = await this.sucursalScope.resolverLecturaInventario(usuario, sucursalId);
-        return this.inventario.listarMovimientos(id);
+        const paginar = page != null && page !== '';
+        return this.inventario.listarMovimientos(id, {
+            paginar,
+            page: paginar ? Number(page) : undefined,
+            limite: limit != null ? Number(limit) : undefined,
+        });
     }
     async costos(sucursalId, usuario) {
         const id = await this.sucursalScope.resolverLecturaInventario(usuario, sucursalId);
         return this.inventario.listarCostosProductos(id);
     }
-    async recetaProducto(productoId, usuario) {
+    async recetaProducto(productoId, tipoEntidad, usuario) {
         const id = await this.sucursalScope.resolverLecturaInventario(usuario, usuario.sucursal_id);
-        return this.inventario.recetaDeProducto(productoId, id);
+        const tipo = tipoEntidad === 'bebida' || tipoEntidad === 'topping'
+            ? tipoEntidad
+            : 'producto';
+        return this.inventario.recetaDeProducto(productoId, id, tipo);
     }
     async configurarReceta(dto, usuario) {
         const id = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
@@ -95,13 +94,13 @@ let InventarioController = class InventarioController {
         const id = await this.sucursalScope.resolverEscritura(usuario, dto.sucursal_id);
         return this.inventario.registrarCompra({ ...dto, sucursal_id: id }, usuario.sub);
     }
-    async listar(sucursalId, usuario) {
+    async listar(sucursalId, usuario, pag) {
         const id = await this.sucursalScope.resolverLecturaInventario(usuario, sucursalId);
-        return this.inventario.listarIngredientes(id);
+        return this.inventario.listarIngredientes(id, pag);
     }
     async crear(dto, usuario) {
         const id = await this.sucursalScope.resolverEscritura(usuario, dto.sucursal_id);
-        return this.inventario.crearIngrediente({ ...dto, sucursal_id: id });
+        return this.inventario.crearIngrediente({ ...dto, sucursal_id: id }, usuario.restaurante_id ?? undefined);
     }
     async actualizar(id, dto, usuario) {
         const sucursalId = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
@@ -131,12 +130,21 @@ __decorate([
 __decorate([
     (0, common_1.Post)('traslados/:id/recibir'),
     (0, permisos_decorator_1.Permisos)('editar_inventario'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], InventarioController.prototype, "recibirTraslado", null);
+__decorate([
+    (0, common_1.Post)('traslados/:id/cancelar'),
+    (0, permisos_decorator_1.Permisos)('editar_inventario'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], InventarioController.prototype, "cancelarTraslado", null);
 __decorate([
     (0, common_1.Get)('hermanas/resumen'),
     (0, permisos_decorator_1.Permisos)('ver_inventario'),
@@ -148,7 +156,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('conteos/iniciar/:sucursal_id'),
     (0, permisos_decorator_1.Permisos)('editar_inventario'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
@@ -157,7 +165,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('conteos/:conteo_id/cerrar'),
     (0, permisos_decorator_1.Permisos)('editar_inventario'),
-    __param(0, (0, common_1.Param)('conteo_id')),
+    __param(0, (0, common_1.Param)('conteo_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -170,8 +178,10 @@ __decorate([
     (0, permisos_decorator_1.Permisos)('ver_inventario'),
     __param(0, (0, common_1.Param)('sucursal_id')),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, common_1.Query)('page')),
+    __param(3, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String, String]),
     __metadata("design:returntype", Promise)
 ], InventarioController.prototype, "movimientos", null);
 __decorate([
@@ -187,9 +197,10 @@ __decorate([
     (0, common_1.Get)('producto-ingredientes/:producto_id'),
     (0, permisos_decorator_1.Permisos)('ver_inventario', 'editar_inventario'),
     __param(0, (0, common_1.Param)('producto_id')),
-    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Query)('tipo_entidad')),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], InventarioController.prototype, "recetaProducto", null);
 __decorate([
@@ -217,8 +228,10 @@ __decorate([
     (0, permisos_decorator_1.Permisos)('ver_inventario'),
     __param(0, (0, common_1.Param)('sucursal_id')),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload,
+        paginacion_dto_1.PaginacionQueryDto]),
     __metadata("design:returntype", Promise)
 ], InventarioController.prototype, "listar", null);
 __decorate([
@@ -234,7 +247,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, permisos_decorator_1.Permisos)('editar_inventario'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),

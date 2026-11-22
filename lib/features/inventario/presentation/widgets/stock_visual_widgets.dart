@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 
 enum StockEstado { ok, bajo, agotado, soloCosto, sinReceta }
 
@@ -16,18 +16,19 @@ StockEstado stockEstadoDesde({
   return StockEstado.ok;
 }
 
+/// Colores de riesgo (semánticos; UI neutra alrededor).
 Color colorStockEstado(StockEstado e) {
   switch (e) {
     case StockEstado.ok:
-      return ColoresFoody.exito;
+      return AnaliticaTokens.inventario;
     case StockEstado.bajo:
-      return const Color(0xFFFF9800);
+      return const Color(0xFFD97706); // ámbar
     case StockEstado.agotado:
-      return ColoresFoody.error;
+      return AnaliticaTokens.alertas;
     case StockEstado.soloCosto:
-      return Colors.brown.shade400;
+      return AnaliticaTokens.inkMuted;
     case StockEstado.sinReceta:
-      return Colors.grey;
+      return AnaliticaTokens.inkSoft;
   }
 }
 
@@ -46,7 +47,6 @@ String etiquetaStockEstado(StockEstado e) {
   }
 }
 
-/// Badge compacto de estado de inventario.
 class StockBadge extends StatelessWidget {
   const StockBadge({
     super.key,
@@ -63,12 +63,12 @@ class StockBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compacto ? 6 : 8,
-        vertical: compacto ? 2 : 4,
+        vertical: compacto ? 2 : 3,
       ),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -81,7 +81,7 @@ class StockBadge extends StatelessWidget {
                     : estado == StockEstado.soloCosto
                         ? Icons.payments_outlined
                         : Icons.inventory_2_outlined,
-            size: compacto ? 12 : 14,
+            size: compacto ? 12 : 13,
             color: color,
           ),
           if (!compacto) ...[
@@ -101,14 +101,13 @@ class StockBadge extends StatelessWidget {
   }
 }
 
-/// Barra de stock vs mínimo.
 class StockBarra extends StatelessWidget {
   const StockBarra({
     super.key,
     required this.stock,
     required this.minimo,
     required this.unidad,
-    this.alto = 6,
+    this.alto = 5,
   });
 
   final num stock;
@@ -127,18 +126,21 @@ class StockBarra extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(3),
           child: LinearProgressIndicator(
             value: pct,
             minHeight: alto,
-            backgroundColor: Colors.grey.shade200,
+            backgroundColor: AnaliticaTokens.borderSoft,
             color: color,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           'Quedan ${_fmt(stock)} $unidad · mín. ${_fmt(minimo)}',
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+          style: const TextStyle(
+            fontSize: 11,
+            color: AnaliticaTokens.inkSoft,
+          ),
         ),
       ],
     );
@@ -150,7 +152,7 @@ class StockBarra extends StatelessWidget {
   }
 }
 
-/// Banner superior con resumen de alertas de inventario.
+/// Banner compacto de alertas (mantiene color de riesgo).
 class StockAlertaBanner extends StatelessWidget {
   const StockAlertaBanner({
     super.key,
@@ -168,47 +170,59 @@ class StockAlertaBanner extends StatelessWidget {
     if (agotados == 0 && bajos == 0) return const SizedBox.shrink();
 
     final severo = agotados > 0;
-    final color = severo ? ColoresFoody.error : const Color(0xFFFF9800);
+    final color = severo ? AnaliticaTokens.alertas : const Color(0xFFD97706);
     final partes = <String>[];
     if (agotados > 0) partes.add('$agotados agotado${agotados > 1 ? 's' : ''}');
     if (bajos > 0) partes.add('$bajos bajo mínimo');
 
-    return Material(
-      color: color.withValues(alpha: 0.1),
-      child: InkWell(
-        onTap: onVerBajos,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            children: [
-              Icon(
-                severo ? Icons.inventory_outlined : Icons.warning_amber,
-                color: color,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Alertas de inventario',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: color,
-                        fontSize: 13,
-                      ),
-                    ),
-                    Text(
-                      '${partes.join(' · ')}. '
-                      'Los platos con receta no se pueden vender sin stock.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
-                    ),
-                  ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Material(
+        color: AnaliticaTokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onVerBajos,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  severo ? Icons.inventory_2_outlined : Icons.warning_amber,
+                  color: color,
+                  size: 18,
                 ),
-              ),
-              if (onVerBajos != null)
-                Icon(Icons.chevron_right, color: color),
-            ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Alertas de inventario',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: color,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      Text(
+                        partes.join(' · '),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AnaliticaTokens.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onVerBajos != null)
+                  Icon(Icons.chevron_right, size: 18, color: color),
+              ],
+            ),
           ),
         ),
       ),
@@ -216,7 +230,6 @@ class StockAlertaBanner extends StatelessWidget {
   }
 }
 
-/// Línea bajo un insumo en receta: cuánto descuenta y cuánto queda.
 class StockLineaReceta extends StatelessWidget {
   const StockLineaReceta({
     super.key,
@@ -238,13 +251,13 @@ class StockLineaReceta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!descontarStock) {
-      return Row(
+      return const Row(
         children: [
-          Icon(Icons.payments_outlined, size: 14, color: Colors.brown.shade400),
-          const SizedBox(width: 4),
+          Icon(Icons.payments_outlined, size: 14, color: AnaliticaTokens.inkMuted),
+          SizedBox(width: 4),
           Text(
             'Solo costo · no descuenta inventario',
-            style: TextStyle(fontSize: 11, color: Colors.brown.shade600),
+            style: TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
           ),
         ],
       );
@@ -262,14 +275,18 @@ class StockLineaReceta extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.remove_circle_outline, size: 14, color: ColoresFoody.primario),
+            const Icon(
+              Icons.remove_circle_outline,
+              size: 14,
+              color: AnaliticaTokens.ventas,
+            ),
             const SizedBox(width: 4),
             Text(
               'Venta descuenta ${_fmt(cantidadReceta)} $unidadReceta',
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: ColoresFoody.primario,
+                color: AnaliticaTokens.inkMuted,
               ),
             ),
           ],
@@ -299,7 +316,6 @@ class StockLineaReceta extends StatelessWidget {
   }
 }
 
-/// Tarjeta de impacto de stock al vender 1 unidad (admin costos).
 class StockImpactoProductoCard extends StatelessWidget {
   const StockImpactoProductoCard({
     super.key,
@@ -317,116 +333,133 @@ class StockImpactoProductoCard extends StatelessWidget {
         .cast<Map<String, dynamic>>();
     final incluidos = (impacto['incluidos'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
-    final color = puede ? ColoresFoody.exito : ColoresFoody.error;
+    final color =
+        puede ? AnaliticaTokens.inventario : AnaliticaTokens.alertas;
+    final hayDetalle =
+        faltas.isNotEmpty || incluidos.isNotEmpty || ingredientes.isNotEmpty;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: AnaliticaTokens.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                puede ? Icons.check_circle_outline : Icons.block,
-                color: color,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: !puede,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          leading: Icon(
+            puede ? Icons.check_circle_outline : Icons.block,
+            color: color,
+            size: 20,
+          ),
+          title: Text(
+            puede ? 'Stock OK · 1 venta' : 'Sin stock suficiente',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: color,
+              fontSize: 13,
+            ),
+          ),
+          subtitle: hayDetalle
+              ? Text(
+                  puede ? 'Ver consumo' : 'Ver faltantes',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AnaliticaTokens.inkSoft,
+                  ),
+                )
+              : null,
+          children: [
+            if (incluidos.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
-                  puede
-                      ? 'Stock OK para vender 1 unidad'
-                      : 'No se puede vender: falta inventario',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: color,
+                  'Incluye: '
+                  '${incluidos.map((i) => '${i['cantidad']}× ${i['nombre']}').join(', ')}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AnaliticaTokens.inkMuted,
                   ),
                 ),
               ),
-            ],
-          ),
-          if (incluidos.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Incluye (también descuenta stock): '
-              '${incluidos.map((i) => '${i['cantidad']}× ${i['nombre']}').join(', ')}',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade800),
-            ),
-          ],
-          if (faltas.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...faltas.map((f) {
-              return Text(
-                '• ${f['nombre']}: necesitas ${f['necesita']} ${f['unidad']}, '
-                'hay ${f['disponible']}',
-                style: TextStyle(fontSize: 12, color: ColoresFoody.error),
-              );
-            }),
-          ] else if (ingredientes.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...ingredientes.take(4).map((ing) {
-              final estado = stockEstadoDesde(
-                stock: num.tryParse('${ing['disponible']}') ?? 0,
-                minimo: num.tryParse('${ing['minimo']}') ?? 0,
-                descontarStock: ing['descontar_stock'] != false,
-              );
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    StockBadge(estado: estado, compacto: true),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        '${ing['nombre']}: −${ing['necesita']} ${ing['unidad']} '
-                        '(quedan ${ing['disponible']})',
-                        style: const TextStyle(fontSize: 11),
+            if (faltas.isNotEmpty)
+              ...faltas.map((f) {
+                return Text(
+                  '• ${f['nombre']}: necesitas ${f['necesita']} ${f['unidad']}, '
+                  'hay ${f['disponible']}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AnaliticaTokens.alertas,
+                  ),
+                );
+              })
+            else if (ingredientes.isNotEmpty)
+              ...ingredientes.take(4).map((ing) {
+                final estado = stockEstadoDesde(
+                  stock: num.tryParse('${ing['disponible']}') ?? 0,
+                  minimo: num.tryParse('${ing['minimo']}') ?? 0,
+                  descontarStock: ing['descontar_stock'] != false,
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      StockBadge(estado: estado, compacto: true),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '${ing['nombre']}: −${ing['necesita']} ${ing['unidad']}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            }),
+                    ],
+                  ),
+                );
+              }),
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Aviso de impacto de ítems incluidos en el stock.
 class StockAvisoIncluidos extends StatelessWidget {
   const StockAvisoIncluidos({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: ColoresFoody.acento.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: ColoresFoody.primario.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline, size: 18, color: ColoresFoody.primario),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Cada ítem incluido también descuenta su receta al vender. '
-              'Si un incluido no tiene stock (ej. queso en rosquetes), '
-              'el plato completo no se puede pedir.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
-            ),
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AnaliticaTokens.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AnaliticaTokens.border),
+        ),
+        child: const ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: EdgeInsets.fromLTRB(12, 0, 12, 10),
+          leading: Icon(
+            Icons.info_outline,
+            size: 18,
+            color: AnaliticaTokens.inkMuted,
           ),
-        ],
+          title: Text(
+            'Incluidos también descuentan stock',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          children: [
+            Text(
+              'Si un incluido no tiene stock, el plato completo no se puede pedir.',
+              style: TextStyle(fontSize: 12, color: AnaliticaTokens.inkMuted),
+            ),
+          ],
+        ),
       ),
     );
   }

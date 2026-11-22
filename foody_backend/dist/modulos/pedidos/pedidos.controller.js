@@ -26,8 +26,12 @@ const cambiar_estado_pedido_dto_1 = require("./dto/cambiar-estado-pedido.dto");
 const aplicar_descuento_dto_1 = require("./dto/aplicar-descuento.dto");
 const crear_pedido_dto_1 = require("./dto/crear-pedido.dto");
 const agregar_items_pedido_dto_1 = require("./dto/agregar-items-pedido.dto");
+const motivo_pedido_dto_1 = require("./dto/motivo-pedido.dto");
+const actualizar_item_pedido_dto_1 = require("./dto/actualizar-item-pedido.dto");
 const cobrar_mesa_dto_1 = require("./dto/cobrar-mesa.dto");
 const actualizar_comensal_dto_1 = require("./dto/actualizar-comensal.dto");
+const aprobar_pedido_mesa_dto_1 = require("./dto/aprobar-pedido-mesa.dto");
+const listar_pedidos_query_dto_1 = require("./dto/listar-pedidos-query.dto");
 const pedidos_service_1 = require("./pedidos.service");
 let PedidosController = class PedidosController {
     pedidosService;
@@ -36,11 +40,30 @@ let PedidosController = class PedidosController {
         this.pedidosService = pedidosService;
         this.sucursalScope = sucursalScope;
     }
-    async listar(usuario, sucursalId, soloActivos) {
-        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+    async listar(usuario, query) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
+        const paginar = query.page != null;
         return this.pedidosService.listarPorSucursal(id, {
-            soloActivos: soloActivos !== 'false',
+            soloActivos: query.solo_activos !== false,
+            paginar,
+            page: paginar ? query.page : undefined,
+            limite: query.limit,
+            meseraId: query.mesera_id,
         });
+    }
+    async listarCerradosHoy(usuario, query) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
+        const paginar = query.page != null;
+        return this.pedidosService.listarCerradosHoy(id, {
+            meseraId: query.mesera_id,
+            paginar,
+            page: paginar ? query.page : undefined,
+            limite: query.limit,
+        });
+    }
+    async detalle(pedidoId, usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.pedidosService.obtenerDetalleAdmin(pedidoId, id);
     }
     async listarPorMesa(mesaId, usuario, sucursalId) {
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
@@ -48,14 +71,10 @@ let PedidosController = class PedidosController {
     }
     async cobrarMesa(mesaId, usuario, dto, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
-        return this.pedidosService.cobrarCuentaMesa(id, mesaId, usuario.sub, dto);
+        return this.pedidosService.cobrarCuentaMesa(id, mesaId, usuario.sub, dto, usuario.rol);
     }
     async crearStaff(dto, usuario) {
-        const sucursalId = await this.sucursalScope.resolverEscritura(usuario, dto.sucursal_id ?? usuario.sucursal_id);
-        if (!sucursalId) {
-            throw new common_1.BadRequestException('sucursal_id es obligatorio');
-        }
-        return this.pedidosService.crear({ ...dto, sucursal_id: sucursalId }, { creadoPorStaff: true, usuarioId: usuario.sub, rol: usuario.rol });
+        return this.pedidosService.crearStaff(usuario, dto);
     }
     async agregarItems(pedidoId, dto, usuario, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -64,6 +83,10 @@ let PedidosController = class PedidosController {
             usuarioId: usuario.sub,
             rol: usuario.rol,
         });
+    }
+    async actualizarItem(pedidoId, itemId, dto, usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.pedidosService.actualizarItemPedido(pedidoId, itemId, id, usuario.sub, dto);
     }
     async eliminarItem(pedidoId, itemId, usuario, body, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -79,15 +102,18 @@ let PedidosController = class PedidosController {
     }
     async cobrarPedido(pedidoId, usuario, dto, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
-        return this.pedidosService.cobrarPedidoCaja(pedidoId, id, usuario.sub, dto);
+        return this.pedidosService.cobrarPedidoCaja(pedidoId, id, usuario.sub, dto, usuario.rol);
     }
     async actualizarComensal(pedidoId, itemId, usuario, dto, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
         return this.pedidosService.actualizarComensalItem(pedidoId, itemId, id, dto.comensal_etiqueta ?? null);
     }
-    async aprobar(pedidoId, usuario, sucursalId) {
+    async aprobar(pedidoId, usuario, body, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
-        return this.pedidosService.aprobarMesa(pedidoId, id, usuario.sub);
+        return this.pedidosService.aprobarMesa(pedidoId, id, usuario.sub, {
+            meseraId: body?.mesera_id,
+            rolLlamador: usuario.rol,
+        });
     }
     async rechazar(pedidoId, usuario, body, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -99,16 +125,36 @@ __decorate([
     (0, common_1.Get)(),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
-    __param(1, (0, common_1.Query)('sucursal_id')),
-    __param(2, (0, common_1.Query)('solo_activos')),
+    __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String]),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
+        listar_pedidos_query_dto_1.ListarPedidosQueryDto]),
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "listar", null);
 __decorate([
+    (0, common_1.Get)('cerrados-hoy'),
+    (0, permisos_decorator_1.Permisos)('ver_pedidos'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
+        listar_pedidos_query_dto_1.ListarCerradosHoyQueryDto]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "listarCerradosHoy", null);
+__decorate([
+    (0, common_1.Get)(':id/detalle'),
+    (0, permisos_decorator_1.Permisos)('ver_pedidos'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "detalle", null);
+__decorate([
     (0, common_1.Get)('mesa/:mesaId'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
-    __param(0, (0, common_1.Param)('mesaId')),
+    __param(0, (0, common_1.Param)('mesaId', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
@@ -117,8 +163,8 @@ __decorate([
 ], PedidosController.prototype, "listarPorMesa", null);
 __decorate([
     (0, common_1.Post)('mesa/:mesaId/cobrar'),
-    (0, permisos_decorator_1.Permisos)('ver_pedidos', 'crear_pedido'),
-    __param(0, (0, common_1.Param)('mesaId')),
+    (0, permisos_decorator_1.Permisos)('cobrar_pedido'),
+    __param(0, (0, common_1.Param)('mesaId', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Body)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
@@ -129,6 +175,7 @@ __decorate([
 ], PedidosController.prototype, "cobrarMesa", null);
 __decorate([
     (0, common_1.Post)('staff'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
     (0, permisos_decorator_1.Permisos)('crear_pedido'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -140,7 +187,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/items'),
     (0, permisos_decorator_1.Permisos)('crear_pedido'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
@@ -150,21 +197,35 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "agregarItems", null);
 __decorate([
+    (0, common_1.Patch)(':id/items/:itemId'),
+    (0, permisos_decorator_1.Permisos)('crear_pedido'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('itemId', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(4, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, actualizar_item_pedido_dto_1.ActualizarItemPedidoDto,
+        jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "actualizarItem", null);
+__decorate([
     (0, common_1.Delete)(':id/items/:itemId'),
     (0, permisos_decorator_1.Permisos)('crear_pedido'),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, common_1.Param)('itemId')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('itemId', common_1.ParseUUIDPipe)),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(3, (0, common_1.Body)()),
     __param(4, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, jwt_payload_1.JwtPayload, Object, String]),
+    __metadata("design:paramtypes", [String, String, jwt_payload_1.JwtPayload,
+        motivo_pedido_dto_1.EliminarItemPedidoDto, String]),
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "eliminarItem", null);
 __decorate([
     (0, common_1.Patch)(':id/estado'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Body)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
@@ -176,7 +237,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)(':id/descuento'),
     (0, permisos_decorator_1.Permisos)('aplicar_descuento'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Body)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
@@ -187,8 +248,8 @@ __decorate([
 ], PedidosController.prototype, "aplicarDescuento", null);
 __decorate([
     (0, common_1.Post)(':id/cobrar'),
-    (0, permisos_decorator_1.Permisos)('crear_pedido', 'ver_pedidos'),
-    __param(0, (0, common_1.Param)('id')),
+    (0, permisos_decorator_1.Permisos)('cobrar_pedido'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Body)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
@@ -200,8 +261,8 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id/items/:itemId/comensal'),
     (0, permisos_decorator_1.Permisos)('crear_pedido', 'ver_pedidos'),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, common_1.Param)('itemId')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('itemId', common_1.ParseUUIDPipe)),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(3, (0, common_1.Body)()),
     __param(4, (0, common_1.Query)('sucursal_id')),
@@ -213,22 +274,25 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id/aprobar'),
     (0, permisos_decorator_1.Permisos)('aprobar_pedido_mesa'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
-    __param(2, (0, common_1.Query)('sucursal_id')),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String]),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload,
+        aprobar_pedido_mesa_dto_1.AprobarPedidoMesaDto, String]),
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "aprobar", null);
 __decorate([
     (0, common_1.Patch)(':id/rechazar'),
     (0, permisos_decorator_1.Permisos)('aprobar_pedido_mesa'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Body)()),
     __param(3, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, Object, String]),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload,
+        motivo_pedido_dto_1.RechazarPedidoMesaDto, String]),
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "rechazar", null);
 exports.PedidosController = PedidosController = __decorate([

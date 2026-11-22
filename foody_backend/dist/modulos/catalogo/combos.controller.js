@@ -24,6 +24,7 @@ const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.gu
 const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const catalogo_service_1 = require("./catalogo.service");
 const crear_combo_dto_1 = require("./dto/crear-combo.dto");
+const extras_mutacion_dto_1 = require("./dto/extras-mutacion.dto");
 let CombosController = class CombosController {
     catalogo;
     sucursalScope;
@@ -66,11 +67,12 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id/disponibilidad'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, extras_mutacion_dto_1.CambiarDisponibilidadDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CombosController.prototype, "disponibilidad", null);
 exports.CombosController = CombosController = __decorate([

@@ -15,6 +15,22 @@ class CosteoRepository {
     return _mapa(r.data);
   }
 
+  Future<Map<String, dynamic>> actualizarMargenesSucursal(
+    String sucursalId, {
+    double? margenObjetivoDefault,
+    double? umbralAlertaMargen,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/sucursales/margenes/$sucursalId',
+      data: {
+        if (margenObjetivoDefault != null)
+          'margen_objetivo_default': margenObjetivoDefault,
+        if (umbralAlertaMargen != null) 'umbral_alerta_margen': umbralAlertaMargen,
+      },
+    );
+    return _mapa(r.data);
+  }
+
   Future<Map<String, dynamic>> recalcular(String sucursalId) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/costeo/recalcular/$sucursalId',
@@ -26,12 +42,14 @@ class CosteoRepository {
     required String productoId,
     required String sucursalId,
     int cantidad = 1,
+    String tipoEntidad = 'producto',
   }) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/costeo/productos/$productoId/impacto-stock',
       queryParameters: {
         'sucursal_id': sucursalId,
         'cantidad': cantidad,
+        if (tipoEntidad != 'producto') 'tipo_entidad': tipoEntidad,
       },
     );
     return _mapa(r.data);
@@ -39,10 +57,25 @@ class CosteoRepository {
 
   Future<Map<String, dynamic>> recalcularProducto(
     String productoId,
+    String sucursalId, {
+    String tipoEntidad = 'producto',
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/costeo/productos/$productoId/recalcular',
+      queryParameters: {
+        'sucursal_id': sucursalId,
+        if (tipoEntidad != 'producto') 'tipo_entidad': tipoEntidad,
+      },
+    );
+    return _mapa(r.data);
+  }
+
+  Future<Map<String, dynamic>> recalcularCombo(
+    String comboId,
     String sucursalId,
   ) async {
     final r = await _dio.post<Map<String, dynamic>>(
-      '/costeo/productos/$productoId/recalcular',
+      '/costeo/combos/$comboId/recalcular',
       queryParameters: {'sucursal_id': sucursalId},
     );
     return _mapa(r.data);
@@ -62,6 +95,7 @@ class CosteoRepository {
     required String unidadResultado,
     required List<Map<String, dynamic>> items,
     double margenError = 0.05,
+    bool usaProduccionLote = false,
   }) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/costeo/subrecetas',
@@ -71,6 +105,7 @@ class CosteoRepository {
         'cantidad_resultado': cantidadResultado,
         'unidad_resultado': unidadResultado,
         'margen_error': margenError,
+        'usa_produccion_lote': usaProduccionLote,
         'items': items.map(_itemSubrecetaPayload).toList(),
       },
     );
@@ -96,6 +131,7 @@ class CosteoRepository {
     required String unidadResultado,
     required List<Map<String, dynamic>> items,
     double margenError = 0.05,
+    bool usaProduccionLote = false,
   }) async {
     final r = await _dio.patch<Map<String, dynamic>>(
       '/costeo/subrecetas/$recetaId',
@@ -105,6 +141,7 @@ class CosteoRepository {
         'cantidad_resultado': cantidadResultado,
         'unidad_resultado': unidadResultado,
         'margen_error': margenError,
+        'usa_produccion_lote': usaProduccionLote,
         'items': items.map(_itemSubrecetaPayload).toList(),
       },
     );
@@ -131,6 +168,47 @@ class CosteoRepository {
     final r = await _dio.post<Map<String, dynamic>>(
       '/costeo/subrecetas/$recetaId/recalcular',
       queryParameters: {'sucursal_id': sucursalId},
+    );
+    return _mapa(r.data);
+  }
+
+  Future<Map<String, dynamic>> registrarProduccionLote({
+    required String sucursalId,
+    required String recetaId,
+    required double cantidadProducida,
+    String? observaciones,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/costeo/producciones',
+      data: {
+        'sucursal_id': sucursalId,
+        'receta_id': recetaId,
+        'cantidad_producida': cantidadProducida,
+        if (observaciones != null && observaciones.isNotEmpty)
+          'observaciones': observaciones,
+      },
+    );
+    return _mapa(r.data);
+  }
+
+  Future<List<Map<String, dynamic>>> listarProducciones(
+    String sucursalId, {
+    String? recetaId,
+  }) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/costeo/producciones/$sucursalId',
+      queryParameters: recetaId != null ? {'receta_id': recetaId} : null,
+    );
+    return _lista(r.data);
+  }
+
+  Future<Map<String, dynamic>> simuladorPopularidad(
+    String sucursalId, {
+    String preset = '30d',
+  }) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/costeo/popularidad/$sucursalId',
+      queryParameters: {'preset': preset},
     );
     return _mapa(r.data);
   }

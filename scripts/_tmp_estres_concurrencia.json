@@ -1,0 +1,19 @@
+﻿{
+    "avisos":  1,
+    "hallazgos":  [
+                      "OK|API /salud OK",
+                      "OK|Producto race: porcio de queso (d689d653-dc6c-4614-8569-c57daa8feb92)",
+                      "OK|Multi-tenant GET n=60 ok=60 fail=0 wall=149ms",
+                      "OK|dashboard Centro=200 Norte=200 (admin cadena puede ver ambas)",
+                      "OK|Idempotency 2x misma key â†’ pedidos unicos=1 (esperado 1)",
+                      "OK|Pedido race estado id=72981dd5-1084-496f-a5ab-e12cef540609 estado_inicial=pendiente",
+                      "OK|Doble en_cocina concurrente: ok=2 fail=0 (esperado ok=1|2; fail solo si error real)",
+                      "AVISO|Caja ya abierta: race abrir omitida (no cerrar turno demo automaticamente)",
+                      "OK|Inventario 2 PATCH concurrentes: ok_http=2 stock 47051 -\u003e 47053 (targets +1/+2; final debe ser uno de ellos)",
+                      "OK|Serializacion: last-writer-wins o FOR UPDATE; sin valor intermedio corrupto",
+                      "OK|Sostenido 160 GET /salud: ok=160 fail=0 wall=2274ms rps=70.3 p50=2 p95=5",
+                      "OK|Pico 80 conc (menu+salud) n=80: ok=80 fail=0 wall=118ms rps=675 p50=1 p95=3"
+                  ],
+    "fallos":  0,
+    "fecha":  "2026-08-06T03:43:53.1509215-05:00"
+}

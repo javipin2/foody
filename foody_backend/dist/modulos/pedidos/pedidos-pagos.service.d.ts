@@ -9,21 +9,20 @@ export declare class PedidosPagosService {
     private readonly cuentaMesa;
     private readonly realtime;
     constructor(database: DatabaseService, cajaAuditoria: PedidosCajaAuditoriaService, cuentaMesa: PedidosCuentaMesaService, realtime: RealtimeBroadcastService);
-    cobrarCuentaMesa(sucursalId: string, mesaId: string, usuarioId: string, dto?: CobrarMesaDto): Promise<{
+    cobrarCuentaMesa(sucursalId: string, mesaId: string, usuarioId: string, dto?: CobrarMesaDto, rol?: string | null): Promise<Record<string, unknown> | {
         mesa_id: string;
         mesa_nombre: string;
         total_cobrado: number;
         propina: number;
         pagos: PagoLineaDto[];
         saldo_restante: number;
-        pedidos_cobrados: {
+        pedidos_cobrados: Array<{
             id: string;
             numero_pedido: string;
-            total: number;
-        }[];
+        }>;
         parcial: boolean;
     }>;
-    cobrarPedidoCaja(sucursalId: string, pedidoId: string, usuarioId: string, dto?: CobrarMesaDto): Promise<{
+    cobrarPedidoCaja(sucursalId: string, pedidoId: string, usuarioId: string, dto?: CobrarMesaDto, rol?: string | null): Promise<Record<string, unknown> | {
         pedido_id: string;
         numero_pedido: string;
         total_cobrado: number;
@@ -34,6 +33,10 @@ export declare class PedidosPagosService {
         pagado: boolean;
         mesa_id: string | null;
     }>;
+    private exigirCocinaCompletaParaPagado;
+    private leerCobroIdempotente;
+    private leerCobroIdempotenteEnTx;
+    private guardarCobroIdempotente;
     private calcularMontoObjetivo;
     private normalizarPagos;
     private saldoPendientePedidos;

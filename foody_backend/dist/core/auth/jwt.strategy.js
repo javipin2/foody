@@ -29,7 +29,7 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
         if (!payload?.sub) {
             throw new common_1.UnauthorizedException('Token inválido');
         }
-        const permisos = await this.authService.permisosDelRol(payload.rol);
+        const permisos = await this.authService.permisosEfectivos(payload.sub, payload.rol);
         return { ...payload, permisos };
     }
 };

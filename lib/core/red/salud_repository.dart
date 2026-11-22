@@ -29,4 +29,18 @@ class SaludRepository {
       detalle: d['detalle'] as String?,
     );
   }
+
+  /// INFRA-EXT-DOWN: probe rápido de Nest (`GET /salud`).
+  Future<bool> apiViva({Duration timeout = const Duration(seconds: 4)}) async {
+    try {
+      final resp = await _dio.get<Map<String, dynamic>>(
+        '/salud',
+        options: Options(receiveTimeout: timeout, sendTimeout: timeout),
+      );
+      final api = RespuestaApi<dynamic>.fromJson(resp.data ?? {}, (d) => d);
+      return api.exito;
+    } catch (_) {
+      return false;
+    }
+  }
 }

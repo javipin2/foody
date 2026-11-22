@@ -44,8 +44,32 @@ export declare class WompiService {
         status: string;
         reference: string;
         payment_link_id: string | null;
+        payment_source_id: string | null;
         payment_method_type: string | null;
         amount_in_cents: number;
+        customer_email: string | null;
+    }>;
+    private secretoIntegridad;
+    firmaIntegridad(referencia: string, montoCentavos: number, moneda?: string): string;
+    crearTransaccionRecurrente(input: {
+        referenciaInterna: string;
+        montoCentavos: number;
+        customerEmail: string;
+        paymentSourceId: string;
+        redirectUrl?: string;
+    }): Promise<{
+        id: string;
+        status: string;
+        reference: string;
+    }>;
+    consultarFuentePago(paymentSourceId: string): Promise<{
+        id: string;
+        status: string;
+        type: string | null;
+        public_data?: {
+            last_four?: string;
+            brand?: string;
+        };
     }>;
     validarFirmaEvento(evento: WompiEvento, checksumHeader?: string): boolean;
     generarReferenciaInterna(): string;

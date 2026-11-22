@@ -2,6 +2,8 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -12,6 +14,14 @@ import { RegistroRestauranteDto } from './dto/registro-restaurante.dto';
 import { PlanFeaturesService } from './plan-features.service';
 import { OnboardingRestauranteService } from '../onboarding/onboarding-restaurante.service';
 import { SupabaseAuthService } from './supabase-auth.service';
+import { esRolCocina } from './roles-food';
+import { RealtimeBroadcastService } from '../realtime/realtime-broadcast.service';
+import {
+  bcryptRoundsRegistro,
+  registroCupoDiario,
+  registroMaxPorMinuto,
+  registroSelfServiceAbierto,
+} from './registro-antispike';
 
 interface UsuarioFila {
   id: string;
@@ -22,6 +32,8 @@ interface UsuarioFila {
   restaurante_id: string | null;
   activo: boolean;
   hash_contrasena: string | null;
+  cocina_id?: string | null;
+  token_version?: number;
 }
 
 @Injectable()
@@ -32,11 +44,43 @@ export class AuthService {
     private readonly planFeatures: PlanFeaturesService,
     private readonly onboarding: OnboardingRestauranteService,
     private readonly supabaseAuth: SupabaseAuthService,
+    private readonly realtime: RealtimeBroadcastService,
   ) {}
+
+  /** Topics staff opacos (RT-SEC-01) — Flutter los usa en FoodyRealtime. */
+  canalesRealtimeParaUsuario(
+    usuario: {
+      id: string;
+      rol: string;
+      sucursal_id: string | null;
+      restaurante_id: string | null;
+      cocina_id?: string | null;
+    },
+    sucursalOverride?: string | null,
+  ): Record<string, string> {
+    const canales: Record<string, string> = {};
+    const sucursalId = sucursalOverride ?? usuario.sucursal_id;
+    if (sucursalId) {
+      canales.sucursal = this.realtime.topicSucursal(sucursalId);
+    }
+    if (usuario.restaurante_id) {
+      canales.restaurante = this.realtime.topicRestaurante(
+        usuario.restaurante_id,
+      );
+    }
+    if (esRolCocina(usuario.rol) && usuario.cocina_id) {
+      canales.cocina = this.realtime.topicCocina(usuario.cocina_id);
+    }
+    if (usuario.rol === 'domiciliario') {
+      canales.domiciliario = this.realtime.topicDomiciliarioPlanta(usuario.id);
+    }
+    return canales;
+  }
 
   async login(email: string, contrasena: string) {
     const usuario = await this.database.consultarUno<UsuarioFila>(
-      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena
+      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena, cocina_id,
+              COALESCE(token_version, 1) AS token_version
        FROM usuarios WHERE LOWER(email) = LOWER($1)`,
       [email.trim()],
     );
@@ -65,7 +109,8 @@ export class AuthService {
     const email = supabaseUser.email!.trim().toLowerCase();
 
     const usuario = await this.database.consultarUno<UsuarioFila>(
-      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena
+      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena, cocina_id,
+              COALESCE(token_version, 1) AS token_version
        FROM usuarios WHERE LOWER(email) = $1`,
       [email],
     );
@@ -99,7 +144,78 @@ export class AuthService {
     return this.emitirSesionStaff(usuario);
   }
 
+  async estadoRegistroRestaurante() {
+    const abierto = registroSelfServiceAbierto();
+    const cupo = registroCupoDiario();
+    const maxMin = registroMaxPorMinuto();
+    const usadosHoy = await this.contarSelfServiceHoy();
+    const usadosMinuto = await this.contarSelfServiceUltimoMinuto();
+    const cupoAgotado = cupo > 0 && usadosHoy >= cupo;
+    const minutoAgotado = maxMin > 0 && usadosMinuto >= maxMin;
+    const acepta = abierto && !cupoAgotado && !minutoAgotado;
+    let mensaje =
+      'Puedes crear tu restaurante ahora. Empezamos con el plan gratis.';
+    if (!abierto) {
+      mensaje =
+        'El registro está temporalmente cerrado. Déjanos tu interés más tarde o escribe a soporte Foody.';
+    } else if (cupoAgotado) {
+      mensaje =
+        'Cupo diario de altas agotado. Vuelve mañana — protegemos a los restaurantes que ya operan.';
+    } else if (minutoAgotado) {
+      mensaje =
+        'Hay mucha demanda ahora. Espera un minuto e inténtalo de nuevo.';
+    }
+    return {
+      abierto: acepta,
+      registro_habilitado: abierto,
+      cupo_diario: cupo,
+      usados_hoy: usadosHoy,
+      max_por_minuto: maxMin,
+      usados_minuto: usadosMinuto,
+      mensaje,
+    };
+  }
+
+  private async contarSelfServiceHoy(): Promise<number> {
+    const fila = await this.database.consultarUno<{ total: string }>(
+      `SELECT COUNT(*)::text AS total
+       FROM restaurantes
+       WHERE origen = 'self_service'
+         AND created_at >= (timezone('America/Bogota', now()))::date
+             AT TIME ZONE 'America/Bogota'`,
+    );
+    return Number(fila?.total ?? 0);
+  }
+
+  private async contarSelfServiceUltimoMinuto(): Promise<number> {
+    const fila = await this.database.consultarUno<{ total: string }>(
+      `SELECT COUNT(*)::text AS total
+       FROM restaurantes
+       WHERE origen = 'self_service'
+         AND created_at >= now() - interval '1 minute'`,
+    );
+    return Number(fila?.total ?? 0);
+  }
+
+  private async exigirCupoRegistroSelfService(): Promise<void> {
+    const estado = await this.estadoRegistroRestaurante();
+    if (estado.abierto) return;
+    const codigo = !estado.registro_habilitado
+      ? 'REGISTRO_CERRADO'
+      : estado.cupo_diario > 0 && estado.usados_hoy >= estado.cupo_diario
+        ? 'REGISTRO_CUPO'
+        : 'REGISTRO_RATE';
+    throw new HttpException(
+      { error: codigo, mensaje: estado.mensaje },
+      codigo === 'REGISTRO_RATE'
+        ? HttpStatus.TOO_MANY_REQUESTS
+        : HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+
   async registrarRestaurante(dto: RegistroRestauranteDto) {
+    await this.exigirCupoRegistroSelfService();
+
     const proveedor = dto.proveedor_auth ?? 'correo';
     let email = dto.admin_email.trim().toLowerCase();
     let proveedorId: string | null = null;
@@ -120,7 +236,7 @@ export class AuthService {
       if (!dto.contrasena || dto.contrasena.length < 6) {
         throw new BadRequestException('La contraseña debe tener al menos 6 caracteres');
       }
-      hash = await bcrypt.hash(dto.contrasena, 10);
+      hash = await bcrypt.hash(dto.contrasena, bcryptRoundsRegistro());
     }
 
     const onboarding = await this.onboarding.crear({
@@ -140,7 +256,8 @@ export class AuthService {
     });
 
     const usuario = await this.database.consultarUno<UsuarioFila>(
-      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena
+      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena,
+              COALESCE(token_version, 1) AS token_version
        FROM usuarios WHERE id = $1`,
       [onboarding.admin_id],
     );
@@ -158,12 +275,13 @@ export class AuthService {
   }
 
   private async emitirSesionStaff(usuario: UsuarioFila) {
-    const permisos = await this.permisosDelRol(usuario.rol);
+    const permisos = await this.permisosEfectivos(usuario.id, usuario.rol);
     const dashboard = this.resolverDashboard(usuario.rol);
     const plan = await this.planFeatures.obtenerPlanRestaurante(
       usuario.restaurante_id,
     );
     const modulos = this.planFeatures.modulosDelPlan(plan);
+    const tv = Number(usuario.token_version ?? 1);
 
     const payload: JwtPayload = {
       sub: usuario.id,
@@ -173,6 +291,8 @@ export class AuthService {
       restaurante_id: usuario.restaurante_id,
       permisos,
       plan,
+      cocina_id: esRolCocina(usuario.rol) ? (usuario.cocina_id ?? null) : null,
+      tv,
     };
 
     const token = await this.jwtService.signAsync(payload);
@@ -189,12 +309,14 @@ export class AuthService {
       permisos,
       plan,
       modulos,
+      realtime_canales: this.canalesRealtimeParaUsuario(usuario),
       usuario: {
         id: usuario.id,
         nombre: usuario.nombre,
         email: usuario.email,
         sucursal_id: usuario.sucursal_id,
         restaurante_id: usuario.restaurante_id,
+        cocina_id: esRolCocina(usuario.rol) ? (usuario.cocina_id ?? null) : null,
       },
     };
   }
@@ -207,17 +329,21 @@ export class AuthService {
       ciudad_id: string | null;
       estado_cuenta: string;
       hash_contrasena: string | null;
+      token_version: number;
     }>(
-      `SELECT id, nombre, email, ciudad_id, estado_cuenta, hash_contrasena
+      `SELECT id, nombre, email, ciudad_id, estado_cuenta, hash_contrasena,
+              COALESCE(token_version, 1) AS token_version
        FROM domiciliarios_independientes WHERE LOWER(email) = LOWER($1)`,
       [email.trim()],
     );
 
-    if (!dom || dom.estado_cuenta !== 'activo') {
+    if (!dom || !dom.hash_contrasena) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
-    if (!dom.hash_contrasena) {
-      throw new UnauthorizedException('Cuenta sin contraseña configurada');
+    if (['suspendido', 'bloqueado'].includes(dom.estado_cuenta)) {
+      throw new UnauthorizedException(
+        'Tu cuenta está suspendida o bloqueada. Contacta a soporte Foody.',
+      );
     }
 
     const valida = await bcrypt.compare(contrasena, dom.hash_contrasena);
@@ -226,6 +352,7 @@ export class AuthService {
     }
 
     const permisos = ['domiciliario_independiente'];
+    const tv = Number(dom.token_version ?? 1);
     const payload: JwtPayload = {
       sub: dom.id,
       email: dom.email,
@@ -234,6 +361,7 @@ export class AuthService {
       restaurante_id: null,
       permisos,
       ciudad_id: dom.ciudad_id,
+      tv,
     };
 
     const token = await this.jwtService.signAsync(payload);
@@ -243,6 +371,10 @@ export class AuthService {
       dashboard: 'domiciliario_independiente',
       rol: 'domiciliario_independiente',
       permisos,
+      estado_cuenta: dom.estado_cuenta,
+      realtime_canales: {
+        domiciliario_indep: this.realtime.topicDomiciliarioIndep(dom.id),
+      },
       usuario: {
         id: dom.id,
         nombre: dom.nombre,
@@ -250,6 +382,26 @@ export class AuthService {
         ciudad_id: dom.ciudad_id,
       },
     };
+  }
+
+  private tokenDomiciliarioIndependiente(dom: {
+    id: string;
+    email: string;
+    ciudad_id: string | null;
+    token_version?: number;
+  }) {
+    const permisos = ['domiciliario_independiente'];
+    const payload: JwtPayload = {
+      sub: dom.id,
+      email: dom.email,
+      rol: 'domiciliario_independiente',
+      sucursal_id: null,
+      restaurante_id: null,
+      permisos,
+      ciudad_id: dom.ciudad_id,
+      tv: Number(dom.token_version ?? 1),
+    };
+    return this.jwtService.signAsync(payload);
   }
 
   async registrarDomiciliarioIndependiente(dto: RegistroDomiciliarioDto) {
@@ -261,18 +413,21 @@ export class AuthService {
       throw new BadRequestException('Ya existe una cuenta con ese correo');
     }
 
-    const hash = await bcrypt.hash(dto.contrasena, 10);
+    const hash = await bcrypt.hash(dto.contrasena, bcryptRoundsRegistro());
     const fila = await this.database.consultarUno<{
       id: string;
       nombre: string;
       email: string;
+      ciudad_id: string | null;
       estado_cuenta: string;
+      token_version: number;
     }>(
       `INSERT INTO domiciliarios_independientes (
          nombre, email, telefono, tipo_vehiculo, placa, ciudad_id,
          hash_contrasena, estado_cuenta
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente_verificacion')
-       RETURNING id, nombre, email, estado_cuenta`,
+       RETURNING id, nombre, email, ciudad_id, estado_cuenta,
+                 COALESCE(token_version, 1) AS token_version`,
       [
         dto.nombre.trim(),
         dto.email.trim().toLowerCase(),
@@ -284,34 +439,57 @@ export class AuthService {
       ],
     );
 
+    const token = await this.tokenDomiciliarioIndependiente(fila!);
+
     return {
       id: fila!.id,
+      token,
       mensaje:
-        'Registro recibido. Un administrador revisará tu cuenta antes de activarla.',
+        'Registro recibido. Sube tus documentos para que un administrador active tu cuenta.',
       estado_cuenta: fila!.estado_cuenta,
+      realtime_canales: {
+        domiciliario_indep: this.realtime.topicDomiciliarioIndep(fila!.id),
+      },
+      usuario: {
+        id: fila!.id,
+        nombre: fila!.nombre,
+        email: fila!.email,
+        ciudad_id: fila!.ciudad_id,
+      },
     };
   }
 
   async perfil(jwt: JwtPayload) {
     const usuario = await this.database.consultarUno<UsuarioFila>(
-      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo
+      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, cocina_id,
+              COALESCE(token_version, 1) AS token_version
        FROM usuarios WHERE id = $1`,
       [jwt.sub],
     );
     if (!usuario?.activo) {
       throw new UnauthorizedException('Usuario no encontrado');
     }
-    const permisos = await this.permisosDelRol(usuario.rol);
+    const permisos = await this.permisosEfectivos(usuario.id, usuario.rol);
     const plan = await this.planFeatures.obtenerPlanRestaurante(
       usuario.restaurante_id,
     );
     const modulos = this.planFeatures.modulosDelPlan(plan);
     const suscripcion = await this.resumenSuscripcion(usuario.restaurante_id);
+    const tv = Number(usuario.token_version ?? 1);
 
     const planJwt = jwt.plan ?? 'basico';
     const permisosJwt = [...(jwt.permisos ?? [])].sort().join(',');
     const permisosActuales = [...permisos].sort().join(',');
-    const necesitaTokenNuevo = planJwt !== plan || permisosJwt !== permisosActuales;
+    const cocinaJwt = jwt.cocina_id ?? null;
+    const cocinaActual = esRolCocina(usuario.rol)
+      ? (usuario.cocina_id ?? null)
+      : null;
+    const tvJwt = Number(jwt.tv ?? 1);
+    const necesitaTokenNuevo =
+      planJwt !== plan ||
+      permisosJwt !== permisosActuales ||
+      cocinaJwt !== cocinaActual ||
+      tvJwt !== tv;
 
     const respuesta: Record<string, unknown> = {
       usuario: {
@@ -320,6 +498,7 @@ export class AuthService {
         email: usuario.email,
         sucursal_id: usuario.sucursal_id,
         restaurante_id: usuario.restaurante_id,
+        cocina_id: cocinaActual,
       },
       rol: usuario.rol,
       permisos,
@@ -338,11 +517,162 @@ export class AuthService {
         restaurante_id: usuario.restaurante_id,
         permisos,
         plan,
+        cocina_id: cocinaActual,
+        tv,
       } satisfies JwtPayload);
       respuesta.token = token;
     }
 
     return respuesta;
+  }
+
+  /** Renueva access JWT sin subir token_version (AUTH-FLOW-01). */
+  async refresh(jwt: JwtPayload) {
+    if (jwt.rol === 'domiciliario_independiente') {
+      const dom = await this.database.consultarUno<{
+        id: string;
+        nombre: string;
+        email: string;
+        ciudad_id: string | null;
+        estado_cuenta: string;
+        token_version: number;
+      }>(
+        `SELECT id, nombre, email, ciudad_id, estado_cuenta,
+                COALESCE(token_version, 1) AS token_version
+         FROM domiciliarios_independientes WHERE id = $1`,
+        [jwt.sub],
+      );
+      if (!dom || dom.estado_cuenta !== 'activo') {
+        throw new UnauthorizedException('Domiciliario inactivo');
+      }
+      const tv = Number(dom.token_version);
+      if (Number(jwt.tv ?? 1) !== tv) {
+        throw new UnauthorizedException({
+          error: 'SESION_REVOCADA',
+          message: 'Sesión cerrada o invalidada. Vuelve a iniciar sesión.',
+        });
+      }
+      const permisos = ['domiciliario_independiente'];
+      const token = await this.jwtService.signAsync({
+        sub: dom.id,
+        email: dom.email,
+        rol: 'domiciliario_independiente',
+        sucursal_id: null,
+        restaurante_id: null,
+        permisos,
+        ciudad_id: dom.ciudad_id,
+        tv,
+      } satisfies JwtPayload);
+      return {
+        token,
+        dashboard: 'domiciliario_independiente',
+        rol: 'domiciliario_independiente',
+        permisos,
+        estado_cuenta: dom.estado_cuenta,
+        realtime_canales: {
+          domiciliario_indep: this.realtime.topicDomiciliarioIndep(dom.id),
+        },
+        usuario: {
+          id: dom.id,
+          nombre: dom.nombre,
+          email: dom.email,
+          ciudad_id: dom.ciudad_id,
+        },
+      };
+    }
+
+    const usuario = await this.database.consultarUno<UsuarioFila>(
+      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena, cocina_id,
+              COALESCE(token_version, 1) AS token_version
+       FROM usuarios WHERE id = $1`,
+      [jwt.sub],
+    );
+    if (!usuario?.activo) {
+      throw new UnauthorizedException('Usuario inactivo');
+    }
+    if (Number(jwt.tv ?? 1) !== Number(usuario.token_version)) {
+      throw new UnauthorizedException({
+        error: 'SESION_REVOCADA',
+        message: 'Sesión cerrada o invalidada. Vuelve a iniciar sesión.',
+      });
+    }
+    return this.emitirSesionStaff(usuario);
+  }
+
+  /** Invalida JWTs actuales subiendo token_version (AUTH-FLOW-02 / AUTH-REV). */
+  async logout(jwt: JwtPayload) {
+    if (jwt.rol === 'domiciliario_independiente') {
+      await this.database.consultar(
+        `UPDATE domiciliarios_independientes
+         SET token_version = COALESCE(token_version, 1) + 1
+         WHERE id = $1`,
+        [jwt.sub],
+      );
+    } else {
+      await this.database.consultar(
+        `UPDATE usuarios
+         SET token_version = COALESCE(token_version, 1) + 1
+         WHERE id = $1`,
+        [jwt.sub],
+      );
+    }
+    return { cerrado: true };
+  }
+
+  /**
+   * Topics realtime para la sesión (login/refresh ya los traen).
+   * Query `sucursal_id` al cambiar de sede (gerente_cadena / multi-sucursal).
+   */
+  async realtimeCanales(jwt: JwtPayload, sucursalIdQuery?: string) {
+    if (jwt.rol === 'domiciliario_independiente') {
+      return {
+        realtime_canales: {
+          domiciliario_indep: this.realtime.topicDomiciliarioIndep(jwt.sub),
+        },
+      };
+    }
+
+    const usuario = await this.database.consultarUno<UsuarioFila>(
+      `SELECT id, nombre, email, rol, sucursal_id, restaurante_id, activo, hash_contrasena, cocina_id,
+              COALESCE(token_version, 1) AS token_version
+       FROM usuarios WHERE id = $1`,
+      [jwt.sub],
+    );
+    if (!usuario?.activo) {
+      throw new UnauthorizedException('Usuario inactivo');
+    }
+
+    let sucursalOverride: string | null | undefined = undefined;
+    if (sucursalIdQuery) {
+      if (usuario.sucursal_id && usuario.sucursal_id !== sucursalIdQuery) {
+        // Misma cadena: sede hermana del restaurante
+        const ok = await this.database.consultarUno<{ id: string }>(
+          `SELECT s.id FROM sucursales s
+           WHERE s.id = $1 AND s.restaurante_id = $2 AND s.activa = true`,
+          [sucursalIdQuery, usuario.restaurante_id],
+        );
+        if (!ok) {
+          throw new UnauthorizedException('Sucursal no permitida');
+        }
+      } else if (!usuario.sucursal_id) {
+        const ok = await this.database.consultarUno<{ id: string }>(
+          `SELECT s.id FROM sucursales s
+           WHERE s.id = $1 AND s.restaurante_id = $2 AND s.activa = true`,
+          [sucursalIdQuery, usuario.restaurante_id],
+        );
+        if (!ok && jwt.rol !== 'super_admin') {
+          throw new UnauthorizedException('Sucursal no permitida');
+        }
+      }
+      sucursalOverride = sucursalIdQuery;
+    }
+
+    return {
+      realtime_canales: this.canalesRealtimeParaUsuario(
+        usuario,
+        sucursalOverride,
+      ),
+    };
   }
 
   async resumenSuscripcion(restauranteId: string | null | undefined) {
@@ -389,14 +719,14 @@ export class AuthService {
     };
   }
 
-  /** Permisos vigentes en BD (usado en login y en cada request JWT). */
+  /** Plantilla del rol (sin overrides de usuario). */
   async permisosDelRol(rol: string): Promise<string[]> {
     if (rol === 'domiciliario_independiente') {
       return ['domiciliario_independiente'];
     }
     // Roles de cocina son dinámicos (cocina_asados, cocina_bebidas...).
-    // No están en roles_permisos; se les concede acceso al KDS de su sucursal.
-    if (this.esRolCocina(rol)) {
+    // No viven en roles_permisos; se les concede acceso al KDS de su sucursal.
+    if (esRolCocina(rol)) {
       return ['ver_cocina'];
     }
     const filas = await this.database.consultar<{ permiso: string }>(
@@ -406,8 +736,89 @@ export class AuthService {
     return filas.map((f) => f.permiso);
   }
 
-  private esRolCocina(rol: string): boolean {
-    return rol === 'cocina' || rol.startsWith('cocina_');
+  /**
+   * Permisos vigentes: filas en `usuario_permisos` si existen;
+   * si no, plantilla del rol. Usado en login y en cada request JWT.
+   */
+  async permisosEfectivos(usuarioId: string, rol: string): Promise<string[]> {
+    if (rol === 'domiciliario_independiente') {
+      return ['domiciliario_independiente'];
+    }
+    const custom = await this.database.consultar<{ permiso: string }>(
+      `SELECT permiso FROM usuario_permisos WHERE usuario_id = $1 ORDER BY permiso`,
+      [usuarioId],
+    );
+    if (custom.length > 0) {
+      return custom.map((f) => f.permiso);
+    }
+    return this.permisosDelRol(rol);
+  }
+
+  async tienePermisosPersonalizados(usuarioId: string): Promise<boolean> {
+    const fila = await this.database.consultarUno<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM usuario_permisos WHERE usuario_id = $1`,
+      [usuarioId],
+    );
+    return (fila?.n ?? 0) > 0;
+  }
+
+  /** Lista canónica de permisos asignables al staff (whitelist). */
+  async catalogoPermisosDisponibles(): Promise<string[]> {
+    const filas = await this.database.consultar<{ permiso: string }>(
+      `SELECT DISTINCT permiso FROM roles_permisos ORDER BY permiso`,
+    );
+    return filas.map((f) => f.permiso);
+  }
+
+  /**
+   * Reemplaza overrides del usuario.
+   * `null` / omitido vía caller = no tocar.
+   * Array vacío no se permite (usar al menos un permiso o borrar custom).
+   * Si el set coincide con la plantilla del rol, se borran overrides (vuelve al rol).
+   */
+  async reemplazarPermisosUsuario(
+    usuarioId: string,
+    rol: string,
+    permisos: string[],
+    client?: import('pg').PoolClient,
+  ): Promise<string[]> {
+    const unicos = [...new Set(permisos.map((p) => p.trim()).filter(Boolean))].sort();
+    if (unicos.length === 0) {
+      throw new BadRequestException('Debes marcar al menos un permiso');
+    }
+    const plantilla = [...(await this.permisosDelRol(rol))].sort();
+    const permitidos = new Set(plantilla);
+    const invalidos = unicos.filter((p) => !permitidos.has(p));
+    if (invalidos.length) {
+      throw new BadRequestException(
+        `Esos permisos no aplican al rol ${rol}: ${invalidos.slice(0, 5).join(', ')}`,
+      );
+    }
+
+    const igualPlantilla =
+      unicos.length === plantilla.length &&
+      unicos.every((p, i) => p === plantilla[i]);
+
+    const run = async (c: import('pg').PoolClient) => {
+      await c.query(`DELETE FROM usuario_permisos WHERE usuario_id = $1`, [
+        usuarioId,
+      ]);
+      if (igualPlantilla) {
+        return plantilla;
+      }
+      for (const permiso of unicos) {
+        await c.query(
+          `INSERT INTO usuario_permisos (usuario_id, permiso) VALUES ($1, $2)`,
+          [usuarioId, permiso],
+        );
+      }
+      return unicos;
+    };
+
+    if (client) {
+      return run(client);
+    }
+    return this.database.enTransaccion((c) => run(c));
   }
 
   private resolverDashboard(rol: string): string {
@@ -415,7 +826,7 @@ export class AuthService {
     if (rol === 'domiciliario_planta') return 'domiciliario';
     if (rol === 'cajero') return 'cajero';
     if (rol === 'mesero') return 'mesero';
-    if (this.esRolCocina(rol)) return 'cocina';
+    if (esRolCocina(rol)) return 'cocina';
     return 'restaurante';
   }
 

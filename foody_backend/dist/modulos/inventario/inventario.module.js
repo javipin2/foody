@@ -14,15 +14,22 @@ const costeo_module_1 = require("../costeo/costeo.module");
 const catalogo_module_1 = require("../catalogo/catalogo.module");
 const inventario_controller_1 = require("./inventario.controller");
 const inventario_service_1 = require("./inventario.service");
+const stock_movimiento_module_1 = require("./stock-movimiento.module");
 let InventarioModule = class InventarioModule {
 };
 exports.InventarioModule = InventarioModule;
 exports.InventarioModule = InventarioModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule, alertas_module_1.AlertasModule, costeo_module_1.CosteoModule, catalogo_module_1.CatalogoModule],
+        imports: [
+            auth_module_1.AuthModule,
+            alertas_module_1.AlertasModule,
+            costeo_module_1.CosteoModule,
+            catalogo_module_1.CatalogoModule,
+            stock_movimiento_module_1.StockMovimientoModule,
+        ],
         controllers: [inventario_controller_1.InventarioController],
         providers: [inventario_service_1.InventarioService],
-        exports: [inventario_service_1.InventarioService],
+        exports: [inventario_service_1.InventarioService, stock_movimiento_module_1.StockMovimientoModule],
     })
 ], InventarioModule);
 //# sourceMappingURL=inventario.module.js.map

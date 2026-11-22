@@ -2,6 +2,7 @@ import { JwtPayload } from '../../core/auth/jwt-payload';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { CatalogoService } from './catalogo.service';
 import { CrearComboDto } from './dto/crear-combo.dto';
+import { CambiarDisponibilidadDto } from './dto/extras-mutacion.dto';
 export declare class CombosController {
     private readonly catalogo;
     private readonly sucursalScope;
@@ -12,9 +13,7 @@ export declare class CombosController {
         nombre: string;
         precio_fijo: number;
     }>;
-    disponibilidad(id: string, body: {
-        disponible: boolean;
-    }, usuario: JwtPayload): Promise<{
+    disponibilidad(id: string, body: CambiarDisponibilidadDto, usuario: JwtPayload): Promise<{
         id: string;
         disponible: boolean;
     }>;

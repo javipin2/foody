@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { NotificacionesService } from '../../modulos/notificaciones/notificaciones.service';
+import { PagosRecurrentesService } from '../../modulos/pagos/pagos-recurrentes.service';
 
 type SuscripcionAviso = {
   id: string;
@@ -16,15 +17,27 @@ type SuscripcionAviso = {
 @Injectable()
 export class SuscripcionesCronService implements OnModuleInit {
   private readonly logger = new Logger(SuscripcionesCronService.name);
+  private readonly LOCK_SUSCRIPCIONES_CRON = 9200002;
 
   constructor(
     private readonly database: DatabaseService,
     private readonly notificaciones: NotificacionesService,
+    private readonly pagosRecurrentes: PagosRecurrentesService,
   ) {}
 
   onModuleInit() {
-    void this.ejecutar();
-    setInterval(() => void this.ejecutar(), 60 * 60 * 1000);
+    void this.database.intentarAdvisoryLock(
+      this.LOCK_SUSCRIPCIONES_CRON,
+      () => this.ejecutar(),
+    );
+    setInterval(
+      () =>
+        void this.database.intentarAdvisoryLock(
+          this.LOCK_SUSCRIPCIONES_CRON,
+          () => this.ejecutar(),
+        ),
+      60 * 60 * 1000,
+    );
   }
 
   async ejecutar(): Promise<{
@@ -32,11 +45,55 @@ export class SuscripcionesCronService implements OnModuleInit {
     bloqueadas: number;
     avisos3d: number;
     avisosHoy: number;
+    renovaciones: number;
+    renovaciones_fallos: number;
   }> {
+    const renov = await this.procesarRenovacionesAutomaticas();
     const avisos = await this.enviarAvisosVencimiento();
     const vencidas = await this.marcarVencidas();
     const bloqueadas = await this.bloquearTrasGracia();
-    return { vencidas, bloqueadas, ...avisos };
+    return {
+      vencidas,
+      bloqueadas,
+      renovaciones: renov.ok,
+      renovaciones_fallos: renov.fallos,
+      ...avisos,
+    };
+  }
+
+  private async procesarRenovacionesAutomaticas(): Promise<{
+    ok: number;
+    fallos: number;
+  }> {
+    const candidatas =
+      await this.pagosRecurrentes.listarCandidatasRenovacionAutomatica();
+    let ok = 0;
+    let fallos = 0;
+    for (const c of candidatas) {
+      try {
+        const resultado = await this.pagosRecurrentes.intentarCobroRenovacion(
+          c.restaurante_id,
+          c.plan as 'basico' | 'pro' | 'enterprise',
+        );
+        if (resultado.iniciado) {
+          ok++;
+          this.logger.log(
+            `Renovación automática restaurante=${c.restaurante_id} plan=${c.plan} → ${resultado.motivo}`,
+          );
+        }
+      } catch (e) {
+        fallos++;
+        this.logger.error(
+          `Renovación automática falló restaurante=${c.restaurante_id}: ${e instanceof Error ? e.message : e}`,
+        );
+      }
+    }
+    if (ok > 0 || fallos > 0) {
+      this.logger.log(
+        `Renovaciones automáticas: iniciadas=${ok} fallos=${fallos}`,
+      );
+    }
+    return { ok, fallos };
   }
 
   private async marcarVencidas(): Promise<number> {
@@ -141,8 +198,8 @@ export class SuscripcionesCronService implements OnModuleInit {
               (
                 SELECT u.sucursal_id FROM usuarios u
                 WHERE u.restaurante_id = s.restaurante_id
-                  AND u.rol = 'admin' AND u.activo = true
-                ORDER BY u.created_at ASC
+                  AND u.rol IN ('admin', 'gerente_cadena') AND u.activo = true
+                ORDER BY CASE WHEN u.rol = 'admin' THEN 0 ELSE 1 END, u.created_at ASC
                 LIMIT 1
               ) AS sucursal_id
        FROM suscripciones_restaurante s
@@ -161,8 +218,8 @@ export class SuscripcionesCronService implements OnModuleInit {
               (
                 SELECT u.sucursal_id FROM usuarios u
                 WHERE u.restaurante_id = s.restaurante_id
-                  AND u.rol = 'admin' AND u.activo = true
-                ORDER BY u.created_at ASC
+                  AND u.rol IN ('admin', 'gerente_cadena') AND u.activo = true
+                ORDER BY CASE WHEN u.rol = 'admin' THEN 0 ELSE 1 END, u.created_at ASC
                 LIMIT 1
               ) AS sucursal_id
        FROM suscripciones_restaurante s

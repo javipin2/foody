@@ -3,7 +3,7 @@
 > **Documento vivo** — actualizar si cambia `foody_backend/src/modulos/pedidos/pedido-estados.ts`  
 > Implementación: `pedido-estados.ts`, `pedidos-estado.service.ts`, `PedidoAdminModel.accionRapida`
 
-**Última actualización:** 2026-06-19 — P0 auditoría E2E: mesa no libera sin cobro; domicilio `entregado` solo desde `en_camino`; cobro contra entrega obligatorio.
+**Última actualización:** 2026-08-06 — Prompt 11: salón no usa `entregado`; cierre = `pagado` vía cobro. Ver `AUDITORIA_PEDIDOS_CICLO_VIDA.md`.
 
 ---
 
@@ -41,7 +41,8 @@ Cliente pide → pendiente_aprobacion
 
 ```
 Crear pedido → en_cocina
-  → listo → pagando → entregado (sin mesa) | cobrar → pagado
+  → listo → pagando → cobrar → pagado
+  (si método de caja al crear: monto_pagado se llena ya — PED-PREPAGO-01: hoy el estado puede quedar en_cocina)
 ```
 
 ### Para llevar / domicilio (cliente app)
@@ -84,7 +85,6 @@ stateDiagram-v2
   en_cocina --> listo: Cocina lista
   listo --> pagando: Mesa / llevar
   listo --> asignado: Domicilio asignar
-  pagando --> entregado: Servido / cliente se fue
   pagando --> pagado: Cobrar caja
   asignado --> en_camino
   en_camino --> entregado

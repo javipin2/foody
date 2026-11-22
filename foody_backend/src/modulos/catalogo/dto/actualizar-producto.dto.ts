@@ -48,4 +48,8 @@ export class ActualizarProductoDto {
   @IsNumber()
   @Min(0)
   precio_para_llevar?: number | null;
+
+  @IsOptional()
+  @IsString()
+  imagen_url?: string | null;
 }

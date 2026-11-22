@@ -123,6 +123,8 @@ if ($tokenRepartidor) {
     $h = @{ Authorization = "Bearer $tokenRepartidor" }
     $r = Invoke-Api -Path "/domiciliarios/ofertas-activas" -Headers $h
     Add-Result "Dom. independiente" "ofertas-activas" ($r.ok -and $r.json.exito -eq $true) "HTTP $($r.status)"
+    $rs = Invoke-Api -Path "/domiciliarios/sesion/estado" -Headers $h
+    Add-Result "Dom. independiente" "sesion/estado" ($rs.ok -and $rs.json.exito -eq $true) "HTTP $($rs.status)"
 }
 
 # 9. Super admin
@@ -146,6 +148,8 @@ try {
     Add-Result "Migraciones" "RLS pedidos (028)" ($rls.Trim() -eq "t") "rls=$($rls.Trim())"
     $hor = docker exec supabase-db psql -U postgres -d postgres -tAc "SELECT COUNT(*) FROM horarios_sucursal WHERE sucursal_id='$Sucursal'" 2>&1
     Add-Result "Migraciones" "Horarios sucursal (030)" ([int]$hor.Trim() -ge 7) "filas=$($hor.Trim())"
+    $sinRls = docker exec supabase-db psql -U postgres -d postgres -tAc "SELECT COUNT(*)::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND NOT c.relrowsecurity" 2>&1
+    Add-Result "Migraciones" "RLS exhaustivo (064)" ($sinRls.Trim() -eq "0") "sin_rls=$($sinRls.Trim())"
 }
 catch { Add-Result "Migraciones" "docker exec" $false $_.Exception.Message }
 

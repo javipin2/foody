@@ -1,7 +1,8 @@
 # Planes y suscripciones — estado vs objetivo
 
-> **Documento de brecha (2026-06-09).** Lo que existe hoy en código vs lo que debe hacer cada plan comercialmente.
-> Estado vivo del sprint: `docs/AVANCE_PROYECTO.md` · Spec negocio: `INFRAESTRUCTURA/reglas_negocio_foody.md` · Precios propuestos: `INFRAESTRUCTURA/plan_negocio_fondo_emprender.md`
+> **Actualizado:** 2026-06-24 (post-Antigravity + freemium). Estado vivo: `docs/AVANCE_PROYECTO.md` § Antigravity.
+> Spec negocio: `INFRAESTRUCTURA/reglas_negocio_foody.md` · Precios: `INFRAESTRUCTURA/plan_negocio_fondo_emprender.md`
+> **Foody NOC (dueño SaaS):** Centro de Operaciones — [`SUPERADMIN_FOODY_CONTROL.md`](SUPERADMIN_FOODY_CONTROL.md) (visión completa · **Fase A esencial ahora**; nombres **Gratis / Pro / Ultra**).
 
 ---
 
@@ -9,101 +10,57 @@
 
 | Concepto | ¿Implementado? | Efecto real hoy |
 |----------|----------------|-----------------|
-| **Estado** de suscripción (`prueba`, `activa`, `vencida`, `bloqueada`) | ✅ Parcial | `SuscripcionActivaGuard` bloquea al staff si no es `prueba` ni `activa` |
-| **Plan** (`basico`, `pro`, `enterprise`) | ✅ Parcial | `PlanFeaturesGuard` + `@RequiereModulo` en inventario/cocina/domi/facturación/reportes; JWT/login incluye `plan` y `modulos[]`; sidebar Flutter filtra rutas |
-| **fecha_vencimiento** | 🟡 Parcial | Se guarda y muestra; **no hay job** que pase automáticamente a `vencida` |
-| Matriz plan → módulos / límites | ⏳ Pendiente | Solo documentado en negocio, no en backend ni Flutter |
-
-Un restaurante con plan **enterprise** y otro con **básico** tienen **las mismas funciones** si ambos tienen estado `activa` o `prueba`.
-
----
-
-## Qué sí hace el sistema hoy
-
-### Tabla `suscripciones_restaurante`
-
-Migración `011_super_admin.sql`:
-
-- `estado`: `prueba` \| `activa` \| `vencida` \| `bloqueada`
-- `plan`: `basico` \| `pro` \| `enterprise` (CHECK en BD)
-- `fecha_inicio`, `fecha_vencimiento`, `motivo_bloqueo`, etc.
-
-### Guard operativo (solo estado, no plan)
-
-Archivo: `foody_backend/src/core/auth/guards/suscripcion-activa.guard.ts`
-
-- Staff con `restaurante_id`: consulta `estado` de la suscripción.
-- Permite acceso solo si `estado IN ('activa', 'prueba')`.
-- `super_admin` y `domiciliario_independiente` pasan sin revisar suscripción.
-- **No lee la columna `plan`.**
-
-### UI superadmin (Foody Control)
-
-- Pestaña **Planes** y menú en **Restaurantes**: editar plan, estado y fecha de vencimiento.
-- Al crear restaurante (`POST /super/restaurantes`): suscripción `prueba` + plan `basico` + 14 días.
+| Plan **`gratis`** (self-service) | ✅ | Onboarding automático; módulos core **con límites numéricos** |
+| Planes **`basico` / `pro` / `enterprise`** | ✅ Parcial | Wompi checkout + webhook (local: sincronizar manual) |
+| **Estado** suscripción | ✅ | `SuscripcionActivaGuard` + cron vencimiento |
+| **Módulos por plan** | ✅ | `PlanFeaturesGuard` + `@RequiereModulo`; guard lee plan en **BD** (no JWT obsoleto) |
+| **Límites numéricos** | ✅ | `LIMITES_POR_PLAN` + `assertLimite*` en mesas, productos, ingredientes, staff, sucursales |
+| UI Flutter candados / upgrade | ✅ | Paywall automático 403 + `MejorarPlanScreen` |
 
 ---
 
-## Qué NO hace el plan (brecha principal)
+## Matriz oficial plan → módulos (implementada)
 
-No existe en el código:
+Fuente: `foody_backend/src/core/auth/plan-features.config.ts` + `lib/features/admin/domain/plan_modulos.dart`
 
-1. **Guard o servicio de features por plan** — p. ej. bloquear inventario/cocina/facturación si plan = `basico`.
-2. **Límites numéricos** — máx. sucursales, usuarios staff, productos por plan.
-3. **Menú Flutter condicionado al plan** — el sidebar del admin restaurante no oculta módulos según plan.
-4. **Respuestas API específicas** — no hay error tipo `PLAN_NO_INCLUYE_MODULO`.
-5. **Vencimiento automático** — cron que actualice `vencida` cuando `fecha_vencimiento < now()`.
-6. **Facturación / cobro** — integración de pagos recurrentes (fuera de scope actual).
+| Módulo | Gratis | Básico | Pro | Enterprise |
+|--------|--------|--------|-----|------------|
+| Menú + pedidos + caja + mesas | ✅ | ✅ | ✅ | ✅ |
+| Inventario + costeo | ✅* | ✅ | ✅ | ✅ |
+| Cocina / KDS | ✅* | ✅ | ✅ | ✅ |
+| Domiciliarios + zonas | ✅* | ✅ | ✅ | ✅ |
+| Reportes | ✅* | ✅ | ✅ | ✅ |
+| Centro de Análisis (`analitica`) | ❌ | ❌ | ✅ | ✅ |
+| Facturación DIAN | ❌ | ❌ | ❌ | ✅ |
 
-Búsqueda en backend (`foody_backend/src`): la columna `plan` solo aparece en `super-admin.service.ts` (listar/actualizar/onboarding). Ningún otro módulo la consulta.
-
----
-
-## Objetivo comercial (a implementar)
-
-Referencia: `INFRAESTRUCTURA/plan_negocio_fondo_emprender.md`
-
-| Plan | Precio propuesto/mes | Incluiría |
-|------|----------------------|-----------|
-| **Básico** | ~$50.000 | Menú digital, pedidos, caja |
-| **Pro** | ~$100.000 | Básico + inventario, domiciliarios, cocina (KDS) |
-| **Enterprise** | ~$130.000 | Pro + facturación electrónica, multi-sucursal ampliada, reportes avanzados |
-
-Reglas adicionales en spec (`reglas_negocio_foody.md`):
-
-- Período de prueba: **14 días** (estado `prueba`, no confundir con nombre de plan).
-- Restaurante bloqueado/vencido: datos conservados **30 días** (`dias_datos_restaurante_bloqueado` en config global).
-- Sucursales extra: a definir (recomendado cobrar desde la 3.ª sucursal).
+\* Plan **gratis**: mismo acceso a módulo, pero con **límites numéricos** (ver tabla siguiente).
 
 ---
 
-## Trabajo pendiente (Sprint 8+)
+## Límites numéricos por plan (implementados)
 
-| # | Tarea | Dónde | Prioridad |
-|---|-------|-------|-----------|
-| 1 | Definir matriz oficial **plan → módulos/permisos/límites** (cerrar con negocio) | Este doc + `reglas_negocio_foody.md` | Alta |
-| 2 | `PlanFeaturesGuard` o `PlanFeaturesService` en NestJS | `foody_backend/src/core/` | Alta |
-| 3 | Decorador `@RequierePlan('pro')` o `@RequiereModulo('inventario')` en controllers | Módulos afectados | Alta |
-| 4 | Incluir `plan` y/o `features[]` en JWT o endpoint `/auth/perfil` | `auth.service` | Media |
-| 5 | Ocultar/deshabilitar entradas del sidebar admin según plan | `panel_sidebar_nav.dart` | Media |
-| 6 | Job/cron **vencimiento automático** (`activa`/`prueba` → `vencida`) | NestJS scheduler o SQL cron | Media |
-| 7 | Pantalla upgrade / badge «Requiere plan Pro» en admin restaurante | Flutter admin | Baja |
-| 8 | Tests e2e: restaurante básico no puede POST inventario | `scripts/verificar-paso0.ps1` o similar | Media |
+Fuente: `LIMITES_POR_PLAN` en `plan-features.config.ts`
 
-### Módulos candidatos a restricción por plan (borrador)
+| Plan | Sucursales | Staff | Mesas | Productos | Ingredientes |
+|------|------------|-------|-------|-----------|--------------|
+| **gratis** | 1 | **2** | **2** | **5** | **5** |
+| basico | 1 | 8 | 30 | 200 | 200 |
+| pro | 3 | 25 | 100 | 9999 | 9999 |
+| enterprise | 99 | 99 | 9999 | 9999 | 9999 |
 
-| Módulo / feature | Básico | Pro | Enterprise |
-|------------------|--------|-----|------------|
-| Menú + pedidos + caja | ✅ | ✅ | ✅ |
-| Mesas QR | ✅ | ✅ | ✅ |
-| Inventario + costeo | ❌ | ✅ | ✅ |
-| Cocina / KDS / impresoras | ❌ | ✅ | ✅ |
-| Domiciliarios (planta + independiente) | ❌ | ✅ | ✅ |
-| Reportes avanzados | ❌ | 🟡 básicos | ✅ |
-| Facturación electrónica (DIAN) | ❌ | ❌ | ✅ |
-| Multi-sucursal (>2 sucursales) | ❌ | 🟡 límite 2 | ✅ ilimitado |
+Al superar un límite: HTTP **403** con `error: PLAN_LIMITE_EXCEDIDO` y mensaje descriptivo.
 
-> **Nota:** tabla borrador hasta acuerdo explícito; no es comportamiento actual del código.
+---
+
+## Precios checkout (Wompi)
+
+| Plan | COP/mes (referencia) |
+|------|----------------------|
+| Básico | 50.000 |
+| Pro | 100.000 |
+| Enterprise | 130.000 |
+
+Centavos en backend: `foody_backend/src/modulos/pagos/pagos-planes.config.ts`
 
 ---
 
@@ -111,15 +68,16 @@ Reglas adicionales en spec (`reglas_negocio_foody.md`):
 
 | Área | Ruta |
 |------|------|
-| Guard suscripción (estado) | `foody_backend/src/core/auth/guards/suscripcion-activa.guard.ts` |
-| CRUD suscripciones super | `foody_backend/src/modulos/super-admin/super-admin.service.ts` |
-| UI planes | `lib/features/admin/presentation/panel_foody_control_screen.dart` |
-| Esquema BD | `foody_supabase/migrations/011_super_admin.sql` |
-| Foody Control widgets | `lib/features/admin/presentation/widgets/foody_control_ui.dart` |
+| Config planes y límites | `foody_backend/src/core/auth/plan-features.config.ts` |
+| Validación límites | `foody_backend/src/core/auth/plan-features.service.ts` |
+| Guard módulos | `foody_backend/src/core/auth/guards/plan-features.guard.ts` |
+| UI módulos sidebar | `lib/features/admin/domain/plan_modulos.dart` |
+| UI precios/planes | `lib/features/pagos/domain/planes_comerciales.dart` |
+| Auditoría Antigravity (archivada) | `docs/archivo/auditoria_flujos_foody-antigravity.md` |
+| Walkthrough (archivado) | `docs/archivo/walkthrough-antigravity.md` |
 
 ---
 
-## Cuándo implementar
+## Histórico (pre-2026-06)
 
-- **Sprint 8** (Super Admin): después de estabilizar Foody Control y guard tenant global.
-- **Antes de producción comercial**: obligatorio si se cobra por tier; si todos los clientes tienen acceso full en piloto, puede posponerse con plan fijo manual.
+Antes de Sprint 8 y Antigravity, la columna `plan` existía en BD pero **no restringía módulos**. Ver commits anteriores a `plan-features.config.ts` freemium.

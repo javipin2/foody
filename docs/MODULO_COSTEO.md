@@ -141,11 +141,18 @@ costo_linea_en_plato = cantidad_usada × costo_por_unidad_resultado
 
 ### 5.4 Subreceta (modo producción en lote — opcional)
 
-Al registrar producción (`producciones`):
+**Default recomendado:** modo teórico — al vender el plato se expanden insumos y se descuenta stock de mercado.
 
-1. Descontar ingredientes de la subreceta del stock
-2. Sumar `cantidad_producida` al stock del ingrediente-subreceta (`es_subreceta=true`)
+**Modo lote** (`usa_produccion_lote`): cocinas de antemano.
+
+Al registrar producción (`POST /costeo/producciones`):
+
+1. Descontar ingredientes de la subreceta del stock de mercado
+2. Sumar `cantidad_producida` al stock del ingrediente-subreceta (`Prep:…`, `es_subreceta=true`)
 3. Usar `costo_real_produccion / cantidad_producida` como costo unitario vigente
+4. Al vender: descuenta solo `Prep:…` (no vuelve a tocar limón/azúcar)
+
+`Prep:…` **no** aparece en lista de mercado ni en alertas de stock bajo (hasta que produzcas, el badge en subrecetas dice «Sin preparar», no «stock bajo»).
 
 ### 5.5 Plato — costo base y domicilio
 

@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CiudadesController = void 0;
 const common_1 = require("@nestjs/common");
+const rate_limit_guard_1 = require("../../compartido/guards/rate-limit.guard");
 const ciudades_service_1 = require("./ciudades.service");
 let CiudadesController = class CiudadesController {
     ciudadesService;
@@ -30,12 +31,14 @@ let CiudadesController = class CiudadesController {
 exports.CiudadesController = CiudadesController;
 __decorate([
     (0, common_1.Get)('ciudades'),
+    (0, rate_limit_guard_1.RateLimitPublico)(120, 60_000),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], CiudadesController.prototype, "listarCiudades", null);
 __decorate([
     (0, common_1.Get)('ciudades/:slug/restaurantes'),
+    (0, rate_limit_guard_1.RateLimitPublico)(90, 60_000),
     __param(0, (0, common_1.Param)('slug')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

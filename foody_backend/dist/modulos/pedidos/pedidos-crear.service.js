@@ -23,6 +23,7 @@ const pedidos_soporte_service_1 = require("./pedidos-soporte.service");
 const pedidos_cuenta_mesa_service_1 = require("./pedidos-cuenta-mesa.service");
 const pedidos_inventario_service_1 = require("./pedidos-inventario.service");
 const pedido_estados_1 = require("./pedido-estados");
+const DIAS_ANTICIPACION_ENCARGO_MIN = 2;
 let PedidosCrearService = class PedidosCrearService {
     database;
     facturacion;
@@ -35,7 +36,7 @@ let PedidosCrearService = class PedidosCrearService {
     soporte;
     cuentaMesa;
     inventario;
-    constructor(database, facturacion, zonas, realtime, alertasRiesgo, costeo, promociones, cajaAuditoria, soporte, cuentaMesa) {
+    constructor(database, facturacion, zonas, realtime, alertasRiesgo, costeo, promociones, cajaAuditoria, soporte, cuentaMesa, inventario) {
         this.database = database;
         this.facturacion = facturacion;
         this.zonas = zonas;
@@ -46,7 +47,7 @@ let PedidosCrearService = class PedidosCrearService {
         this.cajaAuditoria = cajaAuditoria;
         this.soporte = soporte;
         this.cuentaMesa = cuentaMesa;
-        this.inventario = new pedidos_inventario_service_1.PedidosInventarioService(this.costeo, this.alertasRiesgo);
+        this.inventario = inventario;
     }
     async crear(dto, opciones = {}) {
         const items = dto.items ?? [];
@@ -59,14 +60,28 @@ let PedidosCrearService = class PedidosCrearService {
         if (totalLineas > 50) {
             throw new common_1.BadRequestException({
                 error: 'LIMITE_ITEMS',
-                message: 'El pedido no puede superar 50 ?tems',
+                message: 'El pedido no puede superar 50 ítems',
+            });
+        }
+        if (dto.tipo === 'mesa' && !dto.mesa_id) {
+            throw new common_1.BadRequestException({
+                error: 'MESA_REQUERIDA',
+                message: 'Un pedido de mesa requiere mesa_id',
             });
         }
         if (dto.idempotency_key?.trim()) {
             const existente = await this.database.consultarUno(`SELECT pedido_id FROM pedidos_idempotencia WHERE clave = $1`, [dto.idempotency_key.trim()]);
             if (existente) {
-                const pedido = await this.database.consultarUno(`SELECT id, numero_pedido, estado, total FROM pedidos WHERE id = $1`, [existente.pedido_id]);
-                return { ...pedido, idempotente: true };
+                const pedido = await this.database.consultarUno(`SELECT id, numero_pedido, estado, total, seguimiento_token::text AS seguimiento_token
+           FROM pedidos WHERE id = $1`, [existente.pedido_id]);
+                return {
+                    pedido_id: pedido.id,
+                    numero_pedido: pedido.numero_pedido,
+                    estado: pedido.estado,
+                    total: Number(pedido.total),
+                    seguimiento_token: pedido.seguimiento_token,
+                    idempotente: true,
+                };
             }
         }
         if (dto.requiere_factura) {
@@ -79,8 +94,44 @@ let PedidosCrearService = class PedidosCrearService {
                 });
             }
         }
+        if (dto.tipo === 'encargo') {
+            if (combos.length > 0) {
+                throw new common_1.BadRequestException({
+                    error: 'ENCARGO_SIN_COMBOS',
+                    message: 'Los pedidos de encargo no admiten combos',
+                });
+            }
+            this.validarFechaEncargo(dto.fecha_entrega_deseada);
+        }
         let catalogoCambios = [];
         const resultado = await this.database.enTransaccion(async (client) => {
+            if (opciones.soloEstimar) {
+            }
+            else if (dto.idempotency_key?.trim()) {
+                const clave = dto.idempotency_key.trim();
+                await client.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [
+                    clave,
+                ]);
+                const existenteTx = await this.soporte.consultarUnoCliente(client, `SELECT pedido_id FROM pedidos_idempotencia WHERE clave = $1`, [clave]);
+                if (existenteTx) {
+                    const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, numero_pedido, estado, total, seguimiento_token::text AS seguimiento_token
+             FROM pedidos WHERE id = $1`, [existenteTx.pedido_id]);
+                    if (pedido) {
+                        return {
+                            pedido_id: pedido.id,
+                            numero_pedido: pedido.numero_pedido,
+                            subtotal: 0,
+                            costo_domicilio: 0,
+                            total: Number(pedido.total),
+                            estado: pedido.estado,
+                            tiempo_estimado_minutos: 25,
+                            factura_id: null,
+                            seguimiento_token: pedido.seguimiento_token,
+                            idempotente: true,
+                        };
+                    }
+                }
+            }
             const sucursal = await this.soporte.consultarUnoCliente(client, `SELECT id FROM sucursales WHERE id = $1 AND activa = true`, [dto.sucursal_id]);
             if (!sucursal) {
                 throw new common_1.BadRequestException('Sucursal no disponible');
@@ -98,15 +149,30 @@ let PedidosCrearService = class PedidosCrearService {
                  BETWEEN h.hora_apertura AND h.hora_cierre
            )
          END AS activo`, [dto.sucursal_id]);
-            if (!horario?.activo) {
+            const puedeForzarHorario = opciones.creadoPorStaff === true &&
+                dto.forzar_fuera_horario === true &&
+                (opciones.rol === 'admin' ||
+                    opciones.rol === 'gerente' ||
+                    opciones.rol === 'super_admin');
+            if (!horario?.activo && !puedeForzarHorario) {
                 throw new common_1.BadRequestException('RESTAURANTE_CERRADO');
             }
             let mesaNombre = null;
             if (dto.mesa_id) {
-                const mesa = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre FROM mesas
-           WHERE id = $1 AND sucursal_id = $2 AND activa = true`, [dto.mesa_id, dto.sucursal_id]);
+                const mesa = await this.soporte.consultarUnoCliente(client, opciones.soloEstimar
+                    ? `SELECT id, nombre, estado_operativo FROM mesas
+               WHERE id = $1 AND sucursal_id = $2 AND activa = true`
+                    : `SELECT id, nombre, estado_operativo FROM mesas
+               WHERE id = $1 AND sucursal_id = $2 AND activa = true FOR UPDATE`, [dto.mesa_id, dto.sucursal_id]);
                 if (!mesa) {
                     throw new common_1.BadRequestException('MESA_NO_ENCONTRADA');
+                }
+                if (!opciones.creadoPorStaff &&
+                    mesa.estado_operativo === 'reservada') {
+                    throw new common_1.BadRequestException({
+                        error: 'MESA_RESERVADA',
+                        message: 'Esta mesa está reservada. Pide al personal que confirme tu llegada antes de pedir.',
+                    });
                 }
                 mesaNombre = mesa.nombre;
                 if (opciones.creadoPorStaff &&
@@ -120,27 +186,39 @@ let PedidosCrearService = class PedidosCrearService {
             const lineasPreparadas = [];
             const combosPreparados = [];
             for (const item of items) {
-                const producto = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, precio_para_llevar, disponible, cocina_id, costo_calculado
+                const producto = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, precio_para_llevar, disponible, cocina_id,
+                  costo_calculado, es_encargo
            FROM productos
            WHERE id = $1 AND sucursal_id = $2`, [item.producto_id, dto.sucursal_id]);
                 if (!producto?.disponible) {
                     throw new common_1.BadRequestException('PRODUCTO_NO_DISPONIBLE');
                 }
+                if (dto.tipo === 'encargo' && !producto.es_encargo) {
+                    throw new common_1.BadRequestException({
+                        error: 'PRODUCTO_NO_ENCARGO',
+                        message: 'Solo productos marcados como encargo en este pedido',
+                    });
+                }
                 const precioUnit = this.soporte.precioVentaProducto(producto, dto.tipo);
                 let lineaTotal = precioUnit * item.cantidad;
                 const toppings = [];
                 for (const t of item.toppings ?? []) {
-                    const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio FROM toppings
+                    const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM toppings
              WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [t.topping_id, dto.sucursal_id]);
                     if (!top)
                         throw new common_1.BadRequestException('TOPPING_NO_DISPONIBLE');
                     const p = Number(top.precio);
-                    toppings.push({ id: top.id, nombre: top.nombre, precio: p });
+                    toppings.push({
+                        id: top.id,
+                        nombre: top.nombre,
+                        precio: p,
+                        costo: Number(top.costo_calculado ?? 0),
+                    });
                     lineaTotal += p * item.cantidad;
                 }
                 const bebidas = [];
                 for (const b of item.bebidas ?? []) {
-                    const beb = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio FROM bebidas
+                    const beb = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM bebidas
              WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [b.bebida_id, dto.sucursal_id]);
                     if (!beb)
                         throw new common_1.BadRequestException('BEBIDA_NO_DISPONIBLE');
@@ -150,16 +228,21 @@ let PedidosCrearService = class PedidosCrearService {
                         nombre: beb.nombre,
                         precio: p,
                         cantidad: b.cantidad,
+                        costo: Number(beb.costo_calculado ?? 0),
                     });
                     lineaTotal += p * b.cantidad;
                 }
                 subtotal += lineaTotal;
+                const costoExtras = toppings.reduce((s, t) => s + t.costo * item.cantidad, 0) +
+                    bebidas.reduce((s, b) => s + b.costo * b.cantidad, 0);
+                const costoProductoUnit = Number(producto.costo_calculado ?? 0);
+                const costoUnitarioExtra = item.cantidad > 0 ? costoExtras / item.cantidad : 0;
                 lineasPreparadas.push({
                     productoId: producto.id,
                     cantidad: item.cantidad,
                     precioUnitario: precioUnit,
                     precioVentaLinea: lineaTotal,
-                    costoUnitario: Number(producto.costo_calculado ?? 0),
+                    costoUnitario: costoProductoUnit + costoUnitarioExtra,
                     cocinaId: producto.cocina_id,
                     observaciones: item.observaciones ?? null,
                     toppings,
@@ -170,6 +253,18 @@ let PedidosCrearService = class PedidosCrearService {
                     cantidad: item.cantidad,
                     precioVentaLinea: lineaTotal,
                     nombreProducto: producto.nombre,
+                    extras: [
+                        ...toppings.map((t) => ({
+                            tipo: 'topping',
+                            id: t.id,
+                            cantidad: item.cantidad,
+                        })),
+                        ...bebidas.map((b) => ({
+                            tipo: 'bebida',
+                            id: b.id,
+                            cantidad: b.cantidad,
+                        })),
+                    ],
                 });
             }
             for (const comboDto of combos) {
@@ -192,7 +287,36 @@ let PedidosCrearService = class PedidosCrearService {
                 const productosCombo = comboItems.rows
                     .filter((ci) => ci.tipo_item === 'producto')
                     .map((ci) => ({ productoId: ci.item_id, cantidad: ci.cantidad }));
-                subtotal += precioFijo * comboDto.cantidad;
+                const toppings = [];
+                for (const t of comboDto.toppings ?? []) {
+                    const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM toppings
+             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [t.topping_id, dto.sucursal_id]);
+                    if (!top)
+                        throw new common_1.BadRequestException('TOPPING_NO_DISPONIBLE');
+                    toppings.push({
+                        id: top.id,
+                        nombre: top.nombre,
+                        precio: Number(top.precio),
+                        costo: Number(top.costo_calculado ?? 0),
+                    });
+                }
+                const bebidas = [];
+                for (const b of comboDto.bebidas ?? []) {
+                    const beb = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM bebidas
+             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [b.bebida_id, dto.sucursal_id]);
+                    if (!beb)
+                        throw new common_1.BadRequestException('BEBIDA_NO_DISPONIBLE');
+                    bebidas.push({
+                        id: beb.id,
+                        nombre: beb.nombre,
+                        precio: Number(beb.precio),
+                        cantidad: b.cantidad,
+                        costo: Number(beb.costo_calculado ?? 0),
+                    });
+                }
+                const extrasUnitario = toppings.reduce((s, t) => s + t.precio, 0) +
+                    bebidas.reduce((s, b) => s + b.precio * b.cantidad, 0);
+                subtotal += (precioFijo + extrasUnitario) * comboDto.cantidad;
                 combosPreparados.push({
                     comboId: combo.id,
                     nombre: combo.nombre,
@@ -202,6 +326,9 @@ let PedidosCrearService = class PedidosCrearService {
                     cocinaId: producto.cocina_id,
                     costoUnitario: 0,
                     productosCombo,
+                    toppings,
+                    bebidas,
+                    extrasUnitario,
                 });
                 for (const pc of productosCombo) {
                     lineasInventario.push({
@@ -233,20 +360,51 @@ let PedidosCrearService = class PedidosCrearService {
             }
             const total = subtotal + costoDomicilio - descuentoPromo;
             const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(client, dto.sucursal_id, total);
+            if (opciones.soloEstimar) {
+                return {
+                    subtotal,
+                    costo_domicilio: costoDomicilio,
+                    descuento: descuentoPromo,
+                    motivo_descuento: motivoDescuento,
+                    promocion_id: promocionId,
+                    total,
+                    iva_porcentaje: iva.iva_porcentaje,
+                    iva_valor: iva.iva_valor,
+                    lineas: lineasPreparadas.map((l) => ({
+                        producto_id: l.productoId,
+                        cantidad: l.cantidad,
+                        precio_unitario: l.precioUnitario,
+                        subtotal: l.precioVentaLinea,
+                        nombre: lineasInventario.find((i) => i.productoId === l.productoId && i.cantidad === l.cantidad)?.nombreProducto ?? null,
+                    })),
+                    combos: combosPreparados.map((c) => ({
+                        combo_id: c.comboId,
+                        nombre: c.nombre,
+                        cantidad: c.cantidad,
+                        precio_unitario: c.precioFijo + c.extrasUnitario,
+                        subtotal: (c.precioFijo + c.extrasUnitario) * c.cantidad,
+                    })),
+                    estimar: true,
+                };
+            }
             const estadoInicial = this.soporte.resolverEstadoInicial(dto, opciones.creadoPorStaff);
             const metodoPago = dto.metodo_pago ?? 'pendiente';
             const numeroPedido = await this.soporte.generarNumeroPedido(client, dto.sucursal_id);
             await client.query(`INSERT INTO dispositivos_cliente (device_id, ultimo_acceso, plataforma)
          VALUES ($1, now(), 'android')
          ON CONFLICT (device_id) DO UPDATE SET ultimo_acceso = now()`, [dto.device_id]);
+            const authDisp = await client.query(`SELECT auth_uid::text AS auth_uid FROM dispositivos_cliente
+         WHERE device_id = $1 AND anonimizado = false`, [dto.device_id]);
+            const clienteAuthUid = authDisp.rows[0]?.auth_uid ?? null;
             const insertPedido = await client.query(`INSERT INTO pedidos (
            sucursal_id, mesa_id, device_id, numero_pedido, tipo, estado,
            cliente_nombre, cliente_telefono, direccion_entrega, lat, lng,
            metodo_pago, subtotal, costo_domicilio, descuento, motivo_descuento,
            promocion_id, total, requiere_factura,
-           observaciones, tiempo_estimado_minutos, iva_porcentaje, iva_valor
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
-         RETURNING id`, [
+           observaciones, tiempo_estimado_minutos, iva_porcentaje, iva_valor,
+           cliente_auth_uid
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24::uuid)
+         RETURNING id, seguimiento_token::text AS seguimiento_token`, [
                 dto.sucursal_id,
                 dto.mesa_id ?? null,
                 dto.device_id,
@@ -266,12 +424,14 @@ let PedidosCrearService = class PedidosCrearService {
                 promocionId,
                 total,
                 dto.requiere_factura ?? false,
-                dto.observaciones ?? null,
+                this.observacionesPedido(dto),
                 25,
                 iva.iva_porcentaje,
                 iva.iva_valor,
+                clienteAuthUid,
             ]);
             const pedidoId = insertPedido.rows[0].id;
+            const seguimientoToken = insertPedido.rows[0].seguimiento_token;
             const opcionesStock = { incluirEmpaques: dto.tipo === 'domicilio' };
             const contextoStock = {
                 origen: opciones.creadoPorStaff
@@ -348,7 +508,10 @@ let PedidosCrearService = class PedidosCrearService {
             }
             for (const combo of combosPreparados) {
                 for (let u = 0; u < combo.cantidad; u++) {
-                    const costoUnit = combo.costoUnitario;
+                    const costoExtras = combo.toppings.reduce((s, t) => s + t.costo, 0) +
+                        combo.bebidas.reduce((s, b) => s + b.costo * b.cantidad, 0);
+                    const costoUnit = combo.costoUnitario + costoExtras;
+                    const precioVenta = combo.precioFijo + combo.extrasUnitario;
                     const itemRes = await client.query(`INSERT INTO pedido_items (
                pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
                costo_unitario, observaciones
@@ -364,8 +527,16 @@ let PedidosCrearService = class PedidosCrearService {
                     await client.query(`INSERT INTO pedido_combo_selecciones (
                pedido_item_id, combo_id, nombre_combo, precio_combo
              ) VALUES ($1,$2,$3,$4)`, [itemId, combo.comboId, combo.nombre, combo.precioFijo]);
-                    const margenPct = combo.precioFijo > 0
-                        ? ((combo.precioFijo - costoUnit) / combo.precioFijo) * 100
+                    for (const t of combo.toppings) {
+                        await client.query(`INSERT INTO pedido_item_toppings (pedido_item_id, topping_id, nombre_topping, precio_topping)
+               VALUES ($1,$2,$3,$4)`, [itemId, t.id, t.nombre, t.precio]);
+                    }
+                    for (const b of combo.bebidas) {
+                        await client.query(`INSERT INTO pedido_item_bebidas (pedido_item_id, bebida_id, nombre_bebida, precio_bebida, cantidad)
+               VALUES ($1,$2,$3,$4,$5)`, [itemId, b.id, b.nombre, b.precio, b.cantidad]);
+                    }
+                    const margenPct = precioVenta > 0
+                        ? ((precioVenta - costoUnit) / precioVenta) * 100
                         : 0;
                     await client.query(`INSERT INTO margenes_venta (
                pedido_id, pedido_item_id, sucursal_id,
@@ -374,12 +545,14 @@ let PedidosCrearService = class PedidosCrearService {
                         pedidoId,
                         itemId,
                         dto.sucursal_id,
-                        combo.precioFijo,
+                        precioVenta,
                         costoUnit,
                         margenPct,
                     ]);
                 }
             }
+            const metodoCajaRef = dto.pagos?.[0]?.metodo_pago ?? metodoPago;
+            const registrarCajaAlCrear = this.cajaAuditoria.debeRegistrarVentaAlCrear(estadoInicial, dto.tipo, dto.mesa_id, metodoCajaRef);
             if (dto.pagos?.length) {
                 const sumaPagos = dto.pagos.reduce((s, p) => s + p.monto, 0);
                 if (Math.abs(sumaPagos - total) > 0.01) {
@@ -390,7 +563,13 @@ let PedidosCrearService = class PedidosCrearService {
                 }
                 const propinaCaja = dto.propina ?? 0;
                 for (const pago of dto.pagos) {
-                    await this.cajaAuditoria.registrarVentaEnCaja(client, dto.sucursal_id, pedidoId, pago.monto, pago.metodo_pago, { exigirCaja: true, descripcion: `Venta ${numeroPedido}` });
+                    if (registrarCajaAlCrear) {
+                        await this.cajaAuditoria.registrarVentaEnCaja(client, dto.sucursal_id, pedidoId, pago.monto, pago.metodo_pago, {
+                            exigirCaja: true,
+                            descripcion: `Venta ${numeroPedido}`,
+                            usuarioId: opciones.usuarioId,
+                        });
+                    }
                     await client.query(`INSERT INTO pagos_pedido (
                sucursal_id, pedido_id, monto, propina, metodo_pago, referencia
              ) VALUES ($1,$2,$3,$4,$5,$6)`, [
@@ -404,8 +583,16 @@ let PedidosCrearService = class PedidosCrearService {
                 }
                 await client.query(`UPDATE pedidos SET monto_pagado = $2, propina_acumulada = $3, metodo_pago = $4 WHERE id = $1`, [pedidoId, total, propinaCaja, dto.pagos[0].metodo_pago]);
             }
-            else if (this.cajaAuditoria.debeRegistrarVentaAlCrear(estadoInicial, dto.tipo, dto.mesa_id, metodoPago)) {
-                await this.cajaAuditoria.registrarVentaEnCaja(client, dto.sucursal_id, pedidoId, total, metodoPago);
+            else if (dto.propina != null && dto.propina > 0) {
+                await client.query(`UPDATE pedidos SET propina_acumulada = $2 WHERE id = $1`, [pedidoId, dto.propina]);
+            }
+            else if (registrarCajaAlCrear) {
+                await this.cajaAuditoria.registrarVentaEnCaja(client, dto.sucursal_id, pedidoId, total, metodoPago, {
+                    exigirCaja: true,
+                    descripcion: `Venta ${numeroPedido}`,
+                    usuarioId: opciones.usuarioId,
+                });
+                await client.query(`UPDATE pedidos SET monto_pagado = $2, metodo_pago = $3 WHERE id = $1`, [pedidoId, total, metodoPago]);
             }
             await this.cajaAuditoria.registrarAuditoria(client, dto.sucursal_id, pedidoId, {
                 numero_pedido: numeroPedido,
@@ -428,11 +615,6 @@ let PedidosCrearService = class PedidosCrearService {
                 this.soporte.esRolMesero(opciones.rol)) {
                 await client.query(`UPDATE pedidos SET mesera_id = $1, aprobado_at = now() WHERE id = $2`, [opciones.usuarioId, pedidoId]);
                 await this.soporte.asignarMeseraAMesa(client, dto.sucursal_id, dto.mesa_id, opciones.usuarioId);
-            }
-            else if (opciones.creadoPorStaff &&
-                dto.mesa_id &&
-                estadoInicial === 'confirmado') {
-                await client.query(`UPDATE pedidos SET aprobado_at = now() WHERE id = $1`, [pedidoId]);
             }
             let facturaId = null;
             if (dto.requiere_factura) {
@@ -458,22 +640,62 @@ let PedidosCrearService = class PedidosCrearService {
                 estado: estadoInicial,
                 tiempo_estimado_minutos: 25,
                 factura_id: facturaId,
+                seguimiento_token: seguimientoToken,
             };
         });
-        this.soporte.notificarPedidoRealtime(dto.sucursal_id, resultado.pedido_id, resultado.estado, resultado.numero_pedido, { mesaId: dto.mesa_id ?? null });
-        if (dto.mesa_id) {
-            void this.realtime.mesasActualizadas(dto.sucursal_id);
+        if (opciones.soloEstimar || resultado.estimar) {
+            return resultado;
         }
-        this.soporte.notificarCatalogoDisponibilidad(dto.sucursal_id, catalogoCambios);
-        if ((0, pedido_estados_1.estadoActivaCocina)(resultado.estado)) {
-            void this.soporte.notificarCocinasPorPedido(resultado.pedido_id, dto.sucursal_id);
-        }
-        if (this.cajaAuditoria.debeRegistrarVentaAlCrear(resultado.estado, dto.tipo, dto.mesa_id, dto.metodo_pago ?? 'pendiente')) {
-            void this.realtime.cajaMovimiento(dto.sucursal_id, {
-                pedido_id: resultado.pedido_id,
-            });
+        const creado = resultado;
+        const idempotente = creado.idempotente === true;
+        if (!idempotente) {
+            this.soporte.notificarPedidoRealtime(dto.sucursal_id, creado.pedido_id, creado.estado, creado.numero_pedido, { mesaId: dto.mesa_id ?? null });
+            if (dto.mesa_id) {
+                void this.realtime.mesasActualizadas(dto.sucursal_id);
+            }
+            this.soporte.notificarCatalogoDisponibilidad(dto.sucursal_id, catalogoCambios);
+            if ((0, pedido_estados_1.estadoActivaCocina)(creado.estado)) {
+                void this.soporte.notificarCocinasPorPedido(creado.pedido_id, dto.sucursal_id);
+            }
+            if (this.cajaAuditoria.debeRegistrarVentaAlCrear(creado.estado, dto.tipo, dto.mesa_id, dto.metodo_pago ?? 'pendiente')) {
+                void this.realtime.cajaMovimiento(dto.sucursal_id, {
+                    pedido_id: creado.pedido_id,
+                });
+            }
         }
         return resultado;
+    }
+    validarFechaEncargo(fecha) {
+        if (!fecha?.trim()) {
+            throw new common_1.BadRequestException({
+                error: 'FECHA_ENCARGO_REQUERIDA',
+                message: 'Indica la fecha deseada de entrega del encargo',
+            });
+        }
+        const entrega = new Date(`${fecha.trim()}T12:00:00`);
+        if (Number.isNaN(entrega.getTime())) {
+            throw new common_1.BadRequestException({
+                error: 'FECHA_ENCARGO_INVALIDA',
+                message: 'Fecha de entrega no válida',
+            });
+        }
+        const minima = new Date();
+        minima.setHours(0, 0, 0, 0);
+        minima.setDate(minima.getDate() + DIAS_ANTICIPACION_ENCARGO_MIN);
+        if (entrega < minima) {
+            throw new common_1.BadRequestException({
+                error: 'FECHA_ENCARGO_MUY_CERCANA',
+                message: `Los encargos requieren al menos ${DIAS_ANTICIPACION_ENCARGO_MIN} días de anticipación`,
+            });
+        }
+    }
+    observacionesPedido(dto) {
+        const base = dto.observaciones?.trim() ?? '';
+        if (dto.tipo !== 'encargo' || !dto.fecha_entrega_deseada?.trim()) {
+            return base || null;
+        }
+        const prefijo = `[Encargo entrega: ${dto.fecha_entrega_deseada.trim()}]`;
+        return base ? `${prefijo} ${base}` : prefijo;
     }
 };
 exports.PedidosCrearService = PedidosCrearService;
@@ -488,6 +710,7 @@ exports.PedidosCrearService = PedidosCrearService = __decorate([
         promociones_service_1.PromocionesService,
         pedidos_caja_auditoria_service_1.PedidosCajaAuditoriaService,
         pedidos_soporte_service_1.PedidosSoporteService,
-        pedidos_cuenta_mesa_service_1.PedidosCuentaMesaService])
+        pedidos_cuenta_mesa_service_1.PedidosCuentaMesaService,
+        pedidos_inventario_service_1.PedidosInventarioService])
 ], PedidosCrearService);
 //# sourceMappingURL=pedidos-crear.service.js.map

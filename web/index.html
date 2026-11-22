@@ -18,23 +18,38 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Tu Cancha Facil Soft">
+  <meta name="description" content="Foody — pedidos y gestión para restaurantes">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Tu Cancha Facil">
-  <link rel="apple-touch-icon" href="assets/tucanchafacil.png">
+  <meta name="apple-mobile-web-app-title" content="Foody">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap" rel="stylesheet">
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="tucanchafacil.png"/>
+  <!-- Favicon / PWA -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>Reserva de Canchas</title>
+  <title>Foody</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Errores visibles (diagnostico tunel / Brave) -->
+  <script>
+    (function () {
+      function show(msg) {
+        var d = document.createElement('pre');
+        d.setAttribute('data-foody-error', '1');
+        d.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;max-height:40vh;overflow:auto;background:#1a1a1a;color:#ffe66d;padding:12px;z-index:99999;white-space:pre-wrap;font:12px/1.4 Consolas,monospace;border-radius:8px;';
+        d.textContent = msg;
+        document.body ? document.body.appendChild(d) : document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(d); });
+      }
+      window.addEventListener('error', function (e) { show('JS: ' + (e.message || e)); });
+      window.addEventListener('unhandledrejection', function (e) { show('Promise: ' + e.reason); });
+    })();
+  </script>
   
-  <!-- Google Maps API -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAWlN1nPfwbvaKk4epvcV0kAa1aPFssypg&libraries=places"></script>
+  <!-- Google Maps Places (checkout domicilio). loading=async = best practice Google. -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAWlN1nPfwbvaKk4epvcV0kAa1aPFssypg&libraries=places&loading=async"></script>
   <script>
     // Variables globales para comunicación con Dart
     window.placesSearchResult = null;

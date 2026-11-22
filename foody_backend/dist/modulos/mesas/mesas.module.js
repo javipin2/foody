@@ -10,16 +10,20 @@ exports.MesasModule = void 0;
 const common_1 = require("@nestjs/common");
 const auth_module_1 = require("../../core/auth/auth.module");
 const alertas_module_1 = require("../alertas/alertas.module");
+const auditoria_module_1 = require("../auditoria/auditoria.module");
+const realtime_module_1 = require("../../core/realtime/realtime.module");
+const pedidos_module_1 = require("../pedidos/pedidos.module");
 const mesas_controller_1 = require("./mesas.controller");
 const mesas_service_1 = require("./mesas.service");
+const mesas_reserva_cron_service_1 = require("./mesas-reserva-cron.service");
 let MesasModule = class MesasModule {
 };
 exports.MesasModule = MesasModule;
 exports.MesasModule = MesasModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule, alertas_module_1.AlertasModule],
+        imports: [auth_module_1.AuthModule, alertas_module_1.AlertasModule, auditoria_module_1.AuditoriaModule, pedidos_module_1.PedidosModule, realtime_module_1.RealtimeModule],
         controllers: [mesas_controller_1.MesasController],
-        providers: [mesas_service_1.MesasService],
+        providers: [mesas_service_1.MesasService, mesas_reserva_cron_service_1.MesasReservaCronService],
     })
 ], MesasModule);
 //# sourceMappingURL=mesas.module.js.map

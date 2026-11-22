@@ -1,39 +1,58 @@
+import { OnModuleInit } from '@nestjs/common';
 import { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
-export declare class DispatchService {
+import { PedidosEstadoCommandService } from '../pedidos/pedidos-estado-command.service';
+import { PedidosDispatchHooksService } from '../pedidos/pedidos-dispatch-hooks.service';
+import { ConfiguracionGlobalService } from '../../core/config/configuracion-global.module';
+export declare class DispatchService implements OnModuleInit {
     private readonly database;
     private readonly alertasRiesgo;
     private readonly realtime;
     private readonly notificaciones;
-    constructor(database: DatabaseService, alertasRiesgo: AlertasRiesgoService, realtime: RealtimeBroadcastService, notificaciones: NotificacionesService);
+    private readonly pedidosEstadoCommand;
+    private readonly pedidosDispatchHooks;
+    private readonly configGlobal;
+    private expirandoOfertas;
+    private readonly LOCK_TICK_EXPIRAR_OFERTAS;
+    constructor(database: DatabaseService, alertasRiesgo: AlertasRiesgoService, realtime: RealtimeBroadcastService, notificaciones: NotificacionesService, pedidosEstadoCommand: PedidosEstadoCommandService, pedidosDispatchHooks: PedidosDispatchHooksService, configGlobal: ConfiguracionGlobalService);
+    private get radioInicialKm();
+    private get radioIncrementoKm();
+    private get maxIntentos();
+    private get ofertaExpiraSeg();
+    private get comisionFoodyPct();
+    onModuleInit(): void;
+    private tickExpirarOfertas;
     contarPlantaLibres(sucursalId: string): Promise<number>;
     intentarDispatchAutomatico(pedidoId: string, sucursalId: string): Promise<{
         iniciado: boolean;
         motivo: string;
         oferta_id: string;
         intento?: undefined;
+        mensaje?: undefined;
         radio_km?: undefined;
-        domiciliarios_notificados?: undefined;
         expira_en_seg?: undefined;
+        domiciliarios_notificados?: undefined;
     } | {
         iniciado: boolean;
         motivo: string;
         intento: number;
         oferta_id?: undefined;
+        mensaje?: undefined;
         radio_km?: undefined;
-        domiciliarios_notificados?: undefined;
         expira_en_seg?: undefined;
+        domiciliarios_notificados?: undefined;
     } | {
         iniciado: boolean;
         motivo: string;
+        mensaje: string;
         intento: number;
         radio_km: number;
+        expira_en_seg: number;
         oferta_id?: undefined;
         domiciliarios_notificados?: undefined;
-        expira_en_seg?: undefined;
     } | {
         iniciado: boolean;
         oferta_id: string;
@@ -42,34 +61,46 @@ export declare class DispatchService {
         domiciliarios_notificados: number;
         expira_en_seg: number;
         motivo?: undefined;
+        mensaje?: undefined;
     } | {
         iniciado: boolean;
         motivo: string;
+    } | {
+        pedido_id: string;
+        domiciliario_planta_id: string;
+        domiciliario_usuario_id: string;
+        estado: "asignado";
+        iniciado: boolean;
+        motivo: string;
     }>;
+    private asignarPrimeraPlantaLibre;
     iniciarBusquedaIndependientes(pedidoId: string, sucursalId: string): Promise<{
         iniciado: boolean;
         motivo: string;
         oferta_id: string;
         intento?: undefined;
+        mensaje?: undefined;
         radio_km?: undefined;
-        domiciliarios_notificados?: undefined;
         expira_en_seg?: undefined;
+        domiciliarios_notificados?: undefined;
     } | {
         iniciado: boolean;
         motivo: string;
         intento: number;
         oferta_id?: undefined;
+        mensaje?: undefined;
         radio_km?: undefined;
-        domiciliarios_notificados?: undefined;
         expira_en_seg?: undefined;
+        domiciliarios_notificados?: undefined;
     } | {
         iniciado: boolean;
         motivo: string;
+        mensaje: string;
         intento: number;
         radio_km: number;
+        expira_en_seg: number;
         oferta_id?: undefined;
         domiciliarios_notificados?: undefined;
-        expira_en_seg?: undefined;
     } | {
         iniciado: boolean;
         oferta_id: string;
@@ -78,6 +109,7 @@ export declare class DispatchService {
         domiciliarios_notificados: number;
         expira_en_seg: number;
         motivo?: undefined;
+        mensaje?: undefined;
     }>;
     private buscarIndependientesCercanos;
     private expirarOfertasVencidas;
@@ -88,4 +120,5 @@ export declare class DispatchService {
         comision: number;
         ganancia: number;
     };
+    private centroCiudadPorSlug;
 }

@@ -1,7 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
 import { PlanFeaturesService } from '../../core/auth/plan-features.service';
+import { MenuCacheService } from '../../core/cache/menu-cache.service';
 import { ActualizarHorarioDto } from './dto/actualizar-horario.dto';
+import { ActualizarMargenesSucursalDto } from './dto/actualizar-margenes-sucursal.dto';
+import { ActualizarSucursalDto } from './dto/actualizar-sucursal.dto';
 import { CrearSucursalDto } from './dto/crear-sucursal.dto';
 
 @Injectable()
@@ -9,6 +12,7 @@ export class RestaurantesService {
   constructor(
     private readonly database: DatabaseService,
     private readonly planFeatures: PlanFeaturesService,
+    private readonly menuCache: MenuCacheService,
   ) {}
 
   async listarSucursales(restauranteId: string) {
@@ -21,11 +25,12 @@ export class RestaurantesService {
     }
 
     return this.database.consultar(
-      `SELECT s.id, s.nombre, s.direccion, s.lat, s.lng, s.activa, s.ciudad_id, c.nombre AS ciudad_nombre
+      `SELECT s.id, s.nombre, s.direccion, s.telefono, s.lat, s.lng, s.activa,
+              s.ciudad_id, c.nombre AS ciudad_nombre
        FROM sucursales s
        LEFT JOIN ciudades c ON c.id = s.ciudad_id
-       WHERE s.restaurante_id = $1 AND s.activa = true
-       ORDER BY s.nombre ASC`,
+       WHERE s.restaurante_id = $1
+       ORDER BY s.activa DESC, s.nombre ASC`,
       [restauranteId],
     );
   }
@@ -95,6 +100,57 @@ export class RestaurantesService {
     });
   }
 
+  /** CFG-PATCH-SUCURSAL-01: editar nombre/dir/tel/activa de una sede propia. */
+  async actualizarSucursal(
+    restauranteId: string,
+    sucursalId: string,
+    dto: ActualizarSucursalDto,
+  ) {
+    const campos: string[] = [];
+    const valores: unknown[] = [sucursalId, restauranteId];
+    let i = 2;
+
+    if (dto.nombre !== undefined) {
+      campos.push(`nombre = $${++i}`);
+      valores.push(dto.nombre.trim());
+    }
+    if (dto.direccion !== undefined) {
+      campos.push(`direccion = $${++i}`);
+      valores.push(
+        dto.direccion === null ? null : dto.direccion.trim() || null,
+      );
+    }
+    if (dto.telefono !== undefined) {
+      campos.push(`telefono = $${++i}`);
+      valores.push(
+        dto.telefono === null ? null : dto.telefono.trim() || null,
+      );
+    }
+    if (dto.activa !== undefined) {
+      campos.push(`activa = $${++i}`);
+      valores.push(dto.activa);
+    }
+    if (!campos.length) {
+      throw new BadRequestException('Nada que actualizar');
+    }
+
+    const fila = await this.database.consultarUno<{
+      id: string;
+      nombre: string;
+      direccion: string | null;
+      telefono: string | null;
+      activa: boolean;
+    }>(
+      `UPDATE sucursales SET ${campos.join(', ')}
+       WHERE id = $1 AND restaurante_id = $2
+       RETURNING id, nombre, direccion, telefono, activa`,
+      valores,
+    );
+    if (!fila) throw new NotFoundException('Sucursal no encontrada');
+    void this.menuCache.invalidar(sucursalId);
+    return fila;
+  }
+
   private async exigirSucursalDelRestaurante(
     sucursalId: string,
     restauranteId: string,
@@ -128,6 +184,7 @@ export class RestaurantesService {
   ) {
     const fila = await this.database.consultarUno<{
       id: string;
+      sucursal_id: string;
       dia_semana: number;
       hora_apertura: string;
       hora_cierre: string;
@@ -141,7 +198,8 @@ export class RestaurantesService {
        WHERE h.id = $1
          AND h.sucursal_id = s.id
          AND s.restaurante_id = $5
-       RETURNING h.id, h.dia_semana, h.hora_apertura::text, h.hora_cierre::text, h.activo`,
+       RETURNING h.id, h.sucursal_id, h.dia_semana,
+                 h.hora_apertura::text, h.hora_cierre::text, h.activo`,
       [
         horarioId,
         dto.hora_apertura ?? null,
@@ -153,6 +211,115 @@ export class RestaurantesService {
     if (!fila) {
       throw new NotFoundException('Horario no encontrado');
     }
+    // Sin esto el cliente sigue viendo cerrado/abierto hasta ~5 min (TTL menú).
+    await this.menuCache.invalidar(fila.sucursal_id);
+    const { sucursal_id: _sid, ...horario } = fila;
+    return horario;
+  }
+
+  async obtenerMarca(restauranteId: string) {
+    const fila = await this.database.consultarUno<{
+      id: string;
+      nombre: string;
+      telefono: string | null;
+      descripcion: string | null;
+      logo_url: string | null;
+      banner_url: string | null;
+    }>(
+      `SELECT id, nombre, telefono, descripcion, logo_url, banner_url
+       FROM restaurantes WHERE id = $1`,
+      [restauranteId],
+    );
+    if (!fila) throw new NotFoundException('Restaurante no encontrado');
     return fila;
+  }
+
+  async actualizarMarca(
+    restauranteId: string,
+    dto: {
+      nombre?: string;
+      telefono?: string | null;
+      logo_url?: string | null;
+      banner_url?: string | null;
+      descripcion?: string | null;
+    },
+  ) {
+    const campos: string[] = [];
+    const valores: unknown[] = [];
+    let i = 1;
+    if (dto.nombre !== undefined) {
+      const n = dto.nombre.trim();
+      if (!n) {
+        throw new BadRequestException('El nombre de marca no puede quedar vacío');
+      }
+      campos.push(`nombre = $${i++}`);
+      valores.push(n);
+    }
+    if (dto.telefono !== undefined) {
+      campos.push(`telefono = $${i++}`);
+      valores.push(dto.telefono === null ? null : dto.telefono.trim() || null);
+    }
+    if (dto.logo_url !== undefined) {
+      campos.push(`logo_url = $${i++}`);
+      valores.push(dto.logo_url?.trim() || null);
+    }
+    if (dto.banner_url !== undefined) {
+      campos.push(`banner_url = $${i++}`);
+      valores.push(dto.banner_url?.trim() || null);
+    }
+    if (dto.descripcion !== undefined) {
+      campos.push(`descripcion = $${i++}`);
+      valores.push(dto.descripcion?.trim() || null);
+    }
+    if (!campos.length) return this.obtenerMarca(restauranteId);
+    valores.push(restauranteId);
+    const fila = await this.database.consultarUno(
+      `UPDATE restaurantes SET ${campos.join(', ')}
+       WHERE id = $${i}
+       RETURNING id, nombre, telefono, descripcion, logo_url, banner_url`,
+      valores,
+    );
+    if (!fila) throw new NotFoundException('Restaurante no encontrado');
+    // CFG-CACHE-MARCA-04: listado ciudad es SQL vivo (sin caché Nest); sin bust.
+    return fila;
+  }
+
+  async actualizarMargenesSucursal(
+    restauranteId: string,
+    sucursalId: string,
+    dto: ActualizarMargenesSucursalDto,
+  ) {
+    const fila = await this.database.consultarUno<{
+      id: string;
+      restaurante_id: string;
+    }>(
+      `SELECT id, restaurante_id
+       FROM sucursales
+       WHERE id = $1 AND restaurante_id = $2 AND activa = true`,
+      [sucursalId, restauranteId],
+    );
+    if (!fila) throw new NotFoundException('Sucursal no encontrada');
+
+    const r = await this.database.consultarUno<{
+      margen_objetivo_default: string | number | null;
+      umbral_alerta_margen: string | number | null;
+    }>(
+      `UPDATE sucursales
+       SET margen_objetivo_default = COALESCE($2, margen_objetivo_default),
+           umbral_alerta_margen = COALESCE($3, umbral_alerta_margen)
+       WHERE id = $1
+       RETURNING margen_objetivo_default, umbral_alerta_margen`,
+      [sucursalId, dto.margen_objetivo_default ?? null, dto.umbral_alerta_margen ?? null],
+    );
+    if (!r) throw new NotFoundException('Sucursal no encontrada');
+
+    return {
+      margen_objetivo_default: r.margen_objetivo_default != null
+        ? Number(r.margen_objetivo_default)
+        : 35,
+      umbral_alerta_margen: r.umbral_alerta_margen != null
+        ? Number(r.umbral_alerta_margen)
+        : 25,
+    };
   }
 }

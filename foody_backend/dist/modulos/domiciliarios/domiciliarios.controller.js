@@ -24,65 +24,170 @@ const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-a
 const plan_features_guard_1 = require("../../core/auth/guards/plan-features.guard");
 const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requiere-modulo.decorator");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const dispatch_service_1 = require("./dispatch.service");
 const domiciliarios_independientes_service_1 = require("./domiciliarios-independientes.service");
 const domiciliarios_service_1 = require("./domiciliarios.service");
 const asignar_domiciliario_dto_1 = require("./dto/asignar-domiciliario.dto");
 const confirmar_entrega_dto_1 = require("./dto/confirmar-entrega.dto");
+const config_domicilio_dto_1 = require("./dto/config-domicilio.dto");
 const independiente_dto_1 = require("./dto/independiente.dto");
 let DomiciliariosPlantaController = class DomiciliariosPlantaController {
     domiciliariosService;
     dispatchService;
-    constructor(domiciliariosService, dispatchService) {
+    sucursalScope;
+    constructor(domiciliariosService, dispatchService, sucursalScope) {
         this.domiciliariosService = domiciliariosService;
         this.dispatchService = dispatchService;
+        this.sucursalScope = sucursalScope;
     }
-    listarDisponibles(sucursalId) {
-        return this.domiciliariosService.listarPlantaDisponibles(sucursalId);
+    async listarDisponibles(usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.domiciliariosService.listarPlantaDisponibles(id);
     }
-    asignar(dto, usuario) {
+    async resumenComisiones(usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.domiciliariosService.resumenComisionesIndependientes(id);
+    }
+    async resumenLiquidacion(usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.domiciliariosService.resumenLiquidacion(id);
+    }
+    async liquidar(domiciliarioPlantaId, usuario, sucursalId) {
+        const sid = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.domiciliariosService.liquidarDomiciliario(sid, domiciliarioPlantaId, usuario.sub);
+    }
+    async configurarFiado(usuario, sucursalId, body) {
+        const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.domiciliariosService.configurarFiadoDomiciliario(id, body.permitir === true);
+    }
+    async resumenDomicilios(usuario, sucursalId, desde, hasta) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.domiciliariosService.resumenDomicilios(id, desde, hasta);
+    }
+    async configurarDomicilioCaja(usuario, sucursalId, body) {
+        const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.domiciliariosService.configurarDomicilioEnCaja(id, body.ingresa === true);
+    }
+    async asignar(dto, usuario) {
+        await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
         return this.domiciliariosService.asignarPlanta(dto, usuario.sub);
     }
-    dispatchIndependiente(pedidoId, usuario, sucursalId) {
-        const sid = sucursalId ?? usuario.sucursal_id;
+    async reasignar(dto, usuario) {
+        await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
+        return this.domiciliariosService.reasignarPlanta(dto, usuario.sub);
+    }
+    async dispatchIndependiente(pedidoId, usuario, sucursalId) {
+        const sid = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
         return this.dispatchService.iniciarBusquedaIndependientes(pedidoId, sid);
     }
 };
 exports.DomiciliariosPlantaController = DomiciliariosPlantaController;
 __decorate([
     (0, common_1.Get)('disponibles/:sucursal_id'),
-    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_pedidos'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
 ], DomiciliariosPlantaController.prototype, "listarDisponibles", null);
 __decorate([
+    (0, common_1.Get)('comisiones-independientes/:sucursal_id'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "resumenComisiones", null);
+__decorate([
+    (0, common_1.Get)('liquidacion/:sucursal_id'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_caja'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "resumenLiquidacion", null);
+__decorate([
+    (0, common_1.Post)('liquidar/:domiciliario_planta_id'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_caja'),
+    __param(0, (0, common_1.Param)('domiciliario_planta_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "liquidar", null);
+__decorate([
+    (0, common_1.Patch)('config-fiado/:sucursal_id'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, config_domicilio_dto_1.ConfigFiadoDomiciliarioDto]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "configurarFiado", null);
+__decorate([
+    (0, common_1.Get)('domicilios/:sucursal_id'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_caja'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Query)('desde')),
+    __param(3, (0, common_1.Query)('hasta')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String, String]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "resumenDomicilios", null);
+__decorate([
+    (0, common_1.Patch)('config-domicilio-caja/:sucursal_id'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, config_domicilio_dto_1.ConfigDomicilioCajaDto]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "configurarDomicilioCaja", null);
+__decorate([
     (0, common_1.Post)('asignar'),
-    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_pedidos'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [asignar_domiciliario_dto_1.AsignarDomiciliarioDto,
         jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], DomiciliariosPlantaController.prototype, "asignar", null);
 __decorate([
+    (0, common_1.Post)('reasignar'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [asignar_domiciliario_dto_1.AsignarDomiciliarioDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], DomiciliariosPlantaController.prototype, "reasignar", null);
+__decorate([
     (0, common_1.Post)('dispatch-independiente/:pedido_id'),
-    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_pedidos'),
-    __param(0, (0, common_1.Param)('pedido_id')),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios'),
+    __param(0, (0, common_1.Param)('pedido_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], DomiciliariosPlantaController.prototype, "dispatchIndependiente", null);
 exports.DomiciliariosPlantaController = DomiciliariosPlantaController = __decorate([
     (0, common_1.Controller)('domiciliarios-planta'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, plan_features_guard_1.PlanFeaturesGuard, rol_guard_1.RolGuard),
     (0, requiere_modulo_decorator_1.RequiereModulo)('domiciliarios'),
     __metadata("design:paramtypes", [domiciliarios_service_1.DomiciliariosService,
-        dispatch_service_1.DispatchService])
+        dispatch_service_1.DispatchService,
+        sucursal_scope_service_1.SucursalScopeService])
 ], DomiciliariosPlantaController);
 let DomiciliarioPlantaController = class DomiciliarioPlantaController {
     domiciliariosService;
@@ -98,11 +203,20 @@ let DomiciliarioPlantaController = class DomiciliarioPlantaController {
     confirmarEntrega(pedidoId, dto, usuario) {
         return this.domiciliariosService.confirmarEntrega(pedidoId, usuario.sub, dto);
     }
-    historial(usuario) {
-        return this.domiciliariosService.historialEntregas(usuario.sub);
+    ubicacion(dto, usuario) {
+        return this.domiciliariosService.registrarUbicacionEntrega(usuario.sub, dto);
     }
-    estadisticas(usuario) {
-        return this.domiciliariosService.estadisticasPlanta(usuario.sub);
+    historial(usuario, desde, hasta) {
+        return this.domiciliariosService.historialEntregas(usuario.sub, {
+            desde,
+            hasta,
+        });
+    }
+    estadisticas(usuario, desde, hasta) {
+        return this.domiciliariosService.estadisticasPlanta(usuario.sub, {
+            desde,
+            hasta,
+        });
     }
 };
 exports.DomiciliarioPlantaController = DomiciliarioPlantaController;
@@ -117,7 +231,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('pedidos/:id/en-camino'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
@@ -126,7 +240,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('pedidos/:id/confirmar-entrega'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -135,19 +249,33 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], DomiciliarioPlantaController.prototype, "confirmarEntrega", null);
 __decorate([
+    (0, common_1.Post)('ubicacion'),
+    (0, permisos_decorator_1.Permisos)('ver_pedidos'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [independiente_dto_1.UbicacionEntregaDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", void 0)
+], DomiciliarioPlantaController.prototype, "ubicacion", null);
+__decorate([
     (0, common_1.Get)('historial'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Query)('desde')),
+    __param(2, (0, common_1.Query)('hasta')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String]),
     __metadata("design:returntype", void 0)
 ], DomiciliarioPlantaController.prototype, "historial", null);
 __decorate([
     (0, common_1.Get)('estadisticas'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Query)('desde')),
+    __param(2, (0, common_1.Query)('hasta')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String]),
     __metadata("design:returntype", void 0)
 ], DomiciliarioPlantaController.prototype, "estadisticas", null);
 exports.DomiciliarioPlantaController = DomiciliarioPlantaController = __decorate([
@@ -170,6 +298,9 @@ let DomiciliariosIndependientesController = class DomiciliariosIndependientesCon
     cerrarSesion(usuario) {
         return this.independientesService.cerrarSesion(usuario.sub);
     }
+    estadoSesion(usuario) {
+        return this.independientesService.estadoSesion(usuario.sub);
+    }
     ofertasActivas(usuario) {
         return this.independientesService.ofertasActivas(usuario.sub);
     }
@@ -182,11 +313,11 @@ let DomiciliariosIndependientesController = class DomiciliariosIndependientesCon
     enCamino(pedidoId, usuario) {
         return this.independientesService.marcarEnCamino(pedidoId, usuario.sub);
     }
-    confirmarEntrega(pedidoId, usuario) {
-        return this.independientesService.confirmarEntrega(pedidoId, usuario.sub);
+    confirmarEntrega(pedidoId, dto, usuario) {
+        return this.independientesService.confirmarEntrega(pedidoId, usuario.sub, dto);
     }
-    ganancias(usuario) {
-        return this.independientesService.ganancias(usuario.sub);
+    ganancias(usuario, desde, hasta) {
+        return this.independientesService.ganancias(usuario.sub, { desde, hasta });
     }
 };
 exports.DomiciliariosIndependientesController = DomiciliariosIndependientesController;
@@ -206,7 +337,7 @@ __decorate([
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [independiente_dto_1.UbicacionDto,
+    __metadata("design:paramtypes", [independiente_dto_1.UbicacionEntregaDto,
         jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", void 0)
 ], DomiciliariosIndependientesController.prototype, "ubicacion", null);
@@ -219,6 +350,14 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], DomiciliariosIndependientesController.prototype, "cerrarSesion", null);
 __decorate([
+    (0, common_1.Get)('sesion/estado'),
+    (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", void 0)
+], DomiciliariosIndependientesController.prototype, "estadoSesion", null);
+__decorate([
     (0, common_1.Get)('ofertas-activas'),
     (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -229,7 +368,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('ofertas/:id/responder'),
     (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -248,7 +387,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('pedidos/:id/en-camino'),
     (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
@@ -257,18 +396,22 @@ __decorate([
 __decorate([
     (0, common_1.Patch)('pedidos/:id/confirmar-entrega'),
     (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, confirmar_entrega_dto_1.ConfirmarEntregaDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", void 0)
 ], DomiciliariosIndependientesController.prototype, "confirmarEntrega", null);
 __decorate([
     (0, common_1.Get)('ganancias'),
     (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Query)('desde')),
+    __param(2, (0, common_1.Query)('hasta')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String]),
     __metadata("design:returntype", void 0)
 ], DomiciliariosIndependientesController.prototype, "ganancias", null);
 exports.DomiciliariosIndependientesController = DomiciliariosIndependientesController = __decorate([

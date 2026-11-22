@@ -24,15 +24,22 @@ class PagosRepository {
 
   Future<Map<String, dynamic>> sincronizar({
     String? pagoId,
-    required String transaccionWompiId,
+    String? transaccionWompiId,
   }) async {
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/pagos/sincronizar',
       data: {
         if (pagoId != null) 'pago_id': pagoId,
-        'transaccion_wompi_id': transaccionWompiId,
+        if (transaccionWompiId != null && transaccionWompiId.isNotEmpty)
+          'transaccion_wompi_id': transaccionWompiId,
       },
     );
+    return _extraerDatos(respuesta.data);
+  }
+
+  /// Cobro recurrente con fuente guardada o checkout si no hay tarjeta tokenizada.
+  Future<Map<String, dynamic>> renovar() async {
+    final respuesta = await _dio.post<Map<String, dynamic>>('/pagos/renovar');
     return _extraerDatos(respuesta.data);
   }
 

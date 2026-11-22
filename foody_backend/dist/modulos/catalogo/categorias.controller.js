@@ -48,6 +48,16 @@ let CategoriasController = class CategoriasController {
         const sid = await this.sucursalScope.resolverEscritura(usuario);
         return this.catalogo.eliminarCategoria(id, sid);
     }
+    async copiarDesde(destinoId, origenId, usuario) {
+        await this.sucursalScope.validarEscritura(usuario, destinoId);
+        if (!this.sucursalScope.puedeVerInventarioHermanas(usuario)) {
+            throw new common_1.ForbiddenException({
+                error: 'COPIAR_MENU_REQUIERE_MULTI_SUCURSAL',
+                message: 'Copiar menú entre sedes requiere permiso corporativo (gestionar sucursales).',
+            });
+        }
+        return this.catalogo.copiarMenuDesde(usuario.restaurante_id, destinoId, origenId, usuario.sub);
+    }
 };
 exports.CategoriasController = CategoriasController;
 __decorate([
@@ -71,7 +81,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -82,12 +92,22 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CategoriasController.prototype, "eliminar", null);
+__decorate([
+    (0, common_1.Post)('sucursal/:destino_id/copiar-desde/:origen_id'),
+    (0, permisos_decorator_1.Permisos)('editar_productos', 'gestionar_sucursales'),
+    __param(0, (0, common_1.Param)('destino_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('origen_id', common_1.ParseUUIDPipe)),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], CategoriasController.prototype, "copiarDesde", null);
 exports.CategoriasController = CategoriasController = __decorate([
     (0, common_1.Controller)('categorias'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),

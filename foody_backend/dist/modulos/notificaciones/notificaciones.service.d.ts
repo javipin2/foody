@@ -23,26 +23,47 @@ export declare class NotificacionesService {
     private readonly fcm;
     private readonly log;
     constructor(database: DatabaseService, fcm: FcmService);
+    enviarPrueba(usuario: {
+        sub: string;
+        rol: string;
+    }): Promise<{
+        procesadas: number;
+        enviados: number;
+        abandonadas: number;
+        modo: string;
+    }>;
     enviar(dto: EnviarPushDto): Promise<{
         procesadas: number;
         enviados: number;
+        abandonadas: number;
         modo: string;
     }>;
     encolar(dto: EncolarNotificacionDto): Promise<{
         id: string;
         encolada: boolean;
     }>;
+    private maxIntentosFcm;
     procesarPendientes(limite?: number): Promise<{
         procesadas: number;
         enviados: number;
+        abandonadas: number;
         modo: string;
     }>;
     diagnostico(): Promise<{
         firebase_admin: boolean;
         pendientes: number;
+        abandonadas_24h: number;
+        max_intentos: number;
         tokens_web_staff: number;
         tokens_web_cliente: number;
         tokens_web_domiciliario: number;
+    }>;
+    purgarHistorialCrecimiento(opciones?: {
+        diasCola?: number;
+        diasAuditoria?: number;
+    }): Promise<{
+        cola: number;
+        auditoria: number;
     }>;
     enviarPruebaWeb(opciones?: {
         usuario_id?: string;

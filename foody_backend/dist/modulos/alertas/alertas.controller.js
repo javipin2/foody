@@ -69,7 +69,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id/revisar'),
     (0, permisos_decorator_1.Permisos)('ver_alertas'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),
     __metadata("design:type", Function),

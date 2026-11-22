@@ -11,6 +11,7 @@ const common_1 = require("@nestjs/common");
 const auth_module_1 = require("../../core/auth/auth.module");
 const database_module_1 = require("../../core/database/database.module");
 const pagos_controller_1 = require("./pagos.controller");
+const pagos_recurrentes_service_1 = require("./pagos-recurrentes.service");
 const pagos_service_1 = require("./pagos.service");
 const wompi_service_1 = require("./wompi.service");
 let PagosModule = class PagosModule {
@@ -20,8 +21,8 @@ exports.PagosModule = PagosModule = __decorate([
     (0, common_1.Module)({
         imports: [database_module_1.DatabaseModule, auth_module_1.AuthModule],
         controllers: [pagos_controller_1.PagosController],
-        providers: [pagos_service_1.PagosService, wompi_service_1.WompiService],
-        exports: [pagos_service_1.PagosService, wompi_service_1.WompiService],
+        providers: [pagos_service_1.PagosService, pagos_recurrentes_service_1.PagosRecurrentesService, wompi_service_1.WompiService],
+        exports: [pagos_service_1.PagosService, pagos_recurrentes_service_1.PagosRecurrentesService, wompi_service_1.WompiService],
     })
 ], PagosModule);
 //# sourceMappingURL=pagos.module.js.map

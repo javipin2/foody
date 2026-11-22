@@ -22,7 +22,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!payload?.sub) {
       throw new UnauthorizedException('Token inválido');
     }
-    const permisos = await this.authService.permisosDelRol(payload.rol);
+    const permisos = await this.authService.permisosEfectivos(
+      payload.sub,
+      payload.rol,
+    );
     return { ...payload, permisos };
   }
 }

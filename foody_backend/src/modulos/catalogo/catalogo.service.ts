@@ -15,13 +15,29 @@ import { CrearExtraDto } from './dto/crear-extra.dto';
 import { CrearProductoDto } from './dto/crear-producto.dto';
 import { ConfigurarItemsIncluidosDto } from './dto/configurar-items-incluidos.dto';
 
+import { PlanFeaturesService } from '../../core/auth/plan-features.service';
+import { MenuCacheService } from '../../core/cache/menu-cache.service';
+import {
+  envolverPaginado,
+  LIMITE_LISTADO_SIN_PAGINA,
+  opcionesListado,
+  PaginacionQueryDto,
+  resolverPaginacion,
+} from '../../compartido/dto/paginacion.dto';
+
 @Injectable()
 export class CatalogoService {
   constructor(
     private readonly database: DatabaseService,
     private readonly costeo: CosteoService,
     private readonly realtime: RealtimeBroadcastService,
+    private readonly planFeatures: PlanFeaturesService,
+    private readonly menuCache: MenuCacheService,
   ) {}
+
+  private invalidarMenu(sucursalId: string): void {
+    void this.menuCache.invalidar(sucursalId);
+  }
 
   async listarCategorias(sucursalId: string) {
     return this.database.consultar(
@@ -40,6 +56,7 @@ export class CatalogoService {
        RETURNING id, nombre, orden, activa`,
       [dto.sucursal_id, dto.nombre, dto.orden ?? 0],
     );
+    this.invalidarMenu(dto.sucursal_id);
     return fila;
   }
 
@@ -73,6 +90,7 @@ export class CatalogoService {
        WHERE id = $${i++} AND sucursal_id = $${i}`,
       valores,
     );
+    this.invalidarMenu(sucursalId);
     return { id };
   }
 
@@ -82,22 +100,53 @@ export class CatalogoService {
       `UPDATE categorias SET activa = false WHERE id = $1 AND sucursal_id = $2`,
       [id, sucursalId],
     );
+    this.invalidarMenu(sucursalId);
     return { id, activa: false };
   }
 
-  async listarProductos(sucursalId: string) {
-    return this.database.consultar(
-      `SELECT p.id, p.nombre, p.descripcion, p.precio, p.precio_para_llevar,
-              p.disponible, p.orden, p.categoria_id, c.nombre AS categoria_nombre, p.cocina_id
+  async listarProductos(
+    sucursalId: string,
+    query: PaginacionQueryDto = {},
+  ) {
+    const opts = opcionesListado(query, 50);
+    const select = `SELECT p.id, p.nombre, p.descripcion, p.precio, p.precio_para_llevar,
+              p.disponible, p.orden, p.categoria_id, p.imagen_url,
+              c.nombre AS categoria_nombre, p.cocina_id
        FROM productos p
        LEFT JOIN categorias c ON c.id = p.categoria_id
-       WHERE p.sucursal_id = $1
-       ORDER BY c.orden ASC, p.orden ASC, p.nombre ASC`,
-      [sucursalId],
+       WHERE p.sucursal_id = $1`;
+    if (!opts.paginar) {
+      return this.database.consultar(
+        `${select}
+       ORDER BY c.orden ASC, p.orden ASC, p.nombre ASC
+       LIMIT $2`,
+        [sucursalId, opts.limite],
+      );
+    }
+    const { page, limit, offset } = resolverPaginacion(
+      opts.page,
+      opts.limite,
+      50,
     );
+    const [items, totalRow] = await Promise.all([
+      this.database.consultar(
+        `${select}
+       ORDER BY c.orden ASC, p.orden ASC, p.nombre ASC
+       LIMIT $2 OFFSET $3`,
+        [sucursalId, limit, offset],
+      ),
+      this.database.consultarUno<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM productos WHERE sucursal_id = $1`,
+        [sucursalId],
+      ),
+    ]);
+    return envolverPaginado(items, totalRow?.count ?? 0, page, limit);
   }
 
-  async crearProducto(dto: CrearProductoDto) {
+  async crearProducto(dto: CrearProductoDto, restauranteId?: string) {
+    if (restauranteId) {
+      await this.planFeatures.assertLimiteProductos(restauranteId, dto.sucursal_id);
+    }
     const cocinaId =
       dto.cocina_id ??
       (
@@ -110,9 +159,9 @@ export class CatalogoService {
     const fila = await this.database.consultarUno(
       `INSERT INTO productos (
          sucursal_id, categoria_id, cocina_id, nombre, descripcion,
-         precio, precio_para_llevar, disponible, orden
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       RETURNING id, nombre, precio, precio_para_llevar, disponible, categoria_id`,
+         precio, precio_para_llevar, imagen_url, disponible, orden
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING id, nombre, precio, precio_para_llevar, disponible, categoria_id, imagen_url`,
       [
         dto.sucursal_id,
         dto.categoria_id,
@@ -121,10 +170,12 @@ export class CatalogoService {
         dto.descripcion ?? null,
         dto.precio,
         dto.precio_para_llevar ?? null,
+        dto.imagen_url ?? null,
         dto.disponible ?? true,
         dto.orden ?? 0,
       ],
     );
+    this.invalidarMenu(dto.sucursal_id);
     return fila;
   }
 
@@ -148,6 +199,7 @@ export class CatalogoService {
       ['orden', 'orden'],
       ['margen_objetivo', 'margen_objetivo'],
       ['precio_para_llevar', 'precio_para_llevar'],
+      ['imagen_url', 'imagen_url'],
     ];
     for (const [key, col] of mapa) {
       const v = dto[key];
@@ -167,6 +219,7 @@ export class CatalogoService {
     if (dto.margen_objetivo !== undefined || dto.precio !== undefined) {
       await this.costeo.recalcularProductoPorId(id, sucursalId);
     }
+    this.invalidarMenu(sucursalId);
     return { id };
   }
 
@@ -184,24 +237,29 @@ export class CatalogoService {
       producto_ids: [id],
       disponible,
     });
+    this.invalidarMenu(sucursalId);
     return { id, disponible };
   }
 
   listarToppings(sucursalId: string) {
     return this.database.consultar(
-      `SELECT id, nombre, precio, disponible, created_at
-       FROM toppings WHERE sucursal_id = $1 ORDER BY nombre ASC`,
-      [sucursalId],
+      `SELECT id, nombre, precio, disponible, receta_id, costo_calculado,
+              precio_sugerido, created_at
+       FROM toppings WHERE sucursal_id = $1 ORDER BY nombre ASC
+       LIMIT $2`,
+      [sucursalId, LIMITE_LISTADO_SIN_PAGINA],
     );
   }
 
   async crearTopping(dto: CrearExtraDto) {
-    return this.database.consultarUno(
+    const fila = await this.database.consultarUno(
       `INSERT INTO toppings (sucursal_id, nombre, precio, disponible)
        VALUES ($1,$2,$3,true)
        RETURNING id, nombre, precio, disponible`,
       [dto.sucursal_id, dto.nombre, dto.precio],
     );
+    this.invalidarMenu(dto.sucursal_id);
+    return fila;
   }
 
   async actualizarTopping(
@@ -232,24 +290,43 @@ export class CatalogoService {
        WHERE id = $${i++} AND sucursal_id = $${i}`,
       valores,
     );
+    if (datos.disponible !== undefined) {
+      void this.realtime.catalogoDisponibilidad(sucursalId, {
+        topping_ids: [id],
+        disponible: datos.disponible,
+      });
+    }
+    this.invalidarMenu(sucursalId);
     return { id, ...datos };
   }
 
   listarBebidas(sucursalId: string) {
     return this.database.consultar(
-      `SELECT id, nombre, precio, disponible, created_at
-       FROM bebidas WHERE sucursal_id = $1 ORDER BY nombre ASC`,
-      [sucursalId],
+      `SELECT id, nombre, precio, disponible, receta_id, costo_calculado,
+              precio_sugerido, created_at
+       FROM bebidas WHERE sucursal_id = $1 ORDER BY nombre ASC
+       LIMIT $2`,
+      [sucursalId, LIMITE_LISTADO_SIN_PAGINA],
     );
   }
 
   async crearBebida(dto: CrearExtraDto) {
-    return this.database.consultarUno(
+    const fila = await this.database.consultarUno<{
+      id: string;
+      nombre: string;
+      precio: string;
+      disponible: boolean;
+    }>(
       `INSERT INTO bebidas (sucursal_id, nombre, precio, disponible)
        VALUES ($1,$2,$3,true)
        RETURNING id, nombre, precio, disponible`,
       [dto.sucursal_id, dto.nombre, dto.precio],
     );
+    if (fila) {
+      await this.asegurarProductoEspejoBebida(dto.sucursal_id, fila);
+    }
+    this.invalidarMenu(dto.sucursal_id);
+    return fila;
   }
 
   async actualizarBebida(
@@ -280,6 +357,14 @@ export class CatalogoService {
        WHERE id = $${i++} AND sucursal_id = $${i}`,
       valores,
     );
+    if (datos.disponible !== undefined) {
+      void this.realtime.catalogoDisponibilidad(sucursalId, {
+        bebida_ids: [id],
+        disponible: datos.disponible,
+      });
+    }
+    this.invalidarMenu(sucursalId);
+    await this.sincronizarProductoEspejoBebida(sucursalId, id, datos);
     return { id, ...datos };
   }
 
@@ -296,7 +381,45 @@ export class CatalogoService {
        ON CONFLICT (producto_id, topping_id) DO NOTHING`,
       [productoId, toppingId],
     );
+    this.invalidarMenu(sucursalId);
     return { producto_id: productoId, topping_id: toppingId };
+  }
+
+  async listarToppingsProducto(productoId: string, sucursalId: string) {
+    await this.exigirProducto(productoId, sucursalId);
+    return this.database.consultar(
+      `SELECT t.id, t.nombre, t.precio, t.disponible
+       FROM producto_toppings pt
+       INNER JOIN toppings t ON t.id = pt.topping_id
+       WHERE pt.producto_id = $1 AND t.sucursal_id = $2
+       ORDER BY t.nombre ASC`,
+      [productoId, sucursalId],
+    );
+  }
+
+  /** Reemplaza los toppings del producto (checkbox admin). */
+  async configurarToppingsProducto(
+    productoId: string,
+    sucursalId: string,
+    toppingIds: string[],
+  ) {
+    await this.exigirProducto(productoId, sucursalId);
+    const unicos = [...new Set(toppingIds.filter(Boolean))];
+    for (const tid of unicos) {
+      await this.exigirTopping(tid, sucursalId);
+    }
+    await this.database.consultar(
+      `DELETE FROM producto_toppings WHERE producto_id = $1`,
+      [productoId],
+    );
+    for (const tid of unicos) {
+      await this.database.consultar(
+        `INSERT INTO producto_toppings (producto_id, topping_id) VALUES ($1,$2)`,
+        [productoId, tid],
+      );
+    }
+    this.invalidarMenu(sucursalId);
+    return { producto_id: productoId, topping_ids: unicos };
   }
 
   async vincularBebidaProducto(
@@ -312,6 +435,7 @@ export class CatalogoService {
        ON CONFLICT (producto_id, bebida_id) DO NOTHING`,
       [productoId, bebidaId],
     );
+    this.invalidarMenu(sucursalId);
     return { producto_id: productoId, bebida_id: bebidaId };
   }
 
@@ -333,13 +457,23 @@ export class CatalogoService {
        LEFT JOIN combo_items ci ON ci.combo_id = c.id
        WHERE c.sucursal_id = $1
        GROUP BY c.id
-       ORDER BY c.nombre ASC`,
-      [sucursalId],
+       ORDER BY c.nombre ASC
+       LIMIT $2`,
+      [sucursalId, LIMITE_LISTADO_SIN_PAGINA],
     );
   }
 
   async crearCombo(dto: CrearComboDto) {
-    return this.database.enTransaccion(async (client) => {
+    const tieneProducto = dto.items.some((i) => i.tipo_item === 'producto');
+    if (!tieneProducto) {
+      throw new BadRequestException('El combo debe incluir al menos un producto');
+    }
+    if (dto.items.length < 2) {
+      throw new BadRequestException(
+        'El combo debe incluir al menos 2 ítems (producto, bebida o topping)',
+      );
+    }
+    const resultado = await this.database.enTransaccion(async (client) => {
       const combo = await client.query<{ id: string }>(
         `INSERT INTO combos (sucursal_id, nombre, descripcion, precio_fijo, disponible)
          VALUES ($1,$2,$3,$4,true)
@@ -359,6 +493,8 @@ export class CatalogoService {
 
       return { id: comboId, nombre: dto.nombre, precio_fijo: dto.precio_fijo };
     });
+    this.invalidarMenu(dto.sucursal_id);
+    return resultado;
   }
 
   async cambiarDisponibilidadCombo(
@@ -371,6 +507,7 @@ export class CatalogoService {
       `UPDATE combos SET disponible = $1 WHERE id = $2 AND sucursal_id = $3`,
       [disponible, id, sucursalId],
     );
+    this.invalidarMenu(sucursalId);
     return { id, disponible };
   }
 
@@ -486,6 +623,257 @@ export class CatalogoService {
     return this.listarItemsIncluidos(productoId, sucursalId);
   }
 
+  /** Copia categorías, productos, toppings y bebidas de una sede a otra (mismo restaurante). */
+  async copiarMenuDesde(
+    restauranteId: string,
+    sucursalDestinoId: string,
+    sucursalOrigenId: string,
+    usuarioId: string,
+  ) {
+    if (sucursalDestinoId === sucursalOrigenId) {
+      throw new BadRequestException('ORIGEN_IGUAL_DESTINO');
+    }
+
+    const resultado = await this.database.enTransaccion(async (client) => {
+      const suc = await client.query<{ id: string }>(
+        `SELECT id FROM sucursales
+         WHERE restaurante_id = $1 AND activa = true AND id = ANY($2::uuid[])`,
+        [restauranteId, [sucursalDestinoId, sucursalOrigenId]],
+      );
+      if (suc.rows.length < 2) {
+        throw new BadRequestException('SUCURSALES_INVALIDAS');
+      }
+
+      const mapCat = new Map<string, string>();
+      const cats = await client.query<{
+        id: string;
+        nombre: string;
+        orden: number;
+        imagen_url: string | null;
+      }>(
+        `SELECT id, nombre, orden, imagen_url
+         FROM categorias WHERE sucursal_id = $1 AND activa = true`,
+        [sucursalOrigenId],
+      );
+      for (const c of cats.rows) {
+        const exist = await client.query<{ id: string }>(
+          `SELECT id FROM categorias
+           WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`,
+          [sucursalDestinoId, c.nombre],
+        );
+        if (exist.rows[0]) {
+          mapCat.set(c.id, exist.rows[0].id);
+        } else {
+          const ins = await client.query<{ id: string }>(
+            `INSERT INTO categorias (sucursal_id, nombre, orden, activa, imagen_url)
+             VALUES ($1,$2,$3,true,$4) RETURNING id`,
+            [sucursalDestinoId, c.nombre, c.orden, c.imagen_url],
+          );
+          mapCat.set(c.id, ins.rows[0].id);
+        }
+      }
+
+      const mapTop = new Map<string, string>();
+      const tops = await client.query<{
+        id: string;
+        nombre: string;
+        precio: string;
+      }>(
+        `SELECT id, nombre, precio FROM toppings WHERE sucursal_id = $1`,
+        [sucursalOrigenId],
+      );
+      for (const t of tops.rows) {
+        const exist = await client.query<{ id: string }>(
+          `SELECT id FROM toppings
+           WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`,
+          [sucursalDestinoId, t.nombre],
+        );
+        if (exist.rows[0]) {
+          mapTop.set(t.id, exist.rows[0].id);
+        } else {
+          const ins = await client.query<{ id: string }>(
+            `INSERT INTO toppings (sucursal_id, nombre, precio, disponible)
+             VALUES ($1,$2,$3,true) RETURNING id`,
+            [sucursalDestinoId, t.nombre, t.precio],
+          );
+          mapTop.set(t.id, ins.rows[0].id);
+        }
+      }
+
+      const mapBeb = new Map<string, string>();
+      const bebs = await client.query<{
+        id: string;
+        nombre: string;
+        precio: string;
+      }>(
+        `SELECT id, nombre, precio FROM bebidas WHERE sucursal_id = $1`,
+        [sucursalOrigenId],
+      );
+      for (const b of bebs.rows) {
+        const exist = await client.query<{ id: string }>(
+          `SELECT id FROM bebidas
+           WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`,
+          [sucursalDestinoId, b.nombre],
+        );
+        if (exist.rows[0]) {
+          mapBeb.set(b.id, exist.rows[0].id);
+        } else {
+          const ins = await client.query<{ id: string }>(
+            `INSERT INTO bebidas (sucursal_id, nombre, precio, disponible)
+             VALUES ($1,$2,$3,true) RETURNING id`,
+            [sucursalDestinoId, b.nombre, b.precio],
+          );
+          mapBeb.set(b.id, ins.rows[0].id);
+        }
+      }
+
+      const mapCocina = new Map<string, string>();
+      const cocinasOrig = await client.query<{ id: string; nombre: string }>(
+        `SELECT id, nombre FROM cocinas WHERE sucursal_id = $1 AND activa = true`,
+        [sucursalOrigenId],
+      );
+      for (const co of cocinasOrig.rows) {
+        const dest = await client.query<{ id: string }>(
+          `SELECT id FROM cocinas
+           WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`,
+          [sucursalDestinoId, co.nombre],
+        );
+        if (dest.rows[0]) mapCocina.set(co.id, dest.rows[0].id);
+      }
+      const cocinaDefault = await client.query<{ id: string }>(
+        `SELECT id FROM cocinas WHERE sucursal_id = $1 AND activa = true LIMIT 1`,
+        [sucursalDestinoId],
+      );
+      const cocinaFallback = cocinaDefault.rows[0]?.id ?? null;
+
+      let productosNuevos = 0;
+      const mapProd = new Map<string, string>();
+      const prods = await client.query<{
+        id: string;
+        categoria_id: string;
+        cocina_id: string | null;
+        nombre: string;
+        descripcion: string | null;
+        precio: string;
+        precio_para_llevar: string | null;
+        imagen_url: string | null;
+        disponible: boolean;
+        orden: number;
+      }>(
+        `SELECT id, categoria_id, cocina_id, nombre, descripcion, precio,
+                precio_para_llevar, imagen_url, disponible, orden
+         FROM productos WHERE sucursal_id = $1`,
+        [sucursalOrigenId],
+      );
+      for (const p of prods.rows) {
+        const nuevaCat = mapCat.get(p.categoria_id);
+        if (!nuevaCat) continue;
+        const exist = await client.query<{ id: string }>(
+          `SELECT id FROM productos
+           WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`,
+          [sucursalDestinoId, p.nombre],
+        );
+        if (exist.rows[0]) {
+          mapProd.set(p.id, exist.rows[0].id);
+          continue;
+        }
+        const cocinaId = p.cocina_id
+          ? (mapCocina.get(p.cocina_id) ?? cocinaFallback)
+          : cocinaFallback;
+        const ins = await client.query<{ id: string }>(
+          `INSERT INTO productos (
+             sucursal_id, categoria_id, cocina_id, nombre, descripcion,
+             precio, precio_para_llevar, imagen_url, disponible, orden
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           RETURNING id`,
+          [
+            sucursalDestinoId,
+            nuevaCat,
+            cocinaId,
+            p.nombre,
+            p.descripcion,
+            p.precio,
+            p.precio_para_llevar,
+            p.imagen_url,
+            p.disponible,
+            p.orden,
+          ],
+        );
+        mapProd.set(p.id, ins.rows[0].id);
+        productosNuevos++;
+      }
+
+      const linksTop = await client.query<{
+        producto_id: string;
+        topping_id: string;
+      }>(
+        `SELECT pt.producto_id, pt.topping_id
+         FROM producto_toppings pt
+         INNER JOIN productos p ON p.id = pt.producto_id
+         WHERE p.sucursal_id = $1`,
+        [sucursalOrigenId],
+      );
+      for (const l of linksTop.rows) {
+        const np = mapProd.get(l.producto_id);
+        const nt = mapTop.get(l.topping_id);
+        if (!np || !nt) continue;
+        await client.query(
+          `INSERT INTO producto_toppings (producto_id, topping_id)
+           VALUES ($1,$2) ON CONFLICT (producto_id, topping_id) DO NOTHING`,
+          [np, nt],
+        );
+      }
+
+      const linksBeb = await client.query<{
+        producto_id: string;
+        bebida_id: string;
+      }>(
+        `SELECT pb.producto_id, pb.bebida_id
+         FROM producto_bebidas pb
+         INNER JOIN productos p ON p.id = pb.producto_id
+         WHERE p.sucursal_id = $1`,
+        [sucursalOrigenId],
+      );
+      for (const l of linksBeb.rows) {
+        const np = mapProd.get(l.producto_id);
+        const nb = mapBeb.get(l.bebida_id);
+        if (!np || !nb) continue;
+        await client.query(
+          `INSERT INTO producto_bebidas (producto_id, bebida_id)
+           VALUES ($1,$2) ON CONFLICT (producto_id, bebida_id) DO NOTHING`,
+          [np, nb],
+        );
+      }
+
+      await client.query(
+        `INSERT INTO auditoria_logs (
+           sucursal_id, usuario_id, accion, tabla_afectada, datos_despues
+         ) VALUES ($1,$2,'COPIAR_MENU','productos',$3::jsonb)`,
+        [
+          sucursalDestinoId,
+          usuarioId,
+          JSON.stringify({
+            origen: sucursalOrigenId,
+            categorias: mapCat.size,
+            productos_nuevos: productosNuevos,
+            toppings: mapTop.size,
+            bebidas: mapBeb.size,
+          }),
+        ],
+      );
+
+      return {
+        categorias: mapCat.size,
+        productos_nuevos: productosNuevos,
+        toppings: mapTop.size,
+        bebidas: mapBeb.size,
+      };
+    });
+
+    this.invalidarMenu(sucursalDestinoId);
+    return resultado;
+  }
+
   private async validarSinCicloIncluidos(
     client: PoolClient,
     productoId: string,
@@ -513,6 +901,139 @@ export class CatalogoService {
         }
       }
     }
+  }
+
+  /** Publica bebida también como producto en categoría Bebidas (menú cliente). */
+  private async asegurarProductoEspejoBebida(
+    sucursalId: string,
+    bebida: { id: string; nombre: string; precio: string | number; disponible: boolean },
+  ) {
+    const existente = await this.database.consultarUno<{ id: string }>(
+      `SELECT id FROM productos WHERE sucursal_id = $1 AND bebida_origen_id = $2`,
+      [sucursalId, bebida.id],
+    );
+    if (existente) return existente;
+    const catId = await this.asegurarCategoriaPorNombres(
+      sucursalId,
+      ['Bebidas'],
+      null,
+      80,
+      '(bebida|jugo)',
+    );
+    const cocinaId = (
+      await this.database.consultarUno<{ id: string }>(
+        `SELECT id FROM cocinas WHERE sucursal_id = $1 AND activa = true LIMIT 1`,
+        [sucursalId],
+      )
+    )?.id;
+    return this.database.consultarUno(
+      `INSERT INTO productos (
+         sucursal_id, categoria_id, cocina_id, nombre, descripcion, precio,
+         disponible, orden, bebida_origen_id
+       ) VALUES ($1,$2,$3,$4,'Bebida vendible',$5,$6,0,$7)
+       RETURNING id`,
+      [
+        sucursalId,
+        catId,
+        cocinaId ?? null,
+        bebida.nombre,
+        Number(bebida.precio),
+        bebida.disponible,
+        bebida.id,
+      ],
+    );
+  }
+
+  private async sincronizarProductoEspejoBebida(
+    sucursalId: string,
+    bebidaId: string,
+    datos: { nombre?: string; precio?: number; disponible?: boolean },
+  ) {
+    const campos: string[] = [];
+    const valores: unknown[] = [];
+    let i = 1;
+    if (datos.nombre !== undefined) {
+      campos.push(`nombre = $${i++}`);
+      valores.push(datos.nombre);
+    }
+    if (datos.precio !== undefined) {
+      campos.push(`precio = $${i++}`);
+      valores.push(datos.precio);
+    }
+    if (datos.disponible !== undefined) {
+      campos.push(`disponible = $${i++}`);
+      valores.push(datos.disponible);
+    }
+    if (!campos.length) {
+      const b = await this.database.consultarUno<{
+        id: string;
+        nombre: string;
+        precio: string;
+        disponible: boolean;
+      }>(
+        `SELECT id, nombre, precio, disponible FROM bebidas
+         WHERE id = $1 AND sucursal_id = $2`,
+        [bebidaId, sucursalId],
+      );
+      if (b) await this.asegurarProductoEspejoBebida(sucursalId, b);
+      return;
+    }
+    valores.push(sucursalId, bebidaId);
+    const actualizado = await this.database.consultarUno(
+      `UPDATE productos SET ${campos.join(', ')}
+       WHERE sucursal_id = $${i++} AND bebida_origen_id = $${i}
+       RETURNING id`,
+      valores,
+    );
+    if (!actualizado) {
+      const b = await this.database.consultarUno<{
+        id: string;
+        nombre: string;
+        precio: string;
+        disponible: boolean;
+      }>(
+        `SELECT id, nombre, precio, disponible FROM bebidas
+         WHERE id = $1 AND sucursal_id = $2`,
+        [bebidaId, sucursalId],
+      );
+      if (b) await this.asegurarProductoEspejoBebida(sucursalId, b);
+    }
+  }
+
+  private async asegurarCategoriaPorNombres(
+    sucursalId: string,
+    crearComo: string[],
+    nombresExactos: string[] | null,
+    orden: number,
+    regexNombre?: string,
+  ): Promise<string> {
+    let existente: { id: string } | null = null;
+    if (regexNombre) {
+      existente = await this.database.consultarUno<{ id: string }>(
+        `SELECT id FROM categorias
+         WHERE sucursal_id = $1 AND activa = true
+           AND LOWER(TRIM(nombre)) ~ $2
+         ORDER BY orden ASC LIMIT 1`,
+        [sucursalId, regexNombre],
+      );
+    } else if (nombresExactos) {
+      existente = await this.database.consultarUno<{ id: string }>(
+        `SELECT id FROM categorias
+         WHERE sucursal_id = $1 AND activa = true
+           AND LOWER(TRIM(nombre)) = ANY($2::text[])
+         ORDER BY orden ASC LIMIT 1`,
+        [sucursalId, nombresExactos],
+      );
+    }
+    if (existente) return existente.id;
+    const creada = await this.database.consultarUno<{ id: string }>(
+      `INSERT INTO categorias (sucursal_id, nombre, orden, activa)
+       VALUES ($1, $2, $3, true)
+       RETURNING id`,
+      [sucursalId, crearComo[0], orden],
+    );
+    if (!creada) throw new BadRequestException('No se pudo crear categoría');
+    return creada.id;
   }
 
   private async exigirProducto(id: string, sucursalId: string) {

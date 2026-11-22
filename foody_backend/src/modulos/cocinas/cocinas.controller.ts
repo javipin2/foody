@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
@@ -17,6 +18,7 @@ import { SuscripcionActivaGuard } from '../../core/auth/guards/suscripcion-activ
 import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { CocinasService } from './cocinas.service';
 import { ActualizarCocinaDto, CrearCocinaDto } from './dto/cocina.dto';
 
@@ -24,33 +26,52 @@ import { ActualizarCocinaDto, CrearCocinaDto } from './dto/cocina.dto';
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, PlanFeaturesGuard, RolGuard)
 @RequiereModulo('cocina')
 export class CocinasController {
-  constructor(private readonly cocinas: CocinasService) {}
+  constructor(
+    private readonly cocinas: CocinasService,
+    private readonly sucursalScope: SucursalScopeService,
+  ) {}
 
   @Get(':sucursal_id')
   @Permisos('editar_productos')
-  listar(@Param('sucursal_id') sucursalId: string) {
-    return this.cocinas.listarCocinas(sucursalId);
+  async listar(
+    @UsuarioActual() usuario: JwtPayload,
+    @Param('sucursal_id') sucursalId: string,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.cocinas.listarCocinas(id);
   }
 
   @Post()
   @Permisos('editar_productos')
-  crear(@Body() dto: CrearCocinaDto) {
+  async crear(
+    @UsuarioActual() usuario: JwtPayload,
+    @Body() dto: CrearCocinaDto,
+  ) {
+    await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
     return this.cocinas.crearCocina(dto);
   }
 
   @Patch(':id')
   @Permisos('editar_productos')
-  actualizar(
-    @Param('id') id: string,
+  async actualizar(
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarCocinaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
-    return this.cocinas.actualizarCocina(id, usuario.sucursal_id!, dto);
+    const sid = await this.sucursalScope.resolverEscritura(usuario);
+    return this.cocinas.actualizarCocina(id, sid, dto);
   }
 
   @Delete(':id')
   @Permisos('editar_productos')
-  eliminar(@Param('id') id: string, @UsuarioActual() usuario: JwtPayload) {
-    return this.cocinas.eliminarCocina(id, usuario.sucursal_id!);
+  async eliminar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    const sid = await this.sucursalScope.resolverEscritura(usuario);
+    return this.cocinas.eliminarCocina(id, sid);
   }
 }

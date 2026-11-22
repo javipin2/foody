@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PedidosSoporteService = void 0;
 const common_1 = require("@nestjs/common");
+const roles_food_1 = require("../../core/auth/roles-food");
 const database_service_1 = require("../../core/database/database.service");
 const impresion_service_1 = require("../../core/impresion/impresion.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
@@ -25,6 +26,22 @@ let PedidosSoporteService = class PedidosSoporteService {
         this.realtime = realtime;
         this.notificaciones = notificaciones;
         this.impresion = impresion;
+    }
+    async obtenerSeguimientoToken(pedidoId) {
+        const row = await this.database.consultarUno(`SELECT seguimiento_token::text AS seguimiento_token FROM pedidos WHERE id = $1`, [pedidoId]);
+        return row?.seguimiento_token ?? null;
+    }
+    emitirSeguimientoPedido(pedidoId, payload) {
+        void this.obtenerSeguimientoToken(pedidoId).then((token) => {
+            if (token)
+                void this.realtime.pedidoSeguimiento(pedidoId, token, payload);
+        });
+    }
+    emitirUbicacionRepartidor(pedidoId, payload) {
+        void this.obtenerSeguimientoToken(pedidoId).then((token) => {
+            if (token)
+                void this.realtime.ubicacionRepartidor(pedidoId, token, payload);
+        });
     }
     async consultarUnoCliente(client, sql, parametros) {
         const resultado = await client.query(sql, parametros);
@@ -87,7 +104,7 @@ let PedidosSoporteService = class PedidosSoporteService {
         if (!motivo?.trim()) {
             throw new common_1.BadRequestException('Se requiere un motivo para cancelar el pedido');
         }
-        const esElevado = rol === 'admin' || rol === 'gerente';
+        const esElevado = (0, roles_food_1.esAdminRestaurante)(rol) || rol === 'gerente';
         const estadosRestringidos = [
             'en_cocina',
             'listo',
@@ -104,6 +121,89 @@ let PedidosSoporteService = class PedidosSoporteService {
             throw new common_1.BadRequestException('Solo admin o gerente puede cancelar después de 2 minutos');
         }
     }
+    validarCancelacionCliente(pedido, motivo) {
+        if (!motivo?.trim() || motivo.trim().length < 3) {
+            throw new common_1.BadRequestException('Indica un motivo de cancelación (mínimo 3 caracteres)');
+        }
+        const bloqueados = [
+            'en_cocina',
+            'listo',
+            'pagando',
+            'asignado',
+            'en_camino',
+            'entregado',
+            'pagado',
+            'cancelado',
+            'rechazado',
+        ];
+        if (bloqueados.includes(pedido.estado)) {
+            throw new common_1.BadRequestException({
+                error: 'CANCELAR_CLIENTE_NO_PERMITIDO',
+                message: 'Ya no puedes cancelar este pedido. Contacta al restaurante.',
+            });
+        }
+        if (pedido.estado === 'confirmado') {
+            const minutos = (Date.now() - new Date(pedido.created_at).getTime()) / 60000;
+            if (minutos > 2) {
+                throw new common_1.BadRequestException('Solo puedes cancelar en los primeros 2 minutos tras confirmar');
+            }
+        }
+    }
+    validarLlamadaMesera(pedido) {
+        if (!pedido.mesa_id) {
+            throw new common_1.BadRequestException({
+                error: 'LLAMADA_MESERA_NO_MESA',
+                message: 'Solo puedes llamar a la mesera desde un pedido de mesa',
+            });
+        }
+        const bloqueados = [
+            'pagado',
+            'cancelado',
+            'rechazado',
+            'entregado',
+        ];
+        if (bloqueados.includes(pedido.estado)) {
+            throw new common_1.BadRequestException({
+                error: 'LLAMADA_MESERA_NO_PERMITIDA',
+                message: 'Este pedido ya está cerrado',
+            });
+        }
+    }
+    notificarLlamadaMesera(sucursalId, pedidoId, numeroPedido, mesaId, mesaNombre, mensajeCliente) {
+        const num = numeroPedido ? `#${numeroPedido}` : '';
+        const mesa = mesaNombre ? ` (${mesaNombre})` : '';
+        const cuerpo = mensajeCliente?.trim() ||
+            `Cliente en mesa${mesa} pide atención — pedido ${num}`;
+        void this.notificaciones.enviar({
+            sucursal_id: sucursalId,
+            tipo: 'llamar_mesera',
+            titulo: 'Cliente pide atención',
+            cuerpo,
+            roles: ['mesero', 'admin', 'gerente', 'cajero'],
+            datos: {
+                pedido_id: pedidoId,
+                sucursal_id: sucursalId,
+                mesa_id: mesaId ?? '',
+                ruta: mesaId
+                    ? `/admin/mesero?mesa_id=${mesaId}`
+                    : '/admin/mesero',
+            },
+        });
+        void this.realtime.mesasActualizadas(sucursalId);
+        void this.realtime.llamarMesera(sucursalId, {
+            pedido_id: pedidoId,
+            mesa_id: mesaId ?? null,
+            numero_pedido: numeroPedido,
+        });
+    }
+    notificarDesasignacionesDomicilio(usuarioIds, pedidoId) {
+        for (const usuarioId of usuarioIds) {
+            void this.realtime.pedidoDesasignado(usuarioId, {
+                pedido_id: pedidoId,
+                accion: 'cancelado',
+            });
+        }
+    }
     notificarPedidoRealtime(sucursalId, pedidoId, estado, numeroPedido, opciones = {}) {
         void this.realtime.pedidoActualizado({
             pedido_id: pedidoId,
@@ -111,7 +211,7 @@ let PedidosSoporteService = class PedidosSoporteService {
             estado,
             numero_pedido: numeroPedido,
         });
-        void this.realtime.pedidoSeguimiento(pedidoId, { pedido_id: pedidoId, estado });
+        this.emitirSeguimientoPedido(pedidoId, { pedido_id: pedidoId, estado });
         if (estado === 'pendiente_aprobacion') {
             void this.realtime.mesasActualizadas(sucursalId);
             void this.realtime.qrAprobacionUrgente(sucursalId, {
@@ -145,7 +245,9 @@ let PedidosSoporteService = class PedidosSoporteService {
                 roles: ['mesero', 'admin', 'gerente', 'cajero'],
                 datos: {
                     ...base.datos,
-                    ruta: '/admin/mesero',
+                    ruta: mesaId
+                        ? `/admin/mesero?mesa_id=${mesaId}`
+                        : '/admin/mesero',
                 },
             });
             return;
@@ -159,7 +261,7 @@ let PedidosSoporteService = class PedidosSoporteService {
                 roles: ['cajero', 'admin', 'mesero'],
                 datos: {
                     ...base.datos,
-                    ruta: '/admin/panel?tab=pedidos',
+                    ruta: '/admin/panel?seccion=pedidos',
                 },
             });
             return;
@@ -182,6 +284,11 @@ let PedidosSoporteService = class PedidosSoporteService {
             return;
         }
         if (estado === 'listo') {
+            const qMesero = [
+                'tab=pedidos',
+                `pedido_id=${pedidoId}`,
+                ...(mesaId ? [`mesa_id=${mesaId}`] : []),
+            ].join('&');
             void this.notificaciones.enviar({
                 ...base,
                 tipo: 'pedido_listo',
@@ -190,7 +297,7 @@ let PedidosSoporteService = class PedidosSoporteService {
                 roles: ['mesero', 'cajero', 'admin', 'domiciliario_planta'],
                 datos: {
                     ...base.datos,
-                    ruta: '/admin/panel?tab=pedidos',
+                    ruta: `/admin/mesero?${qMesero}`,
                 },
             });
             void this.notificarPushCliente(pedidoId, 'Tu pedido está listo', `Pedido ${num}`);

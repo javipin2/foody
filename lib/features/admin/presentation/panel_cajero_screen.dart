@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/mesas_grid_widget.dart';
-import 'package:reserva_canchas/features/auth/data/auth_repository.dart';
 import 'package:reserva_canchas/features/caja/data/caja_repository.dart';
 import 'package:reserva_canchas/features/caja/presentation/caja_admin_screen.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/pedido_cajero_screen.dart';
@@ -19,6 +21,8 @@ class PanelCajeroScreen extends StatefulWidget {
 
 class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
   final _cajaRepo = CajaRepository();
+  /// Fuerza recarga de tabs al pulsar refresh (NAV-CJ-05).
+  int _refreshTick = 0;
   SesionStaff? _sesion;
   int _tab = 0;
   bool _cargando = true;
@@ -69,9 +73,16 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
     }
   }
 
+  void _onCajaEstadoCambiado(bool abierta) {
+    setState(() {
+      _cajaAbierta = abierta;
+      // NAV-CJ-02/04: tras abrir → POS; tras cerrar → Caja.
+      if (abierta) _tab = 0;
+    });
+  }
+
   Future<void> _cerrarSesion() async {
-    await AuthRepository().logout();
-    if (mounted) context.go('/splash');
+    await cerrarSesionStaff(context);
   }
 
   String get _tituloTab {
@@ -85,6 +96,22 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
     }
   }
 
+  void _seleccionarTab(int i) {
+    if (!_cajaAbierta && i != 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Abre la caja en la pestaña Caja para usar POS o Mesas',
+          ),
+        ),
+      );
+      // NAV-CJ-03
+      setState(() => _tab = 2);
+      return;
+    }
+    setState(() => _tab = i);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
@@ -95,6 +122,9 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
 
     final nombre = _sesion?.usuario['nombre'] as String? ?? 'Cajero';
     final rol = etiquetaRolStaff(_sesion?.rol);
+    final ancho = MediaQuery.sizeOf(context).width;
+    // NAV-CJ-06 / RS-20: tabs arriba desde FoodyBreakpoints.expanded.
+    final navSuperior = FoodyBreakpoints.esExpanded(ancho);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -122,18 +152,23 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
         actions: [
           if (!_cajaAbierta)
             Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Chip(
-                label: const Text('Caja cerrada', style: TextStyle(fontSize: 11)),
-                backgroundColor: Colors.orange.shade50,
-                side: BorderSide(color: Colors.orange.shade200),
-                padding: EdgeInsets.zero,
+              padding: const EdgeInsets.only(right: 4),
+              child: Tooltip(
+                message: 'Caja cerrada',
+                child: Icon(
+                  Icons.lock_outline,
+                  color: Colors.orange.shade800,
+                  size: 22,
+                ),
               ),
             ),
           IconButton(
             tooltip: 'Actualizar',
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: _verificarCaja,
+            onPressed: () {
+              setState(() => _refreshTick++);
+              unawaited(_verificarCaja());
+            },
           ),
           IconButton(
             tooltip: 'Cerrar sesión',
@@ -142,29 +177,44 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
           ),
         ],
       ),
-      body: _contenido(),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        indicatorColor: ColoresFoody.primario.withValues(alpha: 0.15),
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.point_of_sale_outlined),
-            selectedIcon: Icon(Icons.point_of_sale),
-            label: 'POS',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.table_restaurant_outlined),
-            selectedIcon: Icon(Icons.table_restaurant),
-            label: 'Mesas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: Icon(Icons.account_balance_wallet),
-            label: 'Caja',
-          ),
+      body: Column(
+        children: [
+          if (navSuperior)
+            Material(
+              color: Colors.white,
+              elevation: 0,
+              child: _navBar(),
+            ),
+          Expanded(child: _contenido()),
         ],
       ),
+      bottomNavigationBar: navSuperior ? null : _navBar(),
+    );
+  }
+
+  Widget _navBar() {
+    return NavigationBar(
+      selectedIndex: _tab,
+      height: 64,
+      indicatorColor: ColoresFoody.primario.withValues(alpha: 0.15),
+      onDestinationSelected: _seleccionarTab,
+      destinations: const [
+        NavigationDestination(
+          icon: Icon(Icons.point_of_sale_outlined),
+          selectedIcon: Icon(Icons.point_of_sale),
+          label: 'POS',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.table_restaurant_outlined),
+          selectedIcon: Icon(Icons.table_restaurant),
+          label: 'Mesas',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.account_balance_wallet_outlined),
+          selectedIcon: Icon(Icons.account_balance_wallet),
+          label: 'Caja',
+        ),
+      ],
     );
   }
 
@@ -172,14 +222,34 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
     final sid = _sucursalId;
     if (sid == null) {
       return const Center(
-        child: Text('Tu usuario no tiene sucursal asignada. Contacta al administrador.'),
+        child: Text(
+          'Tu usuario no tiene sucursal asignada. Contacta al administrador.',
+        ),
       );
     }
 
     if (_tab == 2) {
       return CajaAdminScreen(
-        key: ValueKey('caja-$sid'),
+        key: ValueKey('caja-$sid-$_refreshTick'),
         sucursalId: sid,
+        ocultarCabecera: true,
+        permitirArqueoCiego: false,
+        onCajaEstadoCambiado: _onCajaEstadoCambiado,
+        onIrPedido: (pedidoId) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Pedido $pedidoId — búscalo en Mesas (cuenta abierta)',
+              ),
+              action: SnackBarAction(
+                label: 'Mesas',
+                onPressed: () {
+                  if (_cajaAbierta) setState(() => _tab = 1);
+                },
+              ),
+            ),
+          );
+        },
       );
     }
 
@@ -195,16 +265,17 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: Colors.white,
             child: Text(
-              'Toca una mesa libre para registrar consumo o una ocupada para ver cuenta y cobrar. '
-              'El turno de mesas lo llevan los meseros.',
+              'Toca una mesa libre para registrar consumo o una ocupada para cobrar. '
+              'Los pedidos QR los aprueba un mesero.',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
             ),
           ),
           Expanded(
             child: MesasGridWidget(
-              key: ValueKey('mesas-cajero-$sid'),
+              key: ValueKey('mesas-cajero-$sid-$_refreshTick'),
               sucursalId: sid,
               modoCajero: true,
+              ocultarCabecera: true,
             ),
           ),
         ],
@@ -212,8 +283,9 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
     }
 
     return PedidoCajeroScreen(
-      key: ValueKey('pos-$sid'),
+      key: ValueKey('pos-$sid-$_refreshTick'),
       sucursalId: sid,
+      ocultarCabecera: true,
     );
   }
 
@@ -227,11 +299,13 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
           decoration: BoxDecoration(
             color: ColoresFoody.primario.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: ColoresFoody.primario.withValues(alpha: 0.25)),
+            border: Border.all(
+              color: ColoresFoody.primario.withValues(alpha: 0.25),
+            ),
           ),
           child: Row(
             children: [
-              Icon(Icons.lock_clock, color: ColoresFoody.primario, size: 32),
+              const Icon(Icons.lock_clock, color: ColoresFoody.primario, size: 32),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -258,14 +332,9 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
           child: CajaAdminScreen(
             key: ValueKey('apertura-$sucursalId'),
             sucursalId: sucursalId,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: _verificarCaja,
-            icon: const Icon(Icons.check_circle_outline),
-            label: const Text('Ya abrí la caja — continuar'),
+            ocultarCabecera: true,
+            permitirArqueoCiego: false,
+            onCajaEstadoCambiado: _onCajaEstadoCambiado,
           ),
         ),
       ],

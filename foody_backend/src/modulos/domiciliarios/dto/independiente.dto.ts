@@ -20,6 +20,13 @@ export class UbicacionDto {
   lng: number;
 }
 
+/** Ubicación durante entrega activa (planta o independiente). */
+export class UbicacionEntregaDto extends UbicacionDto {
+  @IsOptional()
+  @IsUUID()
+  pedido_id?: string;
+}
+
 export class ResponderOfertaDto {
   @IsIn(['aceptada', 'rechazada'])
   respuesta: 'aceptada' | 'rechazada';

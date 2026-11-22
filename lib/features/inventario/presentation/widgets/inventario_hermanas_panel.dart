@@ -6,7 +6,13 @@ import 'package:reserva_canchas/features/inventario/presentation/widgets/stock_v
 
 /// Vista solo lectura del inventario en sucursales hermanas del mismo restaurante.
 class InventarioHermanasPanel extends StatefulWidget {
-  const InventarioHermanasPanel({super.key});
+  const InventarioHermanasPanel({
+    super.key,
+    this.onIrTraslados,
+  });
+
+  /// NAV-MG-06: atajo a tab Traslados del panel de Insumos.
+  final VoidCallback? onIrTraslados;
 
   @override
   State<InventarioHermanasPanel> createState() =>
@@ -122,6 +128,17 @@ class _InventarioHermanasPanelState extends State<InventarioHermanasPanel> {
               ],
             ),
           ),
+          if (widget.onIrTraslados != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonalIcon(
+                onPressed: widget.onIrTraslados,
+                icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                label: const Text('Ir a Traslados'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           ...sucursales.map((s) => _TarjetaSucursalHermana(
                 data: s,

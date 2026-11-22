@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:reserva_canchas/core/modelos/respuesta_api.dart';
 import 'package:reserva_canchas/core/red/cliente_dio.dart';
 import 'package:reserva_canchas/core/notificaciones/servicio_fcm_foody.dart';
+import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/features/auth/domain/login_resultado.dart';
 
@@ -39,7 +40,37 @@ class DomiciliariosIndependientesRepository {
       data,
       (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
     );
-    if (!env.exito) throw Exception(env.mensaje);
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+
+    final d = env.datos!;
+    final token = d['token'] as String?;
+    if (token == null) throw Exception('No se recibió sesión tras el registro');
+
+    final usuario = Map<String, dynamic>.from(
+      d['usuario'] as Map<String, dynamic>? ?? {},
+    );
+    await SesionStaffService.guardar(
+      token: token,
+      dashboard: 'domiciliario_independiente',
+      rol: 'domiciliario_independiente',
+      permisos: const ['domiciliario_independiente'],
+      usuario: usuario,
+      realtimeCanales: _canalesDeMap(d),
+    );
+    FoodyRealtime.aplicarCanalesStaff(_canalesDeMap(d));
+  }
+
+  static Map<String, String> _canalesDeMap(Map<String, dynamic> d) {
+    final out = <String, String>{};
+    final raw = d['realtime_canales'];
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (v != null && v.toString().isNotEmpty) {
+          out[k.toString()] = v.toString();
+        }
+      });
+    }
+    return out;
   }
 
   static Future<LoginResultado> login({
@@ -77,7 +108,9 @@ class DomiciliariosIndependientesRepository {
       rol: rol,
       permisos: permisos,
       usuario: usuario,
+      realtimeCanales: _canalesDeMap(d),
     );
+    FoodyRealtime.aplicarCanalesStaff(_canalesDeMap(d));
 
     await ServicioFcmFoody.instancia.registrarTrasLoginStaff();
 
@@ -86,7 +119,31 @@ class DomiciliariosIndependientesRepository {
       rol: rol,
       permisos: permisos,
       usuario: usuario,
+      estadoCuenta: d['estado_cuenta'] as String?,
     );
+  }
+
+  Future<Map<String, dynamic>> resumenDocumentos() async {
+    final r = await _dio.get<Map<String, dynamic>>('/domiciliarios/documentos');
+    return _parsearMapa(r.data);
+  }
+
+  Future<void> subirDocumento(
+    String tipo,
+    List<int> bytes,
+    String nombreArchivo,
+  ) async {
+    final form = FormData.fromMap({
+      'archivo': MultipartFile.fromBytes(
+        bytes,
+        filename: nombreArchivo,
+      ),
+    });
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/domiciliarios/documentos/$tipo',
+      data: form,
+    );
+    _validar(r.data);
   }
 
   Future<void> iniciarSesion({
@@ -102,6 +159,17 @@ class DomiciliariosIndependientesRepository {
         if (ciudadId != null) 'ciudad_id': ciudadId,
       },
     );
+    _validar(r.data);
+  }
+
+  Future<bool> sesionActiva() async {
+    final r = await _dio.get<Map<String, dynamic>>('/domiciliarios/sesion/estado');
+    final datos = _parsearMapa(r.data);
+    return datos['activa'] == true;
+  }
+
+  Future<void> cerrarSesion() async {
+    final r = await _dio.post<Map<String, dynamic>>('/domiciliarios/sesion/cerrar');
     _validar(r.data);
   }
 
@@ -133,11 +201,42 @@ class DomiciliariosIndependientesRepository {
     _validar(r.data);
   }
 
-  Future<void> confirmarEntrega(String pedidoId) async {
-    final r = await _dio.patch<Map<String, dynamic>>(
-      '/domiciliarios/pedidos/$pedidoId/confirmar-entrega',
+  Future<void> actualizarUbicacion({
+    required double lat,
+    required double lng,
+    String? pedidoId,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/domiciliarios/sesion/ubicacion',
+      data: {
+        'lat': lat,
+        'lng': lng,
+        if (pedidoId != null) 'pedido_id': pedidoId,
+      },
     );
     _validar(r.data);
+  }
+
+  Future<void> confirmarEntrega(String pedidoId, {String? metodoPago}) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/domiciliarios/pedidos/$pedidoId/confirmar-entrega',
+      data: {if (metodoPago != null) 'metodo_pago': metodoPago},
+    );
+    _validar(r.data);
+  }
+
+  Future<Map<String, dynamic>> ganancias({
+    String? desde,
+    String? hasta,
+  }) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/domiciliarios/ganancias',
+      queryParameters: {
+        if (desde != null) 'desde': desde,
+        if (hasta != null) 'hasta': hasta,
+      },
+    );
+    return _parsearMapa(r.data);
   }
 
   List<Map<String, dynamic>> _parsearLista(Map<String, dynamic>? data) {

@@ -23,67 +23,78 @@ const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-a
 const plan_features_guard_1 = require("../../core/auth/guards/plan-features.guard");
 const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requiere-modulo.decorator");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const cocinas_service_1 = require("./cocinas.service");
 const cocina_dto_1 = require("./dto/cocina.dto");
 let CocinasController = class CocinasController {
     cocinas;
-    constructor(cocinas) {
+    sucursalScope;
+    constructor(cocinas, sucursalScope) {
         this.cocinas = cocinas;
+        this.sucursalScope = sucursalScope;
     }
-    listar(sucursalId) {
-        return this.cocinas.listarCocinas(sucursalId);
+    async listar(usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.cocinas.listarCocinas(id);
     }
-    crear(dto) {
+    async crear(usuario, dto) {
+        await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
         return this.cocinas.crearCocina(dto);
     }
-    actualizar(id, dto, usuario) {
-        return this.cocinas.actualizarCocina(id, usuario.sucursal_id, dto);
+    async actualizar(id, dto, usuario) {
+        const sid = await this.sucursalScope.resolverEscritura(usuario);
+        return this.cocinas.actualizarCocina(id, sid, dto);
     }
-    eliminar(id, usuario) {
-        return this.cocinas.eliminarCocina(id, usuario.sucursal_id);
+    async eliminar(id, usuario) {
+        const sid = await this.sucursalScope.resolverEscritura(usuario);
+        return this.cocinas.eliminarCocina(id, sid);
     }
 };
 exports.CocinasController = CocinasController;
 __decorate([
     (0, common_1.Get)(':sucursal_id'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
 ], CocinasController.prototype, "listar", null);
 __decorate([
     (0, common_1.Post)(),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [cocina_dto_1.CrearCocinaDto]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
+        cocina_dto_1.CrearCocinaDto]),
+    __metadata("design:returntype", Promise)
 ], CocinasController.prototype, "crear", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, cocina_dto_1.ActualizarCocinaDto,
         jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], CocinasController.prototype, "actualizar", null);
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], CocinasController.prototype, "eliminar", null);
 exports.CocinasController = CocinasController = __decorate([
     (0, common_1.Controller)('cocinas'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, plan_features_guard_1.PlanFeaturesGuard, rol_guard_1.RolGuard),
     (0, requiere_modulo_decorator_1.RequiereModulo)('cocina'),
-    __metadata("design:paramtypes", [cocinas_service_1.CocinasService])
+    __metadata("design:paramtypes", [cocinas_service_1.CocinasService,
+        sucursal_scope_service_1.SucursalScopeService])
 ], CocinasController);
 //# sourceMappingURL=cocinas.controller.js.map

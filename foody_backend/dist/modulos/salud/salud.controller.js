@@ -20,6 +20,9 @@ let SaludController = class SaludController {
     verificar() {
         return this.saludService.verificar();
     }
+    verificarCompleto() {
+        return this.saludService.verificarCompleto();
+    }
 };
 exports.SaludController = SaludController;
 __decorate([
@@ -28,6 +31,12 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], SaludController.prototype, "verificar", null);
+__decorate([
+    (0, common_1.Get)('completo'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], SaludController.prototype, "verificarCompleto", null);
 exports.SaludController = SaludController = __decorate([
     (0, common_1.Controller)('salud'),
     __metadata("design:paramtypes", [salud_service_1.SaludService])

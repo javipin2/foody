@@ -45,6 +45,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Foody usa la cámara para escanear el código QR de tu mesa.</string>
 	<!--
 	  Deep links (SCHEME):
 	  Mantener este valor sincronizado con:

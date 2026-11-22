@@ -14,29 +14,29 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeografiaController = void 0;
 const common_1 = require("@nestjs/common");
+const rate_limit_guard_1 = require("../../compartido/guards/rate-limit.guard");
+const buscar_geografia_dto_1 = require("./dto/buscar-geografia.dto");
 const geografia_service_1 = require("./geografia.service");
 let GeografiaController = class GeografiaController {
     geografia;
     constructor(geografia) {
         this.geografia = geografia;
     }
-    buscar(consulta, lat, lng, limite) {
-        return this.geografia.buscarDirecciones(consulta ?? '', {
-            lat: lat != null ? Number(lat) : undefined,
-            lng: lng != null ? Number(lng) : undefined,
-            limite: limite != null ? Number(limite) : undefined,
+    buscar(dto) {
+        return this.geografia.buscarDirecciones(dto.q ?? '', {
+            lat: dto.lat,
+            lng: dto.lng,
+            limite: dto.limite,
         });
     }
 };
 exports.GeografiaController = GeografiaController;
 __decorate([
     (0, common_1.Get)('buscar'),
-    __param(0, (0, common_1.Query)('q')),
-    __param(1, (0, common_1.Query)('lat')),
-    __param(2, (0, common_1.Query)('lng')),
-    __param(3, (0, common_1.Query)('limite')),
+    (0, rate_limit_guard_1.RateLimitPublico)(40, 60_000),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:paramtypes", [buscar_geografia_dto_1.BuscarGeografiaDto]),
     __metadata("design:returntype", void 0)
 ], GeografiaController.prototype, "buscar", null);
 exports.GeografiaController = GeografiaController = __decorate([

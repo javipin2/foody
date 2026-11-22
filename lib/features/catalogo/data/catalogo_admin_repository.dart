@@ -118,6 +118,29 @@ class CatalogoAdminRepository {
     _validar(r.data);
   }
 
+  Future<List<Map<String, dynamic>>> toppingsDeProducto(String productoId) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/productos/$productoId/toppings',
+    );
+    _validar(r.data);
+    final datos = r.data?['datos'];
+    if (datos is List) {
+      return datos.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return [];
+  }
+
+  Future<void> configurarToppingsProducto({
+    required String productoId,
+    required List<String> toppingIds,
+  }) async {
+    final r = await _dio.put<Map<String, dynamic>>(
+      '/productos/$productoId/toppings',
+      data: {'topping_ids': toppingIds},
+    );
+    _validar(r.data);
+  }
+
   Future<void> toggleCombo({
     required String id,
     required bool disponible,
@@ -133,7 +156,7 @@ class CatalogoAdminRepository {
     required String sucursalId,
     required String nombre,
     required double precioFijo,
-    required List<String> productoIds,
+    required List<Map<String, dynamic>> items,
   }) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/combos',
@@ -141,9 +164,7 @@ class CatalogoAdminRepository {
         'sucursal_id': sucursalId,
         'nombre': nombre,
         'precio_fijo': precioFijo,
-        'items': productoIds
-            .map((id) => {'tipo_item': 'producto', 'item_id': id, 'cantidad': 1})
-            .toList(),
+        'items': items,
       },
     );
     _validar(r.data);
@@ -237,5 +258,25 @@ class CatalogoAdminRepository {
     if (data == null) throw Exception('Respuesta vacía');
     final env = RespuestaApi<dynamic>.fromJson(data, (raw) => raw);
     if (!env.exito) throw Exception(env.mensaje);
+  }
+
+  Future<Map<String, dynamic>> copiarMenuDesde({
+    required String sucursalDestinoId,
+    required String sucursalOrigenId,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/categorias/sucursal/$sucursalDestinoId/copiar-desde/$sucursalOrigenId',
+    );
+    return _mapa(r.data);
+  }
+
+  Map<String, dynamic> _mapa(Map<String, dynamic>? data) {
+    if (data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      data,
+      (raw) => Map<String, dynamic>.from(raw as Map),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    return env.datos!;
   }
 }

@@ -1,9 +1,12 @@
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
+import { AlmacenamientoService } from '../almacenamiento/almacenamiento.service';
 import { ActualizarPromocionDto, CrearPromocionDto } from './dto/promocion.dto';
 export declare class PromocionesService {
     private readonly database;
-    constructor(database: DatabaseService);
+    private readonly almacenamiento;
+    private readonly logger;
+    constructor(database: DatabaseService, almacenamiento: AlmacenamientoService);
     listarActivas(sucursalId: string): Promise<import("pg").QueryResultRow[]>;
     listarStoriesPorCiudad(slug: string): Promise<import("pg").QueryResultRow[]>;
     listarAdmin(sucursalId: string): Promise<import("pg").QueryResultRow[]>;
@@ -29,4 +32,12 @@ export declare class PromocionesService {
         registrado: boolean;
     }>;
     private exigirPromocion;
+    eliminar(id: string, sucursalId: string): Promise<{
+        eliminado: boolean;
+    }>;
+    limpiarExpiradas(diasGracia?: number): Promise<{
+        filas: number;
+        objetos_storage: number;
+    }>;
+    private exigirProductoDeSucursal;
 }

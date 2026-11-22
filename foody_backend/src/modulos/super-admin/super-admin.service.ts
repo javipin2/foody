@@ -2,11 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../../core/database/database.service';
+import { ConfiguracionGlobalService } from '../../core/config/configuracion-global.module';
 import { OnboardingRestauranteService } from '../../core/onboarding/onboarding-restaurante.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import {
   ActualizarCiudadDto,
   ActualizarConfiguracionDto,
@@ -25,9 +28,13 @@ import {
 
 @Injectable()
 export class SuperAdminService {
+  private readonly logger = new Logger(SuperAdminService.name);
+
   constructor(
     private readonly database: DatabaseService,
     private readonly onboarding: OnboardingRestauranteService,
+    private readonly notificaciones: NotificacionesService,
+    private readonly configGlobal: ConfiguracionGlobalService,
   ) {}
 
   async resumenGlobal() {
@@ -248,6 +255,48 @@ export class SuperAdminService {
     );
   }
 
+  async metricasSelfService() {
+    const [registros, pagos30d, pendientes, porPlan] = await Promise.all([
+      this.database.consultarUno<{ total: string }>(
+        `SELECT COUNT(*)::text AS total FROM restaurantes
+         WHERE origen = 'self_service' AND activo = true`,
+      ),
+      this.database.consultarUno<{ total: string; monto: string }>(
+        `SELECT COUNT(*)::text AS total,
+                COALESCE(SUM(monto_centavos), 0)::text AS monto
+         FROM pagos_suscripcion
+         WHERE estado = 'aprobado'
+           AND created_at >= now() - interval '30 days'`,
+      ),
+      this.database.consultarUno<{ total: string }>(
+        `SELECT COUNT(*)::text AS total FROM pagos_suscripcion
+         WHERE estado = 'pendiente'`,
+      ),
+      this.database.consultar<{ plan: string; total: number }>(
+        `SELECT plan, COUNT(*)::int AS total
+         FROM suscripciones_restaurante
+         GROUP BY plan
+         ORDER BY total DESC`,
+      ),
+    ]);
+
+    const totalRegistros = Number(registros?.total ?? 0);
+    const pagosAprobados = Number(pagos30d?.total ?? 0);
+    const conversion =
+      totalRegistros > 0
+        ? Math.round((pagosAprobados / totalRegistros) * 1000) / 10
+        : 0;
+
+    return {
+      registros_self_service: totalRegistros,
+      pagos_aprobados_30d: pagosAprobados,
+      ingresos_cop_30d: Number(pagos30d?.monto ?? 0) / 100,
+      pagos_pendientes: Number(pendientes?.total ?? 0),
+      tasa_conversion_pagos_pct: conversion,
+      suscripciones_por_plan: porPlan,
+    };
+  }
+
   async estadisticas() {
     const pedidosHoy = await this.database.consultarUno<{ total: string }>(
       `SELECT COUNT(*)::text AS total FROM pedidos
@@ -259,10 +308,12 @@ export class SuperAdminService {
        WHERE created_at >= CURRENT_DATE`,
     );
     const resumen = await this.resumenGlobal();
+    const selfService = await this.metricasSelfService();
     return {
       ...resumen,
       pedidos_hoy: Number(pedidosHoy?.total ?? 0),
       ingresos_foody_hoy: Number(ingresosFoody?.total ?? 0),
+      self_service: selfService,
     };
   }
 
@@ -277,13 +328,15 @@ export class SuperAdminService {
     );
     if (!fila) throw new NotFoundException('Parámetro no encontrado');
 
-    return this.database.consultarUno(
+    const actualizado = await this.database.consultarUno(
       `UPDATE configuracion_global_foody SET
          valor = $2, editado_por = $3, updated_at = now()
        WHERE clave = $1
        RETURNING clave, valor, descripcion, updated_at`,
       [clave, dto.valor.trim(), usuarioId],
     );
+    await this.configGlobal.recargar();
+    return actualizado;
   }
 
   async crearRestaurante(dto: CrearRestauranteDto) {
@@ -416,7 +469,10 @@ export class SuperAdminService {
 
     const hash = await bcrypt.hash(dto.contrasena, 10);
     await this.database.consultar(
-      `UPDATE usuarios SET hash_contrasena = $2 WHERE id = $1`,
+      `UPDATE usuarios
+       SET hash_contrasena = $2,
+           token_version = COALESCE(token_version, 1) + 1
+       WHERE id = $1`,
       [id, hash],
     );
     return { id, actualizado: true };
@@ -445,12 +501,31 @@ export class SuperAdminService {
     return this.database.consultar(
       `SELECT d.id, d.tipo, d.url, d.estado, d.created_at,
               di.id AS domiciliario_id, di.nombre AS domiciliario_nombre,
-              di.email AS domiciliario_email
+              di.email AS domiciliario_email, di.telefono, di.tipo_vehiculo,
+              di.placa, di.estado_cuenta,
+              c.nombre AS ciudad_nombre
        FROM documentos_domiciliario d
        JOIN domiciliarios_independientes di ON di.id = d.domiciliario_id
+       LEFT JOIN ciudades c ON c.id = di.ciudad_id
        WHERE d.estado = 'pendiente'
        ORDER BY d.created_at ASC
        LIMIT 200`,
+    );
+  }
+
+  async listarDocumentosDomiciliario(domiciliarioId: string) {
+    const dom = await this.database.consultarUno<{ id: string }>(
+      `SELECT id FROM domiciliarios_independientes WHERE id = $1`,
+      [domiciliarioId],
+    );
+    if (!dom) throw new NotFoundException('Domiciliario no encontrado');
+
+    return this.database.consultar(
+      `SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
+       FROM documentos_domiciliario
+       WHERE domiciliario_id = $1
+       ORDER BY created_at DESC`,
+      [domiciliarioId],
     );
   }
 
@@ -511,15 +586,52 @@ export class SuperAdminService {
         [domiciliarioId],
       );
       if ((pendientes?.n ?? 0) === 0) {
-        await this.database.consultar(
+        const activado = await this.database.consultarUno<{ id: string }>(
           `UPDATE domiciliarios_independientes
            SET estado_cuenta = 'activo'
-           WHERE id = $1 AND estado_cuenta = 'pendiente_verificacion'`,
+           WHERE id = $1 AND estado_cuenta = 'pendiente_verificacion'
+           RETURNING id`,
           [domiciliarioId],
         );
+        if (activado) {
+          await this.notificarDomiciliario(
+            domiciliarioId,
+            'Cuenta activada en Foody',
+            'Tu documentación fue aprobada. Ya puedes iniciar turno y recibir pedidos.',
+            'domiciliario_cuenta_activa',
+          );
+        }
       }
+    } else if (estado === 'rechazado' && motivoRechazo) {
+      await this.notificarDomiciliario(
+        domiciliarioId,
+        'Documento rechazado',
+        motivoRechazo,
+        'domiciliario_documento_rechazado',
+      );
     }
 
     return { documento_id: documentoId, estado };
+  }
+
+  private async notificarDomiciliario(
+    domiciliarioId: string,
+    titulo: string,
+    cuerpo: string,
+    tipo: string,
+  ) {
+    try {
+      await this.notificaciones.enviar({
+        tipo,
+        titulo,
+        cuerpo,
+        destinatario_domiciliario_id: domiciliarioId,
+        datos: { domiciliario_id: domiciliarioId },
+      });
+    } catch (e) {
+      this.logger.warn(
+        `FCM domiciliario ${domiciliarioId}: ${e instanceof Error ? e.message : e}`,
+      );
+    }
   }
 }

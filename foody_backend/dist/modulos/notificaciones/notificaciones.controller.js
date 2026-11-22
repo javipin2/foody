@@ -19,6 +19,7 @@ const usuario_actual_decorator_1 = require("../../compartido/decoradores/usuario
 const jwt_payload_1 = require("../../core/auth/jwt-payload");
 const jwt_auth_guard_1 = require("../../core/auth/guards/jwt-auth.guard");
 const rol_guard_1 = require("../../core/auth/guards/rol.guard");
+const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-activa.guard");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const notificaciones_service_1 = require("./notificaciones.service");
 let NotificacionesController = class NotificacionesController {
@@ -33,36 +34,20 @@ let NotificacionesController = class NotificacionesController {
         return this.notificaciones.procesarPendientes(100);
     }
     prueba(usuario) {
-        const base = {
-            tipo: 'prueba_foody',
-            titulo: 'Foody — prueba FCM',
-            cuerpo: 'Si ves esto, push operativo ✅',
-        };
-        if (usuario.rol === 'domiciliario_independiente') {
-            return this.notificaciones.enviar({
-                ...base,
-                destinatario_domiciliario_id: usuario.sub,
-                datos: { ruta: '/domiciliario/independiente' },
-            });
-        }
-        return this.notificaciones.enviar({
-            ...base,
-            destinatario_usuario_id: usuario.sub,
-            datos: { ruta: '/admin/panel' },
-        });
+        return this.notificaciones.enviarPrueba(usuario);
     }
     pruebaWeb(usuario) {
         return this.notificaciones.enviarPruebaWeb({
             usuario_id: usuario.sub,
             rol: usuario.rol,
-            todos_web: true,
+            todos_web: false,
         });
     }
 };
 exports.NotificacionesController = NotificacionesController;
 __decorate([
     (0, common_1.Get)('diagnostico'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, rol_guard_1.RolGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
     (0, permisos_decorator_1.Permisos)('ver_dashboard'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
@@ -70,7 +55,7 @@ __decorate([
 ], NotificacionesController.prototype, "diagnostico", null);
 __decorate([
     (0, common_1.Post)('procesar-cola'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, rol_guard_1.RolGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
     (0, permisos_decorator_1.Permisos)('ver_dashboard'),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
@@ -78,7 +63,7 @@ __decorate([
 ], NotificacionesController.prototype, "procesarCola", null);
 __decorate([
     (0, common_1.Post)('prueba'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
@@ -86,7 +71,8 @@ __decorate([
 ], NotificacionesController.prototype, "prueba", null);
 __decorate([
     (0, common_1.Post)('prueba-web'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
+    (0, permisos_decorator_1.Permisos)('ver_dashboard'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),

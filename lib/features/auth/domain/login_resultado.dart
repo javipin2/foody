@@ -6,6 +6,7 @@ class LoginResultado {
     required this.usuario,
     this.plan = 'basico',
     this.modulos = const [],
+    this.estadoCuenta,
   });
 
   final String dashboard;
@@ -14,4 +15,5 @@ class LoginResultado {
   final Map<String, dynamic> usuario;
   final String plan;
   final List<String> modulos;
+  final String? estadoCuenta;
 }

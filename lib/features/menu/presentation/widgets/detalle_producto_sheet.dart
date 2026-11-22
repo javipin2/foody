@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/menu/domain/menu_model.dart';
+import 'package:reserva_canchas/features/menu/presentation/widgets/foody_pedido_sheet.dart';
+import 'package:reserva_canchas/features/menu/presentation/widgets/opcion_upsell_card.dart';
 import 'package:reserva_canchas/features/pedidos/domain/linea_carrito.dart';
 
-/// Modal de personalización (toppings / bebidas) antes de agregar al carrito.
+/// Plato + toppings (extras del producto) + bebidas (productos del menú).
 class DetalleProductoSheet extends StatefulWidget {
   const DetalleProductoSheet({
     super.key,
     required this.producto,
     required this.onAgregar,
+    this.sugerenciasBebidas = const [],
   });
 
   final ProductoMenuModel producto;
-  final void Function(LineaCarrito linea) onAgregar;
+  final void Function(List<LineaCarrito> lineas) onAgregar;
+  /// Bebidas vendibles como productos (categoría Bebidas).
+  final List<ProductoMenuModel> sugerenciasBebidas;
 
   static Future<void> mostrar(
     BuildContext context, {
     required ProductoMenuModel producto,
-    required void Function(LineaCarrito linea) onAgregar,
+    required void Function(List<LineaCarrito> lineas) onAgregar,
+    List<ProductoMenuModel> sugerenciasBebidas = const [],
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -27,8 +33,9 @@ class DetalleProductoSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) => DetalleProductoSheet(
         producto: producto,
-        onAgregar: (linea) {
-          onAgregar(linea);
+        sugerenciasBebidas: sugerenciasBebidas,
+        onAgregar: (lineas) {
+          onAgregar(lineas);
           Navigator.pop(ctx);
         },
       ),
@@ -45,8 +52,8 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
     symbol: r'$',
     decimalDigits: 0,
   );
-  final Set<String> _toppingsSel = {};
-  final Set<String> _bebidasSel = {};
+  final Map<String, int> _toppingsQty = {};
+  final Map<String, int> _bebidasQty = {};
   final _observacionesCtrl = TextEditingController();
   int _cantidad = 1;
 
@@ -56,25 +63,38 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
     super.dispose();
   }
 
+  List<OpcionMenuModel> get _opsBebidas => widget.sugerenciasBebidas
+      .map((p) => OpcionMenuModel(id: p.id, nombre: p.nombre, precio: p.precio))
+      .toList();
+
+  /// ponytail: UI-only hint en sheet; total autoritativo = POST /pedidos/estimar.
   double get _precioPreview {
     var total = widget.producto.precio.toDouble() * _cantidad;
     for (final t in widget.producto.toppings) {
-      if (_toppingsSel.contains(t.id)) {
-        total += t.precio.toDouble() * _cantidad;
-      }
+      final q = _toppingsQty[t.id] ?? 0;
+      if (q > 0) total += t.precio.toDouble() * _cantidad * q;
     }
-    for (final b in widget.producto.bebidas) {
-      if (_bebidasSel.contains(b.id)) {
-        total += b.precio.toDouble();
-      }
+    for (final p in widget.sugerenciasBebidas) {
+      final q = _bebidasQty[p.id] ?? 0;
+      if (q > 0) total += p.precio.toDouble() * q;
     }
     return total;
   }
 
+  void _setQty(Map<String, int> map, String id, int qty) {
+    setState(() {
+      if (qty <= 0) {
+        map.remove(id);
+      } else {
+        map[id] = qty;
+      }
+    });
+  }
+
   void _confirmar() {
-    HapticFeedback.lightImpact();
+    HapticFeedback.mediumImpact();
     final tops = widget.producto.toppings
-        .where((t) => _toppingsSel.contains(t.id))
+        .where((t) => (_toppingsQty[t.id] ?? 0) > 0)
         .map(
           (t) => ToppingLineaCarrito(
             id: t.id,
@@ -83,67 +103,67 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
           ),
         )
         .toList();
-    final bebs = widget.producto.bebidas
-        .where((b) => _bebidasSel.contains(b.id))
-        .map(
-          (b) => BebidaLineaCarrito(
-            id: b.id,
-            nombre: b.nombre,
-            precio: b.precio.toDouble(),
-          ),
-        )
-        .toList();
-
-    final clave = LineaCarrito.generarClave(
-      productoId: widget.producto.id,
-      toppingIds: tops.map((t) => t.id).toList(),
-      bebidaIds: bebs.map((b) => b.id).toList(),
-      observaciones: _observacionesCtrl.text,
-    );
-
-    widget.onAgregar(
+    final obs = _observacionesCtrl.text.trim();
+    final lineas = <LineaCarrito>[
       LineaCarrito(
-        clave: clave,
+        clave: LineaCarrito.generarClave(
+          productoId: widget.producto.id,
+          toppingIds: tops.map((t) => t.id).toList(),
+          observaciones: obs,
+        ),
         productoId: widget.producto.id,
         nombre: widget.producto.nombre,
         precioUnitario: widget.producto.precio.toDouble(),
         precioUnitarioLlevar: widget.producto.precioParaLlevar?.toDouble(),
         cantidad: _cantidad,
         toppings: tops,
-        bebidas: bebs,
-        observaciones: _observacionesCtrl.text.trim().isEmpty
-            ? null
-            : _observacionesCtrl.text.trim(),
+        observaciones: obs.isEmpty ? null : obs,
         imagenUrl: widget.producto.imagenUrl,
         esEncargo: widget.producto.esEncargo,
+        detalleIncluye: (widget.producto.descripcion ?? '').trim().isEmpty
+            ? null
+            : widget.producto.descripcion!.trim(),
+        etiquetaTipo: widget.producto.esEncargo ? 'Encargo' : 'Plato',
       ),
-    );
+    ];
+    for (final p in widget.sugerenciasBebidas) {
+      final q = _bebidasQty[p.id] ?? 0;
+      if (q <= 0) continue;
+      lineas.add(
+        LineaCarrito(
+          clave: LineaCarrito.generarClave(productoId: p.id),
+          productoId: p.id,
+          nombre: p.nombre,
+          precioUnitario: p.precio.toDouble(),
+          precioUnitarioLlevar: p.precioParaLlevar?.toDouble(),
+          cantidad: q,
+          imagenUrl: p.imagenUrl,
+          detalleIncluye: (p.descripcion ?? '').trim().isEmpty
+              ? null
+              : p.descripcion!.trim(),
+          etiquetaTipo: 'Bebida',
+        ),
+      );
+    }
+    widget.onAgregar(lineas);
   }
 
   @override
   Widget build(BuildContext context) {
     final p = widget.producto;
-    return DraggableScrollableSheet(
-      initialChildSize: 0.72,
-      minChildSize: 0.45,
-      maxChildSize: 0.92,
+    return FoodyPedidoSheet(
+      initialChildSize: 0.88,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Container(
           decoration: const BoxDecoration(
-            color: Colors.white,
+            color: AnaliticaTokens.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
             children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+              const FoodySheetHandle(),
               Expanded(
                 child: ListView(
                   controller: scrollController,
@@ -152,14 +172,19 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
                     Text(
                       p.nombre,
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
+                            color: AnaliticaTokens.ink,
+                            letterSpacing: -0.4,
                           ),
                     ),
                     if ((p.descripcion ?? '').isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
                         p.descripcion!,
-                        style: TextStyle(color: Colors.grey.shade700),
+                        style: const TextStyle(
+                          color: AnaliticaTokens.inkMuted,
+                          height: 1.35,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 12),
@@ -167,56 +192,74 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
                       _formato.format(p.precio),
                       style: const TextStyle(
                         fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: ColoresFoody.primario,
+                        fontWeight: FontWeight.w800,
+                        color: AnaliticaTokens.ink,
                       ),
                     ),
-                    if (p.toppings.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      Text('Extras', style: Theme.of(context).textTheme.titleMedium),
-                      ...p.toppings.map(
-                        (t) => CheckboxListTile(
-                          value: _toppingsSel.contains(t.id),
-                          onChanged: (v) => setState(() {
-                            if (v == true) {
-                              _toppingsSel.add(t.id);
-                            } else {
-                              _toppingsSel.remove(t.id);
-                            }
-                          }),
-                          title: Text(t.nombre),
-                          secondary: Text(_formato.format(t.precio)),
-                          activeColor: ColoresFoody.primario,
+                    if (p.toppings.isNotEmpty || _opsBebidas.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Elige extras si quieres; el total se actualiza abajo.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: AnaliticaTokens.inkMuted,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
-                    ],
-                    if (p.bebidas.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text('Bebidas', style: Theme.of(context).textTheme.titleMedium),
-                      ...p.bebidas.map(
-                        (b) => CheckboxListTile(
-                          value: _bebidasSel.contains(b.id),
-                          onChanged: (v) => setState(() {
-                            if (v == true) {
-                              _bebidasSel.add(b.id);
-                            } else {
-                              _bebidasSel.remove(b.id);
-                            }
-                          }),
-                          title: Text(b.nombre),
-                          secondary: Text(_formato.format(b.precio)),
-                          activeColor: ColoresFoody.secundario,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
+                    SeccionUpsellOpciones(
+                      titulo: 'Toppings',
+                      subtitulo: 'Extras de este plato',
+                      opciones: p.toppings,
+                      cantidades: _toppingsQty,
+                      formato: _formato,
+                      acento: AnaliticaTokens.ink,
+                      maxCantidad: 1,
+                      onCambiar: (id, q) => _setQty(_toppingsQty, id, q),
+                    ),
+                    SeccionUpsellOpciones(
+                      titulo: 'Bebidas',
+                      subtitulo: 'También en el menú como producto',
+                      opciones: _opsBebidas,
+                      cantidades: _bebidasQty,
+                      formato: _formato,
+                      acento: AnaliticaTokens.ink,
+                      maxCantidad: 5,
+                      onCambiar: (id, q) => _setQty(_bebidasQty, id, q),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: _observacionesCtrl,
                       maxLines: 2,
-                      decoration: const InputDecoration(
+                      style: const TextStyle(color: AnaliticaTokens.ink),
+                      decoration: InputDecoration(
                         labelText: 'Observaciones',
                         hintText: 'Ej. sin cebolla, poco picante',
-                        border: OutlineInputBorder(),
+                        labelStyle:
+                            const TextStyle(color: AnaliticaTokens.inkMuted),
+                        filled: true,
+                        fillColor: AnaliticaTokens.surfaceMuted,
+                        border: OutlineInputBorder(
+                          borderRadius:
+                              BorderRadius.circular(AnaliticaTokens.r12),
+                          borderSide:
+                              const BorderSide(color: AnaliticaTokens.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius:
+                              BorderRadius.circular(AnaliticaTokens.r12),
+                          borderSide:
+                              const BorderSide(color: AnaliticaTokens.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius:
+                              BorderRadius.circular(AnaliticaTokens.r12),
+                          borderSide: const BorderSide(
+                            color: AnaliticaTokens.ink,
+                            width: 1.4,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -225,22 +268,47 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
                       children: [
                         IconButton.filled(
                           onPressed: _cantidad > 1
-                              ? () => setState(() => _cantidad--)
+                              ? () {
+                                  HapticFeedback.selectionClick();
+                                  setState(() => _cantidad--);
+                                }
                               : null,
                           icon: const Icon(Icons.remove),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AnaliticaTokens.surfaceMuted,
+                            foregroundColor: AnaliticaTokens.ink,
+                          ),
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text(
-                            '$_cantidad',
-                            style: Theme.of(context).textTheme.headlineSmall,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 150),
+                            transitionBuilder: (child, anim) => ScaleTransition(
+                              scale: anim,
+                              child: child,
+                            ),
+                            child: Text(
+                              '$_cantidad',
+                              key: ValueKey(_cantidad),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: AnaliticaTokens.ink,
+                                  ),
+                            ),
                           ),
                         ),
                         IconButton.filled(
-                          onPressed: () => setState(() => _cantidad++),
+                          onPressed: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _cantidad++);
+                          },
                           icon: const Icon(Icons.add),
                           style: IconButton.styleFrom(
-                            backgroundColor: ColoresFoody.primario,
+                            backgroundColor: AnaliticaTokens.ink,
+                            foregroundColor: Colors.white,
                           ),
                         ),
                       ],
@@ -254,12 +322,24 @@ class _DetalleProductoSheetState extends State<DetalleProductoSheet> {
                   child: FilledButton(
                     onPressed: _confirmar,
                     style: FilledButton.styleFrom(
-                      backgroundColor: ColoresFoody.primario,
+                      backgroundColor: AnaliticaTokens.ink,
+                      foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AnaliticaTokens.r12),
+                      ),
                     ),
-                    child: Text(
-                      'Agregar · ${_formato.format(_precioPreview)}',
-                      style: const TextStyle(fontSize: 16),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: Text(
+                        'Agregar · ${_formato.format(_precioPreview)}',
+                        key: ValueKey(_precioPreview),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
                 ),

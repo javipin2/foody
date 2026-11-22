@@ -22,4 +22,27 @@ class RutaMesaUtil {
     final path = Uri.base.path;
     return normalizar(path);
   }
+
+  /// Extrae el token de mesa desde texto escaneado (URL, path o token crudo).
+  static String? tokenDesdeTextoQr(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && uri.hasScheme) {
+      final desdePath = tokenDesdePath(uri.path);
+      if (desdePath != null) return desdePath;
+      final qp = uri.queryParameters['qr'] ?? uri.queryParameters['token'];
+      if (qp != null && qp.isNotEmpty) return qp;
+    }
+
+    final path = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    final desdePath = tokenDesdePath(path);
+    if (desdePath != null) return desdePath;
+
+    if (RegExp(r'^[a-zA-Z0-9_-]{8,128}$').hasMatch(trimmed)) {
+      return trimmed;
+    }
+    return null;
+  }
 }

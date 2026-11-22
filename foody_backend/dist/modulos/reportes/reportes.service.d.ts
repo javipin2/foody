@@ -21,6 +21,9 @@ export declare class ReportesService {
             ventas_movimientos_caja: number;
             diferencia: number;
             movimientos_venta: number;
+            etiqueta_ventas_pedidos: string;
+            etiqueta_ventas_caja: string;
+            nota_universos: string;
             por_metodo_caja: {
                 metodo_pago: string;
                 total: number;

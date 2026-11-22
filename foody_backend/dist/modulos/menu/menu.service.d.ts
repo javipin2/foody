@@ -1,7 +1,18 @@
+import { MenuCacheService } from '../../core/cache/menu-cache.service';
 import { DatabaseService } from '../../core/database/database.service';
+export interface ComboItemFila {
+    combo_id: string;
+    id: string;
+    tipo_item: string;
+    item_id: string;
+    cantidad: number;
+    nombre_item: string;
+}
 export declare class MenuService {
     private readonly database;
-    constructor(database: DatabaseService);
+    private readonly menuCache;
+    constructor(database: DatabaseService, menuCache: MenuCacheService);
+    private readonly menuConstruyendose;
     obtenerPorMesaQr(qrToken: string): Promise<{
         sucursal: {
             id: string;
@@ -49,12 +60,15 @@ export declare class MenuService {
             precio_fijo: number;
             imagen_url: string | null;
             disponible: boolean;
-            items: import("pg").QueryResultRow[];
+            items: ComboItemFila[];
         }[];
         mesa: {
             id: string;
             nombre: string;
             qr_token: string;
+            pedidos_activos: number;
+            pedidos_pendientes_qr: number;
+            total_pendiente_mesa: number;
         };
     }>;
     obtenerPorSucursal(sucursalId: string): Promise<{
@@ -104,8 +118,9 @@ export declare class MenuService {
             precio_fijo: number;
             imagen_url: string | null;
             disponible: boolean;
-            items: import("pg").QueryResultRow[];
+            items: ComboItemFila[];
         }[];
     }>;
+    private construirMenuSucursal;
     private agruparPorProducto;
 }

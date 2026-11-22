@@ -22,12 +22,15 @@ const jwt_auth_guard_1 = require("../../core/auth/guards/jwt-auth.guard");
 const rol_guard_1 = require("../../core/auth/guards/rol.guard");
 const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-activa.guard");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
+const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const promocion_dto_1 = require("./dto/promocion.dto");
 const promociones_service_1 = require("./promociones.service");
 let PromocionesController = class PromocionesController {
     promociones;
-    constructor(promociones) {
+    sucursalScope;
+    constructor(promociones, sucursalScope) {
         this.promociones = promociones;
+        this.sucursalScope = sucursalScope;
     }
     listarActivas(sucursalId) {
         return this.promociones.listarActivas(sucursalId);
@@ -35,20 +38,28 @@ let PromocionesController = class PromocionesController {
     storiesCiudad(slug) {
         return this.promociones.listarStoriesPorCiudad(slug);
     }
-    validarCodigo(sucursalId, codigo, subtotal) {
-        return this.promociones.previewCodigo(sucursalId, codigo, Number(subtotal) || 0);
+    validarCodigo(dto) {
+        return this.promociones.previewCodigo(dto.sucursal_id, dto.codigo, dto.subtotal);
     }
     registrarVista(id, dto) {
         return this.promociones.registrarVista(id, dto.device_id);
     }
-    listarAdmin(sucursalId) {
-        return this.promociones.listarAdmin(sucursalId);
-    }
-    crear(dto) {
+    async crear(usuario, dto) {
+        await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
         return this.promociones.crear(dto);
+    }
+    limpiarExpiradas() {
+        return this.promociones.limpiarExpiradas(7);
+    }
+    async listarAdmin(usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.promociones.listarAdmin(id);
     }
     actualizar(id, dto, usuario) {
         return this.promociones.actualizar(id, usuario.sucursal_id, dto);
+    }
+    eliminar(id, usuario) {
+        return this.promociones.eliminar(id, usuario.sucursal_id);
     }
 };
 exports.PromocionesController = PromocionesController;
@@ -71,45 +82,54 @@ __decorate([
 __decorate([
     (0, common_1.Get)('validar-codigo'),
     (0, rate_limit_guard_1.RateLimitPublico)(60, 60_000),
-    __param(0, (0, common_1.Query)('sucursal_id')),
-    __param(1, (0, common_1.Query)('codigo')),
-    __param(2, (0, common_1.Query)('subtotal')),
+    __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [promocion_dto_1.ValidarCodigoPromocionDto]),
     __metadata("design:returntype", void 0)
 ], PromocionesController.prototype, "validarCodigo", null);
 __decorate([
     (0, common_1.Post)(':id/vista'),
     (0, rate_limit_guard_1.RateLimitPublico)(60, 60_000),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, promocion_dto_1.RegistrarVistaPromocionDto]),
     __metadata("design:returntype", void 0)
 ], PromocionesController.prototype, "registrarVista", null);
 __decorate([
-    (0, common_1.Get)('admin/:sucursal_id'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
-    (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", void 0)
-], PromocionesController.prototype, "listarAdmin", null);
-__decorate([
     (0, common_1.Post)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promocion_dto_1.CrearPromocionDto]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
+        promocion_dto_1.CrearPromocionDto]),
+    __metadata("design:returntype", Promise)
 ], PromocionesController.prototype, "crear", null);
+__decorate([
+    (0, common_1.Post)('admin/limpiar-expiradas'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
+    (0, permisos_decorator_1.Permisos)('editar_productos'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], PromocionesController.prototype, "limpiarExpiradas", null);
+__decorate([
+    (0, common_1.Get)('admin/:sucursal_id'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
+    (0, permisos_decorator_1.Permisos)('editar_productos'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PromocionesController.prototype, "listarAdmin", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -117,8 +137,19 @@ __decorate([
         jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", void 0)
 ], PromocionesController.prototype, "actualizar", null);
+__decorate([
+    (0, common_1.Delete)(':id'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
+    (0, permisos_decorator_1.Permisos)('editar_productos'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", void 0)
+], PromocionesController.prototype, "eliminar", null);
 exports.PromocionesController = PromocionesController = __decorate([
     (0, common_1.Controller)('promociones'),
-    __metadata("design:paramtypes", [promociones_service_1.PromocionesService])
+    __metadata("design:paramtypes", [promociones_service_1.PromocionesService,
+        sucursal_scope_service_1.SucursalScopeService])
 ], PromocionesController);
 //# sourceMappingURL=promociones.controller.js.map

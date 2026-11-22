@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/tema/foody_formulario.dart';
 
 /// Resultado del diálogo crear/editar insumo (modo mercado o solo costo).
 class InsumoFormResultado {
@@ -50,17 +51,26 @@ class _PreviewMercado {
 Future<InsumoFormResultado?> mostrarDialogoInsumo({
   required BuildContext context,
   Map<String, dynamic>? insumoExistente,
+  /// NAV-MC-04: preselección al crear desde Costos (ej. empaque).
+  String? categoriaInicial,
 }) {
   return showDialog<InsumoFormResultado>(
     context: context,
-    builder: (ctx) => _DialogoInsumoForm(insumoExistente: insumoExistente),
+    builder: (ctx) => _DialogoInsumoForm(
+      insumoExistente: insumoExistente,
+      categoriaInicial: categoriaInicial,
+    ),
   );
 }
 
 class _DialogoInsumoForm extends StatefulWidget {
-  const _DialogoInsumoForm({this.insumoExistente});
+  const _DialogoInsumoForm({
+    this.insumoExistente,
+    this.categoriaInicial,
+  });
 
   final Map<String, dynamic>? insumoExistente;
+  final String? categoriaInicial;
 
   @override
   State<_DialogoInsumoForm> createState() => _DialogoInsumoFormState();
@@ -132,7 +142,9 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
     super.initState();
     final ing = widget.insumoExistente;
     final unidad = ing?['unidad_base'] as String? ?? 'g';
-    final catRaw = ing?['categoria_insumo'] as String? ?? 'alimento';
+    final catRaw = ing?['categoria_insumo'] as String? ??
+        widget.categoriaInicial ??
+        'alimento';
 
     _esSoloCosto = _inferirSoloCosto(ing);
     _unidad = _normalizarUnidad(unidad);
@@ -232,204 +244,243 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
     final costoReal = _PreviewMercado.costoReal(precio, neto);
     final factor = _PreviewMercado.factor(bruto, neto);
 
-    return AlertDialog(
-      title: Text(_editando ? 'Editar insumo' : 'Nuevo insumo — mercado'),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _nombre,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del insumo',
-                  hintText: 'Cebolla blanca, carne, bolsa…',
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _proveedor,
-                decoration: const InputDecoration(
-                  labelText: 'Proveedor (opcional)',
-                  hintText: 'Mercado, Makro, Éxito…',
-                ),
-              ),
-              const SizedBox(height: 8),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                    value: false,
-                    label: Text('Compra mercado'),
-                    icon: Icon(Icons.storefront_outlined, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: true,
-                    label: Text('Solo costo'),
-                    icon: Icon(Icons.payments_outlined, size: 16),
-                  ),
-                ],
-                selected: {_esSoloCosto},
-                onSelectionChanged: (s) {
-                  final solo = s.first;
-                  setState(() {
-                    _esSoloCosto = solo;
-                    _categoria = _normalizarCategoria(_categoria, solo);
-                  });
-                },
-              ),
-              const SizedBox(height: 8),
-              if (!_esSoloCosto) ...[
-                DropdownButtonFormField<String>(
-                  initialValue: _categoria,
-                  decoration: const InputDecoration(labelText: 'Categoría'),
-                  items: const [
-                    DropdownMenuItem(value: 'alimento', child: Text('Alimento')),
-                    DropdownMenuItem(value: 'empaque', child: Text('Empaque')),
-                    DropdownMenuItem(value: 'mano_obra', child: Text('Mano de obra')),
-                    DropdownMenuItem(value: 'servicio', child: Text('Servicio / gas fijo')),
-                  ],
-                  onChanged: (v) => setState(() => _categoria = v ?? _categoria),
-                ),
-                const SizedBox(height: 8),
+    return FoodyDialogoShell(
+      titulo: _editando ? 'Editar insumo' : 'Nuevo insumo',
+      subtitulo: _esSoloCosto
+          ? 'Solo costo: no descuenta inventario al vender.'
+          : 'Compra de mercado: registra precio, pesos y stock.',
+      contenido: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FoodyFormSeccion(
+            titulo: 'Identificación',
+            icono: Icons.shopping_basket_outlined,
+            hijo: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 TextField(
-                  controller: _precioCompra,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Precio de compra (COP)',
-                    hintText: 'Lo que pagaste por el bulto/bolsa',
+                  controller: _nombre,
+                  decoration: FoodyFormEstilo.campo(
+                    label: 'Nombre',
+                    hint: 'Cebolla, carne, bolsa…',
                   ),
-                  onChanged: (_) => setState(() {}),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _pesoBruto,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Peso bruto',
-                          hintText: 'Total comprado',
-                          suffixText: _unidad,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _pesoNeto,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Peso neto (aprovechable)',
-                          suffixText: _unidad,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                  ],
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: _unidad,
-                  decoration: const InputDecoration(labelText: 'Unidad de medida'),
-                  items: const [
-                    DropdownMenuItem(value: 'g', child: Text('Gramo (g)')),
-                    DropdownMenuItem(value: 'kg', child: Text('Kilogramo (kg)')),
-                    DropdownMenuItem(value: 'ml', child: Text('Mililitro (ml)')),
-                    DropdownMenuItem(value: 'L', child: Text('Litro (L)')),
-                    DropdownMenuItem(value: 'und', child: Text('Unidad (und)')),
-                  ],
-                  onChanged: (v) => setState(() => _unidad = v ?? _unidad),
-                ),
-                if (costoReal != null) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    color: ColoresFoody.secundario.withValues(alpha: 0.12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Vista previa (el backend confirma al guardar)',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Costo real: ${_moneda.format(costoReal)}/$_unidad',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          if (factor != null && (factor - 1).abs() > 0.01)
-                            Text(
-                              'Factor corrección (merma): ×${factor.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _stockAct,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Stock actual',
-                          suffixText: _unidad,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _stockMin,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Stock mínimo',
-                          suffixText: _unidad,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                DropdownButtonFormField<String>(
-                  initialValue: _categoria,
-                  decoration: const InputDecoration(labelText: 'Categoría'),
-                  items: const [
-                    DropdownMenuItem(value: 'mano_obra', child: Text('Mano de obra')),
-                    DropdownMenuItem(value: 'servicio', child: Text('Servicio / gas fijo')),
-                    DropdownMenuItem(value: 'empaque', child: Text('Empaque (solo costo)')),
-                  ],
-                  onChanged: (v) => setState(() => _categoria = v ?? _categoria),
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 TextField(
-                  controller: _costoSolo,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Costo por plato / unidad (COP)',
-                    helperText: 'No descuenta inventario al vender',
+                  controller: _proveedor,
+                  decoration: FoodyFormEstilo.campo(
+                    label: 'Proveedor (opcional)',
+                    hint: 'Mercado, Makro…',
                   ),
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: false,
+                      label: Text('Mercado'),
+                      icon: Icon(Icons.storefront_outlined, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: true,
+                      label: Text('Solo costo'),
+                      icon: Icon(Icons.payments_outlined, size: 16),
+                    ),
+                  ],
+                  selected: {_esSoloCosto},
+                  onSelectionChanged: (s) {
+                    final solo = s.first;
+                    setState(() {
+                      _esSoloCosto = solo;
+                      _categoria = _normalizarCategoria(_categoria, solo);
+                    });
+                  },
                 ),
               ],
-            ],
+            ),
           ),
-        ),
+          if (!_esSoloCosto) ...[
+            FoodyFormSeccion(
+              titulo: 'Compra y merma',
+              icono: Icons.scale_outlined,
+              acento: ColoresFoody.secundario,
+              hijo: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: _categoria,
+                    decoration: FoodyFormEstilo.campo(label: 'Categoría'),
+                    items: const [
+                      DropdownMenuItem(value: 'alimento', child: Text('Alimento')),
+                      DropdownMenuItem(value: 'empaque', child: Text('Empaque')),
+                      DropdownMenuItem(
+                        value: 'mano_obra',
+                        child: Text('Mano de obra'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'servicio',
+                        child: Text('Servicio / gas fijo'),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _categoria = v ?? _categoria),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _precioCompra,
+                    keyboardType: TextInputType.number,
+                    decoration: FoodyFormEstilo.campo(
+                      label: 'Precio de compra (COP)',
+                      hint: 'Lo que pagaste por el bulto',
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  FoodyFormCamposAdaptativos(
+                    campos: [
+                      TextField(
+                        controller: _pesoBruto,
+                        keyboardType: TextInputType.number,
+                        decoration: FoodyFormEstilo.campo(
+                          label: 'Peso bruto',
+                          suffix: _unidad,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      TextField(
+                        controller: _pesoNeto,
+                        keyboardType: TextInputType.number,
+                        decoration: FoodyFormEstilo.campo(
+                          label: 'Peso neto',
+                          suffix: _unidad,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: _unidad,
+                    decoration: FoodyFormEstilo.campo(label: 'Unidad'),
+                    items: const [
+                      DropdownMenuItem(value: 'g', child: Text('Gramo (g)')),
+                      DropdownMenuItem(value: 'kg', child: Text('Kilogramo (kg)')),
+                      DropdownMenuItem(value: 'ml', child: Text('Mililitro (ml)')),
+                      DropdownMenuItem(value: 'L', child: Text('Litro (L)')),
+                      DropdownMenuItem(value: 'und', child: Text('Unidad (und)')),
+                    ],
+                    onChanged: (v) => setState(() => _unidad = v ?? _unidad),
+                  ),
+                ],
+              ),
+            ),
+            if (costoReal != null)
+              FoodyFormSeccion(
+                titulo: 'Vista previa',
+                icono: Icons.calculate_outlined,
+                acento: ColoresFoody.secundario,
+                trailing: const FoodyFormBadge(
+                  texto: 'Estimado',
+                  color: ColoresFoody.secundario,
+                ),
+                hijo: FoodyFormMetricas(
+                  items: [
+                    FoodyMetricaItem(
+                      etiqueta: 'Costo real / $_unidad',
+                      valor: _moneda.format(costoReal),
+                      color: ColoresFoody.secundario,
+                    ),
+                    if (factor != null && (factor - 1).abs() > 0.01)
+                      FoodyMetricaItem(
+                        etiqueta: 'Factor merma',
+                        valor: '×${factor.toStringAsFixed(2)}',
+                        color: ColoresFoody.primario,
+                      ),
+                  ],
+                ),
+              ),
+            FoodyFormSeccion(
+              titulo: 'Inventario',
+              icono: Icons.inventory_2_outlined,
+              hijo: FoodyFormCamposAdaptativos(
+                campos: [
+                  TextField(
+                    controller: _stockAct,
+                    keyboardType: TextInputType.number,
+                    decoration: FoodyFormEstilo.campo(
+                      label: 'Stock actual',
+                      suffix: _unidad,
+                    ),
+                  ),
+                  TextField(
+                    controller: _stockMin,
+                    keyboardType: TextInputType.number,
+                    decoration: FoodyFormEstilo.campo(
+                      label: 'Stock mínimo',
+                      suffix: _unidad,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else
+            FoodyFormSeccion(
+              titulo: 'Solo costo',
+              icono: Icons.payments_outlined,
+              acento: Colors.brown,
+              hijo: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: _categoria,
+                    decoration: FoodyFormEstilo.campo(label: 'Categoría'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'mano_obra',
+                        child: Text('Mano de obra'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'servicio',
+                        child: Text('Servicio / gas fijo'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'empaque',
+                        child: Text('Empaque (solo costo)'),
+                      ),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _categoria = v ?? _categoria),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _costoSolo,
+                    keyboardType: TextInputType.number,
+                    decoration: FoodyFormEstilo.campo(
+                      label: 'Costo por plato / unidad (COP)',
+                      helper: 'No descuenta inventario al vender',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
-      actions: [
+      acciones: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-        FilledButton(onPressed: _guardar, child: const Text('Guardar')),
+        FilledButton(
+          onPressed: _guardar,
+          style: FilledButton.styleFrom(
+            backgroundColor: ColoresFoody.primario,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+          child: const Text('Guardar'),
+        ),
       ],
     );
   }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -6,6 +7,11 @@ import {
   SupabaseClient,
 } from '@supabase/supabase-js';
 import WebSocket from 'ws';
+import {
+  pepperRealtime,
+  topicCatalogoPublico,
+  topicStaff,
+} from './realtime-topics';
 
 export type EventoPedidoBroadcast = {
   pedido_id: string;
@@ -45,14 +51,50 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    if (this.estaConfigurado()) return;
-    this.logger.error(
-      'Realtime inactivo al arranque: configure SUPABASE_URL y SUPABASE_SERVICE_KEY en .env',
-    );
+    if (!this.estaConfigurado()) {
+      this.logger.error(
+        'Realtime inactivo al arranque: configure SUPABASE_URL y SUPABASE_SERVICE_KEY en .env',
+      );
+      return;
+    }
+    void this.verificarConexion().then((salud) => {
+      if (salud.conectado) {
+        this.logger.log('Realtime broadcast operativo');
+      } else {
+        this.logger.error(
+          `Realtime broadcast no conectado: ${salud.detalle ?? 'sin detalle'}`,
+        );
+      }
+    });
   }
 
   estaConfigurado(): boolean {
     return this.cliente !== null;
+  }
+
+  /** Pepper HMAC (REALTIME_CANAL_PEPPER o JWT_SECRET). */
+  pepper(): string {
+    return pepperRealtime(this.config);
+  }
+
+  topicSucursal(sucursalId: string): string {
+    return topicStaff(this.pepper(), 'sucursal', sucursalId);
+  }
+
+  topicCocina(cocinaId: string): string {
+    return topicStaff(this.pepper(), 'cocina', cocinaId);
+  }
+
+  topicRestaurante(restauranteId: string): string {
+    return topicStaff(this.pepper(), 'restaurante', restauranteId);
+  }
+
+  topicDomiciliarioPlanta(usuarioId: string): string {
+    return topicStaff(this.pepper(), 'domiciliario', usuarioId);
+  }
+
+  topicDomiciliarioIndep(domiciliarioId: string): string {
+    return topicStaff(this.pepper(), 'domiciliario_indep', domiciliarioId);
   }
 
   async verificarConexion(): Promise<SaludRealtime> {
@@ -95,27 +137,42 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
 
   async pedidoActualizado(payload: EventoPedidoBroadcast) {
     await this.enviarBroadcast(
-      `sucursal_${payload.sucursal_id}`,
+      this.topicSucursal(payload.sucursal_id),
       'pedido_actualizado',
       payload as unknown as Record<string, unknown>,
     );
   }
 
-  async pedidoSeguimiento(pedidoId: string, payload: Record<string, unknown>) {
-    await this.enviarBroadcast(`pedido_${pedidoId}`, 'estado_actualizado', payload);
+  /** Canal opaco: requiere seguimiento_token del pedido (RT-9). */
+  static canalPedidoSeguimiento(pedidoId: string, seguimientoToken: string) {
+    return `pedido_${pedidoId}_${seguimientoToken}`;
+  }
+
+  async pedidoSeguimiento(
+    pedidoId: string,
+    seguimientoToken: string,
+    payload: Record<string, unknown>,
+  ) {
+    await this.enviarBroadcast(
+      RealtimeBroadcastService.canalPedidoSeguimiento(pedidoId, seguimientoToken),
+      'estado_actualizado',
+      payload,
+    );
   }
 
   async mesasActualizadas(sucursalId: string) {
-    await this.enviarBroadcast(`sucursal_${sucursalId}`, 'mesas_actualizadas', {
-      sucursal_id: sucursalId,
-    });
+    await this.enviarBroadcast(
+      this.topicSucursal(sucursalId),
+      'mesas_actualizadas',
+      { sucursal_id: sucursalId },
+    );
   }
 
   async cocinaActualizada(
     cocinaId: string,
     payload: Record<string, unknown>,
   ) {
-    await this.enviarBroadcast(`cocina_${cocinaId}`, 'cocina_actualizada', {
+    await this.enviarBroadcast(this.topicCocina(cocinaId), 'cocina_actualizada', {
       cocina_id: cocinaId,
       ...payload,
     });
@@ -127,7 +184,7 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     payload: Record<string, unknown>,
   ) {
     await this.enviarBroadcast(
-      `domiciliario_${usuarioId}`,
+      this.topicDomiciliarioPlanta(usuarioId),
       'pedido_asignado',
       { usuario_id: usuarioId, ...payload },
     );
@@ -139,21 +196,21 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     payload: Record<string, unknown>,
   ) {
     await this.enviarBroadcast(
-      `domiciliario_indep_${domiciliarioId}`,
+      this.topicDomiciliarioIndep(domiciliarioId),
       'oferta_nueva',
       { domiciliario_id: domiciliarioId, ...payload },
     );
   }
 
   async cajaMovimiento(sucursalId: string, payload: Record<string, unknown> = {}) {
-    await this.enviarBroadcast(`sucursal_${sucursalId}`, 'caja_movimiento', {
+    await this.enviarBroadcast(this.topicSucursal(sucursalId), 'caja_movimiento', {
       sucursal_id: sucursalId,
       ...payload,
     });
   }
 
   async alertaNueva(sucursalId: string, payload: Record<string, unknown> = {}) {
-    await this.enviarBroadcast(`sucursal_${sucursalId}`, 'alerta_nueva', {
+    await this.enviarBroadcast(this.topicSucursal(sucursalId), 'alerta_nueva', {
       sucursal_id: sucursalId,
       ...payload,
     });
@@ -170,25 +227,112 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
       nivel?: 'nuevo' | 'advertencia_3min' | 'urgente_5min';
     },
   ) {
-    await this.enviarBroadcast(`sucursal_${sucursalId}`, 'qr_aprobacion_urgente', {
-      sucursal_id: sucursalId,
-      ...payload,
-    });
+    await this.enviarBroadcast(
+      this.topicSucursal(sucursalId),
+      'qr_aprobacion_urgente',
+      {
+        sucursal_id: sucursalId,
+        ...payload,
+      },
+    );
   }
 
-  /** Producto/combo agotado o reactivado — menús abiertos refrescan sin recargar app. */
+  /**
+   * Producto/combo agotado o reactivado — menús abiertos refrescan sin recargar app.
+   *
+   * Se emite en dos canales: el de sucursal (staff, junto al resto de eventos) y
+   * `sucursal_{id}_catalogo`, que escucha el menú del cliente anónimo y el POS.
+   * El canal de catálogo está separado a propósito: los dispositivos de cliente no
+   * deben recibir los payloads de staff (caja, alertas) del canal de sucursal.
+   */
   async catalogoDisponibilidad(
     sucursalId: string,
     payload: {
       producto_ids?: string[];
       combo_ids?: string[];
+      topping_ids?: string[];
+      bebida_ids?: string[];
       disponible: boolean;
     },
   ) {
-    await this.enviarBroadcast(`sucursal_${sucursalId}`, 'catalogo_disponibilidad', {
+    const cuerpo = { sucursal_id: sucursalId, ...payload };
+    await this.enviarBroadcast(
+      this.topicSucursal(sucursalId),
+      'catalogo_disponibilidad',
+      cuerpo,
+    );
+    await this.enviarBroadcast(
+      topicCatalogoPublico(sucursalId),
+      'catalogo_disponibilidad',
+      cuerpo,
+    );
+  }
+
+  /** Plan/suscripción activada tras Wompi — panel admin refresca perfil sin reiniciar. */
+  async suscripcionActualizada(
+    restauranteId: string,
+    payload: { plan: string; pago_id?: string },
+  ) {
+    await this.enviarBroadcast(
+      this.topicRestaurante(restauranteId),
+      'suscripcion_actualizada',
+      {
+        restaurante_id: restauranteId,
+        ...payload,
+      },
+    );
+  }
+
+  /** Cliente en mesa pide atención — grid mesero sin refetch completo de mesas. */
+  async llamarMesera(
+    sucursalId: string,
+    payload: {
+      pedido_id: string;
+      mesa_id?: string | null;
+      numero_pedido?: string;
+    },
+  ) {
+    await this.enviarBroadcast(this.topicSucursal(sucursalId), 'llamar_mesera', {
       sucursal_id: sucursalId,
       ...payload,
     });
+  }
+
+  /** GPS repartidor — separado de cambio de estado del pedido. */
+  async ubicacionRepartidor(
+    pedidoId: string,
+    seguimientoToken: string,
+    payload: Record<string, unknown>,
+  ) {
+    await this.enviarBroadcast(
+      RealtimeBroadcastService.canalPedidoSeguimiento(pedidoId, seguimientoToken),
+      'ubicacion_repartidor',
+      {
+        pedido_id: pedidoId,
+        ...payload,
+      },
+    );
+  }
+
+  /** Oferta independiente venció (60 s). */
+  async ofertaExpirada(domiciliarioId: string, payload: Record<string, unknown>) {
+    await this.enviarBroadcast(
+      this.topicDomiciliarioIndep(domiciliarioId),
+      'oferta_expirada',
+      { domiciliario_id: domiciliarioId, ...payload },
+    );
+  }
+
+  /** Pedido cancelado o reasignado — domiciliario de planta deja de verlo. */
+  async pedidoDesasignado(usuarioId: string, payload: Record<string, unknown>) {
+    await this.enviarBroadcast(
+      this.topicDomiciliarioPlanta(usuarioId),
+      'pedido_desasignado',
+      {
+        usuario_id: usuarioId,
+        ...payload,
+      },
+    );
   }
 
   private async obtenerCanal(nombre: string): Promise<RealtimeChannel | null> {
@@ -226,7 +370,15 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     try {
       const ch = await this.obtenerCanal(canal);
       if (!ch) return;
-      await ch.send({ type: 'broadcast', event: evento, payload });
+      await ch.send({
+        type: 'broadcast',
+        event: evento,
+        payload: {
+          event_id: randomUUID(),
+          emitido_at: new Date().toISOString(),
+          ...payload,
+        },
+      });
     } catch (e) {
       this.logger.warn(`Broadcast ${canal}/${evento}: ${e}`);
     }

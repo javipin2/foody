@@ -8,6 +8,7 @@ class MesaSesion {
     required this.sucursalId,
     required this.sucursalNombre,
     this.qrToken,
+    this.pedidosActivos = 0,
   });
 
   final String mesaId;
@@ -15,6 +16,7 @@ class MesaSesion {
   final String sucursalId;
   final String sucursalNombre;
   final String? qrToken;
+  final int pedidosActivos;
 
   String get rutaMenu =>
       '/menu/$sucursalId'
@@ -32,6 +34,7 @@ class MesaSesionService {
   static const _sucursalIdKey = 'mesa_sesion_sucursal_id';
   static const _sucursalNombreKey = 'mesa_sesion_sucursal_nombre';
   static const _qrTokenKey = 'mesa_sesion_qr_token';
+  static const _pedidosActivosKey = 'mesa_sesion_pedidos_activos';
 
   static Future<void> activar({
     required String mesaId,
@@ -39,12 +42,14 @@ class MesaSesionService {
     required String sucursalId,
     required String sucursalNombre,
     String? qrToken,
+    int pedidosActivos = 0,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_mesaIdKey, mesaId);
     await prefs.setString(_mesaNombreKey, mesaNombre);
     await prefs.setString(_sucursalIdKey, sucursalId);
     await prefs.setString(_sucursalNombreKey, sucursalNombre);
+    await prefs.setInt(_pedidosActivosKey, pedidosActivos);
     if (qrToken != null && qrToken.isNotEmpty) {
       await prefs.setString(_qrTokenKey, qrToken);
     } else {
@@ -70,7 +75,13 @@ class MesaSesionService {
       sucursalId: sucursalId,
       sucursalNombre: sucursalNombre,
       qrToken: prefs.getString(_qrTokenKey),
+      pedidosActivos: prefs.getInt(_pedidosActivosKey) ?? 0,
     );
+  }
+
+  static Future<void> actualizarPedidosActivos(int cantidad) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_pedidosActivosKey, cantidad);
   }
 
   static Future<bool> tieneActiva() async {
@@ -85,6 +96,7 @@ class MesaSesionService {
     await prefs.remove(_sucursalIdKey);
     await prefs.remove(_sucursalNombreKey);
     await prefs.remove(_qrTokenKey);
+    await prefs.remove(_pedidosActivosKey);
   }
 
   /// Rutas permitidas mientras hay mesa activa (cliente en restaurante).
@@ -95,7 +107,6 @@ class MesaSesionService {
     if (ubicacion.startsWith('/carrito/$sid')) return true;
     if (ubicacion.startsWith('/checkout/$sid')) return true;
     if (ubicacion.startsWith('/pedidos/')) return true;
-    if (ubicacion == '/cliente/mis-pedidos') return true;
     return false;
   }
 }

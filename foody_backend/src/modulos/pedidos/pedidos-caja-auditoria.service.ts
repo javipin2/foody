@@ -1,5 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import {
+  CajaMovimientosService,
+  ReversaVentasPedidoResultado,
+} from '../../core/caja/caja-movimientos.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 
 export const METODOS_CON_CAJA = [
   'efectivo',
@@ -18,9 +23,15 @@ export function esPagoDiferidoMesa(
 
 /**
  * Movimiento de caja y auditoría dentro de la transacción de pedido.
+ * Escritura en caja delegada a `CajaMovimientosService` (A-02).
  */
 @Injectable()
 export class PedidosCajaAuditoriaService {
+  constructor(
+    private readonly cajaMovimientos: CajaMovimientosService,
+    private readonly auditoria: AuditoriaService,
+  ) {}
+
   debeRegistrarVentaAlCrear(
     estadoInicial: string,
     tipo: string,
@@ -32,21 +43,16 @@ export class PedidosCajaAuditoriaService {
     }
     if (estadoInicial === 'pendiente_aprobacion') return false;
     if (esPagoDiferidoMesa(tipo, mesaId)) return false;
+    // Domicilio: la venta entra a caja solo al confirmar entrega (o marcar entregado).
+    if (tipo === 'domicilio') return false;
     return true;
   }
 
-  async obtenerCajaAbiertaId(
+  obtenerCajaAbiertaId(
     client: PoolClient,
     sucursalId: string,
   ): Promise<string | null> {
-    const caja = await client.query<{ id: string }>(
-      `SELECT id FROM cajas
-       WHERE sucursal_id = $1 AND estado = 'abierta'
-       ORDER BY apertura_at DESC
-       LIMIT 1`,
-      [sucursalId],
-    );
-    return caja.rows[0]?.id ?? null;
+    return this.cajaMovimientos.obtenerCajaAbiertaId(client, sucursalId);
   }
 
   async registrarVentaEnCaja(
@@ -55,7 +61,7 @@ export class PedidosCajaAuditoriaService {
     pedidoId: string,
     total: number,
     metodoPago: string,
-    opciones?: { exigirCaja?: boolean; descripcion?: string },
+    opciones?: { exigirCaja?: boolean; descripcion?: string; usuarioId?: string },
   ): Promise<void> {
     if (
       !METODOS_CON_CAJA.includes(metodoPago as (typeof METODOS_CON_CAJA)[number])
@@ -63,66 +69,34 @@ export class PedidosCajaAuditoriaService {
       return;
     }
 
-    const cajaId = await this.obtenerCajaAbiertaId(client, sucursalId);
-    if (!cajaId) {
-      if (opciones?.exigirCaja) {
-        throw new BadRequestException({
-          error: 'CAJA_NO_ABIERTA',
-          message:
-            'No hay caja abierta en la sucursal. Abre caja antes de registrar la venta.',
-        });
-      }
-      return;
-    }
-
-    await client.query(
-      `INSERT INTO movimientos_caja (
-         caja_id, sucursal_id, pedido_id, tipo, monto, metodo_pago, descripcion
-       ) VALUES ($1,$2,$3,'venta',$4,$5,$6)`,
-      [
-        cajaId,
+    await this.cajaMovimientos.registrarVentaPedido(
+      client,
+      {
         sucursalId,
         pedidoId,
-        total,
+        monto: total,
         metodoPago,
-        opciones?.descripcion ?? 'Venta automática por pedido',
-      ],
+        descripcion: opciones?.descripcion ?? 'Venta automática por pedido',
+        usuarioId: opciones?.usuarioId ?? null,
+      },
+      { exigirCaja: opciones?.exigirCaja ?? true },
     );
   }
 
-  /** Elimina movimientos de venta previos — registra devolución auditada. */
-  async revertirVentasPedido(
+  revertirVentasPedido(
     client: PoolClient,
     pedidoId: string,
     sucursalId: string,
     usuarioId?: string,
     motivo?: string,
-  ): Promise<number> {
-    const ventas = await client.query<{ id: string; monto: string; metodo_pago: string | null; caja_id: string }>(
-      `SELECT id, monto, metodo_pago, caja_id FROM movimientos_caja
-       WHERE pedido_id = $1 AND tipo = 'venta'`,
-      [pedidoId],
+  ): Promise<ReversaVentasPedidoResultado> {
+    return this.cajaMovimientos.revertirVentasPedido(
+      client,
+      pedidoId,
+      sucursalId,
+      usuarioId,
+      motivo,
     );
-    let n = 0;
-    for (const v of ventas.rows) {
-      await client.query(
-        `INSERT INTO movimientos_caja (
-           caja_id, sucursal_id, pedido_id, tipo, monto, metodo_pago, descripcion, usuario_id
-         ) VALUES ($1,$2,$3,'devolucion',$4,$5,$6,$7)`,
-        [
-          v.caja_id,
-          sucursalId,
-          pedidoId,
-          Number(v.monto),
-          v.metodo_pago,
-          motivo?.trim() || 'Reversa venta pedido',
-          usuarioId ?? null,
-        ],
-      );
-      await client.query(`DELETE FROM movimientos_caja WHERE id = $1`, [v.id]);
-      n++;
-    }
-    return n;
   }
 
   async registrarAuditoria(
@@ -131,12 +105,13 @@ export class PedidosCajaAuditoriaService {
     pedidoId: string,
     datos: Record<string, unknown>,
   ): Promise<void> {
-    await client.query(
-      `INSERT INTO auditoria_logs (
-         sucursal_id, accion, tabla_afectada, registro_id, datos_despues
-       ) VALUES ($1,'CREAR_PEDIDO','pedidos',$2,$3::jsonb)`,
-      [sucursalId, pedidoId, JSON.stringify(datos)],
-    );
+    await this.auditoria.registrarEnTransaccion(client, {
+      sucursalId,
+      accion: 'CREAR_PEDIDO',
+      tablaAfectada: 'pedidos',
+      registroId: pedidoId,
+      datosDespues: datos,
+    });
   }
 
   async registrarAuditoriaCobroMesa(
@@ -146,11 +121,13 @@ export class PedidosCajaAuditoriaService {
     usuarioId: string,
     datos: Record<string, unknown>,
   ): Promise<void> {
-    await client.query(
-      `INSERT INTO auditoria_logs (
-         sucursal_id, accion, tabla_afectada, registro_id, usuario_id, datos_despues
-       ) VALUES ($1,'COBRAR_CUENTA_MESA','mesas',$2,$3,$4::jsonb)`,
-      [sucursalId, mesaId, usuarioId, JSON.stringify(datos)],
-    );
+    await this.auditoria.registrarEnTransaccion(client, {
+      sucursalId,
+      accion: 'COBRAR_CUENTA_MESA',
+      tablaAfectada: 'mesas',
+      registroId: mesaId,
+      usuarioId,
+      datosDespues: datos,
+    });
   }
 }

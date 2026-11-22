@@ -1,9 +1,11 @@
 import { JwtPayload } from '../../core/auth/jwt-payload';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { FiltroReporteDto } from './dto/filtro-reporte.dto';
 import { ReportesService } from './reportes.service';
 export declare class ReportesController {
     private readonly reportesService;
-    constructor(reportesService: ReportesService);
+    private readonly sucursalScope;
+    constructor(reportesService: ReportesService, sucursalScope: SucursalScopeService);
     financiero(usuario: JwtPayload, query: FiltroReporteDto): Promise<{
         periodo: import("./reportes.service").RangoFechas;
         resumen: {
@@ -19,6 +21,9 @@ export declare class ReportesController {
             ventas_movimientos_caja: number;
             diferencia: number;
             movimientos_venta: number;
+            etiqueta_ventas_pedidos: string;
+            etiqueta_ventas_caja: string;
+            nota_universos: string;
             por_metodo_caja: {
                 metodo_pago: string;
                 total: number;

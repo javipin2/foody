@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { RestaurantesService } from './restaurantes.service';
 
 @Controller('restaurantes')
@@ -7,7 +7,7 @@ export class RestaurantesController {
 
   /** Público — sucursales de un restaurante */
   @Get(':id/sucursales')
-  listarSucursales(@Param('id') id: string) {
+  listarSucursales(@Param('id', ParseUUIDPipe) id: string) {
     return this.restaurantesService.listarSucursales(id);
   }
 }

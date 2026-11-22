@@ -3,7 +3,7 @@
 > **Fuente de verdad** para agentes y desarrollo. Acordado con el producto: cada sucursal opera como un restaurante independiente bajo la misma marca.
 > Reglas resumidas: `INFRAESTRUCTURA/reglas_negocio_foody.md` § Multi-sucursal · Regla Cursor: `.cursor/rules/foody-multi-sucursal.mdc`
 
-**Última actualización:** 2026-06-09
+**Última actualización:** 2026-06-24 — P1-02 rol `gerente_cadena` + corporativo en API/UI.
 
 ---
 
@@ -105,7 +105,7 @@ Sin este permiso, el staff solo ve inventario de su `sucursal_id` del JWT.
 | **UI sin selector** para admin de sede | Ocultar dropdown de sucursal en `PanelRestauranteScreen` | Alta — Fase 1 |
 | **Pantalla inventario hermanas** | Lista comparativa read-only Norte vs Sur | Media — Fase 1 |
 | **Traslado entre sucursales** | Movimiento auditado: sale sede A, entra sede B | Media — Fase 2 |
-| **Dashboard consolidado** | Ventas/alertas agregadas para `gerente_cadena` | Baja — Fase 3 |
+| **Dashboard consolidado** | Ventas/alertas agregadas para `gerente_cadena` | ✅ Fase 3 — `GET /dashboard/consolidado` |
 | **Menú maestro** | Plantilla de marca que cada sucursal copia | Baja — Fase 3 |
 
 ---
@@ -122,7 +122,7 @@ Sin este permiso, el staff solo ve inventario de su `sucursal_id` del JWT.
 | `GET /inventario/hermanas/resumen` | ✅ Fase 1 | UI `InventarioHermanasPanel` (solo lectura) |
 | Permiso `ver_inventario_otras_sucursales` | ✅ Migración `043` | Aplicar SQL en BD dev |
 | Traslados entre sucursales | ⏳ Fase 2 | — |
-| Rol `gerente_cadena` explícito | ⏳ Usar `gestionar_sucursales` = corporativo | — |
+| Rol `gerente_cadena` explícito | ✅ Migración `060` + `roles-food.ts` | `gestionar_sucursales` sigue siendo alias corporativo (admin dueño) |
 
 ---
 

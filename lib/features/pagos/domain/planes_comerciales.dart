@@ -20,9 +20,9 @@ class PlanesComercialesFoody {
 
   static const modulosPorPlan = {
     'gratis': <String>[
-      'Menú y pedidos',
-      'Caja y mesas',
-      'Hasta 1 sucursal · 3 usuarios',
+      'Menú, pedidos, caja y mesas QR',
+      'Inventario, costeo y cocina (con límites)',
+      'Hasta 2 mesas · 5 productos · 5 insumos · 2 usuarios',
     ],
     'basico': <String>[
       'Todo lo gratis',
@@ -30,6 +30,7 @@ class PlanesComercialesFoody {
       'Hasta 1 sucursal · 8 usuarios',
     ],
     'pro': <String>[
+      'Todo lo gratis sin límites operativos',
       'Inventario y costeo (márgenes reales)',
       'Cocina KDS e impresoras',
       'Domicilios y zonas',

@@ -79,6 +79,8 @@ class ComboPedidoDto {
     combo_id;
     cantidad;
     precio;
+    toppings;
+    bebidas;
 }
 exports.ComboPedidoDto = ComboPedidoDto;
 __decorate([
@@ -95,6 +97,20 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], ComboPedidoDto.prototype, "precio", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => ToppingItemDto),
+    __metadata("design:type", Array)
+], ComboPedidoDto.prototype, "toppings", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => BebidaItemDto),
+    __metadata("design:type", Array)
+], ComboPedidoDto.prototype, "bebidas", void 0);
 class CrearPedidoDto {
     sucursal_id;
     mesa_id;
@@ -111,10 +127,12 @@ class CrearPedidoDto {
     nombre_fiscal_cliente;
     email_cliente;
     observaciones;
+    fecha_entrega_deseada;
     items;
     combos;
     codigo_promocion;
     idempotency_key;
+    forzar_fuera_horario;
     pagos;
     propina;
 }
@@ -168,6 +186,7 @@ __decorate([
 ], CrearPedidoDto.prototype, "metodo_pago", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CrearPedidoDto.prototype, "requiere_factura", void 0);
 __decorate([
@@ -192,6 +211,11 @@ __decorate([
 ], CrearPedidoDto.prototype, "observaciones", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], CrearPedidoDto.prototype, "fecha_entrega_deseada", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),
     (0, class_transformer_1.Type)(() => ItemPedidoDto),
@@ -214,6 +238,11 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "idempotency_key", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CrearPedidoDto.prototype, "forzar_fuera_horario", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),

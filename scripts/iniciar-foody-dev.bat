@@ -42,7 +42,7 @@ if errorlevel 1 (
   if %INTENTOS% lss 40 goto esperar_api
   echo.
   echo  ERROR: La API no respondio en 2 minutos.
-  echo  Revisa la ventana "Foody — API NestJS (WSL)".
+  echo  Revisa la ventana "Foody — API NestJS".
   pause
   exit /b 1
 ) else (

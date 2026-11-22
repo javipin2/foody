@@ -9,6 +9,7 @@ import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { PedidosCajaAuditoriaService } from './pedidos-caja-auditoria.service';
 import { PedidosSoporteService, OpcionesStaffPedido } from './pedidos-soporte.service';
 import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
+import { PedidosInventarioService } from './pedidos-inventario.service';
 export declare class PedidosCrearService {
     private readonly database;
     private readonly facturacion;
@@ -21,7 +22,7 @@ export declare class PedidosCrearService {
     private readonly soporte;
     private readonly cuentaMesa;
     private readonly inventario;
-    constructor(database: DatabaseService, facturacion: FacturacionService, zonas: ZonasService, realtime: RealtimeBroadcastService, alertasRiesgo: AlertasRiesgoService, costeo: CosteoService, promociones: PromocionesService, cajaAuditoria: PedidosCajaAuditoriaService, soporte: PedidosSoporteService, cuentaMesa: PedidosCuentaMesaService);
+    constructor(database: DatabaseService, facturacion: FacturacionService, zonas: ZonasService, realtime: RealtimeBroadcastService, alertasRiesgo: AlertasRiesgoService, costeo: CosteoService, promociones: PromocionesService, cajaAuditoria: PedidosCajaAuditoriaService, soporte: PedidosSoporteService, cuentaMesa: PedidosCuentaMesaService, inventario: PedidosInventarioService);
     crear(dto: CrearPedidoDto, opciones?: OpcionesStaffPedido): Promise<{
         pedido_id: string;
         numero_pedido: string;
@@ -30,8 +31,75 @@ export declare class PedidosCrearService {
         total: number;
         estado: string;
         tiempo_estimado_minutos: number;
-        factura_id: string | null;
+        factura_id: null;
+        seguimiento_token: string;
+        idempotente: boolean;
+        descuento?: undefined;
+        motivo_descuento?: undefined;
+        promocion_id?: undefined;
+        iva_porcentaje?: undefined;
+        iva_valor?: undefined;
+        lineas?: undefined;
+        combos?: undefined;
+        estimar?: undefined;
     } | {
+        subtotal: number;
+        costo_domicilio: number;
+        descuento: number;
+        motivo_descuento: string | null;
+        promocion_id: string | null;
+        total: number;
+        iva_porcentaje: number;
+        iva_valor: number;
+        lineas: {
+            producto_id: string;
+            cantidad: number;
+            precio_unitario: number;
+            subtotal: number;
+            nombre: string | null;
+        }[];
+        combos: {
+            combo_id: string;
+            nombre: string;
+            cantidad: number;
+            precio_unitario: number;
+            subtotal: number;
+        }[];
+        estimar: true;
+        pedido_id?: undefined;
+        numero_pedido?: undefined;
+        estado?: undefined;
+        tiempo_estimado_minutos?: undefined;
+        factura_id?: undefined;
+        seguimiento_token?: undefined;
+        idempotente?: undefined;
+    } | {
+        pedido_id: string;
+        numero_pedido: string;
+        subtotal: number;
+        costo_domicilio: number;
+        total: number;
+        estado: string;
+        tiempo_estimado_minutos: number;
+        factura_id: string | null;
+        seguimiento_token: string;
+        idempotente?: undefined;
+        descuento?: undefined;
+        motivo_descuento?: undefined;
+        promocion_id?: undefined;
+        iva_porcentaje?: undefined;
+        iva_valor?: undefined;
+        lineas?: undefined;
+        combos?: undefined;
+        estimar?: undefined;
+    } | {
+        pedido_id: string;
+        numero_pedido: string;
+        estado: string;
+        total: number;
+        seguimiento_token: string;
         idempotente: boolean;
     }>;
+    private validarFechaEncargo;
+    private observacionesPedido;
 }

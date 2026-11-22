@@ -50,6 +50,7 @@ class CrearSubrecetaDto {
     cantidad_resultado;
     unidad_resultado;
     margen_error;
+    usa_produccion_lote;
     items;
 }
 exports.CrearSubrecetaDto = CrearSubrecetaDto;
@@ -76,6 +77,11 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CrearSubrecetaDto.prototype, "margen_error", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CrearSubrecetaDto.prototype, "usa_produccion_lote", void 0);
 __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ArrayMinSize)(1),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/catalogo/data/catalogo_admin_repository.dart';
 import 'package:reserva_canchas/features/costeo/presentation/widgets/costeo_ui_bloques.dart';
 import 'package:reserva_canchas/features/inventario/presentation/widgets/stock_visual_widgets.dart';
@@ -18,6 +19,8 @@ class ProductoItemsIncluidosPanel extends StatefulWidget {
     this.costoTotalProducto,
     this.foodCostPct,
     this.margenPct,
+    this.margenBruto,
+    this.scrollExterno = false,
   });
 
   final String productoId;
@@ -31,6 +34,9 @@ class ProductoItemsIncluidosPanel extends StatefulWidget {
   final double? costoTotalProducto;
   final double? foodCostPct;
   final double? margenPct;
+  /// Margen en dinero ya calculado por el API (opcional).
+  final double? margenBruto;
+  final bool scrollExterno;
 
   @override
   State<ProductoItemsIncluidosPanel> createState() =>
@@ -204,7 +210,7 @@ class _ProductoItemsIncluidosPanelState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text(mensajeErrorHttp(e))),
         );
       }
     } finally {
@@ -226,20 +232,17 @@ class _ProductoItemsIncluidosPanelState
     final total = widget.costoTotalProducto ?? incluidos;
     final prepSolo = (total - incluidos).clamp(0.0, double.infinity);
     final precio = widget.precioVenta;
-    final margenBruto = precio != null ? precio - total : null;
-    final fc = widget.foodCostPct ??
-        (precio != null && precio > 0 ? (total / precio) * 100 : null);
-    final margenPct = widget.margenPct ??
-        (precio != null && precio > 0
-            ? ((precio - total) / precio) * 100
-            : null);
+    // AQ-SOLID-08: % / margen solo del API; sin restar precio−costo en Dart.
+    final fc = widget.foodCostPct;
+    final margenPct = widget.margenPct;
+    final margenBruto = widget.margenBruto;
 
-    Color fcColor = ColoresFoody.exito;
+    Color fcColor = AnaliticaTokens.inventario;
     if (fc != null) {
       if (fc > 50) {
-        fcColor = Colors.red.shade700;
+        fcColor = AnaliticaTokens.alertas;
       } else if (fc > 35) {
-        fcColor = Colors.orange.shade800;
+        fcColor = const Color(0xFFD97706);
       }
     }
 
@@ -251,34 +254,40 @@ class _ProductoItemsIncluidosPanelState
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AnaliticaTokens.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
+            border: Border.all(color: AnaliticaTokens.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  CosteoBadgeGrupo(
+                  const CosteoBadgeGrupo(
                     texto: 'Incluido sin costo extra',
-                    color: Colors.blue.shade700,
+                    color: AnaliticaTokens.pedidos,
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
+                  const Expanded(
                     child: Text(
                       'El cliente paga un solo precio; aquí sumamos el costo '
                       'real de todo lo que sale de inventario.',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AnaliticaTokens.inkSoft,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               if (_items.isEmpty)
-                Text(
+                const Text(
                   'Nada incluido aún.\nEj.: 2× Rosquete con el hígado encebollado.',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  style: TextStyle(
+                    color: AnaliticaTokens.inkMuted,
+                    fontSize: 13,
+                  ),
                 )
               else
                 ..._items.map((e) {
@@ -292,8 +301,11 @@ class _ProductoItemsIncluidosPanelState
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle_outline,
-                            size: 18, color: ColoresFoody.secundario),
+                        const Icon(
+                          Icons.check_circle_outline,
+                          size: 18,
+                          color: AnaliticaTokens.pedidos,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Column(
@@ -397,7 +409,7 @@ class _ProductoItemsIncluidosPanelState
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: ColoresFoody.primario,
+              color: AnaliticaTokens.ink,
             ),
           ),
           children: [
@@ -420,63 +432,89 @@ class _ProductoItemsIncluidosPanelState
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
-      return const Center(child: CircularProgressIndicator());
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
 
     final opciones = _opcionesIncluir;
+    final toolbar = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (!_modoEdicion) ...[
+          FilledButton.icon(
+            onPressed: opciones.isEmpty ? _avisarSinOpciones : _elegirProductoMenu,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Agregar del menú'),
+          ),
+          if (_filas.isNotEmpty)
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _modoEdicion = true),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Editar'),
+            ),
+        ] else ...[
+          OutlinedButton(
+            onPressed: _guardando
+                ? null
+                : () {
+                    setState(() => _modoEdicion = false);
+                    _cargar();
+                  },
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: _guardando ? null : _guardar,
+            icon: _guardando
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined, size: 18),
+            label: Text(_guardando ? 'Guardando…' : 'Guardar'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: _elegirProductoMenu,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Agregar'),
+          ),
+        ],
+      ],
+    );
+
+    final cuerpo = <Widget>[
+      toolbar,
+      const SizedBox(height: 12),
+      if (_modoEdicion && _filas.isNotEmpty)
+        for (var i = 0; i < _filas.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _filaEditor(i, opciones),
+        ]
+      else
+        _vistaResumen(),
+    ];
+
+    if (widget.scrollExterno) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: cuerpo,
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              if (!_modoEdicion) ...[
-                FilledButton.icon(
-                  onPressed: opciones.isEmpty ? _avisarSinOpciones : _elegirProductoMenu,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Agregar del menú'),
-                ),
-                if (_filas.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => setState(() => _modoEdicion = true),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Editar'),
-                  ),
-                ],
-              ] else ...[
-                OutlinedButton(
-                  onPressed: _guardando
-                      ? null
-                      : () {
-                          setState(() => _modoEdicion = false);
-                          _cargar();
-                        },
-                  child: const Text('Cancelar'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: _guardando ? null : _guardar,
-                  icon: _guardando
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined, size: 18),
-                  label: Text(_guardando ? 'Guardando…' : 'Guardar'),
-                ),
-                const Spacer(),
-                FilledButton.tonalIcon(
-                  onPressed: _elegirProductoMenu,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Agregar'),
-                ),
-              ],
-            ],
-          ),
+          toolbar,
           const SizedBox(height: 12),
           Expanded(
             child: _modoEdicion && _filas.isNotEmpty

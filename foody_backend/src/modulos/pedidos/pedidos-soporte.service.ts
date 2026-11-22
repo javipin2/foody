@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PoolClient, QueryResultRow } from 'pg';
+import { esAdminRestaurante } from '../../core/auth/roles-food';
 import { DatabaseService } from '../../core/database/database.service';
 import { ImpresionService } from '../../core/impresion/impresion.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
@@ -11,6 +12,8 @@ export type OpcionesStaffPedido = {
   usuarioId?: string;
   /** Rol JWT del staff que opera (mesero asigna mesa; cajero/admin no). */
   rol?: string;
+  /** Solo calcula totales (sin INSERT / stock / idempotencia). AQ-SOLID-06. */
+  soloEstimar?: boolean;
 };
 
 /** Utilidades compartidas entre subdominios de pedidos (mesa, crear, estado). */
@@ -22,6 +25,26 @@ export class PedidosSoporteService {
     private readonly notificaciones: NotificacionesService,
     private readonly impresion: ImpresionService,
   ) {}
+
+  async obtenerSeguimientoToken(pedidoId: string): Promise<string | null> {
+    const row = await this.database.consultarUno<{ seguimiento_token: string }>(
+      `SELECT seguimiento_token::text AS seguimiento_token FROM pedidos WHERE id = $1`,
+      [pedidoId],
+    );
+    return row?.seguimiento_token ?? null;
+  }
+
+  emitirSeguimientoPedido(pedidoId: string, payload: Record<string, unknown>) {
+    void this.obtenerSeguimientoToken(pedidoId).then((token) => {
+      if (token) void this.realtime.pedidoSeguimiento(pedidoId, token, payload);
+    });
+  }
+
+  emitirUbicacionRepartidor(pedidoId: string, payload: Record<string, unknown>) {
+    void this.obtenerSeguimientoToken(pedidoId).then((token) => {
+      if (token) void this.realtime.ubicacionRepartidor(pedidoId, token, payload);
+    });
+  }
 
   async consultarUnoCliente<T extends QueryResultRow>(
     client: PoolClient,
@@ -137,7 +160,7 @@ export class PedidosSoporteService {
         'Se requiere un motivo para cancelar el pedido',
       );
     }
-    const esElevado = rol === 'admin' || rol === 'gerente';
+    const esElevado = esAdminRestaurante(rol) || rol === 'gerente';
     const estadosRestringidos = [
       'en_cocina',
       'listo',
@@ -160,6 +183,115 @@ export class PedidosSoporteService {
     }
   }
 
+  /** Cliente anónimo: solo antes de cocina; confirmado ≤ 2 min. */
+  validarCancelacionCliente(
+    pedido: { estado: string; created_at: Date },
+    motivo?: string,
+  ) {
+    if (!motivo?.trim() || motivo.trim().length < 3) {
+      throw new BadRequestException(
+        'Indica un motivo de cancelación (mínimo 3 caracteres)',
+      );
+    }
+    const bloqueados = [
+      'en_cocina',
+      'listo',
+      'pagando',
+      'asignado',
+      'en_camino',
+      'entregado',
+      'pagado',
+      'cancelado',
+      'rechazado',
+    ];
+    if (bloqueados.includes(pedido.estado)) {
+      throw new BadRequestException({
+        error: 'CANCELAR_CLIENTE_NO_PERMITIDO',
+        message:
+          'Ya no puedes cancelar este pedido. Contacta al restaurante.',
+      });
+    }
+    if (pedido.estado === 'confirmado') {
+      const minutos =
+        (Date.now() - new Date(pedido.created_at).getTime()) / 60000;
+      if (minutos > 2) {
+        throw new BadRequestException(
+          'Solo puedes cancelar en los primeros 2 minutos tras confirmar',
+        );
+      }
+    }
+  }
+
+  /** Cliente anónimo: solo pedidos de mesa activos. */
+  validarLlamadaMesera(pedido: {
+    mesa_id: string | null;
+    estado: string;
+  }) {
+    if (!pedido.mesa_id) {
+      throw new BadRequestException({
+        error: 'LLAMADA_MESERA_NO_MESA',
+        message: 'Solo puedes llamar a la mesera desde un pedido de mesa',
+      });
+    }
+    const bloqueados = [
+      'pagado',
+      'cancelado',
+      'rechazado',
+      'entregado',
+    ];
+    if (bloqueados.includes(pedido.estado)) {
+      throw new BadRequestException({
+        error: 'LLAMADA_MESERA_NO_PERMITIDA',
+        message: 'Este pedido ya está cerrado',
+      });
+    }
+  }
+
+  notificarLlamadaMesera(
+    sucursalId: string,
+    pedidoId: string,
+    numeroPedido: string,
+    mesaId: string | null,
+    mesaNombre?: string | null,
+    mensajeCliente?: string,
+  ) {
+    const num = numeroPedido ? `#${numeroPedido}` : '';
+    const mesa = mesaNombre ? ` (${mesaNombre})` : '';
+    const cuerpo =
+      mensajeCliente?.trim() ||
+      `Cliente en mesa${mesa} pide atención — pedido ${num}`;
+    void this.notificaciones.enviar({
+      sucursal_id: sucursalId,
+      tipo: 'llamar_mesera',
+      titulo: 'Cliente pide atención',
+      cuerpo,
+      roles: ['mesero', 'admin', 'gerente', 'cajero'],
+      datos: {
+        pedido_id: pedidoId,
+        sucursal_id: sucursalId,
+        mesa_id: mesaId ?? '',
+        ruta: mesaId
+          ? `/admin/mesero?mesa_id=${mesaId}`
+          : '/admin/mesero',
+      },
+    });
+    void this.realtime.mesasActualizadas(sucursalId);
+    void this.realtime.llamarMesera(sucursalId, {
+      pedido_id: pedidoId,
+      mesa_id: mesaId ?? null,
+      numero_pedido: numeroPedido,
+    });
+  }
+
+  notificarDesasignacionesDomicilio(usuarioIds: string[], pedidoId: string) {
+    for (const usuarioId of usuarioIds) {
+      void this.realtime.pedidoDesasignado(usuarioId, {
+        pedido_id: pedidoId,
+        accion: 'cancelado',
+      });
+    }
+  }
+
   notificarPedidoRealtime(
     sucursalId: string,
     pedidoId: string,
@@ -173,7 +305,7 @@ export class PedidosSoporteService {
       estado,
       numero_pedido: numeroPedido,
     });
-    void this.realtime.pedidoSeguimiento(pedidoId, { pedido_id: pedidoId, estado });
+    this.emitirSeguimientoPedido(pedidoId, { pedido_id: pedidoId, estado });
     if (estado === 'pendiente_aprobacion') {
       void this.realtime.mesasActualizadas(sucursalId);
       void this.realtime.qrAprobacionUrgente(sucursalId, {
@@ -222,7 +354,9 @@ export class PedidosSoporteService {
         roles: ['mesero', 'admin', 'gerente', 'cajero'],
         datos: {
           ...base.datos,
-          ruta: '/admin/mesero',
+          ruta: mesaId
+            ? `/admin/mesero?mesa_id=${mesaId}`
+            : '/admin/mesero',
         },
       });
       return;
@@ -237,7 +371,7 @@ export class PedidosSoporteService {
         roles: ['cajero', 'admin', 'mesero'],
         datos: {
           ...base.datos,
-          ruta: '/admin/panel?tab=pedidos',
+          ruta: '/admin/panel?seccion=pedidos',
         },
       });
       return;
@@ -266,6 +400,11 @@ export class PedidosSoporteService {
     }
 
     if (estado === 'listo') {
+      const qMesero = [
+        'tab=pedidos',
+        `pedido_id=${pedidoId}`,
+        ...(mesaId ? [`mesa_id=${mesaId}`] : []),
+      ].join('&');
       void this.notificaciones.enviar({
         ...base,
         tipo: 'pedido_listo',
@@ -274,7 +413,7 @@ export class PedidosSoporteService {
         roles: ['mesero', 'cajero', 'admin', 'domiciliario_planta'],
         datos: {
           ...base.datos,
-          ruta: '/admin/panel?tab=pedidos',
+          ruta: `/admin/mesero?${qMesero}`,
         },
       });
       void this.notificarPushCliente(pedidoId, 'Tu pedido está listo', `Pedido ${num}`);

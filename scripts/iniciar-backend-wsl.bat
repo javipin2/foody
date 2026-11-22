@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Foody — API NestJS (WSL)
+title Foody API NestJS puerto 3000
 
 if exist "%~dp0_foody-rutas.bat" (
   call "%~dp0_foody-rutas.bat"
@@ -17,42 +17,92 @@ if not exist "%FOODY_RAIZ%\foody_backend\package.json" (
   exit /b 1
 )
 
-where wsl >nul 2>&1
+where node >nul 2>&1
 if errorlevel 1 (
-  echo  ERROR: WSL no esta instalado.
+  echo.
+  echo  ERROR: Node.js no esta en PATH de Windows.
+  echo  Instala LTS desde nodejs.org y vuelve a abrir esta ventana.
   pause
   exit /b 1
 )
 
 echo.
 echo  ========================================
-echo   Foody — Backend NestJS (puerto 3000)
+echo   Foody - Backend NestJS puerto 3000
 echo  ========================================
 echo.
 echo  Proyecto: %FOODY_RAIZ%
-echo  Docker Desktop: encendido (contenedor supabase)
-echo.
-  echo  ESPERA hasta ver en esta ventana:
-  echo    "Nest application successfully started"
-  echo    y que "npm run build" termine SIN errores TypeScript.
-  echo  Si el build falla, el API queda viejo y Mesas/QR daran 404.
-  echo  Luego abre Flutter o recarga Chrome.
-echo.
-echo  Prueba en Chrome cuando arranque:
-echo    http://localhost:3000/api/v1/ciudades
-echo.
-echo  NO cierres esta ventana.
+echo  Node:
+node -v
 echo.
 
-wsl -d Ubuntu --cd "%FOODY_RAIZ%\foody_backend" bash -lc "source ~/.nvm/nvm.sh 2>/dev/null || true; if [ ! -d node_modules ]; then npm install; fi; echo Compilando backend...; npm run build || exit 1; exec node dist/main.js"
+docker info >nul 2>&1
+if errorlevel 1 (
+  echo  AVISO: Docker Desktop no responde.
+  echo         Enciendelo antes del backend - Supabase Postgres puerto 5432.
+  echo.
+) else (
+  echo  OK - Docker activo
+  echo.
+)
+
+call "%~dp0verificar-backend.bat" >nul 2>&1
+if not errorlevel 1 goto api_ya_corre
+
+cd /d "%FOODY_RAIZ%\foody_backend"
+
+if not exist node_modules (
+  echo  Instalando dependencias npm install...
+  call npm install
+  if errorlevel 1 (
+    echo  ERROR: npm install fallo.
+    pause
+    exit /b 1
+  )
+)
+
+echo  Compilando backend npm run build...
+call npm run build
+if errorlevel 1 (
+  echo.
+  echo  ERROR: Compilacion fallida. Corrige los errores TypeScript de arriba.
+  echo  Mientras el build falle, el puerto 3000 dara rechazo de conexion.
+  pause
+  exit /b 1
+)
+
+echo.
+echo  Arrancando API con Node de Windows...
+echo  No usar WSL - sharp y node_modules son binarios de Windows.
+echo.
+echo  ESPERA hasta ver:
+echo    Foody API en http://localhost:3000/api/v1
+echo.
+echo  Prueba en Chrome:
+echo    http://localhost:3000/api/v1/salud
+echo.
+echo  NO cierres esta ventana ni ejecutes otros comandos aqui.
+echo.
+
+node dist/main.js
 set ERR=%ERRORLEVEL%
 
 if %ERR% neq 0 (
   echo.
-  echo  ERROR al arrancar (codigo %ERR%).
-  echo  En Ubuntu: cd foody_backend ^&^& npm install ^&^& npm run build ^&^& node dist/main.js
+  echo  El proceso termino con codigo %ERR%.
+  echo  Causas frecuentes:
+  echo    - Docker o Supabase apagado
+  echo    - Puerto 3000 ocupado por otro programa
+  echo    - .env desactualizado - ejecuta scripts\sincronizar-env-backend.bat
   echo.
 )
 
 pause
 exit /b %ERR%
+
+:api_ya_corre
+echo  La API ya responde en puerto 3000 - ruta salud en api v1
+echo  Si quieres reiniciar, cierra la otra ventana del backend primero.
+echo.
+pause
+exit /b 0

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizarUnidad = normalizarUnidad;
 exports.unidadesCompatibles = unidadesCompatibles;
 exports.convertirCantidad = convertirCantidad;
+exports.unidadesDeFamilia = unidadesDeFamilia;
 exports.exigirUnidadesCompatibles = exigirUnidadesCompatibles;
 const common_1 = require("@nestjs/common");
 function normalizarUnidad(unidad) {
@@ -61,6 +62,14 @@ function convertirCantidad(cantidad, desde, hacia) {
     if (d === 'ml' && h === 'L')
         return cantidad / 1000;
     return cantidad;
+}
+function unidadesDeFamilia(unidadBase) {
+    const u = normalizarUnidad(unidadBase);
+    if (GRUPO_PESO.has(u))
+        return ['g', 'kg'];
+    if (GRUPO_VOLUMEN.has(u))
+        return ['ml', 'L'];
+    return [u];
 }
 function exigirUnidadesCompatibles(unidadLinea, unidadBase, contexto) {
     if (!unidadesCompatibles(unidadLinea, unidadBase)) {

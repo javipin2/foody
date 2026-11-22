@@ -8,4 +8,5 @@ export declare class CrearProductoDto {
     disponible?: boolean;
     orden?: number;
     precio_para_llevar?: number;
+    imagen_url?: string;
 }

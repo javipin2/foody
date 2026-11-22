@@ -11,7 +11,10 @@ import 'package:reserva_canchas/core/firebase/firebase_inicializador.dart';
 import 'package:reserva_canchas/core/config/app_flavor.dart';
 import 'package:reserva_canchas/core/rutas/app_router.dart';
 import 'package:reserva_canchas/core/tema/tema_foody.dart';
+import 'package:reserva_canchas/core/tema/tema_mode_provider.dart';
 import 'package:reserva_canchas/core/notificaciones/servicio_fcm_foody.dart';
+import 'package:reserva_canchas/features/auth/domain/google_oauth_deep_link_service.dart';
+import 'package:reserva_canchas/features/pagos/domain/pagos_deep_link_service.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -70,8 +73,16 @@ Future<void> _iniciarFoody() async {
       await Supabase.initialize(
         url: kSupabaseUrl.trim(),
         anonKey: kSupabaseAnonKey.trim(),
+        authOptions: FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.pkce,
+          // Web: recupera ?code= en init (evitar llamar getSessionFromUrl dos veces).
+          detectSessionInUri: kIsWeb,
+        ),
       );
       AppBackend.supabaseReady = true;
+      if (!kIsWeb) {
+        await GoogleOAuthDeepLinkService.initialize();
+      }
     } catch (e, st) {
       AppBackend.supabaseReady = false;
       if (kDebugMode) {
@@ -83,6 +94,11 @@ Future<void> _iniciarFoody() async {
     }
   } else {
     AppBackend.supabaseReady = false;
+  }
+
+  // Wompi → foody://plan (no depende de Supabase).
+  if (!kIsWeb) {
+    await PagosDeepLinkService.initialize();
   }
 
   try {
@@ -100,15 +116,18 @@ Future<void> _iniciarFoody() async {
 }
 
 /// App Foody — un entry point; variante con `--dart-define=APP_FLAVOR=...`.
-class FoodyApp extends StatelessWidget {
+class FoodyApp extends ConsumerWidget {
   const FoodyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(temaModeProvider);
     return MaterialApp.router(
       title: AppFlavor.actual.nombreVisible,
       debugShowCheckedModeBanner: false,
-      theme: TemaFoody.tema(),
+      theme: TemaFoody.claro(),
+      darkTheme: TemaFoody.oscuro(),
+      themeMode: themeMode,
       routerConfig: AppRouter.router,
     );
   }

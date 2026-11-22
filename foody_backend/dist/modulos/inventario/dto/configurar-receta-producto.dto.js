@@ -45,6 +45,7 @@ __decorate([
 ], RecetaItemDto.prototype, "unidad", void 0);
 class ConfigurarRecetaProductoDto {
     producto_id;
+    tipo_entidad;
     items;
     margen_error;
 }
@@ -53,6 +54,11 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], ConfigurarRecetaProductoDto.prototype, "producto_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['producto', 'bebida', 'topping']),
+    __metadata("design:type", String)
+], ConfigurarRecetaProductoDto.prototype, "tipo_entidad", void 0);
 __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ArrayMinSize)(1),

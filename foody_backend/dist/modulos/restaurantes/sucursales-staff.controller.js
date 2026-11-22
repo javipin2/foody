@@ -22,6 +22,9 @@ const rol_guard_1 = require("../../core/auth/guards/rol.guard");
 const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-activa.guard");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const actualizar_horario_dto_1 = require("./dto/actualizar-horario.dto");
+const actualizar_marca_restaurante_dto_1 = require("./dto/actualizar-marca-restaurante.dto");
+const actualizar_margenes_sucursal_dto_1 = require("./dto/actualizar-margenes-sucursal.dto");
+const actualizar_sucursal_dto_1 = require("./dto/actualizar-sucursal.dto");
 const crear_sucursal_dto_1 = require("./dto/crear-sucursal.dto");
 const restaurantes_service_1 = require("./restaurantes.service");
 let SucursalesStaffController = class SucursalesStaffController {
@@ -32,8 +35,20 @@ let SucursalesStaffController = class SucursalesStaffController {
     listarMiRestaurante(usuario) {
         return this.restaurantes.listarSucursalesStaff(usuario.restaurante_id, usuario.restaurante_id);
     }
+    obtenerMarca(usuario) {
+        return this.restaurantes.obtenerMarca(usuario.restaurante_id);
+    }
+    actualizarMarca(usuario, dto) {
+        return this.restaurantes.actualizarMarca(usuario.restaurante_id, dto);
+    }
     crear(usuario, dto) {
         return this.restaurantes.crearSucursal(usuario.restaurante_id, usuario.restaurante_id, dto);
+    }
+    actualizarMargenesSucursal(usuario, sucursalId, dto) {
+        return this.restaurantes.actualizarMargenesSucursal(usuario.restaurante_id, sucursalId, dto);
+    }
+    actualizarSucursal(usuario, sucursalId, dto) {
+        return this.restaurantes.actualizarSucursal(usuario.restaurante_id, sucursalId, dto);
     }
     listarHorarios(usuario, sucursalId) {
         return this.restaurantes.listarHorarios(sucursalId, usuario.restaurante_id);
@@ -52,6 +67,24 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SucursalesStaffController.prototype, "listarMiRestaurante", null);
 __decorate([
+    (0, common_1.Get)('marca'),
+    (0, permisos_decorator_1.Permisos)('gestionar_sucursales', 'ver_dashboard'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", void 0)
+], SucursalesStaffController.prototype, "obtenerMarca", null);
+__decorate([
+    (0, common_1.Patch)('marca'),
+    (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload,
+        actualizar_marca_restaurante_dto_1.ActualizarMarcaRestauranteDto]),
+    __metadata("design:returntype", void 0)
+], SucursalesStaffController.prototype, "actualizarMarca", null);
+__decorate([
     (0, common_1.Post)(),
     (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -61,10 +94,30 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], SucursalesStaffController.prototype, "crear", null);
 __decorate([
+    (0, common_1.Patch)('margenes/:sucursalId'),
+    (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursalId', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, actualizar_margenes_sucursal_dto_1.ActualizarMargenesSucursalDto]),
+    __metadata("design:returntype", void 0)
+], SucursalesStaffController.prototype, "actualizarMargenesSucursal", null);
+__decorate([
+    (0, common_1.Patch)(':sucursalId'),
+    (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
+    __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(1, (0, common_1.Param)('sucursalId', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, actualizar_sucursal_dto_1.ActualizarSucursalDto]),
+    __metadata("design:returntype", void 0)
+], SucursalesStaffController.prototype, "actualizarSucursal", null);
+__decorate([
     (0, common_1.Get)(':sucursalId/horarios'),
     (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
-    __param(1, (0, common_1.Param)('sucursalId')),
+    __param(1, (0, common_1.Param)('sucursalId', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
     __metadata("design:returntype", void 0)
@@ -73,7 +126,7 @@ __decorate([
     (0, common_1.Patch)('horarios/:horarioId'),
     (0, permisos_decorator_1.Permisos)('gestionar_sucursales'),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
-    __param(1, (0, common_1.Param)('horarioId')),
+    __param(1, (0, common_1.Param)('horarioId', common_1.ParseUUIDPipe)),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, actualizar_horario_dto_1.ActualizarHorarioDto]),

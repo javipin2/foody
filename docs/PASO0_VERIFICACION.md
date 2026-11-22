@@ -2,7 +2,8 @@
 
 > **Objetivo:** Confirmar que migraciones, backend, logins demo y rutas API funcionan antes de implementar Paso 1.
 > **Automatizado:** `scripts/verificar-paso0.ps1`
-> **Última ejecución:** 2026-06-08 — **25 OK, 0 FALLO**
+> **Última ejecución:** 2026-07-01 — **26 OK, 0 FALLO** (incl. RLS migr.064)
+> **Suite completa:** `scripts/verificar-ci.ps1` (5 scripts)
 
 ---
 
@@ -41,28 +42,31 @@ powershell -ExecutionPolicy Bypass -File scripts/verificar-paso0.ps1
 | Domiciliario independiente | `GET /domiciliarios/ofertas-activas` |
 | Super admin | `GET /super/estadisticas` |
 | Cliente público | `GET /menu/:sucursal`, `GET /ciudades` |
-| Migraciones | IVA (027), RLS (028), horarios (030) |
+| Migraciones | IVA (027), RLS (028), horarios (030), **RLS exhaustivo (064)** |
 
-**Resultado 2026-06-08:** todos OK.
+**Resultado 2026-07-01:** 26/26 OK vía `verificar-paso0.ps1`.
 
 ---
 
-## 3. Checklist manual por rol (Flutter)
+## 3. Checklist manual por rol (Flutter) — pausado
 
-Marcar en cada sesión de prueba. Contraseña demo: **`123456`**.
+> **2026-07-01:** QA UI manual pospuesto. Usar solo scripts API (`verificar-ci.ps1`). Retomar con `CHECKLIST_QA_ROLES.md` cuando vuelva el frontend.  
+**Puerta automática:** `.\scripts\verificar-qa-manual.ps1` (corre CI + lista roles UI)
 
-| Rol | Login / ruta | Qué probar manualmente | 2026-06-08 |
-|-----|--------------|------------------------|------------|
-| **Cliente** | Sin login → `/cliente` | Ciudad → menú → carrito → checkout → seguimiento | ⏳ UI |
-| **Cliente mesa** | `/mesa/demo-mesa-1` | Pedido mesa → pendiente aprobación | ⏳ UI |
-| **Admin** | `admin@foody.demo` → `/admin/login` | Kanban, mesas, caja, menú, inventario, zonas, horarios | ⏳ UI |
-| **Super admin** | `super@foody.demo` | Foody Control: ciudades, onboarding restaurante | ⏳ UI |
-| **Cocina** | `cocina@foody.demo` | Panel KDS `/admin/cocina`, marcar ítem listo | ⏳ UI |
-| **Dom. planta** | `domi@foody.demo` | `/admin/domiciliario`, entregas | ⏳ UI |
-| **Repartidor** | `repartidor@foody.demo` | `/domiciliario/login` → ofertas | ⏳ UI |
-| **Cajero** | `cajero.test@foody.demo` | Caja + nuevo pedido (si existe en BD) | ⏳ UI |
+Resumen rápido — contraseña demo: **`123456`**
 
-> API validada; **prueba UI Flutter pendiente** en esta sesión (no se lanzó `flutter run`).
+| Rol | Login / ruta |
+|-----|----------------|
+| Cliente | `/cliente` |
+| Mesa QR | `/mesa/demo-mesa-1` |
+| Admin | `admin@foody.demo` → `/admin/panel` |
+| Super admin | `super@foody.demo` → `/admin/foody-control` |
+| Cocina | `cocina@foody.demo` → `/admin/cocina` |
+| Dom. planta | `domi@foody.demo` → `/admin/domiciliario` |
+| Repartidor | `repartidor@foody.demo` → `/domiciliario/login` |
+| Cajero / Mesero | crear en Usuarios → `/admin/cajero` · `/admin/mesero` |
+
+Migración VPS (futuro): misma checklist — ver sección 6 de `CHECKLIST_QA_ROLES.md` y `docs/PREPARACION_VPS.md`.
 
 ---
 

@@ -1,0 +1,30 @@
+---
+description: Sesión grande completa — no entregar hasta que backend+frontend+UX funcionen juntos
+alwaysApply: true
+---
+
+# Foody — sesión completa antes de entregar
+
+Complementa `foody-verificar-antes-entregar.mdc`. El usuario exige **una sesión grande integral**, no “compila OK” ni “debería andar”.
+
+## Antes de reportar resultado al usuario
+
+No cierres con “listo / funciona / hecho” hasta cumplir **todo** lo aplicable:
+
+1. **Backend vivo** — API en `:3000`, `GET /api/v1/salud` → `exito: true`, con el `dist` recién compilado si tocaste NestJS.
+2. **BD al día** — migraciones del cambio aplicadas (p. ej. `070_*.sql`); seeds demo si el flujo los necesita.
+3. **Script o curls del dominio** — happy path + al menos un error esperado (403, validación, vacío). Preferir `scripts/verificar-*.ps1`.
+4. **Frontend** — `dart analyze` (o `flutter analyze`) en paths tocados sin **errors**.
+5. **UX / flujo conjunto** — el cambio se prueba **de punta a punta** (UI → Dio → API → BD → respuesta pintada), no solo capas aisladas. Si no hay dispositivo: al menos contrato API que la pantalla consume + revisión de que la UI cablea esos campos (no placeholders).
+6. **Si algo bloquea** (Docker/Supabase caído, seed faltante): **arranca o repara** en la misma sesión; solo entonces di qué quedó sin probar en UI manual.
+
+## Qué NO cuenta
+
+- Solo `npm run build` / `dart analyze` sin API
+- Entregar “código listo” dejando la verificación “para después”
+- Asumir que el servidor en memoria ya tiene el último `dist`
+- Verificar backend **o** frontend por separado y declarar el módulo completo
+
+## Formato al entregar
+
+Sección **Verificación** con: comandos, OK/FAIL, evidencia (status codes / snippets), y gaps explícitos (p. ej. “click-through en dispositivo no corrido”).

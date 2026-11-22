@@ -22,10 +22,12 @@ const rol_guard_1 = require("../../core/auth/guards/rol.guard");
 const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-activa.guard");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
+const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 const catalogo_service_1 = require("./catalogo.service");
 const actualizar_producto_dto_1 = require("./dto/actualizar-producto.dto");
 const crear_producto_dto_1 = require("./dto/crear-producto.dto");
 const configurar_items_incluidos_dto_1 = require("./dto/configurar-items-incluidos.dto");
+const extras_mutacion_dto_1 = require("./dto/extras-mutacion.dto");
 let ProductosController = class ProductosController {
     catalogo;
     sucursalScope;
@@ -33,13 +35,13 @@ let ProductosController = class ProductosController {
         this.catalogo = catalogo;
         this.sucursalScope = sucursalScope;
     }
-    async listar(sucursalId, usuario) {
+    async listar(sucursalId, usuario, pag) {
         await this.sucursalScope.validarLecturaOperativa(usuario, sucursalId);
-        return this.catalogo.listarProductos(sucursalId);
+        return this.catalogo.listarProductos(sucursalId, pag);
     }
     async crear(dto, usuario) {
         await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
-        return this.catalogo.crearProducto(dto);
+        return this.catalogo.crearProducto(dto, usuario.restaurante_id ?? undefined);
     }
     async disponibilidad(id, body, usuario) {
         const sid = await this.sucursalScope.resolverEscritura(usuario);
@@ -48,6 +50,14 @@ let ProductosController = class ProductosController {
     async vincularTopping(productoId, body, usuario) {
         const sid = await this.sucursalScope.resolverEscritura(usuario);
         return this.catalogo.vincularToppingProducto(productoId, body.topping_id, sid);
+    }
+    async listarToppings(productoId, usuario) {
+        const sid = await this.sucursalScope.resolverEscritura(usuario);
+        return this.catalogo.listarToppingsProducto(productoId, sid);
+    }
+    async configurarToppings(productoId, body, usuario) {
+        const sid = await this.sucursalScope.resolverEscritura(usuario);
+        return this.catalogo.configurarToppingsProducto(productoId, sid, body.topping_ids ?? []);
     }
     async vincularBebida(productoId, body, usuario) {
         const sid = await this.sucursalScope.resolverEscritura(usuario);
@@ -72,12 +82,15 @@ __decorate([
     (0, permisos_decorator_1.Permisos)('editar_productos'),
     __param(0, (0, common_1.Param)('sucursal_id')),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload,
+        paginacion_dto_1.PaginacionQueryDto]),
     __metadata("design:returntype", Promise)
 ], ProductosController.prototype, "listar", null);
 __decorate([
     (0, common_1.Post)(),
+    (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -88,37 +101,60 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id/disponibilidad'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, extras_mutacion_dto_1.CambiarDisponibilidadDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], ProductosController.prototype, "disponibilidad", null);
 __decorate([
     (0, common_1.Post)(':id/toppings'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, extras_mutacion_dto_1.VincularToppingDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], ProductosController.prototype, "vincularTopping", null);
 __decorate([
-    (0, common_1.Post)(':id/bebidas'),
+    (0, common_1.Get)(':id/toppings'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], ProductosController.prototype, "listarToppings", null);
+__decorate([
+    (0, common_1.Put)(':id/toppings'),
+    (0, permisos_decorator_1.Permisos)('editar_productos'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, extras_mutacion_dto_1.ConfigurarToppingsDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], ProductosController.prototype, "configurarToppings", null);
+__decorate([
+    (0, common_1.Post)(':id/bebidas'),
+    (0, permisos_decorator_1.Permisos)('editar_productos'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, extras_mutacion_dto_1.VincularBebidaDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], ProductosController.prototype, "vincularBebida", null);
 __decorate([
     (0, common_1.Get)(':id/items-incluidos'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload]),
@@ -127,7 +163,7 @@ __decorate([
 __decorate([
     (0, common_1.Put)(':id/items-incluidos'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -138,7 +174,7 @@ __decorate([
 __decorate([
     (0, common_1.Patch)(':id'),
     (0, permisos_decorator_1.Permisos)('editar_productos'),
-    __param(0, (0, common_1.Param)('id')),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),

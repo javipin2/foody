@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
 import { JwtPayload } from '../../core/auth/jwt-payload';
@@ -49,7 +49,7 @@ export class SuperAdminController {
   }
 
   @Patch('ciudades/:id')
-  actualizarCiudad(@Param('id') id: string, @Body() dto: ActualizarCiudadDto) {
+  actualizarCiudad(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ActualizarCiudadDto) {
     return this.superAdminService.actualizarCiudad(id, dto);
   }
 
@@ -65,14 +65,14 @@ export class SuperAdminController {
 
   @Patch('restaurantes/:id')
   actualizarRestaurante(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarRestauranteDto,
   ) {
     return this.superAdminService.actualizarRestaurante(id, dto);
   }
 
   @Get('restaurantes/:restauranteId/sucursales')
-  sucursalesRestaurante(@Param('restauranteId') restauranteId: string) {
+  sucursalesRestaurante(@Param('restauranteId', ParseUUIDPipe) restauranteId: string) {
     return this.superAdminService.listarSucursalesRestaurante(restauranteId);
   }
 
@@ -83,7 +83,7 @@ export class SuperAdminController {
 
   @Patch('suscripciones/:id')
   actualizarSuscripcion(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarSuscripcionDto,
   ) {
     return this.superAdminService.actualizarSuscripcion(id, dto);
@@ -101,7 +101,7 @@ export class SuperAdminController {
 
   @Patch('usuarios/:id')
   actualizarUsuario(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarUsuarioSuperDto,
   ) {
     return this.superAdminService.actualizarUsuario(id, dto);
@@ -109,7 +109,7 @@ export class SuperAdminController {
 
   @Post('usuarios/:id/cambiar-contrasena')
   cambiarContrasena(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CambiarContrasenaSuperDto,
   ) {
     return this.superAdminService.cambiarContrasenaUsuario(id, dto);
@@ -117,7 +117,7 @@ export class SuperAdminController {
 
   @Patch('usuarios/:id/estado')
   usuarioEstado(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CambiarEstadoUsuarioSuperDto,
   ) {
     return this.superAdminService.cambiarEstadoUsuario(id, dto);
@@ -130,7 +130,7 @@ export class SuperAdminController {
 
   @Patch('domiciliarios/:id/estado')
   domiciliarioEstado(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarDomiciliarioEstadoDto,
   ) {
     return this.superAdminService.actualizarEstadoDomiciliario(id, dto);
@@ -141,9 +141,14 @@ export class SuperAdminController {
     return this.superAdminService.listarDocumentosPendientes();
   }
 
+  @Get('domiciliarios/:id/documentos')
+  documentosDomiciliario(@Param('id', ParseUUIDPipe) id: string) {
+    return this.superAdminService.listarDocumentosDomiciliario(id);
+  }
+
   @Post('domiciliarios/:id/aprobar-documento')
   aprobarDocumento(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AprobarDocumentoDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
@@ -152,7 +157,7 @@ export class SuperAdminController {
 
   @Post('domiciliarios/:id/rechazar-documento')
   rechazarDocumento(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RechazarDocumentoDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {

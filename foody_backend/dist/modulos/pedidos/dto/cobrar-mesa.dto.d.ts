@@ -9,4 +9,5 @@ export declare class CobrarMesaDto {
     item_ids?: string[];
     monto_parcial?: number;
     propina?: number;
+    idempotency_key?: string;
 }

@@ -1,23 +1,24 @@
-import 'package:flutter/material.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 
-/// Tokens visuales del rediseño operativo (ref. `foody_redesign_complete.html`).
+/// Tokens visuales del rediseño operativo (alineado a AnaliticaTokens).
 class OperacionUi {
   OperacionUi._();
 
-  static const fondoPagina = Color(0xFFF1F5F9);
-  static const borde = Color(0xFFE2E8F0);
-  static const textoSecundario = Color(0xFF64748B);
-  static const textoTerciario = Color(0xFF94A3B8);
-  static const primarioSuave = Color(0xFFFEF0E8);
-  static const primarioOscuro = Color(0xFFC4400A);
+  static const fondoPagina = AnaliticaTokens.canvas;
+  static const borde = AnaliticaTokens.border;
+  static const textoSecundario = AnaliticaTokens.inkMuted;
+  static const textoTerciario = AnaliticaTokens.inkSoft;
+  static const primarioSuave = AnaliticaTokens.surfaceMuted;
+  static const primarioOscuro = AnaliticaTokens.ink;
 
   /// Borde uniforme (seguro con [BorderRadius]).
   static BoxDecoration tarjeta() {
     return BoxDecoration(
-      color: Colors.white,
+      color: AnaliticaTokens.surface,
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: borde, width: 0.5),
+      border: Border.all(color: borde),
+      boxShadow: AnaliticaTokens.shadowSoft,
     );
   }
 
@@ -25,20 +26,38 @@ class OperacionUi {
     switch (estado) {
       case 'confirmado':
       case 'pendiente':
-        return (fondo: const Color(0xFFEAF3DE), texto: const Color(0xFF3B6D11));
+        return (
+          fondo: const Color(0xFFEAF3DE),
+          texto: const Color(0xFF3B6D11),
+        );
       case 'en_cocina':
-        return (fondo: const Color(0xFFFAEEDA), texto: const Color(0xFF854F0B));
+        return (
+          fondo: const Color(0xFFFAEEDA),
+          texto: const Color(0xFF854F0B),
+        );
       case 'listo':
-        return (fondo: const Color(0xFFE6F1FB), texto: const Color(0xFF185FA5));
+        return (
+          fondo: const Color(0xFFE6F1FB),
+          texto: const Color(0xFF185FA5),
+        );
       case 'pagando':
-        return (fondo: const Color(0xFFFBEAF0), texto: const Color(0xFF993556));
+        return (
+          fondo: const Color(0xFFFBEAF0),
+          texto: const Color(0xFF993556),
+        );
       case 'asignado':
       case 'en_camino':
-        return (fondo: const Color(0xFFEEEDFE), texto: const Color(0xFF534AB7));
+        return (
+          fondo: const Color(0xFFEEEDFE),
+          texto: const Color(0xFF534AB7),
+        );
       case 'pendiente_aprobacion':
-        return (fondo: const Color(0xFFFAEEDA), texto: const Color(0xFF854F0B));
+        return (
+          fondo: const Color(0xFFFAEEDA),
+          texto: const Color(0xFF854F0B),
+        );
       default:
-        return (fondo: ColoresFoody.grisSuave, texto: textoSecundario);
+        return (fondo: AnaliticaTokens.surfaceMuted, texto: textoSecundario);
     }
   }
 
@@ -132,9 +151,11 @@ class OperacionPageHeader extends StatelessWidget {
                 Text(
                   titulo,
                   style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF0F172A),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                    color: AnaliticaTokens.ink,
+                    height: 1.1,
                   ),
                 ),
                 if (subtitulo != null) ...[
@@ -150,7 +171,15 @@ class OperacionPageHeader extends StatelessWidget {
               ],
             ),
           ),
-          ...acciones,
+          if (acciones.isNotEmpty)
+            Flexible(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: acciones,
+              ),
+            ),
         ],
       ),
     );
@@ -164,21 +193,29 @@ class OperacionStatChip extends StatelessWidget {
     required this.valor,
     this.colorPunto,
     this.icono,
+    this.onTap,
+    this.seleccionado = false,
   });
 
   final String etiqueta;
   final String valor;
   final Color? colorPunto;
   final IconData? icono;
+  final VoidCallback? onTap;
+  final bool seleccionado;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    final fg = seleccionado ? Colors.white : AnaliticaTokens.inkMuted;
+    final child = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: OperacionUi.borde, width: 0.5),
+        color: seleccionado ? AnaliticaTokens.ink : AnaliticaTokens.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: seleccionado ? AnaliticaTokens.ink : AnaliticaTokens.border,
+        ),
+        boxShadow: seleccionado ? null : AnaliticaTokens.shadowSoft,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -195,24 +232,34 @@ class OperacionStatChip extends StatelessWidget {
             const SizedBox(width: 6),
           ],
           if (icono != null) ...[
-            Icon(icono, size: 14, color: OperacionUi.textoTerciario),
+            Icon(icono, size: 14, color: fg),
             const SizedBox(width: 4),
           ],
           Text(
             etiqueta,
-            style: const TextStyle(fontSize: 12, color: OperacionUi.textoSecundario),
+            style: TextStyle(
+              fontSize: 12,
+              color: fg,
+              fontWeight: seleccionado ? FontWeight.w700 : FontWeight.w500,
+            ),
           ),
           const SizedBox(width: 6),
           Text(
             valor,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF0F172A),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: seleccionado ? Colors.white : AnaliticaTokens.ink,
             ),
           ),
         ],
       ),
+    );
+    if (onTap == null) return child;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: child,
     );
   }
 }
@@ -232,30 +279,30 @@ class OperacionPillTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 4,
-      runSpacing: 4,
+      spacing: 6,
+      runSpacing: 6,
       children: opciones.map((o) {
         final activa = o.$1 == seleccionada;
         return Material(
-          color: activa ? OperacionUi.primarioSuave : Colors.transparent,
+          color: activa ? AnaliticaTokens.ink : AnaliticaTokens.surfaceMuted,
           borderRadius: BorderRadius.circular(20),
           child: InkWell(
             onTap: () => onCambio(o.$1),
             borderRadius: BorderRadius.circular(20),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: activa ? const Color(0xFFF5C4A3) : Colors.transparent,
+                  color: activa ? AnaliticaTokens.ink : AnaliticaTokens.border,
                 ),
               ),
               child: Text(
                 o.$2,
                 style: TextStyle(
                   fontSize: 12,
-                  color: activa ? OperacionUi.primarioOscuro : OperacionUi.textoSecundario,
-                  fontWeight: activa ? FontWeight.w600 : FontWeight.normal,
+                  color: activa ? Colors.white : AnaliticaTokens.inkMuted,
+                  fontWeight: activa ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ),
@@ -284,24 +331,25 @@ class OperacionBusqueda extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 160, maxWidth: 280),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: OperacionUi.borde, width: 0.5),
+        color: AnaliticaTokens.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AnaliticaTokens.border),
+        boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, size: 18, color: OperacionUi.textoTerciario),
+          const Icon(Icons.search, size: 18, color: AnaliticaTokens.inkSoft),
           const SizedBox(width: 6),
           Expanded(
             child: TextField(
               controller: controller,
               onChanged: onChanged,
-              style: const TextStyle(fontSize: 13),
+              style: const TextStyle(fontSize: 13, color: AnaliticaTokens.ink),
               decoration: InputDecoration(
                 hintText: hint,
                 hintStyle: const TextStyle(
                   fontSize: 13,
-                  color: OperacionUi.textoTerciario,
+                  color: AnaliticaTokens.inkSoft,
                 ),
                 border: InputBorder.none,
                 isDense: true,
@@ -403,30 +451,32 @@ class OperacionTipoToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ponytail: ink seleccionado (línea Analítica); solo POS nuevo pedido.
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: OperacionUi.borde, width: 0.5),
-        borderRadius: BorderRadius.circular(6),
+        color: const Color(0xFFF3F4F6),
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 0.5),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: opciones.map((o) {
           final activa = o.$1 == seleccionada;
           return Material(
-            color: activa ? ColoresFoody.primario : Colors.transparent,
-            borderRadius: BorderRadius.circular(5),
+            color: activa ? const Color(0xFF111827) : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
             child: InkWell(
               onTap: () => onCambio(o.$1),
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(7),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 11),
                 child: Text(
                   o.$2,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: activa ? Colors.white : OperacionUi.textoSecundario,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: activa ? Colors.white : const Color(0xFF6B7280),
                   ),
                 ),
               ),

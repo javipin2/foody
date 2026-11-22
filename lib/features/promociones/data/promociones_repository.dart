@@ -19,23 +19,42 @@ class PromocionesRepository {
     return _parsearLista(respuesta.data);
   }
 
-  Future<List<Map<String, dynamic>>> listarStoriesCiudad(String slugCiudad) async {
+  /// Grupos WhatsApp: un restaurante = un anillo, N estados dentro.
+  Future<List<Map<String, dynamic>>> listarGruposStoriesCiudad(
+    String slugCiudad,
+  ) async {
     final respuesta = await _publico.get<Map<String, dynamic>>(
       '/promociones/ciudad/$slugCiudad/stories',
     );
-    final grupos = await _parsearLista(respuesta.data);
+    return _parsearLista(respuesta.data);
+  }
+
+  @Deprecated('Usar listarGruposStoriesCiudad')
+  Future<List<Map<String, dynamic>>> listarStoriesCiudad(String slugCiudad) async {
+    final grupos = await listarGruposStoriesCiudad(slugCiudad);
     final resultado = <Map<String, dynamic>>[];
     for (final grupo in grupos) {
-      final raw = grupo['promociones'];
-      if (raw is! List) continue;
-      for (final item in raw) {
-        if (item is! Map) continue;
-        final promo = Map<String, dynamic>.from(item);
-        promo['restaurante_nombre'] = grupo['restaurante_nombre'];
-        promo['restaurante_id'] = grupo['restaurante_id'];
-        promo['logo_url'] = grupo['logo_url'];
-        resultado.add(promo);
-      }
+      resultado.addAll(_promosDeGrupo(grupo));
+    }
+    return resultado;
+  }
+
+  /// Aplana un grupo API → lista de promos con campos del restaurante.
+  static List<Map<String, dynamic>> promosDeGrupo(Map<String, dynamic> grupo) {
+    return _promosDeGrupo(grupo);
+  }
+
+  static List<Map<String, dynamic>> _promosDeGrupo(Map<String, dynamic> grupo) {
+    final raw = grupo['promociones'];
+    if (raw is! List) return const [];
+    final resultado = <Map<String, dynamic>>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final promo = Map<String, dynamic>.from(item);
+      promo['restaurante_nombre'] = grupo['restaurante_nombre'];
+      promo['restaurante_id'] = grupo['restaurante_id'];
+      promo['logo_url'] = grupo['logo_url'];
+      resultado.add(promo);
     }
     return resultado;
   }
@@ -61,6 +80,8 @@ class PromocionesRepository {
     required String imagenUrl,
     String? descripcion,
     String? expiraAt,
+    String? productoId,
+    String tipoMedia = 'imagen',
   }) async {
     final respuesta = await _staff.post<Map<String, dynamic>>(
       '/promociones',
@@ -68,9 +89,12 @@ class PromocionesRepository {
         'sucursal_id': sucursalId,
         if (titulo != null && titulo.isNotEmpty) 'titulo': titulo,
         'imagen_url': imagenUrl,
+        'tipo_media': tipoMedia,
         if (descripcion != null && descripcion.isNotEmpty)
           'descripcion': descripcion,
         if (expiraAt != null && expiraAt.isNotEmpty) 'expira_at': expiraAt,
+        if (productoId != null && productoId.isNotEmpty)
+          'producto_id': productoId,
       },
     );
     _validarExito(respuesta.data);
@@ -91,6 +115,13 @@ class PromocionesRepository {
         if (imagenUrl != null) 'imagen_url': imagenUrl,
         if (descripcion != null) 'descripcion': descripcion,
       },
+    );
+    _validarExito(respuesta.data);
+  }
+
+  Future<void> eliminar(String id) async {
+    final respuesta = await _staff.delete<Map<String, dynamic>>(
+      '/promociones/$id',
     );
     _validarExito(respuesta.data);
   }

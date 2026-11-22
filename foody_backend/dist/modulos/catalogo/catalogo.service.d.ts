@@ -8,11 +8,17 @@ import { CrearComboDto } from './dto/crear-combo.dto';
 import { CrearExtraDto } from './dto/crear-extra.dto';
 import { CrearProductoDto } from './dto/crear-producto.dto';
 import { ConfigurarItemsIncluidosDto } from './dto/configurar-items-incluidos.dto';
+import { PlanFeaturesService } from '../../core/auth/plan-features.service';
+import { MenuCacheService } from '../../core/cache/menu-cache.service';
+import { PaginacionQueryDto } from '../../compartido/dto/paginacion.dto';
 export declare class CatalogoService {
     private readonly database;
     private readonly costeo;
     private readonly realtime;
-    constructor(database: DatabaseService, costeo: CosteoService, realtime: RealtimeBroadcastService);
+    private readonly planFeatures;
+    private readonly menuCache;
+    constructor(database: DatabaseService, costeo: CosteoService, realtime: RealtimeBroadcastService, planFeatures: PlanFeaturesService, menuCache: MenuCacheService);
+    private invalidarMenu;
     listarCategorias(sucursalId: string): Promise<import("pg").QueryResultRow[]>;
     crearCategoria(dto: CrearCategoriaDto): Promise<import("pg").QueryResultRow | null>;
     actualizarCategoria(id: string, sucursalId: string, dto: ActualizarCategoriaDto): Promise<{
@@ -22,8 +28,8 @@ export declare class CatalogoService {
         id: string;
         activa: boolean;
     }>;
-    listarProductos(sucursalId: string): Promise<import("pg").QueryResultRow[]>;
-    crearProducto(dto: CrearProductoDto): Promise<import("pg").QueryResultRow | null>;
+    listarProductos(sucursalId: string, query?: PaginacionQueryDto): Promise<import("pg").QueryResultRow[] | import("../../compartido/dto/paginacion.dto").ResultadoPaginado<import("pg").QueryResultRow>>;
+    crearProducto(dto: CrearProductoDto, restauranteId?: string): Promise<import("pg").QueryResultRow | null>;
     actualizarProducto(id: string, sucursalId: string, dto: ActualizarProductoDto): Promise<{
         id: string;
     }>;
@@ -44,7 +50,12 @@ export declare class CatalogoService {
         id: string;
     }>;
     listarBebidas(sucursalId: string): Promise<import("pg").QueryResultRow[]>;
-    crearBebida(dto: CrearExtraDto): Promise<import("pg").QueryResultRow | null>;
+    crearBebida(dto: CrearExtraDto): Promise<{
+        id: string;
+        nombre: string;
+        precio: string;
+        disponible: boolean;
+    } | null>;
     actualizarBebida(id: string, sucursalId: string, datos: {
         nombre?: string;
         precio?: number;
@@ -58,6 +69,11 @@ export declare class CatalogoService {
     vincularToppingProducto(productoId: string, toppingId: string, sucursalId: string): Promise<{
         producto_id: string;
         topping_id: string;
+    }>;
+    listarToppingsProducto(productoId: string, sucursalId: string): Promise<import("pg").QueryResultRow[]>;
+    configurarToppingsProducto(productoId: string, sucursalId: string, toppingIds: string[]): Promise<{
+        producto_id: string;
+        topping_ids: string[];
     }>;
     vincularBebidaProducto(productoId: string, bebidaId: string, sucursalId: string): Promise<{
         producto_id: string;
@@ -81,6 +97,15 @@ export declare class CatalogoService {
     private exigirCategoria;
     listarItemsIncluidos(productoId: string, sucursalId: string): Promise<import("pg").QueryResultRow[]>;
     configurarItemsIncluidos(productoId: string, sucursalId: string, dto: ConfigurarItemsIncluidosDto): Promise<import("pg").QueryResultRow[]>;
+    copiarMenuDesde(restauranteId: string, sucursalDestinoId: string, sucursalOrigenId: string, usuarioId: string): Promise<{
+        categorias: number;
+        productos_nuevos: number;
+        toppings: number;
+        bebidas: number;
+    }>;
     private validarSinCicloIncluidos;
+    private asegurarProductoEspejoBebida;
+    private sincronizarProductoEspejoBebida;
+    private asegurarCategoriaPorNombres;
     private exigirProducto;
 }

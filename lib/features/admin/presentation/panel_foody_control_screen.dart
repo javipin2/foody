@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
+import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
 import 'package:reserva_canchas/features/admin/data/super_admin_repository.dart';
+import 'package:reserva_canchas/features/admin/presentation/widgets/foody_control_repartidores_vista.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/foody_control_ui.dart';
-import 'package:reserva_canchas/features/auth/data/auth_repository.dart';
 
 /// Panel super admin — Foody Control (multi-restaurante).
 class PanelFoodyControlScreen extends StatefulWidget {
@@ -70,10 +71,7 @@ class _PanelFoodyControlScreenState extends State<PanelFoodyControlScreen> {
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout_outlined),
-            onPressed: () async {
-              await AuthRepository().logout();
-              if (context.mounted) context.go('/splash');
-            },
+            onPressed: () => cerrarSesionStaff(context),
           ),
         ],
       ),
@@ -280,7 +278,7 @@ class _ContenidoFoodyControl extends StatelessWidget {
       case 'config':
         return _VistaConfig(repo: repo);
       case 'repartidores':
-        return _VistaRepartidores(repo: repo);
+        return FoodyControlRepartidoresVista(repo: repo);
       default:
         return _VistaResumen(repo: repo);
     }
@@ -367,6 +365,42 @@ class _VistaResumenState extends State<_VistaResumen> {
                     icono: Icons.payments_outlined,
                   ),
                 ],
+              ),
+              const SizedBox(height: 24),
+              Text('Self-service (F7)', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  final ss = d['self_service'] as Map<String, dynamic>?;
+                  if (ss == null) return const SizedBox.shrink();
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      FoodyControlTarjetaKpi(
+                        titulo: 'Registros auto',
+                        valor: '${ss['registros_self_service'] ?? 0}',
+                        icono: Icons.person_add_outlined,
+                      ),
+                      FoodyControlTarjetaKpi(
+                        titulo: 'Pagos 30 días',
+                        valor: '${ss['pagos_aprobados_30d'] ?? 0}',
+                        icono: Icons.credit_card_outlined,
+                        color: ColoresFoody.secundario,
+                      ),
+                      FoodyControlTarjetaKpi(
+                        titulo: 'Conversión',
+                        valor: '${ss['tasa_conversion_pagos_pct'] ?? 0}%',
+                        icono: Icons.trending_up,
+                      ),
+                      FoodyControlTarjetaKpi(
+                        titulo: 'Ingresos 30 días',
+                        valor: moneda.format(ss['ingresos_cop_30d'] ?? 0),
+                        icono: Icons.attach_money,
+                      ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 24),
               Text('Suscripciones', style: Theme.of(context).textTheme.titleMedium),
@@ -1300,9 +1334,7 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                                   _recargar();
                                 } catch (e) {
                                   if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('$e')),
-                                    );
+                                    mostrarErrorSnackBar(context, e);
                                   }
                                 }
                               },
@@ -1345,9 +1377,7 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                                   }
                                 } catch (e) {
                                   if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('$e')),
-                                    );
+                                    mostrarErrorSnackBar(context, e);
                                   }
                                 }
                               }
@@ -1488,9 +1518,7 @@ class _VistaCiudadesState extends State<_VistaCiudades> {
                             _recargar();
                           } catch (e) {
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('$e')),
-                              );
+                              mostrarErrorSnackBar(context, e);
                             }
                           }
                         },
@@ -1587,6 +1615,13 @@ class _VistaConfigState extends State<_VistaConfig> {
                         ctrl.text.trim(),
                       );
                       _recargar();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Configuración guardada'),
+                          ),
+                        );
+                      }
                     } catch (e) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1602,193 +1637,6 @@ class _VistaConfigState extends State<_VistaConfig> {
           },
         );
       },
-    );
-  }
-}
-
-class _VistaRepartidores extends StatefulWidget {
-  const _VistaRepartidores({required this.repo});
-  final SuperAdminRepository repo;
-
-  @override
-  State<_VistaRepartidores> createState() => _VistaRepartidoresState();
-}
-
-class _VistaRepartidoresState extends State<_VistaRepartidores> {
-  late Future<List<Map<String, dynamic>>> _future;
-  late Future<List<Map<String, dynamic>>> _docsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _recargar();
-  }
-
-  void _recargar() {
-    setState(() {
-      _future = widget.repo.domiciliarios();
-      _docsFuture = widget.repo.documentosPendientes();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          const TabBar(
-            labelColor: ColoresFoody.primario,
-            tabs: [
-              Tab(text: 'Independientes'),
-              Tab(text: 'Documentos pendientes'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _future,
-                  builder: (context, snap) {
-                    if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    return RefreshIndicator(
-                      onRefresh: () async => _recargar(),
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: snap.data!.length,
-                        itemBuilder: (_, i) {
-                          final d = snap.data![i];
-                          return Card(
-                            child: ListTile(
-                              title: Text(d['nombre'] as String? ?? ''),
-                              subtitle: Text(
-                                '${d['email']} · ${d['ciudad_nombre'] ?? '—'}',
-                              ),
-                              trailing: Chip(
-                                label: Text('${d['estado_cuenta']}'),
-                              ),
-                              onTap: () async {
-                                final est = d['estado_cuenta'] == 'activo'
-                                    ? 'suspendido'
-                                    : 'activo';
-                                try {
-                                  await widget.repo.domiciliarioEstado('${d['id']}', est);
-                                  _recargar();
-                                } catch (e) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('$e')),
-                                    );
-                                  }
-                                }
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: _docsFuture,
-                  builder: (context, snap) {
-                    if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snap.data!.isEmpty) {
-                      return const Center(child: Text('Sin documentos pendientes'));
-                    }
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: snap.data!.length,
-                      itemBuilder: (_, i) {
-                        final doc = snap.data![i];
-                        return Card(
-                          child: ListTile(
-                            title: Text('${doc['tipo']} · ${doc['domiciliario_nombre']}'),
-                            subtitle: Text('${doc['domiciliario_email']}'),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.check, color: Colors.green),
-                                  onPressed: () async {
-                                    try {
-                                      await widget.repo.aprobarDocumento(
-                                        '${doc['domiciliario_id']}',
-                                        '${doc['id']}',
-                                      );
-                                      _recargar();
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('$e')),
-                                        );
-                                      }
-                                    }
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.close, color: ColoresFoody.error),
-                                  onPressed: () async {
-                                    final motivoCtrl = TextEditingController();
-                                    final ok = await showDialog<bool>(
-                                      context: context,
-                                      builder: (ctx) => AlertDialog(
-                                        title: const Text('Rechazar'),
-                                        content: TextField(
-                                          controller: motivoCtrl,
-                                          decoration: const InputDecoration(labelText: 'Motivo'),
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.pop(ctx, false),
-                                            child: const Text('Cancelar'),
-                                          ),
-                                          FilledButton(
-                                            onPressed: () => Navigator.pop(
-                                              ctx,
-                                              motivoCtrl.text.trim().length >= 3,
-                                            ),
-                                            child: const Text('Rechazar'),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                    if (ok == true) {
-                                      try {
-                                        await widget.repo.rechazarDocumento(
-                                          '${doc['domiciliario_id']}',
-                                          '${doc['id']}',
-                                          motivoCtrl.text.trim(),
-                                        );
-                                        _recargar();
-                                      } catch (e) {
-                                        if (mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('$e')),
-                                          );
-                                        }
-                                      }
-                                    }
-                                    motivoCtrl.dispose();
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

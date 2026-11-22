@@ -25,5 +25,20 @@ class AppLinkConfig {
   static const String oauthScheme = 'foody';
   static const String oauthHostLogin = 'login';
 
+  /// Retorno tras Wompi (bridge Nest → app). Sincronizar AndroidManifest host `plan`.
+  static const String pagosHostPlan = 'plan';
+
   static String get oauthRedirectUri => '$oauthScheme://$oauthHostLogin';
+
+  static String uriRetornoPago({String? pagoId}) {
+    final base = '$oauthScheme://$pagosHostPlan';
+    if (pagoId == null || pagoId.isEmpty) return base;
+    return '$base?pago_id=${Uri.encodeComponent(pagoId)}';
+  }
+
+  static String rutaPanelTrasPago({String? pagoId}) {
+    final q = <String, String>{'seccion': 'mejorar_plan'};
+    if (pagoId != null && pagoId.isNotEmpty) q['pago_id'] = pagoId;
+    return Uri(path: '/admin/panel', queryParameters: q).toString();
+  }
 }

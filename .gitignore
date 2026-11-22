@@ -50,8 +50,15 @@ app.*.map.json
 # Foody — secretos y entorno local
 .env
 foody_backend/.env
+config/foody-entorno.env
 lib/core/constantes/configuracion.dart
+scripts/cloudflare-tunnel.env
+.cloudflared/
 **/foody_printer.db
 
 # Docker volumes locales (si se montan en el repo)
 postgres_data/
+
+# Backups locales (OPS-02)
+backups/
+*.sql.gz

@@ -3,7 +3,7 @@
 
 INSERT INTO ingredientes (
   id, sucursal_id, nombre, unidad_base, tipo_costeo,
-  stock_actual, stock_minimo, costo_unitario_actual, activo
+  stock_actual, stock_minimo, costo_unitario_actual, activo, categoria_insumo
 ) VALUES
   (
     '40000000-0000-4000-8000-000000000004',
@@ -14,7 +14,8 @@ INSERT INTO ingredientes (
     500,
     50,
     350,
-    true
+    true,
+    'empaque'
   ),
   (
     '40000000-0000-4000-8000-000000000005',
@@ -25,11 +26,13 @@ INSERT INTO ingredientes (
     500,
     50,
     150,
-    true
+    true,
+    'empaque'
   )
 ON CONFLICT (id) DO UPDATE SET
   stock_actual = EXCLUDED.stock_actual,
   costo_unitario_actual = EXCLUDED.costo_unitario_actual,
+  categoria_insumo = EXCLUDED.categoria_insumo,
   activo = true;
 
 INSERT INTO recetas (

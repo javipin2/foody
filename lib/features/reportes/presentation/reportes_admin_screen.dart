@@ -1,15 +1,32 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
-import 'package:reserva_canchas/features/reportes/data/reportes_repository.dart';
+import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_ui.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_chart_card.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_charts.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_kpi_card.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_section.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_surface.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/auditoria/data/auditoria_repository.dart';
+import 'package:reserva_canchas/features/reportes/data/reportes_repository.dart';
+import 'package:reserva_canchas/features/reportes/utils/reporte_export_foody.dart';
+import 'package:share_plus/share_plus.dart';
 
-/// Reportes básicos admin (Sprint 9 — MVP).
+/// Reportes admin — misma línea visual que Centro de Inteligencia.
 class ReportesAdminScreen extends StatefulWidget {
-  const ReportesAdminScreen({super.key, this.sucursalId});
+  const ReportesAdminScreen({
+    super.key,
+    this.sucursalId,
+    this.onIrAnalitica,
+  });
 
   final String? sucursalId;
+  /// NAV-ADM2-12: puente a Centro de Análisis.
+  final VoidCallback? onIrAnalitica;
 
   @override
   State<ReportesAdminScreen> createState() => _ReportesAdminScreenState();
@@ -23,6 +40,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   int _dias = 7;
   bool _cargando = true;
   String? _error;
+  DateTime _actualizadoEn = DateTime.now();
 
   Map<String, dynamic>? _financiero;
   Map<String, dynamic>? _productos;
@@ -36,6 +54,12 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     decimalDigits: 0,
   );
   final _fecha = DateFormat('yyyy-MM-dd');
+
+  static const _periodos = [
+    (1, 'Hoy'),
+    (7, '7d'),
+    (30, '30d'),
+  ];
 
   @override
   void initState() {
@@ -110,6 +134,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           _pedidos = results[2];
           _timeline = null;
           _cargando = false;
+          _actualizadoEn = DateTime.now();
         });
       }
     } catch (e) {
@@ -125,85 +150,302 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   double _num(dynamic v) =>
       v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 
+  String _nombreArchivo(String ext) {
+    final (desde, hasta) = _rango();
+    return 'foody-reportes-$desde-$hasta.$ext';
+  }
+
+  Future<void> _exportarPdf() async {
+    if (_financiero == null && _productos == null && _pedidos == null) return;
+    final (desde, hasta) = _rango();
+    try {
+      final bytes = await ReporteExportFoody.generarPdf(
+        desde: desde,
+        hasta: hasta,
+        financiero: _financiero,
+        productos: _productos,
+        pedidos: _pedidos,
+      );
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            bytes,
+            mimeType: 'application/pdf',
+            name: _nombreArchivo('pdf'),
+          ),
+        ],
+        subject: 'Reporte Foody $desde — $hasta',
+      );
+    } catch (e) {
+      if (mounted) {
+        mostrarErrorSnackBar(context, e, contexto: 'exportar PDF');
+      }
+    }
+  }
+
+  Future<void> _exportarCsv() async {
+    if (_financiero == null && _productos == null && _pedidos == null) return;
+    final (desde, hasta) = _rango();
+    try {
+      final bytes = ReporteExportFoody.generarCsv(
+        desde: desde,
+        hasta: hasta,
+        financiero: _financiero,
+        productos: _productos,
+        pedidos: _pedidos,
+      );
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            bytes,
+            mimeType: 'text/csv',
+            name: _nombreArchivo('csv'),
+          ),
+        ],
+        subject: 'Reporte Foody $desde — $hasta',
+      );
+    } catch (e) {
+      if (mounted) {
+        mostrarErrorSnackBar(context, e, contexto: 'exportar CSV');
+      }
+    }
+  }
+
+  void _mostrarExportar() {
+    if (_cargando || _error != null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AnaliticaTokens.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'Exportar reporte',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('PDF'),
+              subtitle: const Text('Informe completo'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportarPdf();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.table_chart_outlined),
+              title: const Text('CSV / Excel'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _exportarCsv();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final (desde, hasta) = _rango();
+    final hora = DateFormat('HH:mm').format(_actualizadoEn);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 8, 0),
-          child: Row(
-            children: [
-              Text('Reportes', style: Theme.of(context).textTheme.headlineSmall),
-              const Spacer(),
-              DropdownButton<int>(
-                value: _dias,
-                items: const [
-                  DropdownMenuItem(value: 1, child: Text('Hoy')),
-                  DropdownMenuItem(value: 7, child: Text('7 días')),
-                  DropdownMenuItem(value: 30, child: Text('30 días')),
+    return ColoredBox(
+      color: AnaliticaTokens.canvas,
+      child: SaasScrollableShell(
+        header: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Admin / Reportes',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AnaliticaTokens.inkSoft,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Reportes',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: AnaliticaTokens.ink,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$desde → $hasta · Act. $hora',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AnaliticaTokens.inkMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.onIrAnalitica != null)
+                  TextButton(
+                    onPressed: widget.onIrAnalitica,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AnaliticaTokens.inkMuted,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Análisis'),
+                  ),
+                IconButton(
+                  tooltip: 'Exportar',
+                  onPressed: _cargando || _error != null ? null : _mostrarExportar,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.download_rounded, size: 20),
+                  color: AnaliticaTokens.inkMuted,
+                ),
+                IconButton(
+                  tooltip: 'Actualizar',
+                  onPressed: _cargar,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.refresh_rounded, size: 20),
+                  color: AnaliticaTokens.inkMuted,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final p in _periodos) ...[
+                    _PeriodChip(
+                      label: p.$2,
+                      selected: _dias == p.$1,
+                      onTap: () {
+                        setState(() => _dias = p.$1);
+                        _cargar();
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                 ],
-                onChanged: (v) {
-                  if (v == null) return;
-                  setState(() => _dias = v);
-                  _cargar();
-                },
               ),
-              IconButton(
-                tooltip: 'Actualizar',
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: AnaliticaTokens.borderSoft),
+                  ),
+                ),
+                child: TabBar(
+                  controller: _tabs,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: AnaliticaTokens.ink,
+                  unselectedLabelColor: AnaliticaTokens.inkSoft,
+                  indicatorColor: AnaliticaTokens.ink,
+                  indicatorWeight: 2,
+                  dividerColor: Colors.transparent,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12.5,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Financiero'),
+                    Tab(text: 'Productos'),
+                    Tab(text: 'Pedidos'),
+                    Tab(text: 'Auditoría'),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: _cargando
+                  ? AnaliticaSkeleton.tab()
+                  : _error != null
+                      ? _errorView()
+                      : TabBarView(
+                          controller: _tabs,
+                          children: [
+                            _tabFinanciero(),
+                            _tabProductos(),
+                            _tabPedidos(),
+                            _tabAuditoria(),
+                          ],
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _errorView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: AnaliticaSurface(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_outlined,
+                size: 36,
+                color: AnaliticaTokens.inkSoft,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AnaliticaTokens.ink,
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
                 onPressed: _cargar,
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Reintentar'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AnaliticaTokens.ink,
+                ),
               ),
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'Período: $desde → $hasta',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-          ),
-        ),
-        TabBar(
-          controller: _tabs,
-          labelColor: ColoresFoody.primario,
-          tabs: const [
-            Tab(text: 'Financiero'),
-            Tab(text: 'Productos'),
-            Tab(text: 'Pedidos'),
-            Tab(text: 'Auditoría'),
-          ],
-        ),
-        Expanded(
-          child: _cargando
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!),
-                          const SizedBox(height: 12),
-                          FilledButton(
-                            onPressed: _cargar,
-                            child: const Text('Reintentar'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : TabBarView(
-                      controller: _tabs,
-                      children: [
-                        _tabFinanciero(),
-                        _tabProductos(),
-                        _tabPedidos(),
-                        _tabAuditoria(),
-                      ],
-                    ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -211,116 +453,173 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     final r = _financiero?['resumen'] as Map<String, dynamic>? ?? {};
     final cuadre = _financiero?['cuadre_caja'] as Map<String, dynamic>? ?? {};
     final porTipo = _financiero?['por_tipo'] as List<dynamic>? ?? [];
-    final porMetodoCaja =
-        cuadre['por_metodo_caja'] as List<dynamic>? ?? [];
+    final porMetodoCaja = cuadre['por_metodo_caja'] as List<dynamic>? ?? [];
     final diferencia = _num(cuadre['diferencia']);
 
     Color colorDiferencia() {
-      if (diferencia.abs() < 1) return ColoresFoody.secundario;
-      if (diferencia.abs() <= 5000) return ColoresFoody.acento;
-      return Colors.red.shade700;
+      if (diferencia.abs() < 1) return AnaliticaTokens.inventario;
+      if (diferencia.abs() <= 5000) return AnaliticaTokens.inkMuted;
+      return AnaliticaTokens.alertas;
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
+        const AnaliticaSectionHeader(
+          titulo: 'Resumen financiero',
+          subtitulo:
+              'Tickets = total de pedidos del período (pueden incluir sin cobrar)',
+          icono: Icons.payments_outlined,
+        ),
+        AnaliticaKpiGrid(
           children: [
-            _tarjeta('Ventas', _moneda.format(_num(r['ventas_total']))),
-            _tarjeta('Pedidos', '${r['pedidos'] ?? 0}'),
-            _tarjeta('Ticket prom.', _moneda.format(_num(r['ticket_promedio']))),
-            _tarjeta('Domicilios', _moneda.format(_num(r['costo_domicilio']))),
+            AnaliticaKpiCard(
+              etiqueta: 'Tickets',
+              valor: _moneda.format(_num(r['ventas_total'])),
+              icono: Icons.payments_outlined,
+              acento: AnaliticaTokens.ventas,
+              destacado: true,
+            ),
+            AnaliticaKpiCard(
+              etiqueta: 'Pedidos',
+              valor: '${r['pedidos'] ?? 0}',
+              icono: Icons.receipt_long_outlined,
+              acento: AnaliticaTokens.pedidos,
+              destacado: true,
+            ),
+            AnaliticaKpiCard(
+              etiqueta: 'Ticket prom.',
+              valor: _moneda.format(_num(r['ticket_promedio'])),
+              icono: Icons.shopping_bag_outlined,
+              acento: AnaliticaTokens.clientes,
+            ),
+            AnaliticaKpiCard(
+              etiqueta: 'Domicilios',
+              valor: _moneda.format(_num(r['costo_domicilio'])),
+              icono: Icons.delivery_dining_outlined,
+              acento: AnaliticaTokens.inkMuted,
+            ),
           ],
         ),
-        const SizedBox(height: 20),
-        Text('Cuadre caja', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text(
-          'Compara ventas en pedidos vs movimientos de caja registrados.',
-          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+        const SizedBox(height: 16),
+        const AnaliticaSectionHeader(
+          titulo: 'Cuadre de caja',
+          subtitulo: 'Tickets vs cobrado neto (universos distintos)',
+          icono: Icons.balance_outlined,
         ),
-        const SizedBox(height: 12),
-        Card(
-          color: colorDiferencia().withValues(alpha: 0.08),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _filaCuadre(
-                  'Ventas (pedidos)',
-                  _moneda.format(_num(cuadre['ventas_pedidos'])),
+        AnaliticaSurface(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _filaCuadre(
+                (cuadre['etiqueta_ventas_pedidos'] as String?) ??
+                    'Tickets (total pedidos)',
+                _moneda.format(_num(cuadre['ventas_pedidos'])),
+              ),
+              _filaCuadre(
+                (cuadre['etiqueta_ventas_caja'] as String?) ??
+                    'Cobrado en caja (neto)',
+                _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
+              ),
+              const Divider(height: 20, color: AnaliticaTokens.borderSoft),
+              _filaCuadre(
+                'Diferencia',
+                _moneda.format(diferencia),
+                destacado: true,
+                color: colorDiferencia(),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                (cuadre['nota_universos'] as String?)?.trim().isNotEmpty == true
+                    ? cuadre['nota_universos'] as String
+                    : diferencia.abs() < 1
+                        ? 'Cuadre OK — tickets y caja coinciden.'
+                        : diferencia > 0
+                            ? 'Hay más en tickets que en caja (cobros pendientes o sin registrar).'
+                            : 'Hay más en caja que en tickets (revisar movimientos manuales o duplicados).',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AnaliticaTokens.inkMuted,
+                  height: 1.35,
                 ),
-                _filaCuadre(
-                  'Ventas (movimientos caja)',
-                  _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
-                ),
-                const Divider(height: 20),
-                _filaCuadre(
-                  'Diferencia',
-                  _moneda.format(diferencia),
-                  destacado: true,
-                  color: colorDiferencia(),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  diferencia.abs() < 1
-                      ? 'Cuadre OK — pedidos y caja coinciden.'
-                      : diferencia > 0
-                          ? 'Hay más ventas en pedidos que en caja (cobros sin registrar o pendientes).'
-                          : 'Hay más en caja que en pedidos (revisar movimientos manuales o duplicados).',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                if ((cuadre['movimientos_venta'] ?? 0) != 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '${cuadre['movimientos_venta']} movimiento(s) de venta en caja',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
+              ),
+              if ((cuadre['movimientos_venta'] ?? 0) != 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '${cuadre['movimientos_venta']} movimiento(s) de venta en caja',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AnaliticaTokens.inkSoft,
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
         if (porMetodoCaja.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(
-            'Caja por método de pago',
-            style: Theme.of(context).textTheme.titleSmall,
+          const AnaliticaSectionHeader(
+            titulo: 'Caja por método',
+            icono: Icons.account_balance_wallet_outlined,
           ),
-          const SizedBox(height: 4),
           ...porMetodoCaja.map((item) {
             final m = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: Text('${m['metodo_pago']}'),
-              trailing: Text(_moneda.format(_num(m['total']))),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: AnaliticaSurface(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('${m['metodo_pago']}')),
+                    Text(
+                      _moneda.format(_num(m['total'])),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
             );
           }),
         ],
-        const SizedBox(height: 20),
-        Text('Por tipo de pedido', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        const AnaliticaSectionHeader(
+          titulo: 'Por tipo de pedido',
+          icono: Icons.hub_outlined,
+        ),
         if (porTipo.isEmpty)
-          const Text('Sin datos en el período')
+          const Text(
+            'Sin datos en el período',
+            style: TextStyle(color: AnaliticaTokens.inkSoft),
+          )
         else
           ...porTipo.map((item) {
             final m = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${m['tipo']}'),
-              trailing: Text(
-                '${m['pedidos']} · ${_moneda.format(_num(m['ventas']))}',
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: AnaliticaSurface(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${m['tipo']}'.replaceAll('_', ' '),
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    Text(
+                      '${m['pedidos']} · ${_moneda.format(_num(m['ventas']))}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               ),
             );
           }),
@@ -332,29 +631,84 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     final ranking = _productos?['ranking'] as List<dynamic>? ?? [];
 
     if (ranking.isEmpty) {
-      return const Center(child: Text('Sin ventas de productos en el período'));
+      return const Center(
+        child: Text(
+          'Sin ventas de productos en el período',
+          style: TextStyle(color: AnaliticaTokens.inkSoft),
+        ),
+      );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: ranking.length,
-      itemBuilder: (_, i) {
-        final p = ranking[i] as Map<String, dynamic>;
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: ColoresFoody.primario.withValues(alpha: 0.15),
-              child: Text('${i + 1}'),
-            ),
-            title: Text(p['nombre'] as String? ?? ''),
-            subtitle: Text('${p['cantidad']} unidades'),
-            trailing: Text(
-              _moneda.format(_num(p['ventas'])),
-              style: const TextStyle(fontWeight: FontWeight.bold),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+      children: [
+        AnaliticaSectionHeader(
+          titulo: 'Ranking de productos',
+          subtitulo: '${ranking.length} ítems',
+          icono: Icons.bar_chart,
+        ),
+        if (ranking.length >= 2)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: AnaliticaChartCard(
+              titulo: 'Top productos',
+              subtitulo: 'Por ventas',
+              icono: Icons.show_chart,
+              altura: 180,
+              child: BarChart(
+                AnaliticaCharts.barrasHorizontales(
+                  ranking,
+                  valorKey: 'ventas',
+                  nombreKey: 'nombre',
+                  color: AnaliticaTokens.chart,
+                ),
+              ),
             ),
           ),
-        );
-      },
+        for (var i = 0; i < ranking.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: AnaliticaSurface(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 28,
+                    child: Text(
+                      '${i + 1}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AnaliticaTokens.inkSoft,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (ranking[i] as Map)['nombre'] as String? ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '${(ranking[i] as Map)['cantidad']} unidades',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AnaliticaTokens.inkSoft,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _moneda.format(_num((ranking[i] as Map)['ventas'])),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -363,34 +717,90 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     final porDia = _pedidos?['por_dia'] as List<dynamic>? ?? [];
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
       children: [
-        Text('Por estado', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
+        if (porDia.length >= 2) ...[
+          const AnaliticaSectionHeader(
+            titulo: 'Tendencia',
+            subtitulo: 'Ventas por día',
+            icono: Icons.timeline,
+          ),
+          AnaliticaChartCard(
+            titulo: 'Tendencia por día',
+            subtitulo: 'Serie del período',
+            icono: Icons.show_chart,
+            child: LineChart(AnaliticaCharts.lineaDia(porDia)),
+          ),
+          const SizedBox(height: 16),
+        ],
+        const AnaliticaSectionHeader(
+          titulo: 'Por estado',
+          icono: Icons.flag_outlined,
+        ),
         if (porEstado.isEmpty)
-          const Text('Sin pedidos')
+          const Text(
+            'Sin pedidos',
+            style: TextStyle(color: AnaliticaTokens.inkSoft),
+          )
         else
           ...porEstado.map((item) {
             final m = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${m['estado']}'),
-              trailing: Text('${m['total']}'),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: AnaliticaSurface(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${m['estado']}'.replaceAll('_', ' '),
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    Text(
+                      '${m['total']}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
             );
           }),
-        const SizedBox(height: 20),
-        Text('Por día', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        const AnaliticaSectionHeader(
+          titulo: 'Detalle por día',
+          icono: Icons.calendar_today_outlined,
+        ),
         if (porDia.isEmpty)
-          const Text('Sin datos')
+          const Text(
+            'Sin datos',
+            style: TextStyle(color: AnaliticaTokens.inkSoft),
+          )
         else
           ...porDia.map((item) {
             final m = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${m['dia']}'),
-              trailing: Text(
-                '${m['pedidos']} ped. · ${_moneda.format(_num(m['ventas']))}',
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: AnaliticaSurface(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: Text('${m['dia']}')),
+                    Text(
+                      '${m['pedidos']} ped. · ${_moneda.format(_num(m['ventas']))}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           }),
@@ -400,47 +810,99 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
 
   Widget _tabAuditoria() {
     if (_cargandoTimeline) {
-      return const Center(child: CircularProgressIndicator());
+      return AnaliticaSkeleton.tab();
     }
     final eventos = (_timeline?['eventos'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     if (eventos.isEmpty) {
-      return const Center(child: Text('Sin eventos en el período'));
+      return const Center(
+        child: Text(
+          'Sin eventos en el período',
+          style: TextStyle(color: AnaliticaTokens.inkSoft),
+        ),
+      );
     }
-    final hora = DateFormat('HH:mm');
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: eventos.length,
-      itemBuilder: (_, i) {
-        final e = eventos[i];
-        final fuente = e['fuente'] as String? ?? '—';
-        final cuando = DateTime.tryParse('${e['ocurrido_at']}')?.toLocal();
-        return Card(
-          child: ListTile(
-            dense: true,
-            leading: CircleAvatar(
-              radius: 16,
-              backgroundColor: ColoresFoody.primario.withValues(alpha: 0.12),
-              child: Text(
-                fuente.substring(0, 1).toUpperCase(),
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+    final horaFmt = DateFormat('HH:mm');
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+      children: [
+        AnaliticaSectionHeader(
+          titulo: 'Timeline de auditoría',
+          subtitulo: '${eventos.length} eventos',
+          icono: Icons.history,
+        ),
+        ...eventos.map((e) {
+          final fuente = e['fuente'] as String? ?? '—';
+          final cuando = DateTime.tryParse('${e['ocurrido_at']}')?.toLocal();
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: AnaliticaSurface(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AnaliticaTokens.surfaceMuted,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      fuente.substring(0, 1).toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${e['tipo'] ?? e['accion'] ?? fuente}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          cuando != null ? horaFmt.format(cuando) : '',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AnaliticaTokens.inkSoft,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AnaliticaTokens.surfaceMuted,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      fuente,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            title: Text(
-              '${e['tipo'] ?? e['accion'] ?? fuente}',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-            subtitle: Text(
-              cuando != null ? hora.format(cuando) : '',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: Chip(
-              label: Text(fuente, style: const TextStyle(fontSize: 10)),
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-        );
-      },
+          );
+        }),
+      ],
     );
   }
 
@@ -454,39 +916,63 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Expanded(child: Text(etiqueta)),
+          Expanded(
+            child: Text(
+              etiqueta,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AnaliticaTokens.inkMuted,
+              ),
+            ),
+          ),
           Text(
             valor,
             style: TextStyle(
-              fontWeight: destacado ? FontWeight.bold : FontWeight.w600,
-              fontSize: destacado ? 18 : 15,
-              color: color,
+              fontWeight: destacado ? FontWeight.w700 : FontWeight.w600,
+              fontSize: destacado ? 17 : 14,
+              color: color ?? AnaliticaTokens.ink,
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _tarjeta(String titulo, String valor) {
-    return SizedBox(
-      width: 160,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(titulo, style: TextStyle(color: Colors.grey.shade700)),
-              const SizedBox(height: 8),
-              Text(
-                valor,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+class _PeriodChip extends StatelessWidget {
+  const _PeriodChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AnaliticaTokens.ink : AnaliticaTokens.surface,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected ? AnaliticaTokens.ink : AnaliticaTokens.border,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: selected ? Colors.white : AnaliticaTokens.inkMuted,
+            ),
           ),
         ),
       ),

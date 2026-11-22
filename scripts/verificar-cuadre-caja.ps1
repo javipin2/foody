@@ -64,30 +64,54 @@ $ventasPedidos = [double]$cuadre.ventas_pedidos
 $ventasCaja = [double]$cuadre.ventas_movimientos_caja
 $diferencia = [double]$cuadre.diferencia
 $movs = [int]$cuadre.movimientos_venta
+$pagadoAcum = $null
+$diffPagado = $null
 
 Write-Host "Periodo: $desde -> $hoy"
-Write-Host "Ventas pedidos:     $ventasPedidos"
-Write-Host "Ventas caja:        $ventasCaja"
+Write-Host "Tickets (pedidos):  $ventasPedidos"
+Write-Host "Cobrado caja neto:  $ventasCaja"
 Write-Host "Diferencia API:     $diferencia"
 Write-Host "Movimientos venta:  $movs"
+if ($cuadre.nota_universos) {
+    Write-Host "Nota: $($cuadre.nota_universos)"
+}
 
-# Cruce directo en BD (misma ventana de fechas)
+$pagadoSql = @"
+SELECT COALESCE(SUM(monto_pagado), 0) AS pagado
+FROM pedidos
+WHERE sucursal_id = '$Sucursal'
+  AND created_at >= '$desde'::timestamptz
+  AND created_at < ('$hoy'::date + interval '1 day')
+  AND estado NOT IN ('cancelado', 'rechazado');
+"@
+$pagadoRaw = docker exec supabase-db psql -U postgres -d postgres -tAc $pagadoSql 2>&1
+if ($pagadoRaw -match '^\s*[\d.]') {
+    $pagadoAcum = [double]$pagadoRaw.Trim()
+    $diffPagado = [math]::Round($pagadoAcum - $ventasCaja, 2)
+    Write-Host "Monto pagado (pedidos): $pagadoAcum"
+    Write-Host "Diff pagado vs caja:    $diffPagado"
+}
+
+# Cruce BD — mismos filtros que foody_backend/.../ventas-metricas.sql + reportes.service financiero()
 $sql = @"
 SELECT
   COALESCE((
     SELECT SUM(total) FROM pedidos
     WHERE sucursal_id = '$Sucursal'
-      AND created_at >= '$desde'::date
+      AND created_at >= '$desde'::timestamptz
       AND created_at < ('$hoy'::date + interval '1 day')
       AND estado NOT IN ('cancelado', 'rechazado')
   ), 0) AS ventas_pedidos,
   COALESCE((
-    SELECT SUM(m.monto) FROM movimientos_caja m
+    SELECT SUM(CASE WHEN m.tipo = 'venta' THEN m.monto ELSE -m.monto END)
+    FROM movimientos_caja m
     LEFT JOIN pedidos p ON p.id = m.pedido_id
     WHERE m.sucursal_id = '$Sucursal'
-      AND m.tipo = 'venta'
-      AND COALESCE(p.created_at, m.created_at) >= '$desde'::date
-      AND COALESCE(p.created_at, m.created_at) < ('$hoy'::date + interval '1 day')
+      AND m.tipo IN ('venta', 'devolucion')
+      AND (
+        (p.created_at IS NOT NULL AND p.created_at >= '$desde'::timestamptz AND p.created_at < ('$hoy'::date + interval '1 day'))
+        OR (p.created_at IS NULL AND m.created_at >= '$desde'::timestamptz AND m.created_at < ('$hoy'::date + interval '1 day'))
+      )
   ), 0) AS ventas_caja;
 "@
 $dbRaw = docker exec supabase-db psql -U postgres -d postgres -tAc $sql 2>&1
@@ -97,8 +121,8 @@ if ($dbRaw -match '\|') {
     $dbCaja = [double]$parts[1]
     $dbDiff = [math]::Round($dbPedidos - $dbCaja, 2)
     Write-Host ""
-    Write-Host "Cruce BD:"
-    Write-Host "  pedidos: $dbPedidos | caja: $dbCaja | diff: $dbDiff"
+    Write-Host "Cruce BD (alineado API):"
+    Write-Host "  pedidos: $dbPedidos | caja neto: $dbCaja | diff: $dbDiff"
     $apiMatch = [math]::Abs($ventasPedidos - $dbPedidos) -lt 0.01 -and [math]::Abs($ventasCaja - $dbCaja) -lt 0.01
     if (-not $apiMatch) {
         Write-Host "FALLO: API no coincide con consulta SQL directa"
@@ -118,12 +142,19 @@ Write-Host "OK: campo diferencia coherente"
 
 if ([math]::Abs($diferencia) -lt 1) {
     Write-Host ""
-    Write-Host "RESULTADO: CUADRE OK (diferencia < 1 COP en el periodo)"
+    Write-Host "RESULTADO: CUADRE OK (tickets vs caja neto < 1 COP)"
+    exit 0
+}
+
+if ($null -ne $pagadoAcum -and [math]::Abs($diffPagado) -lt 1) {
+    Write-Host ""
+    Write-Host "RESULTADO: CUADRE COBROS OK (monto_pagado vs caja < 1 COP)"
+    Write-Host "  Nota: diferencia tickets-vs-caja ($diferencia) es normal con mesas/domicilios sin cobrar aun."
     exit 0
 }
 
 Write-Host ""
-Write-Host "RESULTADO: DIFERENCIA DETECTADA ($diferencia COP)"
-Write-Host "  Esto puede ser normal si hay pedidos sin cobrar en caja o movimientos manuales."
-Write-Host "  Para validar cobro mesa: abrir caja, cobrar una mesa, volver a ejecutar este script."
+Write-Host "RESULTADO: DIFERENCIA ESPERABLE (tickets - caja neto = $diferencia COP)"
+Write-Host "  Universos distintos: reportes suman pedidos del periodo; caja suma cobros netos."
+Write-Host "  No es fallo de cuadre contable si hay pedidos abiertos o prepago pendiente de cierre."
 exit 0

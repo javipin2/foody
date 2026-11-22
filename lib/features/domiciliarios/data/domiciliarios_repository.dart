@@ -15,6 +15,92 @@ class DomiciliariosRepository {
     return _parsearLista(r.data);
   }
 
+  Future<List<Map<String, dynamic>>> resumenComisionesIndependientes(
+    String sucursalId,
+  ) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/domiciliarios-planta/comisiones-independientes/$sucursalId',
+    );
+    return _parsearLista(r.data);
+  }
+
+  Future<Map<String, dynamic>> resumenLiquidacion(String sucursalId) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/domiciliarios-planta/liquidacion/$sucursalId',
+    );
+    if (r.data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      r.data!,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    return env.datos!;
+  }
+
+  Future<Map<String, dynamic>> liquidarDomiciliario({
+    required String domiciliarioPlantaId,
+    required String sucursalId,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/domiciliarios-planta/liquidar/$domiciliarioPlantaId',
+      queryParameters: {'sucursal_id': sucursalId},
+    );
+    if (r.data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      r.data!,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    return env.datos!;
+  }
+
+  Future<bool> configurarFiadoDomiciliario({
+    required String sucursalId,
+    required bool permitir,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/domiciliarios-planta/config-fiado/$sucursalId',
+      data: {'permitir': permitir},
+    );
+    if (r.data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      r.data!,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    return env.datos!['permite_fiado_domiciliario'] == true;
+  }
+
+  Future<Map<String, dynamic>> resumenDomicilios(String sucursalId) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/domiciliarios-planta/domicilios/$sucursalId',
+    );
+    if (r.data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      r.data!,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    return env.datos!;
+  }
+
+  Future<bool> configurarDomicilioEnCaja({
+    required String sucursalId,
+    required bool ingresa,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/domiciliarios-planta/config-domicilio-caja/$sucursalId',
+      data: {'ingresa': ingresa},
+    );
+    if (r.data == null) throw Exception('Respuesta vacía');
+    final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+      r.data!,
+      (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    );
+    if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+    return env.datos!['domicilio_ingresa_a_caja'] == true;
+  }
+
   Future<void> asignar({
     required String pedidoId,
     required String sucursalId,
@@ -22,6 +108,22 @@ class DomiciliariosRepository {
   }) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/domiciliarios-planta/asignar',
+      data: {
+        'pedido_id': pedidoId,
+        'sucursal_id': sucursalId,
+        'domiciliario_planta_id': domiciliarioPlantaId,
+      },
+    );
+    _validar(r.data);
+  }
+
+  Future<void> reasignar({
+    required String pedidoId,
+    required String sucursalId,
+    required String domiciliarioPlantaId,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/domiciliarios-planta/reasignar',
       data: {
         'pedido_id': pedidoId,
         'sucursal_id': sucursalId,
@@ -55,13 +157,31 @@ class DomiciliariosRepository {
     return _parsearLista(r.data);
   }
 
-  Future<List<Map<String, dynamic>>> historialEntregas() async {
-    final r = await _dio.get<Map<String, dynamic>>('/domiciliario/historial');
+  Future<List<Map<String, dynamic>>> historialEntregas({
+    String? desde,
+    String? hasta,
+  }) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/domiciliario/historial',
+      queryParameters: {
+        if (desde != null) 'desde': desde,
+        if (hasta != null) 'hasta': hasta,
+      },
+    );
     return _parsearLista(r.data);
   }
 
-  Future<Map<String, dynamic>> estadisticasPlanta() async {
-    final r = await _dio.get<Map<String, dynamic>>('/domiciliario/estadisticas');
+  Future<Map<String, dynamic>> estadisticasPlanta({
+    String? desde,
+    String? hasta,
+  }) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/domiciliario/estadisticas',
+      queryParameters: {
+        if (desde != null) 'desde': desde,
+        if (hasta != null) 'hasta': hasta,
+      },
+    );
     if (r.data == null) throw Exception('Respuesta vacía');
     final env = RespuestaApi<Map<String, dynamic>>.fromJson(
       r.data!,
@@ -78,10 +198,34 @@ class DomiciliariosRepository {
     _validar(r.data);
   }
 
-  Future<void> confirmarEntrega(String pedidoId, {String? metodoPago}) async {
+  Future<void> confirmarEntrega(
+    String pedidoId, {
+    String? metodoPago,
+    String? metodoPagoDomicilio,
+  }) async {
     final r = await _dio.patch<Map<String, dynamic>>(
       '/domiciliario/pedidos/$pedidoId/confirmar-entrega',
-      data: {if (metodoPago != null) 'metodo_pago': metodoPago},
+      data: {
+        if (metodoPago != null) 'metodo_pago': metodoPago,
+        if (metodoPagoDomicilio != null)
+          'metodo_pago_domicilio': metodoPagoDomicilio,
+      },
+    );
+    _validar(r.data);
+  }
+
+  Future<void> registrarUbicacion({
+    required double lat,
+    required double lng,
+    String? pedidoId,
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/domiciliario/ubicacion',
+      data: {
+        'lat': lat,
+        'lng': lng,
+        if (pedidoId != null) 'pedido_id': pedidoId,
+      },
     );
     _validar(r.data);
   }

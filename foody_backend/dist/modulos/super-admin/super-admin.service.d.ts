@@ -1,10 +1,15 @@
 import { DatabaseService } from '../../core/database/database.service';
+import { ConfiguracionGlobalService } from '../../core/config/configuracion-global.module';
 import { OnboardingRestauranteService } from '../../core/onboarding/onboarding-restaurante.service';
+import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { ActualizarCiudadDto, ActualizarConfiguracionDto, ActualizarDomiciliarioEstadoDto, ActualizarRestauranteDto, ActualizarSuscripcionDto, ActualizarUsuarioSuperDto, AprobarDocumentoDto, CambiarContrasenaSuperDto, CambiarEstadoUsuarioSuperDto, CrearCiudadDto, CrearRestauranteDto, CrearUsuarioSuperDto, RechazarDocumentoDto } from './dto/super-admin.dto';
 export declare class SuperAdminService {
     private readonly database;
     private readonly onboarding;
-    constructor(database: DatabaseService, onboarding: OnboardingRestauranteService);
+    private readonly notificaciones;
+    private readonly configGlobal;
+    private readonly logger;
+    constructor(database: DatabaseService, onboarding: OnboardingRestauranteService, notificaciones: NotificacionesService, configGlobal: ConfiguracionGlobalService);
     resumenGlobal(): Promise<{
         ciudades_activas: number;
         restaurantes_activos: number;
@@ -23,9 +28,31 @@ export declare class SuperAdminService {
     listarDomiciliarios(): Promise<import("pg").QueryResultRow[]>;
     actualizarEstadoDomiciliario(id: string, dto: ActualizarDomiciliarioEstadoDto): Promise<import("pg").QueryResultRow | null>;
     listarConfiguracion(): Promise<import("pg").QueryResultRow[]>;
+    metricasSelfService(): Promise<{
+        registros_self_service: number;
+        pagos_aprobados_30d: number;
+        ingresos_cop_30d: number;
+        pagos_pendientes: number;
+        tasa_conversion_pagos_pct: number;
+        suscripciones_por_plan: {
+            plan: string;
+            total: number;
+        }[];
+    }>;
     estadisticas(): Promise<{
         pedidos_hoy: number;
         ingresos_foody_hoy: number;
+        self_service: {
+            registros_self_service: number;
+            pagos_aprobados_30d: number;
+            ingresos_cop_30d: number;
+            pagos_pendientes: number;
+            tasa_conversion_pagos_pct: number;
+            suscripciones_por_plan: {
+                plan: string;
+                total: number;
+            }[];
+        };
         ciudades_activas: number;
         restaurantes_activos: number;
         sucursales_activas: number;
@@ -39,7 +66,7 @@ export declare class SuperAdminService {
         id: string;
         nombre: string;
         email: string;
-        rol: "domiciliario_planta" | "cajero" | "mesero" | "admin" | "gerente" | "cocina_principal";
+        rol: "cocina" | "gerente_cadena" | "admin" | "domiciliario_planta" | "cajero" | "mesero" | "gerente" | "cocina_principal";
         sucursal_id: string;
         restaurante_id: string;
     }>;
@@ -53,6 +80,7 @@ export declare class SuperAdminService {
         activo: boolean;
     }>;
     listarDocumentosPendientes(): Promise<import("pg").QueryResultRow[]>;
+    listarDocumentosDomiciliario(domiciliarioId: string): Promise<import("pg").QueryResultRow[]>;
     aprobarDocumento(domiciliarioId: string, dto: AprobarDocumentoDto, revisorId: string): Promise<{
         documento_id: string;
         estado: "rechazado" | "aprobado";
@@ -62,4 +90,5 @@ export declare class SuperAdminService {
         estado: "rechazado" | "aprobado";
     }>;
     private revisarDocumento;
+    private notificarDomiciliario;
 }

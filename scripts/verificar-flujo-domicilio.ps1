@@ -16,6 +16,7 @@ $admin = Get-FoodyToken 'admin@foody.demo'
 $hAdmin = $admin.headers
 
 $null = Limpiar-PedidosActivosDemo -Headers $hAdmin
+$null = Limpiar-AsignacionesDomicilioDemo
 Assert (Ensure-CajaAbierta -Headers $hAdmin) 'Caja abierta para cobro contra entrega'
 
 $crear = Invoke-FoodyApi -Method POST -Path '/pedidos/staff' -Headers $hAdmin -Body @{
@@ -51,15 +52,13 @@ $saltar = Set-QaPedidoEstado 'entregado'
 Assert ((-not $saltar.ok) -or (-not $saltar.json.exito)) 'Bloqueo listo->entregado'
 Assert ($saltar.status -eq 400 -or $saltar.json.error -eq 'TRANSICION_ESTADO_INVALIDA') 'Error TRANSICION_ESTADO_INVALIDA'
 
-$asig = Invoke-FoodyApi -Method POST -Path '/domiciliarios-planta/asignar' -Headers $hAdmin -Body @{
-    pedido_id              = $pedidoId
-    sucursal_id            = $sid
-    domiciliario_planta_id = $DomiPlantaId
+$asigRes = Ensure-AsignacionDomiPlanta -PedidoId $pedidoId -Headers $hAdmin -SucursalId $sid -DomiPlantaId $DomiPlantaId
+if ($asigRes.auto) {
+    Assert $true "Auto-dispatch dejo pedido en $($asigRes.estado)"
 }
-if (-not ($asig.ok -and $asig.json.exito)) {
-    Write-Host "  DEBUG asignar status=$($asig.status) err=$($asig.json.error) msg=$($asig.json.mensaje) raw=$($asig.error)" -ForegroundColor DarkYellow
+else {
+    Assert $asigRes.ok "Asignar domiciliario ($($asigRes.mensaje))"
 }
-Assert ($asig.ok -and $asig.json.exito) "Asignar domiciliario ($($asig.json.mensaje))"
 
 $domi = Get-FoodyToken 'domi@foody.demo'
 $hDomi = $domi.headers

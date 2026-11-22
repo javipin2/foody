@@ -1,0 +1,31 @@
+export declare const PRESETS_ANALITICA: readonly ["hoy", "ayer", "semana", "mes", "mes_anterior", "7d", "30d", "anio", "rango"];
+export type PresetAnalitica = (typeof PRESETS_ANALITICA)[number];
+export declare class FiltroAnaliticaDto {
+    preset?: PresetAnalitica;
+    desde?: string;
+    hasta?: string;
+    comparar?: string;
+    comparar_desde?: string;
+    comparar_hasta?: string;
+    sucursal_id?: string;
+    hora_desde?: number;
+    hora_hasta?: number;
+    estados?: string[];
+    incluir_cancelados?: string;
+    item_estados_cocina?: string[];
+    solo_pendiente_pago?: string;
+    solo_facturados?: string;
+    mesera_ids?: string[];
+    cocina_ids?: string[];
+    producto_ids?: string[];
+    categoria_ids?: string[];
+    domiciliario_ids?: string[];
+    caja_ids?: string[];
+    cajero_ids?: string[];
+    metodos_pago?: string[];
+    cliente_telefono?: string;
+    device_id?: string;
+    cliente_segmento?: 'frecuente' | 'nuevo' | 'todos';
+    formato?: 'csv' | 'xlsx';
+    limite?: number;
+}

@@ -1,6 +1,6 @@
 # Foody — Módulo «Centro de Análisis» (Analítica / BI)
 
-> **Estado:** 📅 Planificado (solo documentación). Aún no implementado.
+> **Estado:** ✅ Backend + Flutter F4 + comparativa sedes + QA script.
 > **Tipo:** Módulo nuevo (`analitica`) que **extiende** el módulo `reportes` existente, no lo reemplaza.
 > **Última actualización:** 2026-06-20 — Spec inicial completa (arquitectura, BD, endpoints, fórmulas, fases).
 
@@ -67,11 +67,11 @@ No es un módulo operativo (no crea pedidos ni cobra). Es **solo lectura analít
 
 ```
 JwtAuthGuard → UsuarioActivoGuard → SuscripcionActivaGuard → PlanFeaturesGuard → RolGuard
-@RequiereModulo('analitica')   // o 'reportes' si se decide no crear módulo de plan nuevo
+@RequiereModulo('analitica')
 @Permisos('ver_analitica')
 ```
 
-> **Plan comercial:** decidir si `analitica` es un módulo aparte en `PlanFeaturesGuard` (p. ej. solo plan Pro/Enterprise) o si va incluido con `reportes`. Ver `docs/PLANES_SUSCRIPCION.md`. **Recomendado:** módulo propio `analitica` para poder venderlo como tier superior.
+> **Plan comercial:** módulo propio `analitica` en `PlanFeaturesGuard` — **plan Pro o superior** (`plan-features.config.ts`). Reportes básicos siguen en módulo `reportes` (gratis).
 
 ---
 
@@ -177,7 +177,7 @@ Base: `/api/v1/analitica`. Todos `GET`, todos con guards de §3.3, todos devuelv
 | `GET /analitica/domiciliarios` | entregas, eficiencia, ranking, % tardías |
 | `GET /analitica/caja` | ventas vs caja, cuadre, gastos por categoría, retiros, CxC |
 | `GET /analitica/riesgo` | anomalías, alertas por nivel, descuentos atípicos, cancelaciones por usuario, auditoría sospechosa |
-| `GET /analitica/comparativa-sedes` | **solo corporativo**: KPIs lado a lado por sucursal del restaurante |
+| `GET /analitica/comparativa-sedes` | **solo corporativo**: KPIs lado a lado por sucursal del restaurante ✅ |
 
 ### 7.1 Forma de respuesta (ejemplo `resumen`)
 
@@ -428,7 +428,7 @@ export class FiltroAnaliticaDto {
 - [ ] Respuesta `{ exito, datos, mensaje }`, montos como número.
 - [ ] Flutter no calcula nada (solo formatea/pinta).
 - [ ] Rango máximo validado; rankings con `LIMIT`.
-- [ ] Permiso `ver_analitica` + `@RequiereModulo` correctos; comparativa de sedes solo corporativo.
+- [x] Permiso `ver_analitica` + `@RequiereModulo('analitica')` plan Pro; comparativa de sedes solo corporativo.
 - [ ] Umbrales tomados de `UMBRALES_ALERTA` (sin duplicar).
 
 ---

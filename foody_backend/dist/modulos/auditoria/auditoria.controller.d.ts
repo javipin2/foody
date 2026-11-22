@@ -1,9 +1,12 @@
 import { JwtPayload } from '../../core/auth/jwt-payload';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { AuditoriaService } from './auditoria.service';
+import { TimelineAuditoriaDto } from './dto/timeline-auditoria.dto';
 export declare class AuditoriaController {
     private readonly auditoria;
-    constructor(auditoria: AuditoriaService);
-    timeline(usuario: JwtPayload, desde: string, hasta: string, sucursalId?: string): Promise<{
+    private readonly sucursalScope;
+    constructor(auditoria: AuditoriaService, sucursalScope: SucursalScopeService);
+    timeline(usuario: JwtPayload, query: TimelineAuditoriaDto): Promise<{
         sucursal_id: string;
         desde: string;
         hasta: string;

@@ -36,8 +36,13 @@ export class RecetaItemDto {
 }
 
 export class ConfigurarRecetaProductoDto {
+  /** Id de producto, bebida o topping según tipo_entidad. */
   @IsUUID()
   producto_id: string;
+
+  @IsOptional()
+  @IsIn(['producto', 'bebida', 'topping'])
+  tipo_entidad?: 'producto' | 'bebida' | 'topping';
 
   @IsArray()
   @ArrayMinSize(1)

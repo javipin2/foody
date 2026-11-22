@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Etiqueta de sección (estilo guía costeo).
 class CosteoEtiquetaSeccion extends StatelessWidget {
@@ -21,18 +22,21 @@ class CosteoEtiquetaSeccion extends StatelessWidget {
         children: [
           Text(
             titulo.toUpperCase(),
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.6,
-              color: Colors.grey.shade600,
+              color: AnaliticaTokens.inkSoft,
             ),
           ),
           if (subtitulo != null) ...[
             const SizedBox(height: 2),
             Text(
               subtitulo!,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AnaliticaTokens.inkMuted,
+              ),
             ),
           ],
         ],
@@ -47,42 +51,105 @@ class CosteoPlatoClienteCard extends StatelessWidget {
     super.key,
     required this.nombre,
     required this.precio,
+    this.compacto = false,
+    this.onMargen,
   });
 
   final String nombre;
   final String precio;
+  /// Cabecera densa (móvil / colapsada).
+  final bool compacto;
+  final VoidCallback? onMargen;
 
   @override
   Widget build(BuildContext context) {
+    if (compacto) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: AnaliticaTokens.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AnaliticaTokens.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 3,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AnaliticaTokens.ink,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    nombre,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AnaliticaTokens.ink,
+                    ),
+                  ),
+                  const Text(
+                    'Precio de venta',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AnaliticaTokens.inkSoft,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              precio,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AnaliticaTokens.ink,
+              ),
+            ),
+            if (onMargen != null)
+              IconButton(
+                tooltip: 'Margen objetivo',
+                visualDensity: VisualDensity.compact,
+                onPressed: onMargen,
+                icon: const Icon(Icons.tune, size: 20),
+                color: AnaliticaTokens.inkMuted,
+              ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AnaliticaTokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: AnaliticaTokens.border),
+        boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: ColoresFoody.primario,
-                borderRadius: const BorderRadius.horizontal(
+              width: 3,
+              decoration: const BoxDecoration(
+                color: AnaliticaTokens.ink,
+                borderRadius: BorderRadius.horizontal(
                   left: Radius.circular(12),
                 ),
               ),
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 child: Row(
                   children: [
                     Expanded(
@@ -92,16 +159,17 @@ class CosteoPlatoClienteCard extends StatelessWidget {
                           Text(
                             nombre,
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 17,
                               fontWeight: FontWeight.w700,
+                              color: AnaliticaTokens.ink,
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            'El cliente solo ve este nombre y el precio.',
+                          const Text(
+                            'Lo que ve el cliente: nombre y precio.',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade600,
+                              color: AnaliticaTokens.inkMuted,
                             ),
                           ),
                         ],
@@ -113,18 +181,31 @@ class CosteoPlatoClienteCard extends StatelessWidget {
                         Text(
                           precio,
                           style: const TextStyle(
-                            fontSize: 22,
+                            fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            color: ColoresFoody.texto,
+                            color: AnaliticaTokens.ink,
                           ),
                         ),
-                        Text(
+                        const Text(
                           'precio de venta',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey.shade500,
+                            color: AnaliticaTokens.inkSoft,
                           ),
                         ),
+                        if (onMargen != null)
+                          TextButton.icon(
+                            onPressed: onMargen,
+                            style: TextButton.styleFrom(
+                              foregroundColor: AnaliticaTokens.inkMuted,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: const Icon(Icons.tune, size: 16),
+                            label: const Text(
+                              'Margen objetivo',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
                       ],
                     ),
                   ],
@@ -193,6 +274,7 @@ class CosteoLineaResumen extends StatelessWidget {
     required this.total,
     this.detallePrecio,
     this.extra,
+    this.etiqueta,
   });
 
   final String nombre;
@@ -200,6 +282,7 @@ class CosteoLineaResumen extends StatelessWidget {
   final String total;
   final String? detallePrecio;
   final Widget? extra;
+  final String? etiqueta;
 
   @override
   Widget build(BuildContext context) {
@@ -212,13 +295,46 @@ class CosteoLineaResumen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  nombre,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        nombre,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AnaliticaTokens.ink,
+                        ),
+                      ),
+                    ),
+                    if (etiqueta != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AnaliticaTokens.surfaceMuted,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          etiqueta!,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AnaliticaTokens.inkMuted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 Text(
                   detalle,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AnaliticaTokens.inkSoft,
+                  ),
                 ),
                 if (extra != null) ...[
                   const SizedBox(height: 6),
@@ -232,12 +348,18 @@ class CosteoLineaResumen extends StatelessWidget {
               padding: const EdgeInsets.only(right: 12, top: 2),
               child: Text(
                 detallePrecio!,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AnaliticaTokens.inkSoft,
+                ),
               ),
             ),
           Text(
             total,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: AnaliticaTokens.ink,
+            ),
           ),
         ],
       ),
@@ -267,9 +389,9 @@ class CosteoGrupoReceta extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AnaliticaTokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AnaliticaTokens.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,7 +403,10 @@ class CosteoGrupoReceta extends StatelessWidget {
               Expanded(
                 child: Text(
                   subtitulo,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AnaliticaTokens.inkSoft,
+                  ),
                 ),
               ),
             ],
@@ -320,9 +445,9 @@ class CosteoResumenPie extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AnaliticaTokens.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AnaliticaTokens.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -333,38 +458,59 @@ class CosteoResumenPie extends StatelessWidget {
             children: [
               Text(
                 tituloCosto,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AnaliticaTokens.ink,
+                ),
               ),
               Text(
                 costoTotal,
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
-                  color: ColoresFoody.primario,
+                  color: AnaliticaTokens.ink,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _kpiMini(
-                  'Food cost',
-                  foodCostPct != null ? '${foodCostPct!.toStringAsFixed(1)}%' : '—',
-                  colorFoodCost,
-                  foodCostPct != null ? (foodCostPct! / 100).clamp(0, 1) : 0,
+          LayoutBuilder(
+            builder: (context, c) {
+              final estrecho = c.maxWidth < 420;
+              final kpis = [
+                Expanded(
+                  child: _kpiMini(
+                    'Food cost',
+                    foodCostPct != null
+                        ? '${foodCostPct!.toStringAsFixed(1)}%'
+                        : '—',
+                    colorFoodCost,
+                    foodCostPct != null
+                        ? (foodCostPct! / 100).clamp(0, 1)
+                        : 0,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _kpiMini('Margen bruto', margenBruto, ColoresFoody.exito, null),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _kpiMini('Margen %', margenPct, ColoresFoody.exito, null),
-              ),
-            ],
+                SizedBox(width: estrecho ? 8 : 12),
+                Expanded(
+                  child: _kpiMini(
+                    'Margen bruto',
+                    margenBruto,
+                    AnaliticaTokens.inventario,
+                    null,
+                  ),
+                ),
+                SizedBox(width: estrecho ? 8 : 12),
+                Expanded(
+                  child: _kpiMini(
+                    'Margen %',
+                    margenPct,
+                    AnaliticaTokens.inventario,
+                    null,
+                  ),
+                ),
+              ];
+              return Row(children: kpis);
+            },
           ),
         ],
       ),
@@ -375,12 +521,18 @@ class CosteoResumenPie extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: AnaliticaTokens.inkSoft,
+          ),
+        ),
         const SizedBox(height: 4),
         Text(
           valor,
           style: TextStyle(
-            fontSize: 16,
+            fontSize: 15,
             fontWeight: FontWeight.w700,
             color: color,
           ),
@@ -388,11 +540,11 @@ class CosteoResumenPie extends StatelessWidget {
         if (progreso != null) ...[
           const SizedBox(height: 6),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(3),
             child: LinearProgressIndicator(
               value: progreso,
-              minHeight: 6,
-              backgroundColor: Colors.grey.shade200,
+              minHeight: 5,
+              backgroundColor: AnaliticaTokens.borderSoft,
               color: color,
             ),
           ),
@@ -403,72 +555,164 @@ class CosteoResumenPie extends StatelessWidget {
 }
 
 /// Pasos guía compactos (insumos / costeo).
-class GuiaPasosCompacta extends StatelessWidget {
+/// NAV-MC-05: colapsable y descartable; recuerda preferencia si [preferenciaKey].
+class GuiaPasosCompacta extends StatefulWidget {
   const GuiaPasosCompacta({
     super.key,
     required this.pasos,
+    this.preferenciaKey,
   });
 
   final List<String> pasos;
+  /// Si no es null, guarda colapsado/oculto en SharedPreferences.
+  final String? preferenciaKey;
+
+  @override
+  State<GuiaPasosCompacta> createState() => _GuiaPasosCompactaState();
+}
+
+class _GuiaPasosCompactaState extends State<GuiaPasosCompacta> {
+  bool _expandida = true;
+  bool _ocultarParaSiempre = false;
+  bool _listo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPreferencia();
+  }
+
+  Future<void> _cargarPreferencia() async {
+    final key = widget.preferenciaKey;
+    if (key == null) {
+      setState(() => _listo = true);
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _ocultarParaSiempre = prefs.getBool('${key}_ocultar') ?? false;
+      _expandida = prefs.getBool('${key}_expandida') ?? true;
+      _listo = true;
+    });
+  }
+
+  Future<void> _guardar() async {
+    final key = widget.preferenciaKey;
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('${key}_ocultar', _ocultarParaSiempre);
+    await prefs.setBool('${key}_expandida', _expandida);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: ColoresFoody.primario.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: ColoresFoody.primario.withValues(alpha: 0.2),
+    if (!_listo) return const SizedBox.shrink();
+
+    if (_ocultarParaSiempre) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: IconButton(
+          tooltip: 'Mostrar orden recomendado',
+          onPressed: () {
+            setState(() {
+              _ocultarParaSiempre = false;
+              _expandida = true;
+            });
+            _guardar();
+          },
+          icon: const Icon(Icons.help_outline, color: AnaliticaTokens.inkMuted),
         ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: AnaliticaTokens.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AnaliticaTokens.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.route_outlined, size: 18, color: ColoresFoody.primario),
+              const Icon(
+                Icons.route_outlined,
+                size: 16,
+                color: AnaliticaTokens.inkMuted,
+              ),
               const SizedBox(width: 6),
-              Text(
-                'Orden recomendado',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: ColoresFoody.primario,
-                  fontSize: 13,
+              const Expanded(
+                child: Text(
+                  'Orden recomendado',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AnaliticaTokens.ink,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: _expandida ? 'Ocultar pasos' : 'Ver pasos',
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  setState(() => _expandida = !_expandida);
+                  _guardar();
+                },
+                icon: Icon(
+                  _expandida ? Icons.expand_less : Icons.expand_more,
+                  color: AnaliticaTokens.inkSoft,
+                ),
+              ),
+              IconButton(
+                tooltip: 'No volver a mostrar',
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  setState(() => _ocultarParaSiempre = true);
+                  _guardar();
+                },
+                icon: const Icon(
+                  Icons.close,
+                  size: 18,
+                  color: AnaliticaTokens.inkSoft,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          ...pasos.asMap().entries.map(
-                (e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${e.key + 1}.',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: ColoresFoody.primario,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          e.value,
-                          style: TextStyle(
+          if (_expandida) ...[
+            const SizedBox(height: 4),
+            ...widget.pasos.asMap().entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${e.key + 1}.',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AnaliticaTokens.ink,
                             fontSize: 12,
-                            color: Colors.grey.shade800,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            e.value,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AnaliticaTokens.inkMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+          ],
         ],
       ),
     );

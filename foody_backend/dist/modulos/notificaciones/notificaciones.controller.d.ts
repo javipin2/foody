@@ -6,6 +6,8 @@ export declare class NotificacionesController {
     diagnostico(): Promise<{
         firebase_admin: boolean;
         pendientes: number;
+        abandonadas_24h: number;
+        max_intentos: number;
         tokens_web_staff: number;
         tokens_web_cliente: number;
         tokens_web_domiciliario: number;
@@ -13,11 +15,13 @@ export declare class NotificacionesController {
     procesarCola(): Promise<{
         procesadas: number;
         enviados: number;
+        abandonadas: number;
         modo: string;
     }>;
     prueba(usuario: JwtPayload): Promise<{
         procesadas: number;
         enviados: number;
+        abandonadas: number;
         modo: string;
     }>;
     pruebaWeb(usuario: JwtPayload): Promise<{

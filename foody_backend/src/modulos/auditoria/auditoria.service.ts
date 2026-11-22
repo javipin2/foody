@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PoolClient } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
 
 export interface FiltroTimeline {
@@ -7,9 +8,50 @@ export interface FiltroTimeline {
   hasta: string;
 }
 
+export interface RegistroAuditoria {
+  sucursalId: string;
+  accion: string;
+  tablaAfectada: string;
+  registroId: string;
+  usuarioId?: string | null;
+  datosAntes?: Record<string, unknown> | null;
+  datosDespues?: Record<string, unknown> | null;
+}
+
 @Injectable()
 export class AuditoriaService {
   constructor(private readonly database: DatabaseService) {}
+
+  /** INSERT centralizado en `auditoria_logs` (A-03). */
+  async registrarEnTransaccion(
+    client: PoolClient,
+    registro: RegistroAuditoria,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO auditoria_logs (
+         sucursal_id, usuario_id, accion, tabla_afectada, registro_id, datos_antes, datos_despues
+       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)`,
+      [
+        registro.sucursalId,
+        registro.usuarioId ?? null,
+        registro.accion,
+        registro.tablaAfectada,
+        registro.registroId,
+        registro.datosAntes
+          ? JSON.stringify(registro.datosAntes)
+          : null,
+        registro.datosDespues
+          ? JSON.stringify(registro.datosDespues)
+          : null,
+      ],
+    );
+  }
+
+  async registrar(registro: RegistroAuditoria): Promise<void> {
+    await this.database.enTransaccion((client) =>
+      this.registrarEnTransaccion(client, registro),
+    );
+  }
 
   /** Timeline unificado turno: auditoría + alertas + movimientos caja (X-010). */
   async timelineTurno(filtro: FiltroTimeline) {
@@ -26,7 +68,8 @@ export class AuditoriaService {
        WHERE a.sucursal_id = $1
          AND a.created_at >= $2::timestamptz
          AND a.created_at <= $3::timestamptz
-       ORDER BY a.created_at ASC`,
+       ORDER BY a.created_at ASC
+       LIMIT 500`,
       [sucursal_id, desde, hastaExclusive],
     );
 
@@ -38,7 +81,8 @@ export class AuditoriaService {
        WHERE ar.sucursal_id = $1
          AND ar.created_at >= $2::timestamptz
          AND ar.created_at <= $3::timestamptz
-       ORDER BY ar.created_at ASC`,
+       ORDER BY ar.created_at ASC
+       LIMIT 500`,
       [sucursal_id, desde, hastaExclusive],
     );
 
@@ -51,7 +95,8 @@ export class AuditoriaService {
        WHERE m.sucursal_id = $1
          AND m.created_at >= $2::timestamptz
          AND m.created_at <= $3::timestamptz
-       ORDER BY m.created_at ASC`,
+       ORDER BY m.created_at ASC
+       LIMIT 500`,
       [sucursal_id, desde, hastaExclusive],
     );
 
@@ -62,7 +107,8 @@ export class AuditoriaService {
        WHERE p.sucursal_id = $1
          AND p.created_at >= $2::timestamptz
          AND p.created_at <= $3::timestamptz
-       ORDER BY p.created_at ASC`,
+       ORDER BY p.created_at ASC
+       LIMIT 500`,
       [sucursal_id, desde, hastaExclusive],
     );
 

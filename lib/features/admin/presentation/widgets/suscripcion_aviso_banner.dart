@@ -8,10 +8,13 @@ class SuscripcionAvisoBanner extends StatelessWidget {
     super.key,
     this.suscripcion,
     this.onMejorarPlan,
+    this.onDismiss,
   });
 
   final Map<String, dynamic>? suscripcion;
   final VoidCallback? onMejorarPlan;
+  /// NAV-ADM2-08: ocultar en sesión (no persiste).
+  final VoidCallback? onDismiss;
 
   void _irMejorarPlan(BuildContext context) {
     if (onMejorarPlan != null) {
@@ -142,6 +145,13 @@ class SuscripcionAvisoBanner extends StatelessWidget {
                   ),
                 ),
               ],
+              if (onDismiss != null)
+                IconButton(
+                  tooltip: 'Ocultar',
+                  icon: const Icon(Icons.close, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onDismiss,
+                ),
             ],
           ),
         ),

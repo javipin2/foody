@@ -1,10 +1,14 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
+import { JwtPayload } from '../../core/auth/jwt-payload';
+import { PlanFeaturesService } from '../../core/auth/plan-features.service';
+import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
 import { CosteoService } from '../costeo/costeo.service';
 import { CatalogoDisponibilidadService } from '../catalogo/catalogo-disponibilidad.service';
@@ -14,12 +18,22 @@ import { CrearIngredienteDto } from './dto/crear-ingrediente.dto';
 import { CerrarConteoDto } from './dto/cerrar-conteo.dto';
 import { RegistrarCompraDto } from './dto/registrar-compra.dto';
 import { CrearTrasladoDto } from './dto/crear-traslado.dto';
-import { exigirUnidadesCompatibles } from '../costeo/unidad-costeo.util';
+import {
+  exigirUnidadesCompatibles,
+  normalizarUnidad,
+} from '../costeo/unidad-costeo.util';
 import {
   derivarCostoDesdeMercado,
   enriquecerInsumoRespuesta,
   tipoCosteoDesdeUnidad,
 } from './insumo-mercado.util';
+import {
+  envolverPaginado,
+  opcionesListado,
+  PaginacionQueryDto,
+  resolverPaginacion,
+} from '../../compartido/dto/paginacion.dto';
+import { StockMovimientoService } from './stock-movimiento.service';
 
 @Injectable()
 export class InventarioService {
@@ -28,13 +42,37 @@ export class InventarioService {
     private readonly alertasRiesgo: AlertasRiesgoService,
     private readonly costeo: CosteoService,
     private readonly catalogoDisponibilidad: CatalogoDisponibilidadService,
+    private readonly planFeatures: PlanFeaturesService,
+    private readonly stockMovimiento: StockMovimientoService,
+    private readonly sucursalScope: SucursalScopeService,
   ) {}
 
+  private assertPuedeTrasladosMultiSucursal(actor: JwtPayload) {
+    if (!this.sucursalScope.puedeVerInventarioHermanas(actor)) {
+      throw new ForbiddenException({
+        error: 'TRASLADOS_REQUIERE_ADMIN_MULTI_SUCURSAL',
+        message:
+          'Los traslados entre sedes requieren permiso corporativo (gestionar sucursales).',
+      });
+    }
+  }
+
   /** Resumen de inventario en sucursales hermanas (solo lectura admin). */
-  async resumenInventarioHermanas(
-    restauranteId: string,
-    sucursalPropiaId: string,
-  ) {
+  async resumenInventarioHermanas(actor: JwtPayload) {
+    if (!this.sucursalScope.puedeVerInventarioHermanas(actor)) {
+      await this.sucursalScope.validarLecturaInventario(
+        actor,
+        actor.sucursal_id!,
+      );
+      return {
+        sucursal_propia: actor.sucursal_id,
+        puede_ver_hermanas: false,
+        sucursales: [],
+      };
+    }
+
+    const restauranteId = actor.restaurante_id!;
+    const sucursalPropiaId = actor.sucursal_id!;
     const sucursales = await this.database.consultar<{
       id: string;
       nombre: string;
@@ -71,11 +109,14 @@ export class InventarioService {
         `SELECT COUNT(*)::text AS total,
                 COUNT(*) FILTER (
                   WHERE descontar_stock = true
+                    AND COALESCE(es_subreceta, false) = false
                     AND stock_actual > 0
                     AND stock_actual <= stock_minimo
                 )::text AS bajo,
                 COUNT(*) FILTER (
-                  WHERE descontar_stock = true AND stock_actual <= 0
+                  WHERE descontar_stock = true
+                    AND COALESCE(es_subreceta, false) = false
+                    AND stock_actual <= 0
                 )::text AS agotados
          FROM ingredientes
          WHERE sucursal_id = $1 AND activo = true`,
@@ -94,6 +135,7 @@ export class InventarioService {
          FROM ingredientes
          WHERE sucursal_id = $1 AND activo = true
            AND descontar_stock = true
+           AND COALESCE(es_subreceta, false) = false
            AND (stock_actual <= stock_minimo)
          ORDER BY stock_actual ASC, nombre ASC
          LIMIT 12`,
@@ -126,22 +168,59 @@ export class InventarioService {
     };
   }
 
-  async listarIngredientes(sucursalId: string) {
-    const filas = await this.database.consultar(
-      `SELECT id, nombre, unidad_base, tipo_costeo, stock_actual, stock_minimo,
+  async listarIngredientes(
+    sucursalId: string,
+    query: PaginacionQueryDto = {},
+  ) {
+    const opts = opcionesListado(query, 50);
+    const select = `SELECT id, nombre, unidad_base, tipo_costeo, stock_actual, stock_minimo,
               costo_unitario_actual, descontar_stock, activo, created_at,
               proveedor, precio_compra, peso_bruto, peso_neto, categoria_insumo,
               rendimiento_porcentaje,
               (stock_actual <= stock_minimo) AS bajo_minimo
        FROM ingredientes
        WHERE sucursal_id = $1 AND activo = true
-       ORDER BY nombre ASC`,
-      [sucursalId],
+         AND COALESCE(es_subreceta, false) = false`;
+    if (!opts.paginar) {
+      const filas = await this.database.consultar(
+        `${select}
+       ORDER BY nombre ASC
+       LIMIT $2`,
+        [sucursalId, opts.limite],
+      );
+      return filas.map((f) => enriquecerInsumoRespuesta(f));
+    }
+    const { page, limit, offset } = resolverPaginacion(
+      opts.page,
+      opts.limite,
+      50,
     );
-    return filas.map((f) => enriquecerInsumoRespuesta(f));
+    const [items, totalRow] = await Promise.all([
+      this.database.consultar(
+        `${select}
+       ORDER BY nombre ASC
+       LIMIT $2 OFFSET $3`,
+        [sucursalId, limit, offset],
+      ),
+      this.database.consultarUno<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM ingredientes
+         WHERE sucursal_id = $1 AND activo = true
+           AND COALESCE(es_subreceta, false) = false`,
+        [sucursalId],
+      ),
+    ]);
+    return envolverPaginado(
+      items.map((f) => enriquecerInsumoRespuesta(f)),
+      totalRow?.count ?? 0,
+      page,
+      limit,
+    );
   }
 
-  async crearIngrediente(dto: CrearIngredienteDto) {
+  async crearIngrediente(dto: CrearIngredienteDto, restauranteId?: string) {
+    if (restauranteId) {
+      await this.planFeatures.assertLimiteIngredientes(restauranteId, dto.sucursal_id);
+    }
     const unidad = dto.unidad_base;
     const tipoCosteo = dto.tipo_costeo ?? tipoCosteoDesdeUnidad(unidad);
     const descontarStock = dto.descontar_stock ?? unidad !== 'servicio';
@@ -230,25 +309,17 @@ export class InventarioService {
         const nuevo = dto.stock_nuevo;
         const anterior = Number(actual.stock_actual);
         if (nuevo !== anterior) {
-          await client.query(
-            `INSERT INTO movimientos_ingrediente (
-               sucursal_id, ingrediente_id, tipo, cantidad,
-               stock_anterior, stock_posterior, motivo, usuario_id
-             ) VALUES ($1,$2,'ajuste',$3,$4,$5,$6,$7)`,
-            [
-              sucursalId,
-              id,
-              Math.abs(nuevo - anterior),
-              anterior,
-              nuevo,
-              dto.motivo_ajuste ?? 'Ajuste manual',
-              usuarioId,
-            ],
-          );
-          await client.query(
-            `UPDATE ingredientes SET stock_actual = $1 WHERE id = $2 AND sucursal_id = $3`,
-            [nuevo, id, sucursalId],
-          );
+          await this.stockMovimiento.aplicarMovimiento({
+            client,
+            sucursalId,
+            ingredienteId: id,
+            tipo: 'ajuste',
+            cantidad: Math.abs(nuevo - anterior),
+            stockAnterior: anterior,
+            stockPosterior: nuevo,
+            motivo: dto.motivo_ajuste ?? 'Ajuste manual',
+            usuarioId,
+          });
           stockCambio = true;
         }
       }
@@ -333,6 +404,19 @@ export class InventarioService {
           id,
         );
       this.catalogoDisponibilidad.emitirCambios(sucursalId, cambios);
+      const stock = Number(result.fila.stock_actual);
+      const minimo = Number(result.fila.stock_minimo ?? 0);
+      if (minimo > 0 && stock <= minimo) {
+        await this.alertasRiesgo.registrar({
+          sucursalId,
+          tipo: 'stock_minimo_alcanzado',
+          nivel: 'medio',
+          descripcion: `Stock bajo en ${result.fila.nombre} tras ajuste (${stock} ≤ ${minimo})`,
+          referenciaId: id,
+          referenciaTipo: 'ingrediente',
+          deduplicar: true,
+        });
+      }
     }
 
     if (recalcularCostos) {
@@ -341,17 +425,46 @@ export class InventarioService {
     return enriquecerInsumoRespuesta(result.fila);
   }
 
-  listarMovimientos(sucursalId: string, limite = 50) {
-    return this.database.consultar(
-      `SELECT m.id, m.ingrediente_id, i.nombre AS ingrediente_nombre,
+  listarMovimientos(
+    sucursalId: string,
+    opciones: { limite?: number; page?: number; paginar?: boolean } = {},
+  ) {
+    const select = `SELECT m.id, m.ingrediente_id, i.nombre AS ingrediente_nombre,
               m.tipo, m.cantidad, m.stock_anterior, m.stock_posterior,
-              m.motivo, m.pedido_id, m.created_at
+              m.motivo, m.pedido_id, m.usuario_id, u.nombre AS usuario_nombre,
+              m.created_at
        FROM movimientos_ingrediente m
        INNER JOIN ingredientes i ON i.id = m.ingrediente_id
-       WHERE m.sucursal_id = $1
+       LEFT JOIN usuarios u ON u.id = m.usuario_id
+       WHERE m.sucursal_id = $1`;
+    if (!opciones.paginar) {
+      const limite = opciones.limite ?? 50;
+      return this.database.consultar(
+        `${select}
        ORDER BY m.created_at DESC
        LIMIT $2`,
-      [sucursalId, limite],
+        [sucursalId, limite],
+      );
+    }
+    const { page, limit, offset } = resolverPaginacion(
+      opciones.page,
+      opciones.limite,
+      50,
+    );
+    return Promise.all([
+      this.database.consultar(
+        `${select}
+       ORDER BY m.created_at DESC
+       LIMIT $2 OFFSET $3`,
+        [sucursalId, limit, offset],
+      ),
+      this.database.consultarUno<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM movimientos_ingrediente
+         WHERE sucursal_id = $1`,
+        [sucursalId],
+      ),
+    ]).then(([items, totalRow]) =>
+      envolverPaginado(items, totalRow?.count ?? 0, page, limit),
     );
   }
 
@@ -405,28 +518,18 @@ export class InventarioService {
           ],
         );
 
-        await client.query(
-          `UPDATE ingredientes
-           SET stock_actual = $1, costo_unitario_actual = $2
-           WHERE id = $3 AND sucursal_id = $4`,
-          [stockPosterior, costoUnitario, item.ingrediente_id, dto.sucursal_id],
-        );
-
-        await client.query(
-          `INSERT INTO movimientos_ingrediente (
-             sucursal_id, ingrediente_id, tipo, cantidad,
-             stock_anterior, stock_posterior, motivo, usuario_id
-           ) VALUES ($1,$2,'compra',$3,$4,$5,$6,$7)`,
-          [
-            dto.sucursal_id,
-            item.ingrediente_id,
-            item.cantidad_unidades_base,
-            stockAnterior,
-            stockPosterior,
-            `Compra ${compraId}`,
-            usuarioId,
-          ],
-        );
+        await this.stockMovimiento.aplicarMovimiento({
+          client,
+          sucursalId: dto.sucursal_id,
+          ingredienteId: item.ingrediente_id,
+          tipo: 'compra',
+          cantidad: item.cantidad_unidades_base,
+          stockAnterior,
+          stockPosterior,
+          motivo: `Compra ${compraId}`,
+          usuarioId,
+          costoUnitarioActual: costoUnitario,
+        });
 
         await this.alertasRiesgo.evaluarSubidaCostoIngrediente(
           client,
@@ -438,19 +541,38 @@ export class InventarioService {
         );
       }
 
-      return { compra_id: compraId, total_compra: totalCompra };
+      const ingredientesAfectados = [
+        ...new Set(dto.items.map((i) => i.ingrediente_id)),
+      ];
+      return {
+        compra_id: compraId,
+        total_compra: totalCompra,
+        ingredientesAfectados,
+      };
     }).then(async (result) => {
       await this.costeo.recalcularSucursal(dto.sucursal_id);
-      return result;
+      await this.sincronizarCatalogoPorIngredientes(
+        dto.sucursal_id,
+        result.ingredientesAfectados,
+      );
+      return { compra_id: result.compra_id, total_compra: result.total_compra };
     });
   }
 
-  async recetaDeProducto(productoId: string, sucursalId: string) {
+  async recetaDeProducto(
+    productoId: string,
+    sucursalId: string,
+    tipoEntidad: 'producto' | 'bebida' | 'topping' = 'producto',
+  ) {
+    if (tipoEntidad === 'bebida' || tipoEntidad === 'topping') {
+      return this.recetaDeExtra(productoId, sucursalId, tipoEntidad);
+    }
     const producto = await this.database.consultarUno<{
       receta_id: string | null;
       costo_calculado: string | null;
+      costo_domicilio: string | null;
     }>(
-      `SELECT receta_id, costo_calculado FROM productos
+      `SELECT receta_id, costo_calculado, costo_domicilio FROM productos
        WHERE id = $1 AND sucursal_id = $2`,
       [productoId, sucursalId],
     );
@@ -458,10 +580,12 @@ export class InventarioService {
     if (!producto.receta_id) {
       return {
         producto_id: productoId,
+        tipo_entidad: 'producto',
         receta_id: null,
         items: [],
         margen_error: 0.05,
         costo_calculado: producto.costo_calculado,
+        costo_domicilio: producto.costo_domicilio,
       };
     }
 
@@ -484,9 +608,68 @@ export class InventarioService {
 
     return {
       producto_id: productoId,
+      tipo_entidad: 'producto',
       receta_id: producto.receta_id,
       margen_error: Number(receta?.margen_error ?? 0.05),
       costo_calculado: producto.costo_calculado,
+      costo_domicilio: producto.costo_domicilio,
+      items,
+    };
+  }
+
+  private async recetaDeExtra(
+    extraId: string,
+    sucursalId: string,
+    tipo: 'bebida' | 'topping',
+  ) {
+    const tabla = tipo === 'bebida' ? 'bebidas' : 'toppings';
+    const fila = await this.database.consultarUno<{
+      receta_id: string | null;
+      costo_calculado: string | null;
+    }>(
+      `SELECT receta_id, costo_calculado FROM ${tabla}
+       WHERE id = $1 AND sucursal_id = $2`,
+      [extraId, sucursalId],
+    );
+    if (!fila) {
+      throw new NotFoundException(
+        tipo === 'bebida' ? 'BEBIDA_NO_ENCONTRADA' : 'TOPPING_NO_ENCONTRADO',
+      );
+    }
+    if (!fila.receta_id) {
+      return {
+        producto_id: extraId,
+        tipo_entidad: tipo,
+        receta_id: null,
+        items: [],
+        margen_error: 0.05,
+        costo_calculado: fila.costo_calculado,
+      };
+    }
+
+    const receta = await this.database.consultarUno<{ margen_error: string }>(
+      `SELECT margen_error FROM recetas WHERE id = $1 AND sucursal_id = $2`,
+      [fila.receta_id, sucursalId],
+    );
+
+    const items = await this.database.consultar(
+      `SELECT ri.id, ri.tipo_item, ri.ingrediente_id, i.nombre AS ingrediente_nombre,
+              ri.subreceta_id, sr.nombre AS subreceta_nombre,
+              ri.cantidad, ri.unidad, ri.orden
+       FROM receta_items ri
+       LEFT JOIN ingredientes i ON i.id = ri.ingrediente_id
+       LEFT JOIN recetas sr ON sr.id = ri.subreceta_id
+       WHERE ri.receta_id = $1
+       ORDER BY ri.orden ASC`,
+      [fila.receta_id],
+    );
+
+    return {
+      producto_id: extraId,
+      tipo_entidad: tipo,
+      receta_id: fila.receta_id,
+      margen_error: Number(receta?.margen_error ?? 0.05),
+      costo_calculado: fila.costo_calculado,
       items,
     };
   }
@@ -495,6 +678,10 @@ export class InventarioService {
     dto: ConfigurarRecetaProductoDto,
     sucursalId: string,
   ) {
+    const tipo = dto.tipo_entidad ?? 'producto';
+    if (tipo === 'bebida' || tipo === 'topping') {
+      return this.configurarRecetaExtra(dto, sucursalId, tipo);
+    }
     return this.database.enTransaccion(async (client) => {
       const producto = await client.query<{
         id: string;
@@ -539,8 +726,8 @@ export class InventarioService {
 
       let orden = 0;
       for (const item of dto.items) {
-        const tipo = item.tipo_item ?? 'ingrediente';
-        if (tipo === 'subreceta') {
+        const tipoItem = item.tipo_item ?? 'ingrediente';
+        if (tipoItem === 'subreceta') {
           if (!item.subreceta_id) {
             throw new BadRequestException('SUBRECETA_REQUERIDA');
           }
@@ -565,7 +752,7 @@ export class InventarioService {
               recetaId,
               item.subreceta_id,
               item.cantidad,
-              item.unidad,
+              normalizarUnidad(item.unidad),
               orden++,
             ],
           );
@@ -589,10 +776,10 @@ export class InventarioService {
              ) VALUES ($1,$2,$3,$4,$5,$6)`,
             [
               recetaId,
-              tipo,
+              tipoItem,
               item.ingrediente_id,
               item.cantidad,
-              item.unidad,
+              normalizarUnidad(item.unidad),
               orden++,
             ],
           );
@@ -607,6 +794,137 @@ export class InventarioService {
 
       return {
         producto_id: dto.producto_id,
+        tipo_entidad: 'producto',
+        receta_id: recetaId,
+        costo_calculado: costoPorcion,
+        items: dto.items.length,
+      };
+    });
+  }
+
+  private configurarRecetaExtra(
+    dto: ConfigurarRecetaProductoDto,
+    sucursalId: string,
+    tipo: 'bebida' | 'topping',
+  ) {
+    const tabla = tipo === 'bebida' ? 'bebidas' : 'toppings';
+    const tipoReceta = tipo;
+    return this.database.enTransaccion(async (client) => {
+      const extra = await client.query<{
+        id: string;
+        nombre: string;
+        receta_id: string | null;
+      }>(
+        `SELECT id, nombre, receta_id FROM ${tabla}
+         WHERE id = $1 AND sucursal_id = $2`,
+        [dto.producto_id, sucursalId],
+      );
+      if (!extra.rows[0]) {
+        throw new NotFoundException(
+          tipo === 'bebida' ? 'BEBIDA_NO_ENCONTRADA' : 'TOPPING_NO_ENCONTRADO',
+        );
+      }
+      const fila = extra.rows[0];
+
+      let recetaId = fila.receta_id;
+      if (!recetaId) {
+        const nueva = await client.query<{ id: string }>(
+          `INSERT INTO recetas (sucursal_id, nombre, tipo, rendimiento_porciones)
+           VALUES ($1,$2,$3,1)
+           RETURNING id`,
+          [sucursalId, `Receta ${fila.nombre}`, tipoReceta],
+        );
+        recetaId = nueva.rows[0].id;
+        await client.query(
+          `UPDATE ${tabla} SET receta_id = $1 WHERE id = $2 AND sucursal_id = $3`,
+          [recetaId, dto.producto_id, sucursalId],
+        );
+      }
+
+      if (dto.margen_error !== undefined) {
+        await client.query(
+          `UPDATE recetas SET margen_error = $1, tipo = $2
+           WHERE id = $3 AND sucursal_id = $4`,
+          [dto.margen_error, tipoReceta, recetaId, sucursalId],
+        );
+      }
+
+      await client.query(`DELETE FROM receta_items WHERE receta_id = $1`, [
+        recetaId,
+      ]);
+
+      let orden = 0;
+      for (const item of dto.items) {
+        const tipoItem = item.tipo_item ?? 'ingrediente';
+        if (tipoItem === 'subreceta') {
+          if (!item.subreceta_id) {
+            throw new BadRequestException('SUBRECETA_REQUERIDA');
+          }
+          const sr = await client.query<{ unidad_resultado: string }>(
+            `SELECT unidad_resultado FROM recetas
+             WHERE id = $1 AND sucursal_id = $2 AND tipo = 'subreceta'`,
+            [item.subreceta_id, sucursalId],
+          );
+          if (!sr.rows[0]) {
+            throw new NotFoundException('SUBRECETA_NO_ENCONTRADA');
+          }
+          exigirUnidadesCompatibles(
+            item.unidad,
+            sr.rows[0].unidad_resultado,
+            `Receta de ${fila.nombre}`,
+          );
+          await client.query(
+            `INSERT INTO receta_items (
+               receta_id, tipo_item, subreceta_id, cantidad, unidad, orden
+             ) VALUES ($1,'subreceta',$2,$3,$4,$5)`,
+            [
+              recetaId,
+              item.subreceta_id,
+              item.cantidad,
+              normalizarUnidad(item.unidad),
+              orden++,
+            ],
+          );
+        } else {
+          if (!item.ingrediente_id) {
+            throw new BadRequestException('INGREDIENTE_REQUERIDO');
+          }
+          const ing = await this.exigirIngrediente(
+            client,
+            item.ingrediente_id,
+            sucursalId,
+          );
+          exigirUnidadesCompatibles(
+            item.unidad,
+            ing.unidad_base,
+            `Receta de ${fila.nombre}`,
+          );
+          await client.query(
+            `INSERT INTO receta_items (
+               receta_id, tipo_item, ingrediente_id, cantidad, unidad, orden
+             ) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [
+              recetaId,
+              tipoItem,
+              item.ingrediente_id,
+              item.cantidad,
+              normalizarUnidad(item.unidad),
+              orden++,
+            ],
+          );
+        }
+      }
+
+      const costoPorcion = await this.costeo.recalcularExtra(
+        client,
+        tipo,
+        dto.producto_id,
+        sucursalId,
+      );
+
+      return {
+        producto_id: dto.producto_id,
+        tipo_entidad: tipo,
         receta_id: recetaId,
         costo_calculado: costoPorcion,
         items: dto.items.length,
@@ -654,6 +972,7 @@ export class InventarioService {
       }
 
       let ajustes = 0;
+      const ingredientesAfectados: string[] = [];
       for (const item of dto.items) {
         const ing = await this.exigirIngrediente(
           client,
@@ -672,27 +991,19 @@ export class InventarioService {
         );
 
         if (diferencia !== 0) {
-          await client.query(
-            `UPDATE ingredientes SET stock_actual = $1
-             WHERE id = $2 AND sucursal_id = $3`,
-            [real, item.ingrediente_id, sucursalId],
-          );
-          await client.query(
-            `INSERT INTO movimientos_ingrediente (
-               sucursal_id, ingrediente_id, tipo, cantidad,
-               stock_anterior, stock_posterior, motivo, usuario_id
-             ) VALUES ($1,$2,'conteo',$3,$4,$5,$6,$7)`,
-            [
-              sucursalId,
-              item.ingrediente_id,
-              Math.abs(diferencia),
-              teorico,
-              real,
-              `Conteo físico ${conteoId}`,
-              usuarioId,
-            ],
-          );
+          await this.stockMovimiento.aplicarMovimiento({
+            client,
+            sucursalId,
+            ingredienteId: item.ingrediente_id,
+            tipo: 'conteo',
+            cantidad: Math.abs(diferencia),
+            stockAnterior: teorico,
+            stockPosterior: real,
+            motivo: `Conteo físico ${conteoId}`,
+            usuarioId,
+          });
           ajustes++;
+          ingredientesAfectados.push(item.ingrediente_id);
         }
       }
 
@@ -703,8 +1014,46 @@ export class InventarioService {
         [conteoId],
       );
 
-      return { conteo_id: conteoId, items: dto.items.length, ajustes };
+      return {
+        conteo_id: conteoId,
+        items: dto.items.length,
+        ajustes,
+        ingredientesAfectados,
+      };
+    }).then(async (result) => {
+      await this.sincronizarCatalogoPorIngredientes(
+        sucursalId,
+        result.ingredientesAfectados,
+      );
+      return {
+        conteo_id: result.conteo_id,
+        items: result.items,
+        ajustes: result.ajustes,
+      };
     });
+  }
+
+  /** Propaga stock de ingredientes al menú (disponibilidad + Realtime). */
+  private async sincronizarCatalogoPorIngredientes(
+    sucursalId: string,
+    ingredienteIds: string[],
+  ) {
+    const unicos = [...new Set(ingredienteIds)];
+    if (!unicos.length) return;
+
+    const todosCambios: Awaited<
+      ReturnType<CatalogoDisponibilidadService['sincronizarPorIngrediente']>
+    > = [];
+    for (const ingId of unicos) {
+      const cambios = await this.catalogoDisponibilidad.sincronizarPorIngrediente(
+        sucursalId,
+        ingId,
+      );
+      todosCambios.push(...cambios);
+    }
+    if (todosCambios.length) {
+      this.catalogoDisponibilidad.emitirCambios(sucursalId, todosCambios);
+    }
   }
 
   listarCostosProductos(sucursalId: string) {
@@ -737,11 +1086,10 @@ export class InventarioService {
     );
   }
 
-  crearTraslado(
-    restauranteId: string,
-    usuarioId: string,
-    dto: CrearTrasladoDto,
-  ) {
+  crearTraslado(actor: JwtPayload, dto: CrearTrasladoDto) {
+    this.assertPuedeTrasladosMultiSucursal(actor);
+    const restauranteId = actor.restaurante_id!;
+    const usuarioId = actor.sub;
     if (dto.sucursal_origen_id === dto.sucursal_destino_id) {
       throw new BadRequestException('ORIGEN_IGUAL_DESTINO');
     }
@@ -782,27 +1130,17 @@ export class InventarioService {
         });
       }
 
-      await client.query(
-        `UPDATE ingredientes SET stock_actual = $1
-         WHERE id = $2 AND sucursal_id = $3`,
-        [stockPosterior, dto.ingrediente_id, dto.sucursal_origen_id],
-      );
-
-      await client.query(
-        `INSERT INTO movimientos_ingrediente (
-           sucursal_id, ingrediente_id, tipo, cantidad,
-           stock_anterior, stock_posterior, motivo, usuario_id
-         ) VALUES ($1,$2,'ajuste',$3,$4,$5,$6,$7)`,
-        [
-          dto.sucursal_origen_id,
-          dto.ingrediente_id,
-          dto.cantidad,
-          stockAnterior,
-          stockPosterior,
-          `Traslado saliente → ${dto.sucursal_destino_id}`,
-          usuarioId,
-        ],
-      );
+      await this.stockMovimiento.aplicarMovimiento({
+        client,
+        sucursalId: dto.sucursal_origen_id,
+        ingredienteId: dto.ingrediente_id,
+        tipo: 'ajuste',
+        cantidad: dto.cantidad,
+        stockAnterior,
+        stockPosterior,
+        motivo: `Traslado saliente → ${dto.sucursal_destino_id}`,
+        usuarioId,
+      });
 
       const traslado = await client.query<{ id: string }>(
         `INSERT INTO traslados_inventario (
@@ -894,26 +1232,17 @@ export class InventarioService {
       const stockAnterior = Number(destinoIng.rows[0].stock_actual);
       const stockPosterior = stockAnterior + cantidad;
 
-      await client.query(
-        `UPDATE ingredientes SET stock_actual = $1 WHERE id = $2`,
-        [stockPosterior, destinoIng.rows[0].id],
-      );
-
-      await client.query(
-        `INSERT INTO movimientos_ingrediente (
-           sucursal_id, ingrediente_id, tipo, cantidad,
-           stock_anterior, stock_posterior, motivo, usuario_id
-         ) VALUES ($1,$2,'compra',$3,$4,$5,$6,$7)`,
-        [
-          sucursalDestinoId,
-          destinoIng.rows[0].id,
-          cantidad,
-          stockAnterior,
-          stockPosterior,
-          `Traslado recibido ${trasladoId}`,
-          usuarioId,
-        ],
-      );
+      await this.stockMovimiento.aplicarMovimiento({
+        client,
+        sucursalId: sucursalDestinoId,
+        ingredienteId: destinoIng.rows[0].id,
+        tipo: 'compra',
+        cantidad,
+        stockAnterior,
+        stockPosterior,
+        motivo: `Traslado recibido ${trasladoId}`,
+        usuarioId,
+      });
 
       await client.query(
         `UPDATE traslados_inventario
@@ -930,6 +1259,73 @@ export class InventarioService {
       );
 
       return { traslado_id: trasladoId, estado: 'recibido' };
+    });
+  }
+
+  cancelarTraslado(
+    trasladoId: string,
+    actor: JwtPayload,
+    sucursalOrigenId: string,
+  ) {
+    this.assertPuedeTrasladosMultiSucursal(actor);
+    const restauranteId = actor.restaurante_id!;
+    const usuarioId = actor.sub;
+    return this.database.enTransaccion(async (client) => {
+      const t = await client.query<{
+        id: string;
+        estado: string;
+        cantidad: string;
+        ingrediente_id: string;
+        sucursal_origen_id: string;
+      }>(
+        `SELECT id, estado, cantidad, ingrediente_id, sucursal_origen_id
+         FROM traslados_inventario
+         WHERE id = $1 AND restaurante_id = $2 FOR UPDATE`,
+        [trasladoId, restauranteId],
+      );
+      const fila = t.rows[0];
+      if (!fila) throw new NotFoundException('TRASLADO_NO_ENCONTRADO');
+      if (fila.sucursal_origen_id !== sucursalOrigenId) {
+        throw new BadRequestException('TRASLADO_OTRA_SUCURSAL');
+      }
+      if (fila.estado !== 'pendiente') {
+        throw new BadRequestException('TRASLADO_YA_CERRADO');
+      }
+
+      const origen = await this.exigirIngrediente(
+        client,
+        fila.ingrediente_id,
+        sucursalOrigenId,
+      );
+      const cantidad = Number(fila.cantidad);
+      const stockAnterior = Number(origen.stock_actual);
+      const stockPosterior = stockAnterior + cantidad;
+
+      await this.stockMovimiento.aplicarMovimiento({
+        client,
+        sucursalId: sucursalOrigenId,
+        ingredienteId: fila.ingrediente_id,
+        tipo: 'ajuste',
+        cantidad,
+        stockAnterior,
+        stockPosterior,
+        motivo: `Traslado cancelado ${trasladoId}`,
+        usuarioId,
+      });
+
+      await client.query(
+        `UPDATE traslados_inventario SET estado = 'cancelado' WHERE id = $1`,
+        [trasladoId],
+      );
+
+      await client.query(
+        `INSERT INTO auditoria_logs (
+           sucursal_id, usuario_id, accion, tabla_afectada, registro_id
+         ) VALUES ($1,$2,'CANCELAR_TRASLADO','traslados_inventario',$3)`,
+        [sucursalOrigenId, usuarioId, trasladoId],
+      );
+
+      return { traslado_id: trasladoId, estado: 'cancelado' };
     });
   }
 
@@ -952,7 +1348,8 @@ export class InventarioService {
       `SELECT id, nombre, stock_actual, stock_minimo, costo_unitario_actual,
               unidad_base, precio_compra, peso_bruto, peso_neto
        FROM ingredientes
-       WHERE id = $1 AND sucursal_id = $2 AND activo = true`,
+       WHERE id = $1 AND sucursal_id = $2 AND activo = true
+       FOR UPDATE`,
       [id, sucursalId],
     );
     if (!fila.rows[0]) {

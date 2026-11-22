@@ -7,6 +7,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CrearZonaDto {
   @IsUUID()
@@ -56,13 +57,15 @@ export class UbicacionSucursalDto {
 
 export class CotizarDomicilioDto {
   @IsUUID()
-  sucursal_id: string;
+  sucursal_id!: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   lat?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   lng?: number;
 }

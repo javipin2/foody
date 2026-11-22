@@ -13,6 +13,8 @@ class CarritoState {
   int get totalItems =>
       lineas.values.fold(0, (sum, l) => sum + l.cantidad);
 
+  /// Hint local desde precios del menú en memoria.
+  /// Total de cobro / checkout: `POST /pedidos/estimar` (AQ-SOLID-06).
   double get totalPrecio =>
       lineas.values.fold(0.0, (sum, l) => sum + l.subtotal);
 
@@ -58,6 +60,20 @@ class CarritoNotifier extends StateNotifier<CarritoState> {
     } else {
       nuevas[clave] = actual.copiarCon(cantidad: actual.cantidad - 1);
     }
+    state = state.copiarCon(lineas: nuevas);
+  }
+
+  void agregarUno(String clave) {
+    final actual = state.lineas[clave];
+    if (actual == null) return;
+    final nuevas = Map<String, LineaCarrito>.from(state.lineas);
+    nuevas[clave] = actual.copiarCon(cantidad: actual.cantidad + 1);
+    state = state.copiarCon(lineas: nuevas);
+  }
+
+  void eliminarLinea(String clave) {
+    if (!state.lineas.containsKey(clave)) return;
+    final nuevas = Map<String, LineaCarrito>.from(state.lineas)..remove(clave);
     state = state.copiarCon(lineas: nuevas);
   }
 

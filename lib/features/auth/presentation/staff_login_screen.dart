@@ -1,14 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/config/app_flavor.dart';
+import 'package:reserva_canchas/core/navegacion/abrir_app_cliente.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
+import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/auth/data/auth_repository.dart';
+import 'package:reserva_canchas/features/auth/domain/google_oauth_deep_link_service.dart';
 import 'package:reserva_canchas/features/auth/domain/google_oauth_staff_service.dart';
+import 'package:reserva_canchas/features/auth/presentation/widgets/auth_form_estilo.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Login staff Foody (L01) — UI inspirada en admin_login_screen, datos vía NestJS.
+/// Login staff Foody — shell Analítica (ink); auth/OAuth intactos.
 class StaffLoginScreen extends StatefulWidget {
   const StaffLoginScreen({super.key});
 
@@ -25,11 +32,13 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
   bool _cargando = false;
   bool _procesandoGoogle = false;
   bool _ocultar = true;
+  bool _demoExpandido = false;
 
   late AnimationController _anim;
   late Animation<double> _fade;
   late AnimationController _shake;
   late Animation<double> _shakeAnim;
+  StreamSubscription<void>? _subOAuthRetorno;
 
   @override
   void initState() {
@@ -45,13 +54,42 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
     );
     _shakeAnim = CurvedAnimation(parent: _shake, curve: Curves.elasticInOut);
     _anim.forward();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _procesarRetornoGoogle());
+    _subOAuthRetorno = GoogleOAuthDeepLinkService.onRetorno.listen((_) {
+      if (mounted) _procesarRetornoGoogle();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _inicializarPantalla());
+  }
+
+  /// JWT existente → dashboard; si no, solo OAuth recién iniciado (no sesión Supabase vieja).
+  Future<void> _inicializarPantalla() async {
+    final errorOAuth = GoogleOAuthStaffService.errorOAuthEnUrl();
+    if (errorOAuth != null) {
+      await GoogleOAuthStaffService.limpiarMarcadoresOAuth();
+      if (!mounted) return;
+      GoogleOAuthStaffService.limpiarQueryOAuthEnRuta(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            mensajeErrorHttp(AuthException(errorOAuth), contexto: 'Google'),
+          ),
+          backgroundColor: AnaliticaTokens.alertas,
+        ),
+      );
+    }
+
+    final sesion = await SesionStaffService.cargar();
+    if (!mounted) return;
+    if (sesion != null) {
+      irDashboardStaff(context, sesion.dashboard);
+      return;
+    }
+    await _procesarRetornoGoogle();
   }
 
   Future<void> _procesarRetornoGoogle() async {
     if (!AppBackend.supabaseReady || _cargando || _procesandoGoogle) return;
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) return;
+    if (!await GoogleOAuthStaffService.hayRetornoOAuthPendiente()) return;
+    if (!mounted) return;
 
     setState(() => _procesandoGoogle = true);
     try {
@@ -61,7 +99,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(mensajeErrorHttp(e, contexto: 'Google')),
-            backgroundColor: ColoresFoody.error,
+            backgroundColor: AnaliticaTokens.alertas,
           ),
         );
       }
@@ -93,6 +131,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
 
   @override
   void dispose() {
+    _subOAuthRetorno?.cancel();
     _anim.dispose();
     _shake.dispose();
     _email.dispose();
@@ -119,7 +158,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(mensajeErrorHttp(e, contexto: 'iniciar sesión')),
-          backgroundColor: ColoresFoody.error,
+          backgroundColor: AnaliticaTokens.alertas,
         ),
       );
     } finally {
@@ -130,143 +169,334 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
   @override
   Widget build(BuildContext context) {
     final ocupado = _cargando || _procesandoGoogle;
+    final desdeCliente = AppFlavor.actual.esCliente;
 
     return Scaffold(
-      backgroundColor: ColoresFoody.fondo,
-      appBar: AppBar(
-        title: const Text('Acceso staff'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: ocupado ? null : () => context.go('/cliente'),
-        ),
-      ),
+      backgroundColor: AnaliticaTokens.canvas,
       body: Stack(
         children: [
+          // Ambiente sutil (no flat).
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AnaliticaTokens.surface,
+                    AnaliticaTokens.canvas,
+                    AnaliticaTokens.surfaceMuted.withValues(alpha: 0.9),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (desdeCliente)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: IconButton(
+                  tooltip: 'Volver',
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: AnaliticaTokens.ink,
+                  ),
+                  onPressed: ocupado
+                      ? null
+                      : () => AbrirAppCliente.ejecutar(context),
+                ),
+              ),
+            ),
           FadeTransition(
             opacity: _fade,
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(24, 48, 24, 32),
                 child: AnimatedBuilder(
                   animation: _shakeAnim,
                   builder: (context, child) {
-                    final offset =
-                        _shakeAnim.value * 8 * (_shake.status.isAnimating ? 1 : 0);
+                    final offset = _shakeAnim.value *
+                        8 *
+                        (_shake.status.isAnimating ? 1 : 0);
                     return Transform.translate(
                       offset: Offset(offset, 0),
                       child: child,
                     );
                   },
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: Card(
-                      elevation: 4,
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.restaurant, size: 56, color: ColoresFoody.primario),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Foody Staff',
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              const SizedBox(height: 24),
-                              TextFormField(
-                                controller: _email,
-                                keyboardType: TextInputType.emailAddress,
-                                decoration: const InputDecoration(
-                                  labelText: 'Correo',
-                                  prefixIcon: Icon(Icons.email_outlined),
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+                      decoration: BoxDecoration(
+                        color: AnaliticaTokens.surface,
+                        borderRadius:
+                            BorderRadius.circular(AnaliticaTokens.r16),
+                        border: Border.all(color: AnaliticaTokens.border),
+                        boxShadow: AnaliticaTokens.shadowLift,
+                      ),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Center(
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: AnaliticaTokens.ink,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                validator: (v) =>
-                                    v == null || !v.contains('@') ? 'Correo inválido' : null,
+                                child: const Icon(
+                                  Icons.restaurant_rounded,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
                               ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _contrasena,
-                                obscureText: _ocultar,
-                                decoration: InputDecoration(
-                                  labelText: 'Contraseña',
-                                  prefixIcon: const Icon(Icons.lock_outline),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _ocultar ? Icons.visibility : Icons.visibility_off,
-                                    ),
-                                    onPressed: () => setState(() => _ocultar = !_ocultar),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Foody',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.6,
+                                color: AnaliticaTokens.ink,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Acceso staff',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: AnaliticaTokens.inkMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            TextFormField(
+                              controller: _email,
+                              keyboardType: TextInputType.emailAddress,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AnaliticaTokens.ink,
+                              ),
+                              decoration: AuthFormEstilo.campo(
+                                label: 'Correo',
+                                prefixIcon:
+                                    const Icon(Icons.email_outlined),
+                              ),
+                              validator: (v) => v == null || !v.contains('@')
+                                  ? 'Correo inválido'
+                                  : null,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _contrasena,
+                              obscureText: _ocultar,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: AnaliticaTokens.ink,
+                              ),
+                              decoration: AuthFormEstilo.campo(
+                                label: 'Contraseña',
+                                prefixIcon:
+                                    const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _ocultar
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AnaliticaTokens.inkSoft,
+                                    size: 20,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _ocultar = !_ocultar),
+                                ),
+                              ),
+                              validator: (v) =>
+                                  v == null || v.length < 4
+                                      ? 'Mínimo 4 caracteres'
+                                      : null,
+                            ),
+                            const SizedBox(height: 20),
+                            if (AppBackend.supabaseReady) ...[
+                              OutlinedButton.icon(
+                                onPressed: ocupado ? null : _googleOAuth,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AnaliticaTokens.ink,
+                                  side: const BorderSide(
+                                    color: AnaliticaTokens.border,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
                                   ),
                                 ),
-                                validator: (v) =>
-                                    v == null || v.length < 4 ? 'Mínimo 4 caracteres' : null,
-                              ),
-                              const SizedBox(height: 24),
-                              if (AppBackend.supabaseReady) ...[
-                                OutlinedButton.icon(
-                                  onPressed: ocupado ? null : _googleOAuth,
-                                  icon: const Icon(Icons.g_mobiledata, size: 28),
-                                  label: const Text('Continuar con Google'),
+                                icon: const Icon(Icons.g_mobiledata, size: 26),
+                                label: const Text(
+                                  'Continuar con Google',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 14),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Divider(
+                                        color: AnaliticaTokens.border,
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding:
+                                          EdgeInsets.symmetric(horizontal: 10),
+                                      child: Text(
+                                        'o',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AnaliticaTokens.inkSoft,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Divider(
+                                        color: AnaliticaTokens.border,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            SizedBox(
+                              width: double.infinity,
+                              height: 46,
+                              child: FilledButton(
+                                onPressed: ocupado ? null : _ingresar,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AnaliticaTokens.ink,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      AnaliticaTokens.r12,
+                                    ),
+                                  ),
+                                ),
+                                child: _cargando
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text(
+                                        'Ingresar',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Material(
+                              color: AnaliticaTokens.surfaceMuted,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                onTap: () => setState(
+                                  () => _demoExpandido = !_demoExpandido,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
                                   child: Row(
                                     children: [
-                                      Expanded(child: Divider()),
-                                      Padding(
-                                        padding: EdgeInsets.symmetric(horizontal: 8),
-                                        child: Text('o'),
+                                      const Icon(
+                                        Icons.info_outline,
+                                        size: 16,
+                                        color: AnaliticaTokens.inkSoft,
                                       ),
-                                      Expanded(child: Divider()),
+                                      const SizedBox(width: 8),
+                                      const Expanded(
+                                        child: Text(
+                                          'Cuentas demo',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: AnaliticaTokens.inkMuted,
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        _demoExpandido
+                                            ? Icons.expand_less
+                                            : Icons.expand_more,
+                                        size: 18,
+                                        color: AnaliticaTokens.inkSoft,
+                                      ),
                                     ],
                                   ),
                                 ),
-                              ],
-                              SizedBox(
+                              ),
+                            ),
+                            if (_demoExpandido) ...[
+                              const SizedBox(height: 8),
+                              Container(
                                 width: double.infinity,
-                                child: FilledButton(
-                                  onPressed: ocupado ? null : _ingresar,
-                                  child: _cargando
-                                      ? const SizedBox(
-                                          height: 22,
-                                          width: 22,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : const Text('Ingresar'),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: AnaliticaTokens.border,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Text(
+                                  'admin@foody.demo · super@foody.demo · cocina@foody.demo\n'
+                                  'Empleado: tu correo Foody (ej. domi@foody.demo)\n'
+                                  'Cajero/mesero: Foody Control → Usuarios\n'
+                                  'Contraseña demo: 123456\n'
+                                  'Independiente: botón abajo → repartidor@foody.demo',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    height: 1.45,
+                                    color: AnaliticaTokens.inkMuted,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'admin@foody.demo · super@foody.demo · cocina@foody.demo',
-                                style: Theme.of(context).textTheme.bodySmall,
-                                textAlign: TextAlign.center,
-                              ),
-                              Text(
-                                'Cajero/mesero: créalos en Foody Control → Usuarios',
-                                style: Theme.of(context).textTheme.bodySmall,
-                                textAlign: TextAlign.center,
-                              ),
-                              Text(
-                                'Contraseña demo: 123456',
-                                style: Theme.of(context).textTheme.bodySmall,
-                                textAlign: TextAlign.center,
-                              ),
-                              Text(
-                                'Repartidor: botón abajo → repartidor@foody.demo',
-                                style: Theme.of(context).textTheme.bodySmall,
-                                textAlign: TextAlign.center,
-                              ),
-                              TextButton(
-                                onPressed: ocupado ? null : () => context.go('/admin/registro'),
-                                child: const Text('Crear restaurante gratis'),
-                              ),
-                              TextButton(
-                                onPressed: ocupado ? null : () => context.go('/domiciliario/login'),
-                                child: const Text('Soy repartidor independiente'),
-                              ),
                             ],
-                          ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: ocupado
+                                  ? null
+                                  : () => context.go('/admin/registro'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AnaliticaTokens.ink,
+                              ),
+                              child: const Text(
+                                'Crear restaurante gratis',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: ocupado
+                                  ? null
+                                  : () => context.go('/domiciliario/login'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AnaliticaTokens.inkMuted,
+                              ),
+                              child: const Text(
+                                'Soy repartidor independiente',
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -276,15 +506,21 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
             ),
           ),
           if (_procesandoGoogle)
-            const ColoredBox(
-              color: Color(0x88FFFFFF),
-              child: Center(
+            ColoredBox(
+              color: AnaliticaTokens.surface.withValues(alpha: 0.85),
+              child: const Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(),
+                    CircularProgressIndicator(color: AnaliticaTokens.ink),
                     SizedBox(height: 12),
-                    Text('Conectando con Google...'),
+                    Text(
+                      'Conectando con Google…',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AnaliticaTokens.inkMuted,
+                      ),
+                    ),
                   ],
                 ),
               ),

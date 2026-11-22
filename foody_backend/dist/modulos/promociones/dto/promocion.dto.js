@@ -9,14 +9,17 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RegistrarVistaPromocionDto = exports.ActualizarPromocionDto = exports.CrearPromocionDto = void 0;
+exports.ValidarCodigoPromocionDto = exports.RegistrarVistaPromocionDto = exports.ActualizarPromocionDto = exports.CrearPromocionDto = void 0;
 const class_validator_1 = require("class-validator");
+const class_transformer_1 = require("class-transformer");
 class CrearPromocionDto {
     sucursal_id;
     titulo;
     imagen_url;
     descripcion;
     expira_at;
+    producto_id;
+    tipo_media;
     codigo;
     descuento_porcentaje;
     descuento_monto;
@@ -47,6 +50,16 @@ __decorate([
 ], CrearPromocionDto.prototype, "expira_at", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], CrearPromocionDto.prototype, "producto_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['imagen', 'video']),
+    __metadata("design:type", String)
+], CrearPromocionDto.prototype, "tipo_media", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CrearPromocionDto.prototype, "codigo", void 0);
@@ -69,6 +82,7 @@ class ActualizarPromocionDto {
     descripcion;
     expira_at;
     activa;
+    producto_id;
     codigo;
     descuento_porcentaje;
     descuento_monto;
@@ -101,6 +115,11 @@ __decorate([
 ], ActualizarPromocionDto.prototype, "activa", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", Object)
+], ActualizarPromocionDto.prototype, "producto_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ActualizarPromocionDto.prototype, "codigo", void 0);
@@ -125,4 +144,27 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], RegistrarVistaPromocionDto.prototype, "device_id", void 0);
+class ValidarCodigoPromocionDto {
+    sucursal_id;
+    codigo;
+    subtotal = 0;
+}
+exports.ValidarCodigoPromocionDto = ValidarCodigoPromocionDto;
+__decorate([
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], ValidarCodigoPromocionDto.prototype, "sucursal_id", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(1),
+    __metadata("design:type", String)
+], ValidarCodigoPromocionDto.prototype, "codigo", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => value === undefined || value === null || value === '' ? 0 : Number(value)),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], ValidarCodigoPromocionDto.prototype, "subtotal", void 0);
 //# sourceMappingURL=promocion.dto.js.map
