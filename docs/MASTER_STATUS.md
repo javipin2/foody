@@ -1171,6 +1171,9 @@ Cuando dos fuentes trataban el mismo tema, **prevalece la fecha más reciente ve
 | 2026-11-22 | **UX-CFG-VIEW-01** — pantalla Configuración agrupada por tarea, ancho acotado y 1/2/3 columnas responsivas; análisis focalizado Dart sin issues; QA visual/temas pendiente |
 | 2026-11-22 | **UX-INV-TRASLADOS-01** — panel de traslados y formulario responsive con estados vacíos/error/permiso, análisis focalizado Dart sin issues; QA visual pendiente |
 | 2026-11-22 | **UX-INV-TABLA-01** — listado Mercado con tabla compacta en escritorio, grid tablet y tarjetas móvil; filtros y acciones existentes conservados; análisis focalizado sin issues |
+| 2026-11-22 | **UX-INV-MOV-01** — historial de movimientos con transición de stock priorizada y fila táctil adaptable; análisis focalizado sin errores |
+| 2026-11-22 | **DS-FORM-THEME-01** — formularios compartidos ahora derivan superficies y tipografía del tema, evitando blancos forzados en modo oscuro |
+| 2026-11-22 | **UX-SUBRECETA-THEME-01** — editor de subreceta migra sus superficies/alertas a colores del tema; lógica intacta |
 | 2026-11-22 | **NAV-CFG-HUB-01 / DS-BASE-01** — configuración admin agrupada por tarea, índice de opciones con permisos, `?seccion=` preservado; dirección visual documentada en FRONTEND_DESIGN_AUDIT; QA por rol pendiente |
 | 2026-11-22 | **DS-REF-01** — cuatro referencias visuales del usuario clasificadas por dispositivo/tarea; registradas en FRONTEND_DESIGN_AUDIT como guía contextual, no plantilla global |
 | 2026-11-22 | **QA-UI-REDISENO-01** — análisis puntual de 4 Dart: sin issues; análisis global: 1 warning previo en `auth_repository.dart:86`; puerta `verificar-ci.ps1`: 26 OK / 1 fallo por tablas sin RLS (`cobros_idempotencia`, `rate_limit_entries`, `usuario_permisos`), y `verificar-p2-pulido.ps1` falla en su lectura de respuesta HTTP (`GetResponseStream` inexistente) |

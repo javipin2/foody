@@ -312,6 +312,7 @@ Detalle UX staff/cliente baseline: **FRONTEND_UX_AUDITORIA.md**. Cliente profund
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-11-22 | **Oleada admin / inventario** — listado Mercado con tabla desktop/grid tablet/cards móvil; registro de movimientos prioriza transición de stock; Traslados responsivo; shells de formulario y editor de Subreceta respetan tema claro/oscuro. API y flujos intactos; análisis focalizado sin errores (1 info previo en interpolación de subreceta); QA visual pendiente. |
 | 2026-11-22 | **Insumos responsive** — hero azul oscuro/naranja, acción Nuevo insumo en escritorio, resumen con datos disponibles y tabs iconográficas; lógica/backend intactos |
 | 2026-08-04 | **Checkout cliente UX** — ink AppBar/tipo/pago/campos/CTA; tip confirmación |
 | 2026-08-04 | **Carrito detalle** — tap sheet Incluye/extras, swipe borrar, Vaciar |

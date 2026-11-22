@@ -1736,78 +1736,115 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                     ? AnaliticaTokens.ventas
                     : AnaliticaTokens.inkMuted;
 
+        final creado = DateTime.tryParse('${m['created_at'] ?? ''}')?.toLocal();
+        final referencia = [
+          if ((m['motivo'] as String?)?.trim().isNotEmpty == true)
+            (m['motivo'] as String).trim(),
+          if (creado != null)
+            DateFormat('d MMM · HH:mm', 'es_CO').format(creado),
+        ].join(' · ');
         return Container(
-          margin: const EdgeInsets.only(bottom: 6),
+          margin: const EdgeInsets.only(bottom: 7),
           decoration: BoxDecoration(
             color: AnaliticaTokens.surface,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AnaliticaTokens.border),
           ),
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: compacto ? 10 : 12,
-              vertical: 2,
-            ),
-            leading: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: colorTipo.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(Icons.swap_vert, size: 16, color: colorTipo),
-            ),
-            title: Text(
-              '${m['tipo']} · $nombre',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: AnaliticaTokens.ink,
-              ),
-            ),
-            subtitle: Text(
-              [
-                '${m['stock_anterior']} → ${m['stock_posterior']}',
-                if ((m['motivo'] as String?)?.isNotEmpty == true)
-                  '${m['motivo']}',
-                if (m['created_at'] != null)
-                  m['created_at'].toString().substring(0, 16),
-              ].join(' · '),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 11.5,
-                color: AnaliticaTokens.inkSoft,
-              ),
-            ),
-            trailing: const Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: AnaliticaTokens.inkSoft,
-            ),
-            // NAV-MC-17: ir a Mercado filtrando / abriendo el insumo.
-            onTap: () {
-              setState(() {
-                _tabs.index = 0;
-                _filtroInsumos = 'todos';
-                _busquedaCtrl.text = nombre;
-              });
-              if (ingId != null) {
-                Map<String, dynamic>? ing;
-                for (final e in _ingredientes) {
-                  if (e['id'] == ingId) {
-                    ing = e;
-                    break;
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              // NAV-MC-17: ir a Mercado filtrando / abriendo el insumo.
+              onTap: () {
+                setState(() {
+                  _tabs.index = 0;
+                  _filtroInsumos = 'todos';
+                  _busquedaCtrl.text = nombre;
+                });
+                if (ingId != null) {
+                  Map<String, dynamic>? ing;
+                  for (final e in _ingredientes) {
+                    if (e['id'] == ingId) {
+                      ing = e;
+                      break;
+                    }
                   }
+                  if (ing != null) unawaited(_dialogoEditarIngrediente(ing));
                 }
-                if (ing != null) {
-                  unawaited(_dialogoEditarIngrediente(ing));
-                }
-              }
-            },
+              },
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compacto ? 12 : 16,
+                  vertical: compacto ? 11 : 12,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: colorTipo.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(Icons.swap_vert, size: 17, color: colorTipo),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            nombre.isEmpty ? '${m['tipo']}' : nombre,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: AnaliticaTokens.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              '${m['tipo']}',
+                              if (referencia.isNotEmpty) referencia,
+                            ].join(' · '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AnaliticaTokens.inkSoft,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AnaliticaTokens.surfaceMuted,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${m['stock_anterior']} → ${m['stock_posterior']}',
+                        style: const TextStyle(
+                          color: AnaliticaTokens.ink,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        size: 18, color: AnaliticaTokens.inkSoft),
+                  ],
+                ),
+              ),
+            ),
           ),
         );
       },

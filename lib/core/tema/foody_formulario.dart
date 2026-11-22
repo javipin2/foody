@@ -8,7 +8,6 @@ class FoodyFormEstilo {
   FoodyFormEstilo._();
 
   static const radio = 16.0;
-  static const radioCampo = 12.0;
 
   static InputDecoration campo({
     required String label,
@@ -28,20 +27,7 @@ class FoodyFormEstilo {
       suffixIcon: suffixIcon,
       isDense: denso,
       filled: true,
-      fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(radioCampo),
-        borderSide: BorderSide(color: Colors.grey.shade200),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(radioCampo),
-        borderSide: BorderSide(color: Colors.grey.shade200),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(radioCampo),
-        borderSide: const BorderSide(color: ColoresFoody.primario, width: 1.5),
-      ),
     );
   }
 }
@@ -70,9 +56,10 @@ class FoodyDialogoShell extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final ancho = size.width.clamp(280.0, maxWidth);
     final altoMax = size.height * maxHeightFactor;
+    final theme = Theme.of(context);
 
     return AlertDialog(
-      backgroundColor: ColoresFoody.grisSuave,
+      backgroundColor: theme.colorScheme.surface,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(FoodyFormEstilo.radio + 4),
@@ -86,22 +73,16 @@ class FoodyDialogoShell extends StatelessWidget {
         children: [
           Text(
             titulo,
-            style: const TextStyle(
+            style: theme.textTheme.titleLarge?.copyWith(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: ColoresFoody.texto,
             ),
           ),
           if (subtitulo != null) ...[
             const SizedBox(height: 6),
             Text(
               subtitulo!,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                color: Colors.grey.shade600,
-                height: 1.35,
-              ),
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
             ),
           ],
         ],
@@ -142,12 +123,13 @@ class FoodyFormSeccion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = acento ?? ColoresFoody.primario;
+    final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(FoodyFormEstilo.radio),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -181,19 +163,16 @@ class FoodyFormSeccion extends StatelessWidget {
                     children: [
                       Text(
                         titulo,
-                        style: const TextStyle(
+                        style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
-                          color: ColoresFoody.texto,
                         ),
                       ),
                       if (subtitulo != null)
                         Text(
                           subtitulo!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                          ),
+                          style:
+                              theme.textTheme.bodySmall?.copyWith(fontSize: 11),
                         ),
                     ],
                   ),
@@ -231,7 +210,7 @@ class FoodyFormMetricas extends StatelessWidget {
             children: [
               for (var i = 0; i < items.length; i++) ...[
                 if (i > 0) const SizedBox(height: 8),
-                _chip(items[i], expand: true),
+                _chip(context, items[i], expand: true),
               ],
             ],
           );
@@ -240,7 +219,7 @@ class FoodyFormMetricas extends StatelessWidget {
           children: [
             for (var i = 0; i < items.length; i++) ...[
               if (i > 0) const SizedBox(width: 8),
-              Expanded(child: _chip(items[i], expand: false)),
+              Expanded(child: _chip(context, items[i], expand: false)),
             ],
           ],
         );
@@ -248,7 +227,8 @@ class FoodyFormMetricas extends StatelessWidget {
     );
   }
 
-  Widget _chip(FoodyMetricaItem item, {required bool expand}) {
+  Widget _chip(BuildContext context, FoodyMetricaItem item,
+      {required bool expand}) {
     return Container(
       width: expand ? double.infinity : null,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -264,7 +244,7 @@ class FoodyFormMetricas extends StatelessWidget {
             item.etiqueta,
             style: TextStyle(
               fontSize: 11,
-              color: Colors.grey.shade700,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),

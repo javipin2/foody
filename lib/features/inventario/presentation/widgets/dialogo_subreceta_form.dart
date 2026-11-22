@@ -222,8 +222,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
     if (tipo == 'subreceta') {
       final sr = _subrecetaPorId(fila['subreceta_id'] as String?);
       if (sr == null) return 0;
-      final unit =
-          num.tryParse('${sr['costo_por_unidad']}')?.toDouble() ?? 0;
+      final unit = num.tryParse('${sr['costo_por_unidad']}')?.toDouble() ?? 0;
       final uLinea = fila['unidad'] as String? ?? 'und';
       final uRes = sr['unidad_resultado'] as String? ?? uLinea;
       final cantEfectiva = convertirCantidadCosteo(cant, uLinea, uRes);
@@ -247,8 +246,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
       _filas.fold(0.0, (sum, f) => sum + _costoLinea(f));
 
   double get _margenDecimal {
-    final pct =
-        double.tryParse(_margenPct.text.replaceAll(',', '.')) ?? 5;
+    final pct = double.tryParse(_margenPct.text.replaceAll(',', '.')) ?? 5;
     return pct / 100;
   }
 
@@ -369,8 +367,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
 
     return FoodyDialogoShell(
       titulo: _esEdicion ? 'Editar subreceta' : 'Nueva subreceta',
-      subtitulo:
-          'Preparación intermedia (salsa, base, arroz…). '
+      subtitulo: 'Preparación intermedia (salsa, base, arroz…). '
           'El costo sale de tu lista de mercado.',
       contenido: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -435,18 +432,15 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                 const SizedBox(height: 12),
                 Text(
                   '¿Cuándo se mueve el inventario?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade800,
-                  ),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
                 const SizedBox(height: 8),
                 _modoStockOpcion(
                   seleccionado: !_usaProduccionLote,
                   titulo: 'Al vender el plato',
-                  detalle:
-                      'Recomendado. Al enviar a cocina se descuentan '
+                  detalle: 'Recomendado. Al enviar a cocina se descuentan '
                       'los insumos de la lista de mercado (limón, azúcar…). '
                       'No hace falta «preparar» stock aparte.',
                   onTap: () => setState(() => _usaProduccionLote = false),
@@ -455,8 +449,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                 _modoStockOpcion(
                   seleccionado: _usaProduccionLote,
                   titulo: 'Preparo un lote y lo guardo',
-                  detalle:
-                      'Cocinas de antemano. Registras producción: baja '
+                  detalle: 'Cocinas de antemano. Registras producción: baja '
                       'insumos y entra stock de «Prep: ${_nombre.text.trim().isEmpty ? '…' : _nombre.text.trim()}». '
                       'Al vender solo baja el preparado.',
                   onTap: () => setState(() => _usaProduccionLote = true),
@@ -466,9 +459,11 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.shade200),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.tertiary,
+                      ),
                     ),
                     child: Text(
                       'Al guardar, el preparado empieza en 0. '
@@ -478,7 +473,8 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.35,
-                        color: Colors.amber.shade900,
+                        color:
+                            Theme.of(context).colorScheme.onTertiaryContainer,
                       ),
                     ),
                   ),
@@ -502,7 +498,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                     FoodyMetricaItem(
                       etiqueta: 'Insumos',
                       valor: _moneda.format(_costoInsumos),
-                      color: ColoresFoody.texto,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     FoodyMetricaItem(
                       etiqueta: 'Con margen $margenTxt%',
@@ -522,7 +518,10 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                   const SizedBox(height: 8),
                   Text(
                     'Indica la cantidad obtenida para ver costo por unidad',
-                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
                   ),
                 ],
                 if (_cantidadResultado <= 1 &&
@@ -532,7 +531,10 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                   Text(
                     '¿Es un lote grande? Pon cuántas $_unidadRes salen '
                     '(ej. 2700), no 1.',
-                    style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
                   ),
                 ],
               ],
@@ -599,7 +601,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
     return Material(
       color: seleccionado
           ? ColoresFoody.secundario.withValues(alpha: 0.1)
-          : Colors.white,
+          : Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -611,7 +613,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
             border: Border.all(
               color: seleccionado
                   ? ColoresFoody.secundario
-                  : Colors.grey.shade300,
+                  : Theme.of(context).colorScheme.outlineVariant,
               width: seleccionado ? 1.5 : 1,
             ),
           ),
@@ -625,7 +627,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                 size: 22,
                 color: seleccionado
                     ? ColoresFoody.secundario
-                    : Colors.grey.shade500,
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -634,10 +636,10 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                   children: [
                     Text(
                       titulo,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -645,7 +647,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.35,
-                        color: Colors.grey.shade700,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -670,10 +672,12 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: ColoresFoody.grisSuave,
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: costoCero ? Colors.orange.shade200 : Colors.grey.shade200,
+          color: costoCero
+              ? Theme.of(context).colorScheme.tertiary
+              : Theme.of(context).colorScheme.outlineVariant,
         ),
       ),
       child: Column(
@@ -836,9 +840,11 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -847,7 +853,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                         'Subtotal',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       Text(
@@ -856,7 +862,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
                           color: costoCero
-                              ? Colors.orange.shade800
+                              ? Theme.of(context).colorScheme.tertiary
                               : ColoresFoody.primario,
                         ),
                       ),
@@ -871,7 +877,10 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 'Sin costo en mercado — revisa Lista de mercado',
-                style: TextStyle(fontSize: 11, color: Colors.orange.shade800),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.tertiary,
+                ),
               ),
             ),
         ],
@@ -887,8 +896,8 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
       return unidadesDeFamiliaCosteo(base);
     }
     final ing = _ingredientePorId(fila['ingrediente_id'] as String?);
-    final base = ing?['unidad_base'] as String? ??
-        (fila['unidad'] as String? ?? 'g');
+    final base =
+        ing?['unidad_base'] as String? ?? (fila['unidad'] as String? ?? 'g');
     return unidadesDeFamiliaCosteo(base);
   }
 
