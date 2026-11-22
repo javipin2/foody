@@ -66,7 +66,21 @@ class TemaFoody {
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      colorScheme: scheme,
+      colorScheme: scheme.copyWith(
+        onSurface: ink,
+        onSurfaceVariant: inkMuted,
+        outlineVariant: border,
+        surfaceContainerLowest: isDark ? const Color(0xFF0B0C0F) : Colors.white,
+        surfaceContainerLow:
+            isDark ? const Color(0xFF16181D) : const Color(0xFFF8F9FB),
+        surfaceContainer:
+            isDark ? const Color(0xFF1C1F26) : const Color(0xFFF3F5F8),
+        surfaceContainerHigh:
+            isDark ? const Color(0xFF22262E) : const Color(0xFFEDF0F4),
+        surfaceContainerHighest:
+            isDark ? const Color(0xFF2A2E36) : const Color(0xFFE6EAF0),
+        onPrimary: const Color(0xFF111827),
+      ),
       scaffoldBackgroundColor: scaffold,
       textTheme: TextTheme(
         bodyMedium: GoogleFonts.inter(color: ink),
@@ -157,12 +171,18 @@ class TemaFoody {
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: card,
-        shape: RoundedRectangleBorder(borderRadius: radius),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: border),
+        ),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: card,
+        surfaceTintColor: Colors.transparent,
+        dragHandleColor: inkMuted,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(

@@ -49,7 +49,46 @@ Las cuatro imágenes adjuntas orientan composición, densidad y adaptación por 
 | Checkout cliente — `lib/features/pedidos/presentation/checkout_screen.dart` | Definir canal, datos/contacto, domicilio, factura opcional, pago, promoción y confirmar pedido | Contenido limitado a 760 px en escritorio; barra final alineada; controles, tarjetas y campos siguen el tema actual; errores permanecen junto al flujo | `dart format` + `dart analyze` focalizado sin incidencias; QA visual móvil/escritorio y claro/oscuro pendiente | 🟡 Mejorado; cálculo y envío conservan el backend como autoridad |
 | Carrito cliente — `lib/features/pedidos/presentation/carrito_screen.dart` | Ajustar cantidades, revisar extras/detalle, retirar líneas, vaciar y continuar | Lista y barra de total/CTA limitadas a 760 px en escritorio; app bar, tarjetas, stepper, detalle y barra inferior derivan color del tema; táctil móvil conservado | `dart format` + `dart analyze` focalizado sin incidencias; QA visual móvil/escritorio y claro/oscuro pendiente | 🟡 Mejorado; estado del carrito y gestos intactos |
 
-Siguiente recorrido: revisar tema oscuro/estados de **Menú admin** y luego cerrar Insumos (Subrecetas, Conteo, diálogos y estados), continuando por vistas administrativas y operativas según impacto. Facturación queda pendiente de QA visual; se conserva el modo túnel. La revisión visual global queda para el usuario al concluir la oleada.
+#### Operación e interfaces administrativas
+
+- **Caja.** El panel muestra las acciones junto al resumen cuando hay espacio y debajo de las métricas en una columna estrecha. Apertura, movimientos, fiados y acciones de turno usan superficies y texto del tema activo. El error usa el estado compartido con reintento.
+- **Pedidos.** Las tarjetas y columnas del tablero adoptan el tema activo, incluidos el contador de pedidos y los estados vacíos por columna. Se conserva el flujo por pestañas y canales.
+- **Menú.** La cabecera, las pestañas, los filtros, las tarjetas, las tablas y los controles de formulario usan colores del tema activo. La navegación y las acciones siguen conectadas a los flujos existentes.
+- **Insumos.** Conteo y el listado de Subrecetas adaptan sus superficies al tema. Conteo indica dónde agregar insumos cuando todavía no se puede iniciar.
+- **Administración.** Se migraron los colores neutros de Usuarios, Alertas, Horarios, Cocinas, Domiciliarios, Promociones, Reportes, Sedes, Zonas y Costos en sus vistas principales. Este pase cubre el tema visual. Aún falta la comprobación de tamaños, diálogos y estados por pantalla.
+
+El análisis focalizado de las 17 unidades Dart pasó sin errores ni advertencias. Reportes conserva cuatro avisos preexistentes sobre la API para compartir archivos. En la API local se comprobó salud con BD conectada, acceso con la cuenta demo, sedes y Caja activa con HTTP 200, y rechazo sin sesión con HTTP 401 en la consulta de sedes.
+
+La compilación web release de Equipo terminó en `build/qa_redisenio_equipo`. El navegador abrió el formulario local de acceso, pero el inicio de sesión demo quedó cargando sin mostrar el panel. El mismo inicio por HTTP al API del túnel devolvió 201 y permitió el origen local. Esto deja pendiente la comprobación visual autenticada.
+
+Queda por cerrar la revisión visual de la oleada en móvil, tablet y escritorio, incluidas las vistas operativas por rol, los formularios de Insumos, las pantallas de cliente fuera de Carrito y Checkout y el panel de plataforma. El entorno de referencia sigue siendo `MODO=tunel`.
+
+#### Panel del restaurante, navegación y carga
+
+- Barra superior con nombre de sección, contexto de grupo o sede, menú de cuenta y acciones agrupadas en móvil. El selector de sedes admite nombres largos y muestra el cambio en curso.
+- Barra lateral plegable en escritorio con acento Foody en la selección. El menú móvil cierra tras abrir una sección. Los accesos del Inicio siguen la misma ruta que la barra lateral.
+- Entrada breve por sección y estados de carga adaptados al tema. La preferencia de reducir movimiento elimina la transición y el efecto de brillo. Los estados compartidos de carga, error y vacío usan colores del tema.
+- Búsqueda disponible desde que abre el diálogo. Pedidos y mesas se consultan por separado para conservar los resultados que sí llegaron ante un error parcial.
+- Salón, Punto de venta, Cocina, Análisis y Plan y pagos adoptan colores del tema en las vistas principales. El cuadro compartido de formularios se adapta al espacio disponible y permite desplazar el título y el contenido.
+- Los diálogos que usan `FoodyDialogo` recogen el tema y tienen una entrada y salida breves, con opción de reducir movimiento. En Usuarios, los formularios permiten desplazar su contenido en móvil y muestran nombres legibles para los permisos.
+- El registro de notificaciones continúa en segundo plano después del acceso. Al cerrar sesión se acota la espera del token de notificaciones. El ingreso habitual va a Inicio y el retorno con pago pendiente conserva su ruta específica.
+
+Pruebas observadas en la compilación local de Equipo con cuenta demo: encabezado accesible de las 23 rutas del catálogo, plegado de la barra lateral, búsqueda de Caja, datos de Caja en modo oscuro, cierre al formulario, nuevo ingreso a Inicio, acceso a Configuración desde el menú a 390 px y barra de navegación reducida a 820 px. Las consultas de Dashboard, Reportes, Análisis y listados pasaron. El chequeo del ranking ahora reconoce un periodo sin ventas cuando ambas fuentes están vacías. Con la cuenta Pro, Facturación respondió HTTP 403 según la restricción Enterprise. El análisis de `lib` reportó cero errores y advertencias y 66 avisos informativos.
+
+La cobertura de pantallas se complementó con escrituras de Caja, Inventario, Facturación interna y Foody Control en una base aislada. Queda por completar la revisión de combinaciones de tema, tamaño y rol para formularios secundarios.
+
+La última compilación local verificó el diálogo Nuevo usuario en tema oscuro a 390 px y su cancelación. El control de Mesas ahora rechaza un identificador de sede mal formado antes de consultar datos. Nest compiló y el controlador ejecutado en una instancia aislada respondió 400 al dato inválido y 200 al válido. La API del túnel no se reinició durante la prueba.
+
+#### Diálogos operativos y plataforma
+
+- Caja, Inventario, Menú, Facturación, Finanzas, Pedidos, Promociones y Foody Control reutilizan presentación y movimiento de `FoodyDialogo`. Las hojas modales usan el color y el borde superior del tema base.
+- El conteo mantiene el formulario abierto cuando una cantidad está vacía o es inválida. El fiado señala los campos incompletos. La anulación de factura conserva el motivo en el formulario hasta que tenga la longitud requerida.
+- Foody Control usa la barra y navegación adaptadas al ancho, con selección anunciada, transición de sección, carga y soporte para reducir movimiento. El formulario de alta de restaurante muestra errores antes de salir y solicita una contraseña inicial.
+- El esquema de color comparte una escala neutra para superficies, bordes y texto en ambos temas. Los esqueletos de sección mantienen la altura prevista en paneles que ocupan toda la pantalla.
+- Confirmado en navegador: validación y cancelación de fiado, apertura y cancelación de cobro, validación y cancelación del conteo, ingreso y navegación por las siete secciones de plataforma, apertura y cancelación del alta de restaurante en oscuro a 390 px. En la última compilación también se comprobó que la contraseña del alta empieza vacía y que enviar los campos vacíos mantiene abierto el formulario. En la API activa, la cuenta super admin recibió HTTP 200 en estadísticas, restaurantes, usuarios, ciudades y configuración. Mesas respondió 400 para una sede inválida y 200 para una válida.
+- En una base aislada con datos sintéticos se verificaron apertura y cobro, rechazo de reapertura de pedidos pagados, alta y cobro de fiado, conteo y actualización de existencias, alta de restaurante y cajero, y rechazo de acceso entre dos restaurantes.
+- Facturación Enterprise se verificó en navegador contra esa base. Guardar configuración y anular con motivo actualizan y persisten los datos. La vista previa mostró el estado y los importes. La API rechazó emitir antes de cobrar, emitió después del cobro y mantuvo el pedido pagado al anular la factura. DIAN sigue pausado.
+- El alta de personal en Foody Control empieza con la contraseña vacía, muestra errores por campo y carga las sedes del restaurante elegido. Se verificaron en navegador la falta de contraseña, el intento de envío vacío y la cancelación. El alta con datos sintéticos se comprobó por API.
 
 ---
 

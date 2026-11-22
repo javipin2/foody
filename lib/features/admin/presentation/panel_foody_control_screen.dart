@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
+import 'package:reserva_canchas/core/tema/tema_mode_provider.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
@@ -36,15 +42,28 @@ class _PanelFoodyControlScreenState extends State<PanelFoodyControlScreen> {
   @override
   Widget build(BuildContext context) {
     final ancho = MediaQuery.sizeOf(context).width;
-    final esMovil = ancho < 800;
-    final railExtendido = ancho >= 1100;
+    final esMovil = FoodyBreakpoints.esCompact(ancho);
+    final railExtendido = FoodyBreakpoints.esLarge(ancho);
+    final scheme = Theme.of(context).colorScheme;
+    final oscuro = scheme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: FoodyControlUi.fondo,
+      backgroundColor: SaaSTokens.canvas(context),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0F172A),
+        toolbarHeight: esMovil ? 60 : 68,
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
+        shape: Border(bottom: BorderSide(color: scheme.outlineVariant)),
+        leading: esMovil
+            ? Builder(
+                builder: (context) => IconButton(
+                  tooltip: 'Abrir menú de plataforma',
+                  icon: const Icon(Icons.menu_rounded),
+                  onPressed: Scaffold.of(context).openDrawer,
+                ),
+              )
+            : null,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -57,12 +76,20 @@ class _PanelFoodyControlScreenState extends State<PanelFoodyControlScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
-                color: Colors.grey.shade600,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: oscuro ? 'Modo claro' : 'Modo oscuro',
+            icon: Icon(
+                oscuro ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+            onPressed: () => ProviderScope.containerOf(context)
+                .read(temaModeProvider.notifier)
+                .alternar(),
+          ),
           IconButton(
             tooltip: 'Actualizar',
             icon: const Icon(Icons.refresh_rounded),
@@ -77,22 +104,23 @@ class _PanelFoodyControlScreenState extends State<PanelFoodyControlScreen> {
       ),
       drawer: esMovil
           ? Drawer(
-              width: 300,
-              child: _NavFoodyControl(
-                seccion: _seccion,
-                extendido: true,
-                onSeleccionar: (id) {
-                  _ir(id);
-                  Navigator.pop(context);
-                },
-              ),
+              width: (ancho * 0.85).clamp(0.0, 320.0),
+              child: Builder(
+                  builder: (drawerContext) => _NavFoodyControl(
+                        seccion: _seccion,
+                        extendido: true,
+                        onSeleccionar: (id) {
+                          _ir(id);
+                          Scaffold.of(drawerContext).closeDrawer();
+                        },
+                      )),
             )
           : null,
       body: Row(
         children: [
           if (!esMovil)
             SizedBox(
-              width: railExtendido ? 220 : 72,
+              width: railExtendido ? 232 : 72,
               child: _NavFoodyControl(
                 seccion: _seccion,
                 extendido: railExtendido,
@@ -102,13 +130,24 @@ class _PanelFoodyControlScreenState extends State<PanelFoodyControlScreen> {
           Expanded(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(left: BorderSide(color: Colors.grey.shade200)),
+                color: SaaSTokens.canvas(context),
+                border: Border(
+                    left: esMovil
+                        ? BorderSide.none
+                        : BorderSide(color: scheme.outlineVariant)),
               ),
-              child: _ContenidoFoodyControl(
+              child: TweenAnimationBuilder<double>(
                 key: ValueKey('$_seccion-$_refreshTick'),
-                seccion: _seccion,
-                repo: _repo,
+                tween: Tween(begin: 0, end: 1),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                builder: (context, valor, child) => Opacity(
+                  opacity: 0.76 + valor * 0.24,
+                  child: child,
+                ),
+                child: _ContenidoFoodyControl(seccion: _seccion, repo: _repo),
               ),
             ),
           ),
@@ -137,7 +176,8 @@ class _NavFoodyControl extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(extendido ? 16 : 12, 20, extendido ? 16 : 12, 12),
+            padding: EdgeInsets.fromLTRB(
+                extendido ? 16 : 12, 20, extendido ? 16 : 12, 12),
             child: extendido
                 ? Row(
                     children: [
@@ -148,7 +188,8 @@ class _NavFoodyControl extends StatelessWidget {
                           color: ColoresFoody.primario,
                           borderRadius: BorderRadius.circular(9),
                         ),
-                        child: const Icon(Icons.hub_rounded, color: Colors.white, size: 20),
+                        child: const Icon(Icons.hub_rounded,
+                            color: Colors.white, size: 20),
                       ),
                       const SizedBox(width: 10),
                       const Expanded(
@@ -165,7 +206,8 @@ class _NavFoodyControl extends StatelessWidget {
                             ),
                             Text(
                               'Plataforma Foody',
-                              style: TextStyle(color: Colors.white54, fontSize: 11),
+                              style: TextStyle(
+                                  color: Colors.white54, fontSize: 11),
                             ),
                           ],
                         ),
@@ -190,7 +232,7 @@ class _NavFoodyControl extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
               children: [
                 for (final s in FoodyControlUi.secciones)
-                  _itemNav(s.id, s.titulo, s.icono),
+                  _itemNav(context, s.id, s.titulo, s.icono),
               ],
             ),
           ),
@@ -199,64 +241,73 @@ class _NavFoodyControl extends StatelessWidget {
     );
   }
 
-  Widget _itemNav(String id, String titulo, IconData icono) {
+  Widget _itemNav(
+      BuildContext context, String id, String titulo, IconData icono) {
     final sel = seccion == id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => onSeleccionar(id),
-          borderRadius: BorderRadius.circular(10),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: EdgeInsets.symmetric(
-              horizontal: extendido ? 12 : 8,
-              vertical: extendido ? 11 : 12,
-            ),
-            decoration: BoxDecoration(
-              color: sel
-                  ? ColoresFoody.primario.withValues(alpha: 0.18)
-                  : Colors.transparent,
+      child: Semantics(
+          button: true,
+          selected: sel,
+          label: extendido ? null : titulo,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => onSeleccionar(id),
               borderRadius: BorderRadius.circular(10),
-              border: sel
-                  ? Border.all(
-                      color: ColoresFoody.primario.withValues(alpha: 0.35),
-                    )
-                  : null,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  icono,
-                  size: 22,
-                  color: sel ? ColoresFoody.primario : Colors.white60,
+              child: AnimatedContainer(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+                padding: EdgeInsets.symmetric(
+                  horizontal: extendido ? 12 : 8,
+                  vertical: extendido ? 11 : 12,
                 ),
-                if (extendido) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      titulo,
-                      style: TextStyle(
-                        color: sel ? Colors.white : Colors.white70,
-                        fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
-                        fontSize: 13,
-                      ),
+                decoration: BoxDecoration(
+                  color: sel
+                      ? ColoresFoody.primario.withValues(alpha: 0.18)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: sel
+                      ? Border.all(
+                          color: ColoresFoody.primario.withValues(alpha: 0.35),
+                        )
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: extendido
+                      ? MainAxisAlignment.start
+                      : MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icono,
+                      size: 22,
+                      color: sel ? ColoresFoody.primario : Colors.white60,
                     ),
-                  ),
-                ],
-              ],
+                    if (extendido) ...[
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          titulo,
+                          style: TextStyle(
+                            color: sel ? Colors.white : Colors.white70,
+                            fontWeight: sel ? FontWeight.w600 : FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
+          )),
     );
   }
 }
 
 class _ContenidoFoodyControl extends StatelessWidget {
   const _ContenidoFoodyControl({
-    super.key,
     required this.seccion,
     required this.repo,
   });
@@ -312,7 +363,8 @@ class _VistaResumenState extends State<_VistaResumen> {
 
   @override
   Widget build(BuildContext context) {
-    final moneda = NumberFormat.currency(locale: 'es_CO', symbol: r'$', decimalDigits: 0);
+    final moneda =
+        NumberFormat.currency(locale: 'es_CO', symbol: r'$', decimalDigits: 0);
     return FutureBuilder<Map<String, dynamic>>(
       future: _future,
       builder: (context, snap) {
@@ -323,105 +375,114 @@ class _VistaResumenState extends State<_VistaResumen> {
           );
         }
         if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: AnaliticaSkeleton.seccion(
+                etiqueta: 'Cargando datos de la plataforma'),
+          );
         }
         final d = snap.data!;
         return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                'Vista general de la plataforma',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  FoodyControlTarjetaKpi(
-                    titulo: 'Restaurantes',
-                    valor: '${d['restaurantes_activos'] ?? 0}',
-                    icono: Icons.storefront_outlined,
-                  ),
-                  FoodyControlTarjetaKpi(
-                    titulo: 'Sucursales',
-                    valor: '${d['sucursales_activas'] ?? 0}',
-                    icono: Icons.store_mall_directory_outlined,
-                    color: ColoresFoody.secundario,
-                  ),
-                  FoodyControlTarjetaKpi(
-                    titulo: 'Ciudades',
-                    valor: '${d['ciudades_activas'] ?? 0}',
-                    icono: Icons.location_city_outlined,
-                  ),
-                  FoodyControlTarjetaKpi(
-                    titulo: 'Pedidos hoy',
-                    valor: '${d['pedidos_hoy'] ?? 0}',
-                    icono: Icons.receipt_long_outlined,
-                  ),
-                  FoodyControlTarjetaKpi(
-                    titulo: 'Ingresos Foody hoy',
-                    valor: moneda.format(d['ingresos_foody_hoy'] ?? 0),
-                    icono: Icons.payments_outlined,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Text('Self-service (F7)', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Builder(
-                builder: (context) {
-                  final ss = d['self_service'] as Map<String, dynamic>?;
-                  if (ss == null) return const SizedBox.shrink();
-                  return Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      FoodyControlTarjetaKpi(
-                        titulo: 'Registros auto',
-                        valor: '${ss['registros_self_service'] ?? 0}',
-                        icono: Icons.person_add_outlined,
-                      ),
-                      FoodyControlTarjetaKpi(
-                        titulo: 'Pagos 30 días',
-                        valor: '${ss['pagos_aprobados_30d'] ?? 0}',
-                        icono: Icons.credit_card_outlined,
-                        color: ColoresFoody.secundario,
-                      ),
-                      FoodyControlTarjetaKpi(
-                        titulo: 'Conversión',
-                        valor: '${ss['tasa_conversion_pagos_pct'] ?? 0}%',
-                        icono: Icons.trending_up,
-                      ),
-                      FoodyControlTarjetaKpi(
-                        titulo: 'Ingresos 30 días',
-                        valor: moneda.format(ss['ingresos_cop_30d'] ?? 0),
-                        icono: Icons.attach_money,
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Text('Suscripciones', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              ...(d['suscripciones'] as List<dynamic>? ?? []).map((s) {
-                final map = Map<String, dynamic>.from(s as Map);
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.circle,
-                      size: 12,
-                      color: FoodyControlUi.colorEstado('${map['estado']}'),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Vista general de la plataforma',
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                FoodyControlTarjetaKpi(
+                  titulo: 'Restaurantes',
+                  valor: '${d['restaurantes_activos'] ?? 0}',
+                  icono: Icons.storefront_outlined,
+                ),
+                FoodyControlTarjetaKpi(
+                  titulo: 'Sucursales',
+                  valor: '${d['sucursales_activas'] ?? 0}',
+                  icono: Icons.store_mall_directory_outlined,
+                  color: ColoresFoody.secundario,
+                ),
+                FoodyControlTarjetaKpi(
+                  titulo: 'Ciudades',
+                  valor: '${d['ciudades_activas'] ?? 0}',
+                  icono: Icons.location_city_outlined,
+                ),
+                FoodyControlTarjetaKpi(
+                  titulo: 'Pedidos hoy',
+                  valor: '${d['pedidos_hoy'] ?? 0}',
+                  icono: Icons.receipt_long_outlined,
+                ),
+                FoodyControlTarjetaKpi(
+                  titulo: 'Ingresos Foody hoy',
+                  valor: moneda.format(d['ingresos_foody_hoy'] ?? 0),
+                  icono: Icons.payments_outlined,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text('Self-service (F7)',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Builder(
+              builder: (context) {
+                final ss = d['self_service'] as Map<String, dynamic>?;
+                if (ss == null) return const SizedBox.shrink();
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    FoodyControlTarjetaKpi(
+                      titulo: 'Registros auto',
+                      valor: '${ss['registros_self_service'] ?? 0}',
+                      icono: Icons.person_add_outlined,
                     ),
-                    title: Text(FoodyControlUi.etiquetaEstado('${map['estado']}')),
-                    trailing: Text('${map['total'] ?? 0} restaurantes'),
-                  ),
+                    FoodyControlTarjetaKpi(
+                      titulo: 'Pagos 30 días',
+                      valor: '${ss['pagos_aprobados_30d'] ?? 0}',
+                      icono: Icons.credit_card_outlined,
+                      color: ColoresFoody.secundario,
+                    ),
+                    FoodyControlTarjetaKpi(
+                      titulo: 'Conversión',
+                      valor: '${ss['tasa_conversion_pagos_pct'] ?? 0}%',
+                      icono: Icons.trending_up,
+                    ),
+                    FoodyControlTarjetaKpi(
+                      titulo: 'Ingresos 30 días',
+                      valor: moneda.format(ss['ingresos_cop_30d'] ?? 0),
+                      icono: Icons.attach_money,
+                    ),
+                  ],
                 );
-              }),
-            ],
-          );
+              },
+            ),
+            const SizedBox(height: 24),
+            Text('Suscripciones',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            ...(d['suscripciones'] as List<dynamic>? ?? []).map((s) {
+              final map = Map<String, dynamic>.from(s as Map);
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(
+                    Icons.circle,
+                    size: 12,
+                    color: FoodyControlUi.colorEstado('${map['estado']}'),
+                  ),
+                  title:
+                      Text(FoodyControlUi.etiquetaEstado('${map['estado']}')),
+                  trailing: Text('${map['total'] ?? 0} restaurantes'),
+                ),
+              );
+            }),
+          ],
+        );
       },
     );
   }
@@ -469,6 +530,7 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
       }
       return;
     }
+    if (!mounted) return;
     if (ciudades.isEmpty) {
       _snack('Crea una ciudad primero (pestaña Ciudades)');
       return;
@@ -480,16 +542,21 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
     final dirCtrl = TextEditingController();
     final adminCtrl = TextEditingController();
     final emailCtrl = TextEditingController();
-    final passCtrl = TextEditingController(text: '123456');
+    final passCtrl = TextEditingController();
+    final formulario = GlobalKey<FormState>();
+    String? requerido(String? valor) =>
+        (valor?.trim().isEmpty ?? true) ? 'Completa este campo' : null;
 
-    final confirmado = await showDialog<bool>(
+    final confirmado = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           title: const Text('Nuevo restaurante'),
+          scrollable: true,
           content: SizedBox(
             width: 420,
-            child: SingleChildScrollView(
+            child: Form(
+              key: formulario,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -510,8 +577,9 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                     onChanged: (v) => setLocal(() => ciudadId = v),
                   ),
                   const SizedBox(height: 10),
-                  TextField(
+                  TextFormField(
                     controller: restCtrl,
+                    validator: requerido,
                     decoration: const InputDecoration(
                       labelText: 'Nombre del restaurante',
                       border: OutlineInputBorder(),
@@ -525,6 +593,7 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: dirCtrl,
                     decoration: const InputDecoration(
@@ -541,16 +610,23 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  TextField(
+                  TextFormField(
                     controller: adminCtrl,
+                    validator: requerido,
                     decoration: const InputDecoration(
                       labelText: 'Nombre',
                       border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 10),
-                  TextField(
+                  TextFormField(
                     controller: emailCtrl,
+                    validator: (valor) {
+                      final correo = valor?.trim() ?? '';
+                      return correo.contains('@') && !correo.endsWith('@')
+                          ? null
+                          : 'Escribe un correo válido';
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Correo',
                       border: OutlineInputBorder(),
@@ -558,8 +634,11 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                     keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 10),
-                  TextField(
+                  TextFormField(
                     controller: passCtrl,
+                    validator: (valor) => (valor?.trim().length ?? 0) < 6
+                        ? 'Escribe al menos 6 caracteres'
+                        : null,
                     decoration: const InputDecoration(
                       labelText: 'Contraseña',
                       border: OutlineInputBorder(),
@@ -576,13 +655,12 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(
-                ctx,
-                restCtrl.text.trim().isNotEmpty &&
-                    adminCtrl.text.trim().isNotEmpty &&
-                    emailCtrl.text.trim().isNotEmpty &&
-                    ciudadId != null,
-              ),
+              onPressed: () {
+                if ((formulario.currentState?.validate() ?? false) &&
+                    ciudadId != null) {
+                  Navigator.pop(ctx, true);
+                }
+              },
               child: const Text('Crear restaurante'),
             ),
           ],
@@ -590,7 +668,7 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
       ),
     );
 
-    if (confirmado != true || ciudadId == null) {
+    if (confirmado != true || ciudadId == null || !mounted) {
       restCtrl.dispose();
       sucCtrl.dispose();
       dirCtrl.dispose();
@@ -602,7 +680,8 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
 
     final nombreRest = restCtrl.text.trim();
     final emailAdmin = emailCtrl.text.trim();
-    final nombreSuc = sucCtrl.text.trim().isEmpty ? 'Sede principal' : sucCtrl.text.trim();
+    final nombreSuc =
+        sucCtrl.text.trim().isEmpty ? 'Sede principal' : sucCtrl.text.trim();
     final direccion = dirCtrl.text.trim();
     final adminNombre = adminCtrl.text.trim();
     final contrasena = passCtrl.text.trim();
@@ -639,7 +718,8 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
       _recargar();
       if (mounted) {
         try {
-          final existe = await widget.repo.existeRestaurantePorNombre(nombreRest);
+          final existe =
+              await widget.repo.existeRestaurantePorNombre(nombreRest);
           if (existe) {
             _snack(
               'El restaurante «$nombreRest» sí se creó (hubo error de red al confirmar).',
@@ -669,7 +749,7 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
     var plan = r['suscripcion_plan'] as String? ?? 'basico';
     var estado = r['suscripcion_estado'] as String? ?? 'prueba';
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -706,15 +786,20 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar')),
           ],
         ),
       ),
     );
     if (ok != true) return;
     try {
-      await widget.repo.actualizarSuscripcion(susId, estado: estado, plan: plan);
+      await widget.repo
+          .actualizarSuscripcion(susId, estado: estado, plan: plan);
       _recargar();
       _snack('Plan actualizado');
     } catch (e) {
@@ -739,17 +824,24 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                 builder: (context, snap) {
                   if (snap.hasError) {
                     return _ErrorCarga(
-                      mensaje: mensajeErrorHttp(snap.error!, contexto: 'restaurantes'),
+                      mensaje: mensajeErrorHttp(snap.error!,
+                          contexto: 'restaurantes'),
                       onReintentar: _recargar,
                     );
                   }
                   if (!snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: AnaliticaSkeleton.seccion(
+                          etiqueta: 'Cargando datos de la plataforma'),
+                    );
                   }
                   final q = _busqueda.text.trim().toLowerCase();
                   final lista = snap.data!.where((r) {
                     if (q.isEmpty) return true;
-                    return (r['nombre'] as String? ?? '').toLowerCase().contains(q);
+                    return (r['nombre'] as String? ?? '')
+                        .toLowerCase()
+                        .contains(q);
                   }).toList();
 
                   if (lista.isEmpty) {
@@ -769,13 +861,17 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(color: Colors.grey.shade200),
+                            side: BorderSide(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant),
                           ),
                           child: ListTile(
                             contentPadding: const EdgeInsets.all(16),
                             title: Text(
                               r['nombre'] as String? ?? '',
-                              style: const TextStyle(fontWeight: FontWeight.w700),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -784,7 +880,11 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                                 Text(
                                   '${r['ciudad_nombre']} · '
                                   '${r['sucursales_activas'] ?? 0} sucursal(es)',
-                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                      fontSize: 12),
                                 ),
                                 const SizedBox(height: 8),
                                 FoodyControlChipEstado(
@@ -822,11 +922,14 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                                 } else if (v == 'suscripcion') {
                                   final susId = r['suscripcion_id'] as String?;
                                   if (susId == null) return;
-                                  final est = r['suscripcion_estado'] == 'activa'
-                                      ? 'bloqueada'
-                                      : 'activa';
+                                  final est =
+                                      r['suscripcion_estado'] == 'activa'
+                                          ? 'bloqueada'
+                                          : 'activa';
                                   try {
-                                    await widget.repo.actualizarSuscripcion(susId, estado: est);
+                                    await widget.repo.actualizarSuscripcion(
+                                        susId,
+                                        estado: est);
                                     _recargar();
                                   } catch (e) {
                                     _snack(mensajeErrorHttp(e));
@@ -834,7 +937,8 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                                 }
                               },
                               itemBuilder: (_) => [
-                                const PopupMenuItem(value: 'plan', child: Text('Editar plan')),
+                                const PopupMenuItem(
+                                    value: 'plan', child: Text('Editar plan')),
                                 PopupMenuItem(
                                   value: 'suscripcion',
                                   child: Text(
@@ -845,7 +949,9 @@ class _VistaRestaurantesState extends State<_VistaRestaurantes> {
                                 ),
                                 PopupMenuItem(
                                   value: 'toggle',
-                                  child: Text(activo ? 'Desactivar restaurante' : 'Activar restaurante'),
+                                  child: Text(activo
+                                      ? 'Desactivar restaurante'
+                                      : 'Activar restaurante'),
                                 ),
                               ],
                             ),
@@ -911,7 +1017,7 @@ class _VistaPlanesState extends State<_VistaPlanes> {
     final vence = DateTime.tryParse('${s['fecha_vencimiento']}');
     var fechaVence = vence ?? DateTime.now().add(const Duration(days: 14));
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -964,7 +1070,8 @@ class _VistaPlanesState extends State<_VistaPlanes> {
                     final picked = await showDatePicker(
                       context: ctx,
                       initialDate: fechaVence,
-                      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                      firstDate:
+                          DateTime.now().subtract(const Duration(days: 30)),
                       lastDate: DateTime.now().add(const Duration(days: 3650)),
                     );
                     if (picked != null) setLocal(() => fechaVence = picked);
@@ -974,8 +1081,12 @@ class _VistaPlanesState extends State<_VistaPlanes> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aplicar plan')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Aplicar plan')),
           ],
         ),
       ),
@@ -1025,7 +1136,11 @@ class _VistaPlanesState extends State<_VistaPlanes> {
                 );
               }
               if (!snap.hasData) {
-                return const Center(child: CircularProgressIndicator());
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: AnaliticaSkeleton.seccion(
+                      etiqueta: 'Cargando datos de la plataforma'),
+                );
               }
               final q = _busqueda.text.trim().toLowerCase();
               final lista = snap.data!.where((s) {
@@ -1042,7 +1157,8 @@ class _VistaPlanesState extends State<_VistaPlanes> {
                   itemCount: lista.length,
                   itemBuilder: (_, i) {
                     final s = lista[i];
-                    final vence = DateTime.tryParse('${s['fecha_vencimiento']}');
+                    final vence =
+                        DateTime.tryParse('${s['fecha_vencimiento']}');
                     return Card(
                       margin: const EdgeInsets.only(bottom: 10),
                       child: ListTile(
@@ -1065,7 +1181,9 @@ class _VistaPlanesState extends State<_VistaPlanes> {
                                   'Vence: ${fmt.format(vence)}',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey.shade600,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                                   ),
                                 ),
                               ),
@@ -1125,7 +1243,14 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
   }
 
   Future<void> _crearUsuario() async {
-    final restaurantes = await widget.repo.restaurantes();
+    final List<Map<String, dynamic>> restaurantes;
+    try {
+      restaurantes = await widget.repo.restaurantes();
+    } catch (error) {
+      if (mounted) mostrarErrorSnackBar(context, error);
+      return;
+    }
+    if (!mounted) return;
     if (restaurantes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Crea un restaurante primero')),
@@ -1133,52 +1258,28 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
       return;
     }
 
-    String? restauranteId = restaurantes.first['id'] as String?;
-    List<Map<String, dynamic>> sucursales = [];
-    String? sucursalId;
-    var rol = 'cajero';
-    final nombreCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
-    final passCtrl = TextEditingController(text: '123456');
-
-    if (restauranteId != null) {
-      sucursales = await widget.repo.sucursalesRestaurante(restauranteId);
-      sucursalId = sucursales.isNotEmpty ? sucursales.first['id'] as String? : null;
-    }
-
-    final resultado = await showDialog<Map<String, dynamic>>(
+    final resultado = await FoodyDialogo.mostrar<Map<String, String>>(
       context: context,
       builder: (ctx) => _DialogoCrearUsuario(
         restaurantes: restaurantes,
-        restauranteIdInicial: restauranteId,
-        sucursalesIniciales: sucursales,
-        sucursalIdInicial: sucursalId,
-        rolInicial: rol,
-        nombreCtrl: nombreCtrl,
-        emailCtrl: emailCtrl,
-        passCtrl: passCtrl,
         repo: widget.repo,
       ),
     );
-
-    final sid = resultado?['sucursal_id'] as String?;
-    final rolFinal = resultado?['rol'] as String? ?? rol;
-
-    if (resultado != null && sid != null) {
+    if (mounted && resultado != null) {
       try {
         await foodyControlConCarga(
           context,
           () => widget.repo.crearUsuario(
-            nombre: nombreCtrl.text.trim(),
-            email: emailCtrl.text.trim(),
-            contrasena: passCtrl.text.trim(),
-            rol: rolFinal,
-            sucursalId: sid,
+            nombre: resultado['nombre']!,
+            email: resultado['email']!,
+            contrasena: resultado['contrasena']!,
+            rol: resultado['rol']!,
+            sucursalId: resultado['sucursal_id']!,
           ),
           mensaje: 'Creando usuario…',
         );
-        _recargar();
         if (mounted) {
+          _recargar();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Usuario creado')),
           );
@@ -1191,15 +1292,13 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
         }
       }
     }
-    nombreCtrl.dispose();
-    emailCtrl.dispose();
-    passCtrl.dispose();
   }
 
   Future<void> _editarUsuario(Map<String, dynamic> u) async {
     var rol = u['rol'] as String? ?? 'cajero';
-    final nombreCtrl = TextEditingController(text: u['nombre'] as String? ?? '');
-    final ok = await showDialog<bool>(
+    final nombreCtrl =
+        TextEditingController(text: u['nombre'] as String? ?? '');
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -1215,15 +1314,20 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                 initialValue: rol,
                 decoration: const InputDecoration(labelText: 'Rol'),
                 items: FoodyControlUi.rolesStaff
-                    .map((r) => DropdownMenuItem(value: r.$1, child: Text(r.$2)))
+                    .map(
+                        (r) => DropdownMenuItem(value: r.$1, child: Text(r.$2)))
                     .toList(),
                 onChanged: (v) => setLocal(() => rol = v ?? rol),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar')),
           ],
         ),
       ),
@@ -1262,7 +1366,8 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: DropdownButtonFormField<String>(
-                    initialValue: _filtroRestaurante.isEmpty ? '' : _filtroRestaurante,
+                    initialValue:
+                        _filtroRestaurante.isEmpty ? '' : _filtroRestaurante,
                     decoration: const InputDecoration(
                       labelText: 'Filtrar restaurante',
                       isDense: true,
@@ -1277,7 +1382,8 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                         ),
                       ),
                     ],
-                    onChanged: (v) => setState(() => _filtroRestaurante = v ?? ''),
+                    onChanged: (v) =>
+                        setState(() => _filtroRestaurante = v ?? ''),
                   ),
                 );
               },
@@ -1292,7 +1398,11 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                 future: _future,
                 builder: (context, snap) {
                   if (!snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: AnaliticaSkeleton.seccion(
+                          etiqueta: 'Cargando datos de la plataforma'),
+                    );
                   }
                   final q = _busqueda.text.trim().toLowerCase();
                   final lista = snap.data!.where((u) {
@@ -1342,23 +1452,25 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                             onTap: () => _editarUsuario(u),
                             onLongPress: () async {
                               final passCtrl = TextEditingController();
-                              final ok = await showDialog<bool>(
+                              final ok = await FoodyDialogo.mostrar<bool>(
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: Text('Contraseña · ${u['email']}'),
                                   content: TextField(
                                     controller: passCtrl,
                                     obscureText: true,
-                                    decoration: const InputDecoration(labelText: 'Nueva contraseña'),
+                                    decoration: const InputDecoration(
+                                        labelText: 'Nueva contraseña'),
                                   ),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.pop(ctx, false),
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
                                       child: const Text('Cancelar'),
                                     ),
                                     FilledButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, passCtrl.text.length >= 6),
+                                      onPressed: () => Navigator.pop(
+                                          ctx, passCtrl.text.length >= 6),
                                       child: const Text('Guardar'),
                                     ),
                                   ],
@@ -1372,7 +1484,9 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                                   );
                                   if (mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Contraseña actualizada')),
+                                      const SnackBar(
+                                          content:
+                                              Text('Contraseña actualizada')),
                                     );
                                   }
                                 } catch (e) {
@@ -1435,7 +1549,7 @@ class _VistaCiudadesState extends State<_VistaCiudades> {
   Future<void> _nueva() async {
     final nombreCtrl = TextEditingController();
     final slugCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Nueva ciudad'),
@@ -1457,9 +1571,12 @@ class _VistaCiudadesState extends State<_VistaCiudades> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, nombreCtrl.text.trim().isNotEmpty),
+            onPressed: () =>
+                Navigator.pop(ctx, nombreCtrl.text.trim().isNotEmpty),
             child: const Text('Crear'),
           ),
         ],
@@ -1492,7 +1609,11 @@ class _VistaCiudadesState extends State<_VistaCiudades> {
           future: _future,
           builder: (context, snap) {
             if (!snap.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: AnaliticaSkeleton.seccion(
+                    etiqueta: 'Cargando datos de la plataforma'),
+              );
             }
             return RefreshIndicator(
               onRefresh: () async => _recargar(),
@@ -1573,7 +1694,11 @@ class _VistaConfigState extends State<_VistaConfig> {
       future: _future,
       builder: (context, snap) {
         if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: AnaliticaSkeleton.seccion(
+                etiqueta: 'Cargando datos de la plataforma'),
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -1583,12 +1708,13 @@ class _VistaConfigState extends State<_VistaConfig> {
             return Card(
               child: ListTile(
                 title: Text('${c['clave']}'),
-                subtitle: Text('${c['descripcion'] ?? ''}\nValor: ${c['valor']}'),
+                subtitle:
+                    Text('${c['descripcion'] ?? ''}\nValor: ${c['valor']}'),
                 isThreeLine: true,
                 trailing: const Icon(Icons.edit_outlined),
                 onTap: () async {
                   final ctrl = TextEditingController(text: '${c['valor']}');
-                  final ok = await showDialog<bool>(
+                  final ok = await FoodyDialogo.mostrar<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       title: Text('${c['clave']}'),
@@ -1644,24 +1770,10 @@ class _VistaConfigState extends State<_VistaConfig> {
 class _DialogoCrearUsuario extends StatefulWidget {
   const _DialogoCrearUsuario({
     required this.restaurantes,
-    required this.restauranteIdInicial,
-    required this.sucursalesIniciales,
-    required this.sucursalIdInicial,
-    required this.rolInicial,
-    required this.nombreCtrl,
-    required this.emailCtrl,
-    required this.passCtrl,
     required this.repo,
   });
 
   final List<Map<String, dynamic>> restaurantes;
-  final String? restauranteIdInicial;
-  final List<Map<String, dynamic>> sucursalesIniciales;
-  final String? sucursalIdInicial;
-  final String rolInicial;
-  final TextEditingController nombreCtrl;
-  final TextEditingController emailCtrl;
-  final TextEditingController passCtrl;
   final SuperAdminRepository repo;
 
   @override
@@ -1669,19 +1781,29 @@ class _DialogoCrearUsuario extends StatefulWidget {
 }
 
 class _DialogoCrearUsuarioState extends State<_DialogoCrearUsuario> {
-  late String? _restauranteId;
-  late String? _sucursalId;
-  late String _rol;
+  final _formulario = GlobalKey<FormState>();
+  final _nombre = TextEditingController();
+  final _email = TextEditingController();
+  final _contrasena = TextEditingController();
+  String? _restauranteId;
+  String? _sucursalId;
+  String _rol = 'cajero';
   List<Map<String, dynamic>> _sucursales = [];
   bool _cargandoSucursales = false;
+  String? _errorSucursales;
 
   @override
   void initState() {
     super.initState();
-    _restauranteId = widget.restauranteIdInicial;
-    _sucursalId = widget.sucursalIdInicial;
-    _rol = widget.rolInicial;
-    _sucursales = widget.sucursalesIniciales;
+    _cambiarRestaurante(widget.restaurantes.first['id'] as String?);
+  }
+
+  @override
+  void dispose() {
+    _nombre.dispose();
+    _email.dispose();
+    _contrasena.dispose();
+    super.dispose();
   }
 
   Future<void> _cambiarRestaurante(String? id) async {
@@ -1690,6 +1812,7 @@ class _DialogoCrearUsuarioState extends State<_DialogoCrearUsuario> {
       _sucursalId = null;
       _sucursales = [];
       _cargandoSucursales = true;
+      _errorSucursales = null;
     });
     if (id == null) {
       setState(() => _cargandoSucursales = false);
@@ -1697,120 +1820,134 @@ class _DialogoCrearUsuarioState extends State<_DialogoCrearUsuario> {
     }
     try {
       final lista = await widget.repo.sucursalesRestaurante(id);
-      if (!mounted) return;
+      if (!mounted || _restauranteId != id) return;
       setState(() {
         _sucursales = lista;
         _sucursalId = lista.isNotEmpty ? lista.first['id'] as String? : null;
         _cargandoSucursales = false;
       });
     } catch (e) {
-      if (mounted) {
-        setState(() => _cargandoSucursales = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'sucursales'))),
-        );
+      if (mounted && _restauranteId == id) {
+        setState(() {
+          _cargandoSucursales = false;
+          _errorSucursales = mensajeErrorHttp(e, contexto: 'sucursales');
+        });
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final valido = widget.nombreCtrl.text.trim().isNotEmpty &&
-        widget.emailCtrl.text.trim().isNotEmpty &&
-        _sucursalId != null;
-
     return AlertDialog(
       title: const Text('Nuevo usuario staff'),
       content: SizedBox(
         width: 400,
         child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: _restauranteId,
-                decoration: const InputDecoration(
-                  labelText: 'Restaurante',
-                  border: OutlineInputBorder(),
-                ),
-                items: widget.restaurantes
-                    .map(
-                      (r) => DropdownMenuItem(
-                        value: r['id'] as String,
-                        child: Text(r['nombre'] as String? ?? ''),
-                      ),
-                    )
-                    .toList(),
-                onChanged: _cambiarRestaurante,
-              ),
-              const SizedBox(height: 10),
-              if (_cargandoSucursales)
-                const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: LinearProgressIndicator(),
-                )
-              else
+          child: Form(
+            key: _formulario,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 DropdownButtonFormField<String>(
-                  initialValue: _sucursalId,
+                  initialValue: _restauranteId,
                   decoration: const InputDecoration(
-                    labelText: 'Sucursal',
+                    labelText: 'Restaurante',
                     border: OutlineInputBorder(),
                   ),
-                  items: _sucursales
+                  items: widget.restaurantes
                       .map(
-                        (s) => DropdownMenuItem(
-                          value: s['id'] as String,
-                          child: Text(s['nombre'] as String? ?? ''),
+                        (r) => DropdownMenuItem(
+                          value: r['id'] as String,
+                          child: Text(r['nombre'] as String? ?? ''),
                         ),
                       )
                       .toList(),
-                  onChanged: (v) => setState(() => _sucursalId = v),
+                  onChanged: _cambiarRestaurante,
                 ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                initialValue: _rol,
-                decoration: const InputDecoration(
-                  labelText: 'Rol',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 10),
+                if (_cargandoSucursales)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: LinearProgressIndicator(),
+                  )
+                else if (_errorSucursales != null)
+                  TextButton(
+                    onPressed: () => _cambiarRestaurante(_restauranteId),
+                    child: Text('$_errorSucursales Reintentar'),
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(_restauranteId),
+                    initialValue: _sucursalId,
+                    decoration: const InputDecoration(
+                      labelText: 'Sucursal',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _sucursales
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s['id'] as String,
+                            child: Text(s['nombre'] as String? ?? ''),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => _sucursalId = v),
+                    validator: (v) =>
+                        v == null ? 'Selecciona una sucursal' : null,
+                  ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: _rol,
+                  decoration: const InputDecoration(
+                    labelText: 'Rol',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: FoodyControlUi.rolesStaff
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r.$1,
+                          child: Text(r.$2),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => setState(() => _rol = v ?? _rol),
                 ),
-                items: FoodyControlUi.rolesStaff
-                    .map(
-                      (r) => DropdownMenuItem(
-                        value: r.$1,
-                        child: Text(r.$2),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _rol = v ?? _rol),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: widget.nombreCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _nombre,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v?.trim().length ?? 0) < 2 ? 'Escribe el nombre' : null,
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: widget.emailCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Correo',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) => (v?.trim() ?? '').contains('@')
+                      ? null
+                      : 'Escribe un correo válido',
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: widget.passCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Contraseña',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _contrasena,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña',
+                    border: OutlineInputBorder(),
+                  ),
+                  obscureText: true,
+                  validator: (v) => (v?.trim().length ?? 0) < 6
+                      ? 'Escribe al menos 6 caracteres'
+                      : null,
                 ),
-                obscureText: true,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1820,12 +1957,18 @@ class _DialogoCrearUsuarioState extends State<_DialogoCrearUsuario> {
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: valido
-              ? () => Navigator.pop(context, {
-                    'sucursal_id': _sucursalId,
+          onPressed: _cargandoSucursales || _errorSucursales != null
+              ? null
+              : () {
+                  if (!_formulario.currentState!.validate()) return;
+                  Navigator.pop(context, {
+                    'sucursal_id': _sucursalId!,
                     'rol': _rol,
-                  })
-              : null,
+                    'nombre': _nombre.text.trim(),
+                    'email': _email.text.trim(),
+                    'contrasena': _contrasena.text.trim(),
+                  });
+                },
           child: const Text('Crear'),
         ),
       ],
@@ -1847,7 +1990,9 @@ class _ErrorCarga extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_outlined, size: 48, color: Colors.grey.shade400),
+            Icon(Icons.cloud_off_outlined,
+                size: 48,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(mensaje, textAlign: TextAlign.center),
             const SizedBox(height: 16),

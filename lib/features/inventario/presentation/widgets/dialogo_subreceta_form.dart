@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/tema/foody_formulario.dart';
@@ -32,7 +33,7 @@ Future<SubrecetaFormResultado?> mostrarDialogoSubreceta({
   Map<String, dynamic>? subrecetaExistente,
   List<Map<String, dynamic>>? itemsExistentes,
 }) {
-  return showDialog<SubrecetaFormResultado>(
+  return FoodyDialogo.mostrar<SubrecetaFormResultado>(
     context: context,
     builder: (ctx) => _DialogoSubrecetaForm(
       ingredientes: ingredientes,

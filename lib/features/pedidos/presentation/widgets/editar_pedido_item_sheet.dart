@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
@@ -18,7 +19,7 @@ Future<bool> mostrarEditarPedidoItemSheet({
 }) async {
   final ancho = MediaQuery.sizeOf(context).width;
   final result = FoodyBreakpoints.esExpanded(ancho)
-      ? await showDialog<bool>(
+      ? await FoodyDialogo.mostrar<bool>(
           context: context,
           builder: (ctx) => Dialog(
             insetPadding:

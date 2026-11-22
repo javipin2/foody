@@ -79,6 +79,7 @@ Assert-True ($res.ok -and $res.json.exito) "GET /dashboard/resumen"
 Assert-True ($graf.ok -and $graf.json.exito) "GET /dashboard/graficos"
 Assert-True ($fin.ok -and $fin.json.exito) "GET /reportes/financiero hoy"
 Assert-True ($ana.ok -and $ana.json.exito) "GET /analitica/resumen preset=hoy"
+Assert-True ($prod.ok -and $prod.json.exito) "GET /reportes/productos últimos 7 días"
 
 $d = $res.json.datos
 $keys = @('ventas_hoy', 'pedidos_activos', 'pedidos_pendientes_qr', 'pedidos_completados_hoy', 'alertas_pendientes')
@@ -158,8 +159,11 @@ if ($prod.ok -and $prod.json.exito) {
             Assert-True $true ("dash={0} rep={1}" -f $nDash, $nRep)
         }
     }
+    elseif ($tops.Count -eq 0 -and $repTop.Count -eq 0) {
+        Assert-True ($prod.json.datos.ranking -is [System.Array]) "ranking vacío válido para un periodo sin productos vendidos"
+    }
     else {
-        Assert-True ($repTop.Count -gt 0) "reportes productos ranking no vacio"
+        Assert-True $false "dashboard y reportes discrepan sobre si hay productos vendidos"
     }
 }
 

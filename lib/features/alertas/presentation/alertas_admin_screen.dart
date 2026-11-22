@@ -30,6 +30,8 @@ class AlertasAdminScreen extends StatefulWidget {
 }
 
 class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = AlertasRepository();
   List<Map<String, dynamic>> _alertas = [];
   bool _soloPendientes = true;
@@ -126,7 +128,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
       case 'medio':
         return const Color(0xFFD97706);
       default:
-        return AnaliticaTokens.inkSoft;
+        return _scheme.onSurfaceVariant;
     }
   }
 
@@ -159,7 +161,6 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                 ? 'Se generaron $n alertas nuevas'
                 : 'Sin alertas nuevas por reglas programadas',
           ),
-          backgroundColor: AnaliticaTokens.ink,
         ),
       );
       await _cargar();
@@ -269,8 +270,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
     }
   }
 
-  int get _pendientes =>
-      _alertas.where((a) => a['revisada'] != true).length;
+  int get _pendientes => _alertas.where((a) => a['revisada'] != true).length;
 
   @override
   Widget build(BuildContext context) {
@@ -278,7 +278,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -291,11 +291,11 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Admin / Sistema',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -306,7 +306,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                     fontSize: compacto ? 18 : 20,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.4,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     height: 1.15,
                   ),
                 ),
@@ -317,8 +317,8 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                       : _soloPendientes
                           ? '$_pendientes pendientes · toca una alerta para ir al origen'
                           : '${_alertas.length} en total · $_pendientes pendientes',
-                  style: const TextStyle(
-                    color: AnaliticaTokens.inkMuted,
+                  style: TextStyle(
+                    color: _scheme.onSurfaceVariant,
                     fontSize: 12.5,
                   ),
                 ),
@@ -335,17 +335,17 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                           color: _soloPendientes
-                              ? Colors.white
-                              : AnaliticaTokens.inkMuted,
+                              ? _scheme.onPrimary
+                              : _scheme.onSurfaceVariant,
                         ),
                       ),
                       selected: _soloPendientes,
-                      selectedColor: AnaliticaTokens.ink,
-                      backgroundColor: AnaliticaTokens.surface,
+                      selectedColor: _scheme.primary,
+                      backgroundColor: _scheme.surfaceContainerLow,
                       side: BorderSide(
                         color: _soloPendientes
-                            ? AnaliticaTokens.ink
-                            : AnaliticaTokens.border,
+                            ? _scheme.onSurface
+                            : _scheme.outlineVariant,
                       ),
                       showCheckmark: false,
                       visualDensity: VisualDensity.compact,
@@ -357,7 +357,8 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                     FilledButton.icon(
                       onPressed: _evaluando ? null : _evaluarReglas,
                       style: FilledButton.styleFrom(
-                        backgroundColor: AnaliticaTokens.ink,
+                        backgroundColor: _scheme.primary,
+                        foregroundColor: _scheme.onPrimary,
                         visualDensity: VisualDensity.compact,
                       ),
                       icon: _evaluando
@@ -376,9 +377,9 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                       tooltip: 'Actualizar',
                       onPressed: _cargar,
                       visualDensity: VisualDensity.compact,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.refresh,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -395,7 +396,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                     ? _vacio()
                     : RefreshIndicator(
                         onRefresh: _cargar,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                         child: ListView.separated(
                           padding: EdgeInsets.fromLTRB(
                             compacto ? 12 : 20,
@@ -421,9 +422,9 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -437,9 +438,9 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -447,7 +448,8 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -466,9 +468,9 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -477,40 +479,41 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surfaceMuted,
+                  color: _scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.notifications_none_outlined,
                   size: 24,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 14),
               Text(
                 _soloPendientes ? 'Sin alertas pendientes' : 'Sin alertas',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Cuando ocurra un riesgo operativo (stock, mesa sin pago, merma…), '
                 'aparecerá aquí para revisarlo.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _evaluando ? null : _evaluarReglas,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.bolt_outlined, size: 18),
@@ -533,7 +536,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
         (a['referencia_id'] as String?)?.isNotEmpty == true;
 
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       child: InkWell(
         onTap: tieneEnlace ? () => _abrirReferencia(a) : null,
@@ -541,7 +544,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Padding(
@@ -575,11 +578,10 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                           fontWeight: FontWeight.w600,
                           height: 1.3,
                           color: revisada
-                              ? AnaliticaTokens.inkSoft
-                              : AnaliticaTokens.ink,
-                          decoration: revisada
-                              ? TextDecoration.lineThrough
-                              : null,
+                              ? _scheme.onSurfaceVariant
+                              : _scheme.onSurface,
+                          decoration:
+                              revisada ? TextDecoration.lineThrough : null,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -587,12 +589,12 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                         spacing: 6,
                         runSpacing: 4,
                         children: [
-                          _badge(_etiquetaTipo(tipo), AnaliticaTokens.inkMuted),
+                          _badge(_etiquetaTipo(tipo), _scheme.onSurfaceVariant),
                           _badge(_etiquetaNivel(nivel), color),
                           if (creado != null)
                             _badge(
                               _fecha.format(creado),
-                              AnaliticaTokens.inkSoft,
+                              _scheme.onSurfaceVariant,
                             ),
                           if (tieneEnlace)
                             _badge('Ver origen', AnaliticaTokens.pedidos),
@@ -614,10 +616,10 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                   IconButton(
                     tooltip: 'Marcar revisada',
                     onPressed: () => _revisar(a['id'] as String),
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.done_all,
                       size: 20,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
               ],

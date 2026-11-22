@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
@@ -24,7 +25,10 @@ class DashboardConsolidadoWidget extends StatefulWidget {
       _DashboardConsolidadoWidgetState();
 }
 
-class _DashboardConsolidadoWidgetState extends State<DashboardConsolidadoWidget> {
+class _DashboardConsolidadoWidgetState
+    extends State<DashboardConsolidadoWidget> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = DashboardRepository();
   late Future<Map<String, dynamic>> _future;
 
@@ -71,7 +75,8 @@ class _DashboardConsolidadoWidgetState extends State<DashboardConsolidadoWidget>
           future: _future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return AnaliticaSkeleton.seccion(
+                  etiqueta: 'Cargando consolidado');
             }
             if (snapshot.hasError) {
               return FoodyEstadoUi.desdeExcepcion(
@@ -96,7 +101,8 @@ class _DashboardConsolidadoWidgetState extends State<DashboardConsolidadoWidget>
               children: [
                 Text(
                   '$nSedes sucursales activas',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  style:
+                      TextStyle(color: _scheme.onSurfaceVariant, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
                 LayoutBuilder(
@@ -173,7 +179,8 @@ class _DashboardConsolidadoWidgetState extends State<DashboardConsolidadoWidget>
                         trailing: widget.onSeleccionarSucursal != null
                             ? const Icon(Icons.chevron_right)
                             : null,
-                        onTap: widget.onSeleccionarSucursal != null && sid.isNotEmpty
+                        onTap: widget.onSeleccionarSucursal != null &&
+                                sid.isNotEmpty
                             ? () => widget.onSeleccionarSucursal!(sid)
                             : null,
                       ),
@@ -205,7 +212,7 @@ class _TarjetaTotal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      color: ColoresFoody.tarjeta,
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),

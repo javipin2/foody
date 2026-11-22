@@ -26,6 +26,8 @@ class SucursalesAdminScreen extends StatefulWidget {
 }
 
 class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = SucursalesRepository();
   final _almacenamiento = AlmacenamientoRepository();
   final _picker = ImagePicker();
@@ -72,8 +74,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            error ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
+        backgroundColor: error ? AnaliticaTokens.alertas : _scheme.onSurface,
       ),
     );
   }
@@ -245,9 +246,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                 esBanner
                     ? 'Banner · recomendado 1600×600'
                     : 'Logo circular · recomendado 800×800',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -332,8 +333,10 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
   Future<void> _editarSucursal(Map<String, dynamic> s) async {
     final id = s['id'] as String?;
     if (id == null) return;
-    final nombreCtrl = TextEditingController(text: s['nombre'] as String? ?? '');
-    final dirCtrl = TextEditingController(text: s['direccion'] as String? ?? '');
+    final nombreCtrl =
+        TextEditingController(text: s['nombre'] as String? ?? '');
+    final dirCtrl =
+        TextEditingController(text: s['direccion'] as String? ?? '');
     final telCtrl = TextEditingController(text: s['telefono'] as String? ?? '');
     var activa = s['activa'] != false;
     final ok = await FoodyDialogo.mostrar<bool>(
@@ -415,7 +418,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -428,11 +431,11 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Admin / Sucursal',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -450,7 +453,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                               fontSize: compacto ? 18 : 20,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.4,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                               height: 1.15,
                             ),
                           ),
@@ -459,8 +462,8 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                             _cargando
                                 ? 'Cargando…'
                                 : '${_sucursales.length} sede${_sucursales.length == 1 ? '' : 's'} · menú, mesas y pedidos por ubicación',
-                            style: const TextStyle(
-                              color: AnaliticaTokens.inkMuted,
+                            style: TextStyle(
+                              color: _scheme.onSurfaceVariant,
                               fontSize: 12.5,
                             ),
                           ),
@@ -470,7 +473,8 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                     FilledButton.icon(
                       onPressed: _nuevaSucursal,
                       style: FilledButton.styleFrom(
-                        backgroundColor: AnaliticaTokens.ink,
+                        backgroundColor: _scheme.primary,
+                        foregroundColor: _scheme.onPrimary,
                         visualDensity: VisualDensity.compact,
                       ),
                       icon: const Icon(Icons.add, size: 18),
@@ -480,9 +484,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                       tooltip: 'Actualizar',
                       onPressed: _cargar,
                       visualDensity: VisualDensity.compact,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.refresh,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -497,7 +501,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                 ? _estadoError()
                 : RefreshIndicator(
                     onRefresh: _cargar,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     child: ListView(
                       padding: EdgeInsets.fromLTRB(
                         compacto ? 12 : 20,
@@ -529,9 +533,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -545,9 +549,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -555,7 +559,8 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -574,9 +579,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       clipBehavior: Clip.antiAlias,
@@ -587,7 +592,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -596,7 +601,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                         style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w700,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                       SizedBox(height: 2),
@@ -606,7 +611,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                         style: TextStyle(
                           fontSize: 12.5,
                           height: 1.35,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -618,12 +623,12 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                   label: const Text('Nombre / tel'),
                 ),
                 if (_subiendoMarca)
-                  const SizedBox(
+                  SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   ),
               ],
@@ -659,9 +664,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
       children: [
         Container(
           decoration: BoxDecoration(
-            color: AnaliticaTokens.canvas,
+            color: _scheme.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -788,7 +793,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                                   color: AnaliticaTokens.inventario,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: AnaliticaTokens.surface,
+                                    color: _scheme.surfaceContainerLow,
                                     width: 2,
                                   ),
                                 ),
@@ -817,10 +822,10 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                             nombre,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                             ),
                           ),
                           if (telefono != null && telefono.isNotEmpty) ...[
@@ -829,9 +834,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                               telefono,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AnaliticaTokens.inkMuted,
+                                color: _scheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -847,7 +852,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                               fontSize: 12,
                               color: listo
                                   ? AnaliticaTokens.inventario
-                                  : AnaliticaTokens.inkMuted,
+                                  : _scheme.onSurfaceVariant,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -860,7 +865,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
@@ -886,8 +891,8 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                 onPressed:
                     _subiendoMarca ? null : () => _subirMarca(esBanner: true),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: Icon(
@@ -903,8 +908,8 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                 onPressed:
                     _subiendoMarca ? null : () => _subirMarca(esBanner: false),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: Icon(
@@ -925,7 +930,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
     required bool tieneBanner,
     required bool tieneLogo,
   }) {
-    final color = listo ? AnaliticaTokens.inventario : AnaliticaTokens.ink;
+    final color = listo ? AnaliticaTokens.inventario : _scheme.onSurface;
     final texto = listo
         ? 'Listo'
         : !tieneBanner && !tieneLogo
@@ -963,7 +968,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
 
   Widget _chipAccion({required IconData icon, required VoidCallback onTap}) {
     return Material(
-      color: AnaliticaTokens.ink.withValues(alpha: 0.72),
+      color: _scheme.onSurface.withValues(alpha: 0.72),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -978,15 +983,15 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
 
   Widget _placeholderBanner() {
     return Container(
-      color: AnaliticaTokens.surfaceMuted,
-      child: const Center(
+      color: _scheme.surfaceContainerHighest,
+      child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.image_outlined,
               size: 32,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
             ),
             SizedBox(height: 6),
             Text(
@@ -994,7 +999,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.inkSoft,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -1005,17 +1010,17 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
 
   Widget _placeholderLogo() {
     return Container(
-      color: AnaliticaTokens.surfaceMuted,
-      child: const Icon(
+      color: _scheme.surfaceContainerHighest,
+      child: Icon(
         Icons.storefront_outlined,
         size: 24,
-        color: AnaliticaTokens.inkMuted,
+        color: _scheme.onSurfaceVariant,
       ),
     );
   }
 
   Widget _encabezadoLista() {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -1023,7 +1028,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
           style: TextStyle(
             fontSize: 13.5,
             fontWeight: FontWeight.w700,
-            color: AnaliticaTokens.ink,
+            color: _scheme.onSurface,
           ),
         ),
         SizedBox(height: 2),
@@ -1032,7 +1037,7 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
           style: TextStyle(
             fontSize: 12.5,
             height: 1.35,
-            color: AnaliticaTokens.inkMuted,
+            color: _scheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -1043,9 +1048,9 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Column(
@@ -1054,39 +1059,40 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: AnaliticaTokens.surfaceMuted,
+              color: _scheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.store_outlined,
               size: 24,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'Aún no tienes sucursales',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Crea la primera sede para operar menú, mesas y pedidos.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _nuevaSucursal,
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
               visualDensity: VisualDensity.compact,
             ),
             icon: const Icon(Icons.add, size: 18),
@@ -1106,76 +1112,76 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
         child: Opacity(
           opacity: activa ? 1 : 0.55,
           child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
-            boxShadow: AnaliticaTokens.shadowSoft,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AnaliticaTokens.ink.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: AnaliticaTokens.ink.withValues(alpha: 0.15),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+              border: Border.all(color: _scheme.outlineVariant),
+              boxShadow: AnaliticaTokens.shadowSoft,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: _scheme.onSurface.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _scheme.onSurface.withValues(alpha: 0.15),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.store_outlined,
+                      size: 20,
+                      color: _scheme.onSurface,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.store_outlined,
-                    size: 20,
-                    color: AnaliticaTokens.ink,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        nombre,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          _badge(
-                            (dir == null || dir.isEmpty)
-                                ? 'Sin dirección'
-                                : dir,
-                            AnaliticaTokens.inkMuted,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          nombre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: _scheme.onSurface,
                           ),
-                          if (ciudad.isNotEmpty)
-                            _badge(ciudad, AnaliticaTokens.pedidos),
-                          if (!activa)
-                            _badge('Inactiva', AnaliticaTokens.inkMuted),
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _badge(
+                              (dir == null || dir.isEmpty)
+                                  ? 'Sin dirección'
+                                  : dir,
+                              _scheme.onSurfaceVariant,
+                            ),
+                            if (ciudad.isNotEmpty)
+                              _badge(ciudad, AnaliticaTokens.pedidos),
+                            if (!activa)
+                              _badge('Inactiva', _scheme.onSurfaceVariant),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                PopupMenuButton<String>(
+                  PopupMenuButton<String>(
                     tooltip: 'Más acciones',
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.more_vert,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                     onSelected: (v) {
                       if (v == 'editar') unawaited(_editarSucursal(s));
@@ -1199,10 +1205,10 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
                         ),
                     ],
                   ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );

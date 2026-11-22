@@ -3,9 +3,9 @@
 > **Fuente de verdad del trabajo Flutter/UI.**  
 > Actualizar al cerrar cada sesión de frontend. Sincronizar resumen en [`../MASTER_STATUS.md`](../MASTER_STATUS.md).
 
-**Última actualización:** 2026-11-22 — Menú, Facturación, Carrito y Checkout responsive/tema.
+**Última actualización:** 2026-11-22 — Diálogos operativos, validación de formularios y diseño adaptable de Foody Control.
 
-**Próximo paso:** continuar por Caja/Pedidos operativos y vistas admin priorizadas; después revisar claro/oscuro, estados y dimensiones visuales de las vistas intervenidas. Mantener `MODO=tunel`; la revisión visual global del usuario se hará al terminar la oleada.
+**Próximo paso:** completar los formularios y vistas que aún no cubre la oleada y verificar claro/oscuro, estados y tamaños por rol. El entorno de referencia sigue en `MODO=tunel`.
 
 ### Secuencia del rediseño Foody (2026-11-22)
 
@@ -14,8 +14,8 @@
 | 1. Auditoría técnica y funcional | ✅ Cerrada por instrucción del producto | Diagnóstico previo de módulos, plan, comisiones y aislamiento |
 | 2. Arquitectura de navegación | 🟡 Aplicada inicialmente | `FRONTEND_NAVIGATION_MAP.md`; centro Configuración y agrupación de ajustes existentes; deep links preservados |
 | 3. Sistema visual | 🟡 Definido con referencias visuales del usuario | `FRONTEND_DESIGN_AUDIT.md`; cuatro referencias mapeadas por contexto; queda aterrizar tokens/componentes y migrar vistas gradualmente |
-| 4. Implementación progresiva | 🔄 En curso | Centro Configuración e Insumos/Inventario ya intervenidos; continúa recorrido por vistas, sin bloquear el avance por QA global pendiente |
-| 5. Comercial y escalabilidad | 🟡 Revisión inicial documentada; decisión comercial pendiente | `MEMORIA.md` y `AUDITORIA_ARQUITECTONICA_FOODY.md` contrastados con Nest; revisar Free/Pro y liquidaciones antes de cualquier cambio |
+| 4. Implementación progresiva | 🔄 En curso | Navegación comprobada en 23 rutas y 7 secciones de plataforma. Escrituras de Caja, Inventario, Facturación y altas probadas con datos sintéticos. Continúa la cobertura de formularios por rol, tamaño y tema. |
+| 5. Comercial y escalabilidad | 🟡 Validación parcial | Free se asigna en autoservicio y limita a dos mesas. La API habilitó Analítica en Pro y Facturación en Enterprise. Accesos cruzados rechazados entre dos restaurantes. Quedan por definir la transición al precio de Pro anunciado y la política de liquidaciones. |
 
 La etapa 2 requiere validación de uso por roles durante QA. La etapa 3 se materializará vista por vista, usando las referencias del usuario según dispositivo y tarea, no como plantilla global. No se deben cambiar planes ni cargos sin decisión comercial explícita.
 

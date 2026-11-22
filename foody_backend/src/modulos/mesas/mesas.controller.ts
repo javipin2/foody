@@ -128,7 +128,7 @@ export class MesasController {
   @Get(':sucursal_id')
   @Permisos('gestionar_mesas', 'ver_mesas', 'ver_pedidos', 'crear_pedido')
   async listar(
-    @Param('sucursal_id') sucursalId: string,
+    @Param('sucursal_id', ParseUUIDPipe) sucursalId: string,
     @Query('incluir_inactivas') incluirInactivas: string | undefined,
     @UsuarioActual() usuario: JwtPayload,
   ) {

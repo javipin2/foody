@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/utilidades/parsear_numero.dart';
@@ -33,6 +34,7 @@ class DashboardResumenWidget extends StatefulWidget {
   final VoidCallback? onIrMesas;
   final VoidCallback? onIrAlertas;
   final VoidCallback? onIrCaja;
+
   /// Ventas del día = SUM pedidos; navega a Reportes (no Caja).
   final VoidCallback? onIrReportes;
   final VoidCallback? onIrInsumos;
@@ -44,6 +46,8 @@ class DashboardResumenWidget extends StatefulWidget {
 }
 
 class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _dash = DashboardRepository();
   final _mesasRepo = MesasRepository();
   final _pedidosRepo = PedidosRepository();
@@ -321,7 +325,8 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         };
     final copy = List<Map<String, dynamic>>.from(alertas);
     copy.sort((a, b) {
-      final r = rank(a['nivel'] as String?).compareTo(rank(b['nivel'] as String?));
+      final r =
+          rank(a['nivel'] as String?).compareTo(rank(b['nivel'] as String?));
       if (r != 0) return r;
       final ca = DateTime.tryParse('${a['created_at']}') ?? DateTime(1970);
       final cb = DateTime.tryParse('${b['created_at']}') ?? DateTime(1970);
@@ -348,12 +353,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         _header(),
         const SizedBox(height: 12),
         if (_cargando)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 48),
-            child: Center(
-              child: CircularProgressIndicator(color: AnaliticaTokens.inkMuted),
-            ),
-          )
+          AnaliticaSkeleton.seccion(etiqueta: 'Cargando resumen de operación')
         else if (_error != null)
           _errorBox()
         else ...[
@@ -446,13 +446,13 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Centro de operación',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.4,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 4),
@@ -460,9 +460,9 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                 hora == null
                     ? 'Solo lo que requiere atención ahora'
                     : 'Actualizado $hora · refresco cada ${_pollSeg}s (no en vivo)',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -471,7 +471,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         IconButton(
           tooltip: 'Actualizar',
           onPressed: _cargando ? null : _cargar,
-          icon: const Icon(Icons.refresh, color: AnaliticaTokens.inkMuted),
+          icon: Icon(Icons.refresh, color: _scheme.onSurfaceVariant),
         ),
       ],
     );
@@ -536,7 +536,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
 
   Widget _kpiCard(_Kpi k) {
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       child: InkWell(
         onTap: k.onTap,
@@ -544,7 +544,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Padding(
@@ -552,13 +552,21 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  k.titulo,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AnaliticaTokens.inkMuted,
-                  ),
+                Row(
+                  children: [
+                    Icon(Icons.circle, size: 7, color: k.color),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        k.titulo,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -569,7 +577,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.3,
-                    color: k.color,
+                    color: _scheme.onSurface,
                   ),
                 ),
               ],
@@ -593,7 +601,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
   }) {
     final abierto = _abiertos.contains(id);
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       child: Ink(
         decoration: BoxDecoration(
@@ -601,7 +609,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
           border: Border.all(
             color: count > 0
                 ? colorCount.withValues(alpha: 0.28)
-                : AnaliticaTokens.border,
+                : _scheme.outlineVariant,
           ),
           boxShadow: AnaliticaTokens.shadowSoft,
         ),
@@ -630,17 +638,17 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                         children: [
                           Text(
                             titulo,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w800,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                             ),
                           ),
                           Text(
                             subtitulo,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -654,7 +662,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                       decoration: BoxDecoration(
                         color: count > 0
                             ? colorCount.withValues(alpha: 0.12)
-                            : AnaliticaTokens.surfaceMuted,
+                            : _scheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -663,24 +671,21 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                           fontFamily: 'monospace',
-                          color: count > 0
-                              ? colorCount
-                              : AnaliticaTokens.inkSoft,
+                          color:
+                              count > 0 ? colorCount : _scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
                     Icon(
-                      abierto
-                          ? Icons.expand_less
-                          : Icons.expand_more,
-                      color: AnaliticaTokens.inkMuted,
+                      abierto ? Icons.expand_less : Icons.expand_more,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ],
                 ),
               ),
             ),
             if (abierto) ...[
-              const Divider(height: 1, color: AnaliticaTokens.borderSoft),
+              Divider(height: 1, color: _scheme.outlineVariant),
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
                 child: hijo,
@@ -691,7 +696,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                   child: TextButton(
                     onPressed: onVerTodo,
                     style: TextButton.styleFrom(
-                      foregroundColor: AnaliticaTokens.inkMuted,
+                      foregroundColor: _scheme.onSurfaceVariant,
                       visualDensity: VisualDensity.compact,
                     ),
                     child: Text(verTodoLabel ?? 'Ver más'),
@@ -718,9 +723,9 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
           Expanded(
             child: Text(
               texto,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -802,19 +807,19 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                       titulo,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                     Text(
                       subtitulo,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -853,7 +858,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     final color = switch (nivel) {
       'critico' || 'alto' => AnaliticaTokens.alertas,
       'medio' => const Color(0xFFD97706),
-      _ => AnaliticaTokens.inkSoft,
+      _ => _scheme.onSurfaceVariant,
     };
     final label = switch (nivel) {
       'critico' => 'Crítico',
@@ -892,22 +897,23 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
       ),
       child: Column(
         children: [
           Text(
             _error!,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AnaliticaTokens.ink),
+            style: TextStyle(color: _scheme.onSurface),
           ),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _cargar,
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
             ),
             child: const Text('Reintentar'),
           ),

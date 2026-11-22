@@ -54,11 +54,13 @@ class FoodyDialogoShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
-    final ancho = size.width.clamp(280.0, maxWidth);
+    final ancho = (size.width - 32).clamp(0.0, maxWidth);
     final altoMax = size.height * maxHeightFactor;
     final theme = Theme.of(context);
 
     return AlertDialog(
+      scrollable: true,
+      constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: altoMax),
       backgroundColor: theme.colorScheme.surface,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
@@ -89,12 +91,7 @@ class FoodyDialogoShell extends StatelessWidget {
       ),
       content: SizedBox(
         width: ancho,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: altoMax - 140),
-          child: SingleChildScrollView(
-            child: contenido,
-          ),
-        ),
+        child: contenido,
       ),
       actions: acciones,
     );

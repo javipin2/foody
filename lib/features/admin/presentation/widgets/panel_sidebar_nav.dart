@@ -34,14 +34,17 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
   static const _fondo = Color(0xFF0F172A);
   static const _superficie = Color(0xFF1E293B);
   static const _borde = Color(0xFF334155);
-  // Activo neutro (sin naranja chrome); logo sigue con marca Foody.
-  static const _activoBarra = Color(0xFFF8FAFC);
-  static final _activoFondo = Colors.white.withValues(alpha: 0.10);
-  static final _activoBorde = Colors.white.withValues(alpha: 0.18);
+  static const _activoBarra = Color(0xFFFF9B75);
+  static const _activoFondo = Color(0xFF302B35);
+  static const _activoBorde = Color(0xFF674338);
   static final _estrella = Colors.white.withValues(alpha: 0.55);
 
   late Set<String> _expandidos;
   List<String> _favoritos = [];
+
+  Duration get _duracion => MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 180);
 
   @override
   void initState() {
@@ -135,9 +138,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
               ),
               children: [
                 if (_favoritos.isNotEmpty)
-                  compacto
-                      ? _bloqueFavoritosCompacto()
-                      : _bloqueFavoritos(),
+                  compacto ? _bloqueFavoritosCompacto() : _bloqueFavoritos(),
                 for (final g in widget.grupos)
                   _grupoAcordeon(
                     g.grupo,
@@ -190,16 +191,6 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                 _itemPorRuta(ruta)!,
                 seleccionado: ruta == widget.seccionActiva,
               ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
-            child: Text(
-              'Toca ★ en un módulo para fijarlo (máx. ${PanelFavoritosService.maxFavoritos})',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.35),
-                fontSize: 10,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -253,9 +244,8 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
               child: Icon(
                 item.bloqueadoPorPlan ? Icons.lock_outline : item.icono,
                 size: 22,
-                color: sel
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.75),
+                color:
+                    sel ? Colors.white : Colors.white.withValues(alpha: 0.75),
               ),
             ),
           ),
@@ -286,7 +276,8 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                   color: ColoresFoody.primario,
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: const Icon(Icons.restaurant, color: Colors.white, size: 20),
+                child:
+                    const Icon(Icons.restaurant, color: Colors.white, size: 20),
               ),
             )
           : Column(
@@ -395,14 +386,14 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: DecoratedBox(
+      child: AnimatedContainer(
+        duration: _duracion,
+        curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
-          color: tieneActivo
-              ? _activoFondo
-              : _superficie.withValues(alpha: 0.45),
+          color: tieneActivo ? _activoFondo : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: tieneActivo ? _activoBorde : _borde.withValues(alpha: 0.6),
+            color: tieneActivo ? _activoBorde : Colors.transparent,
           ),
         ),
         child: Column(
@@ -411,7 +402,8 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
               onTap: () => _toggleGrupo(grupo.id, soloUno: soloUnGrupo),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 child: Row(
                   children: [
                     Icon(
@@ -436,19 +428,12 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                               fontSize: 13,
                             ),
                           ),
-                          Text(
-                            grupo.subtitulo,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 10,
-                            ),
-                          ),
                         ],
                       ),
                     ),
                     AnimatedRotation(
                       turns: expandido ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 200),
+                      duration: _duracion,
                       child: Icon(
                         Icons.keyboard_arrow_down_rounded,
                         color: Colors.white.withValues(alpha: 0.5),
@@ -476,7 +461,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
               crossFadeState: expandido
                   ? CrossFadeState.showSecond
                   : CrossFadeState.showFirst,
-              duration: const Duration(milliseconds: 200),
+              duration: _duracion,
               sizeCurve: Curves.easeOutCubic,
             ),
           ],
@@ -501,62 +486,60 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
         side: const BorderSide(color: _borde),
       ),
       onSelected: _ir,
-      itemBuilder: (menuCtx) => items
-          .map(
-            (item) {
-              final fav = _esFavorito(item.ruta);
-              return PopupMenuItem<String>(
-                value: item.ruta,
-                child: Row(
-                  children: [
-                    Icon(
-                      item.bloqueadoPorPlan ? Icons.lock_outline : item.icono,
-                      size: 18,
+      itemBuilder: (menuCtx) => items.map(
+        (item) {
+          final fav = _esFavorito(item.ruta);
+          return PopupMenuItem<String>(
+            value: item.ruta,
+            child: Row(
+              children: [
+                Icon(
+                  item.bloqueadoPorPlan ? Icons.lock_outline : item.icono,
+                  size: 18,
+                  color: item.ruta == widget.seccionActiva
+                      ? Colors.white
+                      : item.bloqueadoPorPlan
+                          ? Colors.white38
+                          : Colors.white70,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.titulo,
+                    style: TextStyle(
                       color: item.ruta == widget.seccionActiva
                           ? Colors.white
                           : item.bloqueadoPorPlan
-                              ? Colors.white38
-                              : Colors.white70,
+                              ? Colors.white54
+                              : Colors.white,
+                      fontWeight: item.ruta == widget.seccionActiva
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        item.titulo,
-                        style: TextStyle(
-                          color: item.ruta == widget.seccionActiva
-                              ? Colors.white
-                              : item.bloqueadoPorPlan
-                                  ? Colors.white54
-                                  : Colors.white,
-                          fontWeight: item.ruta == widget.seccionActiva
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                    // Evita disparar onSelected al pinnear.
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.pop(menuCtx);
-                        unawaited(_toggleFavorito(item.ruta));
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Icon(
-                          fav ? Icons.star_rounded : Icons.star_border_rounded,
-                          size: 20,
-                          color: fav
-                              ? Colors.white.withValues(alpha: 0.9)
-                              : Colors.white.withValues(alpha: 0.45),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              );
-            },
-          )
-          .toList(),
+                // Evita disparar onSelected al pinnear.
+                GestureDetector(
+                  onTap: () {
+                    Navigator.pop(menuCtx);
+                    unawaited(_toggleFavorito(item.ruta));
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Icon(
+                      fav ? Icons.star_rounded : Icons.star_border_rounded,
+                      size: 20,
+                      color: fav
+                          ? Colors.white.withValues(alpha: 0.9)
+                          : Colors.white.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ).toList(),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -591,14 +574,15 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
 
   Widget _itemPlano(MenuAdminItem item, {required bool compacto}) {
     final sel = item.ruta == widget.seccionActiva;
+    final tile = _tile(
+      item: item,
+      seleccionado: sel,
+      compacto: compacto,
+      onTap: () => _ir(item.ruta),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: _tile(
-        item: item,
-        seleccionado: sel,
-        compacto: compacto,
-        onTap: () => _ir(item.ruta),
-      ),
+      child: compacto ? Tooltip(message: item.titulo, child: tile) : tile,
     );
   }
 
@@ -631,7 +615,8 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
         onLongPress: () => _toggleFavorito(item.ruta),
         borderRadius: BorderRadius.circular(10),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: _duracion,
+          curve: Curves.easeOutCubic,
           padding: EdgeInsets.symmetric(
             horizontal: indent ? 10 : (compacto ? 8 : 12),
             vertical: indent ? 9 : 11,
@@ -686,9 +671,7 @@ class _PanelSidebarNavState extends State<PanelSidebarNav> {
                   ),
                 ),
                 Tooltip(
-                  message: fav
-                      ? 'Quitar de favoritos'
-                      : 'Añadir a favoritos',
+                  message: fav ? 'Quitar de favoritos' : 'Añadir a favoritos',
                   child: InkWell(
                     onTap: () => _toggleFavorito(item.ruta),
                     borderRadius: BorderRadius.circular(16),

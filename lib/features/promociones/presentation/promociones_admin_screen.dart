@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
@@ -26,6 +27,8 @@ class PromocionesAdminScreen extends StatefulWidget {
 }
 
 class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = PromocionesRepository();
   final _almacenamiento = AlmacenamientoRepository();
   final _picker = ImagePicker();
@@ -83,7 +86,7 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
     final sid = widget.sucursalId;
     if (sid == null) return;
 
-    final resultado = await showDialog<_DatosNuevaPromo>(
+    final resultado = await FoodyDialogo.mostrar<_DatosNuevaPromo>(
       context: context,
       builder: (ctx) => _DialogoNuevaPromocion(
         picker: _picker,
@@ -160,28 +163,28 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
   Future<void> _eliminar(Map<String, dynamic> promo) async {
     final id = promo['id'] as String?;
     if (id == null) return;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AnaliticaTokens.surface,
-        title: const Text(
+        backgroundColor: _scheme.surfaceContainerLow,
+        title: Text(
           '¿Eliminar estado?',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: AnaliticaTokens.ink,
+            color: _scheme.onSurface,
           ),
         ),
-        content: const Text(
+        content: Text(
           'Se borra de forma permanente. Los clientes ya no lo verán.',
-          style: TextStyle(fontSize: 13.5, color: AnaliticaTokens.inkMuted),
+          style: TextStyle(fontSize: 13.5, color: _scheme.onSurfaceVariant),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
+            child: Text(
               'Cancelar',
-              style: TextStyle(color: AnaliticaTokens.inkMuted),
+              style: TextStyle(color: _scheme.onSurfaceVariant),
             ),
           ),
           FilledButton(
@@ -204,8 +207,7 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
     }
   }
 
-  int get _activas =>
-      _promos.where((p) => p['activa'] as bool? ?? true).length;
+  int get _activas => _promos.where((p) => p['activa'] as bool? ?? true).length;
 
   @override
   Widget build(BuildContext context) {
@@ -213,13 +215,13 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _dialogoCrear,
-          backgroundColor: AnaliticaTokens.ink,
-          foregroundColor: Colors.white,
+          backgroundColor: _scheme.primary,
+          foregroundColor: _scheme.onPrimary,
           elevation: 2,
           icon: const Icon(Icons.add, size: 20),
           label: Text(
@@ -229,7 +231,7 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
         ),
         body: RefreshIndicator(
           onRefresh: _cargar,
-          color: AnaliticaTokens.ink,
+          color: _scheme.onSurface,
           child: _cargando
               ? AnaliticaSkeleton.tab()
               : _error != null
@@ -264,11 +266,11 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Admin / Menú e Inventario',
           style: TextStyle(
             fontSize: 11,
-            color: AnaliticaTokens.inkSoft,
+            color: _scheme.onSurfaceVariant,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -282,7 +284,7 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
                   fontSize: compacto ? 18 : 20,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.4,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                   height: 1.15,
                 ),
               ),
@@ -291,7 +293,7 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
               TextButton.icon(
                 onPressed: widget.onIrMenu,
                 style: TextButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.inkMuted,
+                  foregroundColor: _scheme.onSurfaceVariant,
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.restaurant_menu, size: 16),
@@ -304,8 +306,8 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
           _promos.isEmpty
               ? 'Estados tipo story · visibles 24 h en el menú del cliente'
               : '$_activas activas · ${_promos.length} en total · expiran en 24 h',
-          style: const TextStyle(
-            color: AnaliticaTokens.inkMuted,
+          style: TextStyle(
+            color: _scheme.onSurfaceVariant,
             fontSize: 12.5,
           ),
         ),
@@ -321,9 +323,9 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -337,9 +339,9 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -347,7 +349,8 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -363,9 +366,9 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
       margin: const EdgeInsets.only(top: 24),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Column(
@@ -374,39 +377,40 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: AnaliticaTokens.surfaceMuted,
+              color: _scheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.auto_awesome_outlined,
               size: 24,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             'Sin promociones',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Publica la primera: foto o video ≤30 s, visible 24 horas en el menú.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _dialogoCrear,
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
               visualDensity: VisualDensity.compact,
             ),
             icon: const Icon(Icons.add, size: 18),
@@ -425,16 +429,14 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
     final producto = p['producto_nombre'] as String?;
     final vistas = p['vistas'] ?? 0;
     final colorEstado =
-        activa ? AnaliticaTokens.inventario : AnaliticaTokens.inkSoft;
+        activa ? AnaliticaTokens.inventario : _scheme.onSurfaceVariant;
 
     return Container(
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
         border: Border.all(
-          color: activa
-              ? AnaliticaTokens.border
-              : AnaliticaTokens.borderSoft,
+          color: activa ? _scheme.outlineVariant : _scheme.outlineVariant,
         ),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
@@ -453,10 +455,10 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
                     titulo,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w700,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                       height: 1.25,
                     ),
                   ),
@@ -469,11 +471,10 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
                         activa ? 'Activa' : 'Inactiva',
                         colorEstado,
                       ),
-                      if (esVideo)
-                        _badge('Video', AnaliticaTokens.pedidos),
+                      if (esVideo) _badge('Video', AnaliticaTokens.pedidos),
                       if (p['expira_at'] != null)
-                        _badge('24 h', AnaliticaTokens.inkMuted),
-                      _badge('$vistas vistas', AnaliticaTokens.inkMuted),
+                        _badge('24 h', _scheme.onSurfaceVariant),
+                      _badge('$vistas vistas', _scheme.onSurfaceVariant),
                     ],
                   ),
                   if (producto != null) ...[
@@ -482,9 +483,9 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
                       '→ $producto',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -496,10 +497,10 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
                 PopupMenuButton<String>(
                   tooltip: 'Más acciones',
                   padding: EdgeInsets.zero,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.more_vert,
                     size: 20,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                   ),
                   onSelected: (a) {
                     if (a == 'foto') _cambiarFoto(p);
@@ -511,7 +512,8 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
                       child: ListTile(
                         dense: true,
                         leading: Icon(Icons.photo_camera_outlined, size: 20),
-                        title: Text('Cambiar foto', style: TextStyle(fontSize: 13)),
+                        title: Text('Cambiar foto',
+                            style: TextStyle(fontSize: 13)),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -555,22 +557,22 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
       child: Container(
         width: 56,
         height: 56,
-        color: AnaliticaTokens.surfaceMuted,
+        color: _scheme.surfaceContainerHighest,
         child: esVideo
-            ? const Icon(Icons.videocam, color: AnaliticaTokens.inkMuted)
+            ? Icon(Icons.videocam, color: _scheme.onSurfaceVariant)
             : (url != null && url.isNotEmpty)
                 ? Image.network(
                     url,
                     fit: BoxFit.cover,
                     cacheWidth: 168,
-                    errorBuilder: (_, __, ___) => const Icon(
+                    errorBuilder: (_, __, ___) => Icon(
                       Icons.local_offer_outlined,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   )
-                : const Icon(
+                : Icon(
                     Icons.local_offer_outlined,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                   ),
       ),
     );
@@ -628,6 +630,8 @@ class _DialogoNuevaPromocion extends StatefulWidget {
 }
 
 class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _tituloCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _menuRepo = MenuRepository();
@@ -723,20 +727,20 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
   InputDecoration _campo(String label) {
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: AnaliticaTokens.inkMuted, fontSize: 13),
+      labelStyle: TextStyle(color: _scheme.onSurfaceVariant, fontSize: 13),
       filled: true,
-      fillColor: AnaliticaTokens.surfaceMuted,
+      fillColor: _scheme.surfaceContainerHighest,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AnaliticaTokens.border),
+        borderSide: BorderSide(color: _scheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AnaliticaTokens.border),
+        borderSide: BorderSide(color: _scheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AnaliticaTokens.ink, width: 1.2),
+        borderSide: BorderSide(color: _scheme.onSurface, width: 1.2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
@@ -747,13 +751,13 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
     final listo = _tituloCtrl.text.trim().isNotEmpty && _bytes != null;
 
     return AlertDialog(
-      backgroundColor: AnaliticaTokens.surface,
-      title: const Text(
+      backgroundColor: _scheme.surfaceContainerLow,
+      title: Text(
         'Nuevo estado (24 h)',
         style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w700,
-          color: AnaliticaTokens.ink,
+          color: _scheme.onSurface,
         ),
       ),
       content: SizedBox(
@@ -763,12 +767,12 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'Se publica como estado de WhatsApp y expira en 24 horas.',
                 style: TextStyle(
                   fontSize: 12.5,
                   height: 1.35,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 12),
@@ -784,8 +788,8 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
                     child: OutlinedButton.icon(
                       onPressed: _elegirFoto,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AnaliticaTokens.ink,
-                        side: const BorderSide(color: AnaliticaTokens.border),
+                        foregroundColor: _scheme.onSurface,
+                        side: BorderSide(color: _scheme.outlineVariant),
                       ),
                       icon: const Icon(Icons.photo_library_outlined, size: 18),
                       label: const Text('Foto', style: TextStyle(fontSize: 13)),
@@ -796,11 +800,12 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
                     child: OutlinedButton.icon(
                       onPressed: _elegirVideo,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AnaliticaTokens.ink,
-                        side: const BorderSide(color: AnaliticaTokens.border),
+                        foregroundColor: _scheme.onSurface,
+                        side: BorderSide(color: _scheme.outlineVariant),
                       ),
                       icon: const Icon(Icons.videocam_outlined, size: 18),
-                      label: const Text('Video ≤30s', style: TextStyle(fontSize: 13)),
+                      label: const Text('Video ≤30s',
+                          style: TextStyle(fontSize: 13)),
                     ),
                   ),
                 ],
@@ -812,12 +817,13 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
                     height: 88,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       'Video listo · $_nombreArchivo',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 12.5),
                       overflow: TextOverflow.ellipsis,
                     ),
                   )
@@ -836,9 +842,9 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
               ),
               const SizedBox(height: 12),
               if (_cargandoProductos)
-                const LinearProgressIndicator(
+                LinearProgressIndicator(
                   minHeight: 2,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 )
               else
                 DropdownButtonFormField<String?>(
@@ -865,14 +871,16 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text(
+          child: Text(
             'Cancelar',
-            style: TextStyle(color: AnaliticaTokens.inkMuted),
+            style: TextStyle(color: _scheme.onSurfaceVariant),
           ),
         ),
         FilledButton(
           onPressed: listo ? _publicar : null,
-          style: FilledButton.styleFrom(backgroundColor: AnaliticaTokens.ink),
+          style: FilledButton.styleFrom(
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary),
           child: const Text('Publicar'),
         ),
       ],

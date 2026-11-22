@@ -23,6 +23,7 @@ class UsuariosAdminScreen extends StatefulWidget {
 
   final String? sucursalId;
   final bool puedeGestionarMultiSucursal;
+
   /// NAV-ADM2-20: crear estación si no hay cocinas.
   final VoidCallback? onIrCocinas;
 
@@ -31,6 +32,8 @@ class UsuariosAdminScreen extends StatefulWidget {
 }
 
 class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = UsuariosRepository();
   final _sucursalesRepo = SucursalesRepository();
   final _cocinasRepo = CocinasRepository();
@@ -140,8 +143,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
     }
   }
 
-  bool _esRolCocina(String rol) =>
-      rol == 'cocina' || rol.startsWith('cocina_');
+  bool _esRolCocina(String rol) => rol == 'cocina' || rol.startsWith('cocina_');
 
   String _rolUi(String rol) => _esRolCocina(rol) ? 'cocina' : rol;
 
@@ -215,25 +217,25 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
+        Text(
           'Permisos de este usuario',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
-            color: AnaliticaTokens.ink,
+            color: _scheme.onSurface,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           'Solo opciones del rol ${_etiquetaRol(rol)}. '
           'Al crear vienen activadas las del rol; puedes desmarcar.',
-          style: const TextStyle(fontSize: 11.5, color: AnaliticaTokens.inkMuted),
+          style: TextStyle(fontSize: 11.5, color: _scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
         if (lista.isEmpty)
-          const Text(
+          Text(
             'Este rol no tiene permisos configurables.',
-            style: TextStyle(fontSize: 12.5, color: AnaliticaTokens.inkMuted),
+            style: TextStyle(fontSize: 12.5, color: _scheme.onSurfaceVariant),
           )
         else
           ...lista.map((p) {
@@ -246,13 +248,6 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
               title: Text(
                 _etiquetaPermiso(p),
                 style: const TextStyle(fontSize: 13),
-              ),
-              subtitle: Text(
-                p,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: AnaliticaTokens.inkMuted,
-                ),
               ),
               onChanged: (v) {
                 final next = Set<String>.from(seleccionados);
@@ -282,7 +277,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
       case 'admin':
       case 'gerente':
       case 'gerente_cadena':
-        return AnaliticaTokens.ink;
+        return _scheme.onSurface;
       case 'cajero':
         return AnaliticaTokens.pedidos;
       case 'mesero':
@@ -292,7 +287,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
       case 'domiciliario_planta':
         return AnaliticaTokens.inventario;
       default:
-        return AnaliticaTokens.inkMuted;
+        return _scheme.onSurfaceVariant;
     }
   }
 
@@ -308,6 +303,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
 
   Future<void> _nuevoUsuario() async {
     await _cargarCatalogoRoles();
+    if (!mounted) return;
     final nombre = TextEditingController();
     final email = TextEditingController();
     final pass = TextEditingController();
@@ -322,9 +318,11 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => AlertDialog(
           title: const Text('Nuevo usuario'),
+          scrollable: true,
           content: SizedBox(
             width: MediaQuery.sizeOf(ctx).width.clamp(280.0, 560.0),
-            child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -383,8 +381,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                       rol = v ?? rol;
                       permisosSel = Set<String>.from(_permisosDeRol(rol));
                       if (_esRolCocina(rol) && cocinasDlg.isEmpty) {
-                        cocinasDlg =
-                            await _cocinasDeSucursal(sucursalAsignada);
+                        cocinasDlg = await _cocinasDeSucursal(sucursalAsignada);
                         if (cocinasDlg.isEmpty && mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
@@ -504,7 +501,6 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
             content: Text(
               'Usuario $e creado en ${_nombreSucursal(sid)}',
             ),
-            backgroundColor: AnaliticaTokens.ink,
           ),
         );
       }
@@ -527,8 +523,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
 
     final nombre = TextEditingController(text: u['nombre'] as String? ?? '');
     String rol = _rolUi(rolActual);
-    String? sucursalAsignada =
-        u['sucursal_id'] as String? ?? _sucursalVistaId;
+    String? sucursalAsignada = u['sucursal_id'] as String? ?? _sucursalVistaId;
     String? cocinaId = u['cocina_id'] as String?;
     var cocinasDlg = await _cocinasDeSucursal(sucursalAsignada);
     if (!mounted) return;
@@ -544,10 +539,8 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
         final lista = pe['permisos'] as List<dynamic>? ?? [];
         if (lista.isNotEmpty) {
           final plantilla = _permisosDeRol(rol).toSet();
-          permisosSel = lista
-              .map((e) => e.toString())
-              .where(plantilla.contains)
-              .toSet();
+          permisosSel =
+              lista.map((e) => e.toString()).where(plantilla.contains).toSet();
           if (permisosSel.isEmpty) {
             permisosSel = Set<String>.from(plantilla);
           }
@@ -562,14 +555,18 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) {
           return AlertDialog(
-            title: Text('Editar ${u['email']}'),
+            title: const Text('Editar usuario'),
+            scrollable: true,
             content: SizedBox(
               width: MediaQuery.sizeOf(ctx).width.clamp(280.0, 560.0),
-              child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 6),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Text(u['email'] as String? ?? ''),
+                    const SizedBox(height: 12),
                     if (widget.puedeGestionarMultiSucursal &&
                         _sucursales.isNotEmpty) ...[
                       DropdownButtonFormField<String>(
@@ -605,8 +602,8 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                       decoration: const InputDecoration(labelText: 'Rol'),
                       items: _rolesDisponibles
                           .map(
-                            (r) =>
-                                DropdownMenuItem(value: r.$1, child: Text(r.$2)),
+                            (r) => DropdownMenuItem(
+                                value: r.$1, child: Text(r.$2)),
                           )
                           .toList(),
                       onChanged: (v) async {
@@ -742,7 +739,6 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Usuario actualizado · ${_etiquetaRol(rol)}'),
-            backgroundColor: AnaliticaTokens.ink,
           ),
         );
       }
@@ -791,7 +787,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
         widget.puedeGestionarMultiSucursal && _sucursales.isNotEmpty;
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -804,11 +800,11 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Admin / Equipo',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -826,7 +822,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                               fontSize: compacto ? 18 : 20,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.4,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                               height: 1.15,
                             ),
                           ),
@@ -835,8 +831,8 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                             _cargando
                                 ? 'Cargando…'
                                 : '${_usuarios.length} en sede · $_activos activos · toca para editar',
-                            style: const TextStyle(
-                              color: AnaliticaTokens.inkMuted,
+                            style: TextStyle(
+                              color: _scheme.onSurfaceVariant,
                               fontSize: 12.5,
                             ),
                           ),
@@ -846,7 +842,8 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                     FilledButton.icon(
                       onPressed: _nuevoUsuario,
                       style: FilledButton.styleFrom(
-                        backgroundColor: AnaliticaTokens.ink,
+                        backgroundColor: _scheme.primary,
+                        foregroundColor: _scheme.onPrimary,
                         visualDensity: VisualDensity.compact,
                       ),
                       icon: const Icon(Icons.person_add_outlined, size: 18),
@@ -856,9 +853,9 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                       tooltip: 'Actualizar',
                       onPressed: _inicializar,
                       visualDensity: VisualDensity.compact,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.refresh,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -871,26 +868,24 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                       labelText: 'Ver usuarios de la sede',
                       isDense: true,
                       filled: true,
-                      fillColor: AnaliticaTokens.surface,
-                      prefixIcon: const Icon(
+                      fillColor: _scheme.surfaceContainerLow,
+                      prefixIcon: Icon(
                         Icons.store_outlined,
                         size: 18,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide:
-                            const BorderSide(color: AnaliticaTokens.border),
+                        borderSide: BorderSide(color: _scheme.outlineVariant),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide:
-                            const BorderSide(color: AnaliticaTokens.border),
+                        borderSide: BorderSide(color: _scheme.outlineVariant),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: AnaliticaTokens.ink,
+                        borderSide: BorderSide(
+                          color: _scheme.onSurface,
                           width: 1.2,
                         ),
                       ),
@@ -919,16 +914,16 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: AnaliticaTokens.surface,
+                      color: _scheme.surfaceContainerLow,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AnaliticaTokens.border),
+                      border: Border.all(color: _scheme.outlineVariant),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
                         Icon(
                           Icons.info_outline,
                           size: 18,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                         SizedBox(width: 8),
                         Expanded(
@@ -938,7 +933,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                             style: TextStyle(
                               fontSize: 12.5,
                               height: 1.35,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                         ),
@@ -956,7 +951,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                 ? _estadoError()
                 : RefreshIndicator(
                     onRefresh: _inicializar,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     child: _usuarios.isEmpty
                         ? _vacio()
                         : ListView.separated(
@@ -985,9 +980,9 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -1001,9 +996,9 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -1011,7 +1006,8 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -1030,9 +1026,9 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -1041,41 +1037,42 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surfaceMuted,
+                  color: _scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.group_outlined,
                   size: 24,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 14),
               Text(
                 'Sin usuarios en ${_nombreSucursal(_sucursalVistaId)}',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Crea cajeros, meseros o cocina para que el equipo '
                 'pueda operar esta sede.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _nuevoUsuario,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.person_add_outlined, size: 18),
@@ -1098,7 +1095,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
     final email = u['email'] as String? ?? '';
 
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       child: InkWell(
         onTap: esAdmin ? null : () => _editarUsuario(u),
@@ -1106,7 +1103,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Padding(
@@ -1120,12 +1117,12 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                   decoration: BoxDecoration(
                     color: activo
                         ? colorRol.withValues(alpha: 0.1)
-                        : AnaliticaTokens.surfaceMuted,
+                        : _scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: activo
                           ? colorRol.withValues(alpha: 0.25)
-                          : AnaliticaTokens.border,
+                          : _scheme.outlineVariant,
                     ),
                   ),
                   child: Text(
@@ -1133,7 +1130,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: activo ? colorRol : AnaliticaTokens.inkSoft,
+                      color: activo ? colorRol : _scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -1153,8 +1150,8 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w600,
                                 color: activo
-                                    ? AnaliticaTokens.ink
-                                    : AnaliticaTokens.inkSoft,
+                                    ? _scheme.onSurface
+                                    : _scheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -1166,7 +1163,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                               shape: BoxShape.circle,
                               color: activo
                                   ? AnaliticaTokens.inventario
-                                  : AnaliticaTokens.inkSoft,
+                                  : _scheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -1176,9 +1173,9 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                         email,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1188,11 +1185,10 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                         children: [
                           _badge(_etiquetaRol(rol), colorRol),
                           if (cocina != null && cocina.isNotEmpty)
-                            _badge(cocina, AnaliticaTokens.inkMuted),
+                            _badge(cocina, _scheme.onSurfaceVariant),
                           if (!activo)
-                            _badge('Inactivo', AnaliticaTokens.inkSoft),
-                          if (esAdmin)
-                            _badge('Propietario', AnaliticaTokens.ink),
+                            _badge('Inactivo', _scheme.onSurfaceVariant),
+                          if (esAdmin) _badge('Propietario', _scheme.onSurface),
                         ],
                       ),
                     ],
@@ -1201,7 +1197,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                 if (!esAdmin)
                   Switch.adaptive(
                     value: activo,
-                    activeTrackColor: AnaliticaTokens.ink,
+                    activeTrackColor: _scheme.primary,
                     onChanged: (_) => _toggleActivo(u),
                   ),
               ],

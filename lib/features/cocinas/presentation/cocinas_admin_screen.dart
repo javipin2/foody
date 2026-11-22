@@ -29,6 +29,8 @@ class CocinasAdminScreen extends StatefulWidget {
 }
 
 class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = CocinasRepository();
   List<Map<String, dynamic>> _cocinas = [];
   List<Map<String, dynamic>> _impresoras = [];
@@ -85,8 +87,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            error ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
+        backgroundColor: error ? AnaliticaTokens.alertas : _scheme.onSurface,
       ),
     );
   }
@@ -263,22 +264,22 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
     final dual = ancho >= 980;
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           _header(compacto: !dual),
         ],
         body: _cargando
-            ? const Center(
+            ? Center(
                 child: CircularProgressIndicator(
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               )
             : _error != null
                 ? _estadoError()
                 : RefreshIndicator(
                     onRefresh: _cargar,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
@@ -316,13 +317,13 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Cocinas e impresoras',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -331,7 +332,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.35,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -351,8 +352,8 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                 icon: const Icon(Icons.kitchen_outlined, size: 18),
                 label: const Text('Cocina en vivo'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                 ),
               ),
           ],
@@ -376,7 +377,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
           ),
           _kpiChip(
             '$impresoras ${_plural(impresoras, 'impresora', 'impresoras')}',
-            AnaliticaTokens.inkMuted,
+            _scheme.onSurfaceVariant,
           ),
           if (_sinImpresora > 0)
             _kpiChip(
@@ -392,9 +393,9 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Text(
@@ -415,25 +416,26 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.cloud_off_outlined,
               size: 40,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
             Text(
               _error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
-                color: AnaliticaTokens.ink,
+                color: _scheme.onSurface,
               ),
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _cargar,
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
               ),
               child: const Text('Reintentar'),
             ),
@@ -509,15 +511,15 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
   }) {
     return Row(
       children: [
-        Icon(icono, size: 20, color: AnaliticaTokens.inkMuted),
+        Icon(icono, size: 20, color: _scheme.onSurfaceVariant),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             titulo,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
         ),
@@ -526,7 +528,8 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
           icon: const Icon(Icons.add, size: 16),
           label: Text(accion),
           style: FilledButton.styleFrom(
-            backgroundColor: AnaliticaTokens.ink,
+            backgroundColor: _scheme.primary,
+            foregroundColor: _scheme.onPrimary,
             visualDensity: VisualDensity.compact,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
@@ -545,30 +548,30 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
       ),
       child: Column(
         children: [
-          Icon(icono, size: 36, color: AnaliticaTokens.inkSoft),
+          Icon(icono, size: 36, color: _scheme.onSurfaceVariant),
           const SizedBox(height: 10),
           Text(
             titulo,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             texto,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           if (cta != null && onCta != null) ...[
@@ -576,7 +579,8 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
             FilledButton(
               onPressed: onCta,
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
               ),
               child: Text(cta),
             ),
@@ -594,7 +598,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
     final sinProd = activa && productos == 0;
 
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       child: InkWell(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
@@ -605,7 +609,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
             border: Border.all(
               color: sinImp
                   ? AnaliticaTokens.alertas.withValues(alpha: 0.35)
-                  : AnaliticaTokens.border,
+                  : _scheme.outlineVariant,
             ),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
@@ -622,7 +626,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                       decoration: BoxDecoration(
                         color: activa
                             ? AnaliticaTokens.cocina.withValues(alpha: 0.12)
-                            : AnaliticaTokens.surfaceMuted,
+                            : _scheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
@@ -630,7 +634,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                         size: 20,
                         color: activa
                             ? AnaliticaTokens.cocina
-                            : AnaliticaTokens.inkSoft,
+                            : _scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -646,16 +650,16 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                               fontSize: 14.5,
                               fontWeight: FontWeight.w700,
                               color: activa
-                                  ? AnaliticaTokens.ink
-                                  : AnaliticaTokens.inkSoft,
+                                  ? _scheme.onSurface
+                                  : _scheme.onSurfaceVariant,
                             ),
                           ),
                           if (!activa)
-                            const Text(
+                            Text(
                               'Inactiva',
                               style: TextStyle(
                                 fontSize: 11.5,
-                                color: AnaliticaTokens.inkSoft,
+                                color: _scheme.onSurfaceVariant,
                               ),
                             ),
                         ],
@@ -663,10 +667,10 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                     ),
                     PopupMenuButton<String>(
                       tooltip: 'Más',
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.more_vert,
                         size: 20,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                       onSelected: (a) {
                         if (a == 'editar') {
@@ -703,7 +707,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                     Switch.adaptive(
                       value: activa,
                       onChanged: (_) => _toggleCocina(c),
-                      activeTrackColor: AnaliticaTokens.ink,
+                      activeTrackColor: _scheme.primary,
                     ),
                   ],
                 ),
@@ -716,13 +720,13 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                       '$productos prod.',
                       sinProd
                           ? AnaliticaTokens.alertas
-                          : AnaliticaTokens.inkMuted,
+                          : _scheme.onSurfaceVariant,
                     ),
                     _badge(
                       '$impresoras impr.',
                       sinImp
                           ? AnaliticaTokens.alertas
-                          : AnaliticaTokens.inkMuted,
+                          : _scheme.onSurfaceVariant,
                     ),
                     if (sinImp)
                       _badge('Sin impresora', AnaliticaTokens.alertas),
@@ -745,7 +749,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
     final cocina = i['cocina_nombre'] as String? ?? 'Sin cocina';
 
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
       child: InkWell(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
@@ -753,7 +757,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Padding(
@@ -764,15 +768,14 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: AnaliticaTokens.surfaceMuted,
+                    color: _scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
                     Icons.print_rounded,
                     size: 20,
-                    color: activa
-                        ? AnaliticaTokens.ink
-                        : AnaliticaTokens.inkSoft,
+                    color:
+                        activa ? _scheme.onSurface : _scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -784,10 +787,10 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                         i['nombre'] as String? ?? '—',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w700,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -796,9 +799,9 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                         runSpacing: 4,
                         children: [
                           _badge(cocina, AnaliticaTokens.cocina),
-                          _badge(tipo, AnaliticaTokens.inkMuted),
+                          _badge(tipo, _scheme.onSurfaceVariant),
                           if (ip != null && ip.isNotEmpty)
-                            _badge(ip, AnaliticaTokens.inkMuted),
+                            _badge(ip, _scheme.onSurfaceVariant),
                         ],
                       ),
                     ],
@@ -806,10 +809,10 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
                 ),
                 PopupMenuButton<String>(
                   tooltip: 'Más',
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.more_vert,
                     size: 20,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                   onSelected: (a) {
                     if (a == 'editar') {

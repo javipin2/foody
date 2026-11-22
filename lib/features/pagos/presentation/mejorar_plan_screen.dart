@@ -27,6 +27,7 @@ class MejorarPlanScreen extends StatefulWidget {
   final String? planSugerido;
   final String? pagoIdInicial;
   final VoidCallback? onPlanActualizado;
+
   /// Avisa al panel para poll en paralelo (tiempo real al volver de Wompi).
   final ValueChanged<String>? onPagoIniciado;
 
@@ -36,6 +37,8 @@ class MejorarPlanScreen extends StatefulWidget {
 
 class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     with WidgetsBindingObserver {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = PagosRepository();
   final _moneda = NumberFormat.currency(
     locale: 'es_CO',
@@ -374,7 +377,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
       case 'error':
         return AnaliticaTokens.alertas;
       default:
-        return AnaliticaTokens.inkSoft;
+        return _scheme.onSurfaceVariant;
     }
   }
 
@@ -387,7 +390,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
       case 'bloqueada':
         return AnaliticaTokens.alertas;
       default:
-        return AnaliticaTokens.inkMuted;
+        return _scheme.onSurfaceVariant;
     }
   }
 
@@ -407,7 +410,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
@@ -419,10 +422,10 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
           Expanded(
             child: Text(
               texto,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 height: 1.35,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -442,10 +445,10 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     final tresColumnas = ancho >= 980;
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: RefreshIndicator(
         onRefresh: _cargarEstado,
-        color: AnaliticaTokens.ink,
+        color: _scheme.onSurface,
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             compacto ? 12 : 20,
@@ -458,7 +461,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
               'Admin / Finanzas',
               style: TextStyle(
                 fontSize: 11,
-                color: AnaliticaTokens.inkSoft,
+                color: _scheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -469,7 +472,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                 fontSize: compacto ? 18 : 20,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.4,
-                color: AnaliticaTokens.ink,
+                color: _scheme.onSurface,
                 height: 1.15,
               ),
             ),
@@ -479,8 +482,8 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
               '${estadoSus != null ? ' · ${_etiquetaEstadoSuscripcion(estadoSus)}' : ''}'
               '${dias != null ? ' · $dias días restantes' : ''}'
               '${vence != null ? ' · vence $vence' : ''}',
-              style: const TextStyle(
-                color: AnaliticaTokens.inkMuted,
+              style: TextStyle(
+                color: _scheme.onSurfaceVariant,
                 fontSize: 12.5,
               ),
             ),
@@ -505,7 +508,8 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                         ? null
                         : _renovarPlan,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
                       visualDensity: VisualDensity.compact,
                     ),
                     icon: _procesandoRenovacion
@@ -527,11 +531,11 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                 ),
                 const SizedBox(height: 12),
               ],
-              const Text(
+              Text(
                 'El costeo y el control de márgenes viven en Pro. '
                 'Paga en línea y desbloquea al instante cuando Wompi confirme.',
                 style: TextStyle(
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   fontSize: 13,
                   height: 1.4,
                 ),
@@ -561,7 +565,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
-                  color: AnaliticaTokens.inkSoft,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 8),
@@ -583,12 +587,12 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                 _seccionHistorialPagos(),
               ],
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Pago seguro con Wompi · COP · renovación mensual 30 días',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 11,
-                  color: AnaliticaTokens.inkSoft,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -608,7 +612,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.35)),
         boxShadow: AnaliticaTokens.shadowSoft,
@@ -622,27 +626,28 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
               color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.workspace_premium_outlined, size: 20, color: color),
+            child:
+                Icon(Icons.workspace_premium_outlined, size: 20, color: color),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Tu suscripción',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13.5,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${PlanesComercialesFoody.nombre(plan)} · ${_etiquetaEstadoSuscripcion(estado)}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
                 if (vence != null) ...[
@@ -651,9 +656,9 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                     dias != null
                         ? 'Vence el $vence ($dias días restantes)'
                         : 'Vence el $vence',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -692,25 +697,25 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
       ),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.credit_card,
             size: 18,
-            color: AnaliticaTokens.inkMuted,
+            color: _scheme.onSurfaceVariant,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Renovación automática activa\n$metodo',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 height: 1.35,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -723,13 +728,13 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'HISTORIAL DE PAGOS',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.5,
-            color: AnaliticaTokens.inkSoft,
+            color: _scheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),
@@ -744,12 +749,12 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
           return Container(
             margin: const EdgeInsets.only(bottom: 6),
             decoration: BoxDecoration(
-              color: AnaliticaTokens.surface,
+              color: _scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: estado == 'rechazado' || estado == 'error'
                     ? color.withValues(alpha: 0.35)
-                    : AnaliticaTokens.border,
+                    : _scheme.outlineVariant,
               ),
             ),
             child: ListTile(
@@ -758,22 +763,21 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
               title: Text(
                 '${PlanesComercialesFoody.nombre(plan)} · ${_moneda.format(monto)}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               subtitle: Text(
                 fecha,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AnaliticaTokens.inkSoft,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               trailing: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
@@ -800,7 +804,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: const Color(0xFFD97706).withValues(alpha: 0.4),
@@ -809,21 +813,21 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '¿Ya pagaste en Wompi?',
             style: TextStyle(
               fontWeight: FontWeight.w700,
               fontSize: 14,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'En local el webhook no llega solo. Copia el «Número de transacción» '
             'del comprobante (ej. 1969957-1782290934-46563) y activa tu plan.',
             style: TextStyle(
               fontSize: 12,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
               height: 1.35,
             ),
           ),
@@ -834,18 +838,18 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
               labelText: 'Número de transacción Wompi',
               isDense: true,
               filled: true,
-              fillColor: AnaliticaTokens.surface,
+              fillColor: _scheme.surfaceContainerLow,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.border),
+                borderSide: BorderSide(color: _scheme.outlineVariant),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.border),
+                borderSide: BorderSide(color: _scheme.outlineVariant),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.ink),
+                borderSide: BorderSide(color: _scheme.onSurface),
               ),
             ),
           ),
@@ -866,7 +870,8 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                   : const Icon(Icons.verified_outlined, size: 18),
               label: const Text('Activar plan'),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
               ),
             ),
           ),
@@ -885,15 +890,15 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
             color: seleccionado
-                ? AnaliticaTokens.ink
+                ? _scheme.onSurface
                 : destacado
-                    ? AnaliticaTokens.ink.withValues(alpha: 0.25)
-                    : AnaliticaTokens.border,
+                    ? _scheme.onSurface.withValues(alpha: 0.25)
+                    : _scheme.outlineVariant,
             width: seleccionado ? 1.5 : 1,
           ),
         ),
@@ -917,10 +922,10 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                             children: [
                               Text(
                                 PlanesComercialesFoody.nombre(plan),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: AnaliticaTokens.ink,
+                                  color: _scheme.onSurface,
                                 ),
                               ),
                               if (destacado) ...[
@@ -931,18 +936,18 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                                     vertical: 2,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: AnaliticaTokens.surfaceMuted,
+                                    color: _scheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(
-                                      color: AnaliticaTokens.border,
+                                      color: _scheme.outlineVariant,
                                     ),
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'Recomendado',
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
-                                      color: AnaliticaTokens.inkMuted,
+                                      color: _scheme.onSurfaceVariant,
                                     ),
                                   ),
                                 ),
@@ -954,9 +959,9 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                     ),
                     Text(
                       '${_moneda.format(_precioCop(plan))}/mes',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                         fontSize: 14,
                       ),
                     ),
@@ -978,9 +983,9 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                         Expanded(
                           child: Text(
                             m,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12.5,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                               height: 1.3,
                             ),
                           ),
@@ -996,9 +1001,10 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                         ? null
                         : () => _pagarPlan(plan),
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
-                      disabledBackgroundColor: AnaliticaTokens.surfaceMuted,
-                      disabledForegroundColor: AnaliticaTokens.inkSoft,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
+                      disabledBackgroundColor: _scheme.surfaceContainerHighest,
+                      disabledForegroundColor: _scheme.onSurfaceVariant,
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),

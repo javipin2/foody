@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
@@ -39,6 +40,8 @@ class MenuAdminScreen extends StatefulWidget {
 
 class _MenuAdminScreenState extends State<MenuAdminScreen>
     with SingleTickerProviderStateMixin {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = CatalogoAdminRepository();
   final _almacenamiento = AlmacenamientoRepository();
   final _picker = ImagePicker();
@@ -153,7 +156,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     if (opciones.isEmpty || widget.sucursalId == null) return;
 
     String? origenId = opciones.first['id'] as String?;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialog) => FoodyDialogoShell(
@@ -222,7 +225,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
 
   Future<void> _nuevaCategoria() async {
     final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => FoodyDialogoShell(
         titulo: 'Nueva categoría',
@@ -243,7 +246,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -283,7 +287,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     String? cocinaId =
         _cocinas.isNotEmpty ? _cocinas.first['id'] as String : null;
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => FoodyDialogoShell(
@@ -362,7 +366,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -505,7 +510,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       return;
     }
 
-    await showDialog<void>(
+    await FoodyDialogo.mostrar<void>(
       context: context,
       builder: (ctx) => FoodyDialogoShell(
         titulo: 'Categorías del menú',
@@ -589,7 +594,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     }
     String cocinaId =
         (producto['cocina_id'] as String?) ?? _cocinas.first['id'] as String;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => FoodyDialogoShell(
@@ -655,7 +660,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final sugerido = costeo != null ? _num(costeo['precio_sugerido']) : null;
     final sinReceta = costeo != null && costeo['costo_calculado'] == null;
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => FoodyDialogoShell(
         titulo: 'Precios',
@@ -739,7 +744,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -797,7 +803,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       return;
     }
     if (!mounted) return;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => FoodyDialogoShell(
@@ -818,7 +824,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     value: seleccionados.contains(t['id'] as String),
                     title: Text(t['nombre'] as String? ?? ''),
                     subtitle: Text(_moneda.format(_num(t['precio']))),
-                    activeColor: AnaliticaTokens.ink,
+                    activeColor: _scheme.primary,
                     onChanged: (v) => setDlg(() {
                       final id = t['id'] as String;
                       if (v == true) {
@@ -870,7 +876,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   Future<void> _nuevoExtra({required bool esBebida}) async {
     final nombre = TextEditingController();
     final precio = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => FoodyDialogoShell(
         titulo: esBebida ? 'Nueva bebida' : 'Nuevo topping',
@@ -901,7 +907,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -968,7 +975,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                 title: Text(p['nombre'] as String? ?? ''),
                 contentPadding: EdgeInsets.zero,
                 dense: true,
-                activeColor: AnaliticaTokens.ink,
+                activeColor: _scheme.primary,
                 onChanged: (v) {
                   setDlg(() {
                     if (v == true) {
@@ -991,7 +998,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       );
     }
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => FoodyDialogoShell(
@@ -1047,7 +1054,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -1110,15 +1118,15 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   @override
   Widget build(BuildContext context) {
     if (widget.sucursalId == null) {
-      return const ColoredBox(
-        color: AnaliticaTokens.canvas,
+      return ColoredBox(
+        color: _scheme.surface,
         child: Center(
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Text(
               'No hay sucursal activa en tu sesión. Cierra sesión e ingresa de nuevo.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AnaliticaTokens.inkMuted),
+              style: TextStyle(color: _scheme.onSurfaceVariant),
             ),
           ),
         ),
@@ -1127,7 +1135,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
 
     if (_cargando) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: _scheme.surface,
         child: AnaliticaSkeleton.tab(),
       );
     }
@@ -1141,7 +1149,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final noDispN = _productos.where((p) => p['disponible'] == false).length;
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -1153,11 +1161,11 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Admin / Menú e Inventario',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AnaliticaTokens.inkSoft,
+                          color: _scheme.onSurfaceVariant,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1168,16 +1176,16 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                           fontSize: compacto ? 18 : 20,
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.4,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                           height: 1.15,
                         ),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'Carta → insumos → costos y márgenes',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1186,9 +1194,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                 if (compacto)
                   PopupMenuButton<String>(
                     tooltip: 'Acciones del menú',
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.more_vert,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                     onSelected: (a) {
                       switch (a) {
@@ -1249,14 +1257,14 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       onPressed: _copiarMenuDesde,
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.copy_all_outlined, size: 20),
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   IconButton(
                     tooltip: 'Gestionar categorías',
                     onPressed: _gestionarCategorias,
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.category_outlined, size: 20),
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                   IconButton(
                     tooltip: 'Nueva categoría',
@@ -1264,12 +1272,13 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     visualDensity: VisualDensity.compact,
                     icon:
                         const Icon(Icons.create_new_folder_outlined, size: 20),
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                   FilledButton.icon(
                     onPressed: _nuevoProducto,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
                       visualDensity: VisualDensity.compact,
                     ),
                     icon: const Icon(Icons.add, size: 18),
@@ -1296,7 +1305,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       0,
                     ),
                     child: Material(
-                      color: AnaliticaTokens.surface,
+                      color: _scheme.surfaceContainerLow,
                       borderRadius: BorderRadius.circular(10),
                       child: Container(
                         decoration: BoxDecoration(
@@ -1315,9 +1324,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                           ),
                           title: Text(
                             _errorCarga!,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                           trailing: TextButton(
@@ -1363,7 +1372,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                   if (noDispN > 0)
                     _alertaChip(
                       '$noDispN no disponibles',
-                      AnaliticaTokens.inkMuted,
+                      _scheme.onSurfaceVariant,
                       () => setState(() {
                         _filtroProductos = 'no_disponible';
                         _tabs.index = 0;
@@ -1379,9 +1388,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: AnaliticaTokens.borderSoft),
+                    bottom: BorderSide(color: _scheme.outlineVariant),
                   ),
                 ),
                 child: FoodyScrollHorizontalFade(
@@ -1389,9 +1398,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     controller: _tabs,
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
-                    labelColor: AnaliticaTokens.ink,
-                    unselectedLabelColor: AnaliticaTokens.inkSoft,
-                    indicatorColor: AnaliticaTokens.ink,
+                    labelColor: _scheme.onSurface,
+                    unselectedLabelColor: _scheme.onSurfaceVariant,
+                    indicatorColor: _scheme.onSurface,
                     indicatorWeight: 2,
                     dividerColor: Colors.transparent,
                     labelStyle: const TextStyle(
@@ -1431,7 +1440,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
 
   Widget _alertaChip(String text, Color color, VoidCallback onTap) {
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -1492,7 +1501,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: Material(
-        color: sel ? AnaliticaTokens.ink : AnaliticaTokens.surface,
+        color: sel ? _scheme.primary : _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(6),
         child: InkWell(
           onTap: () => setState(() => _filtroProductos = id),
@@ -1502,7 +1511,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: sel ? AnaliticaTokens.ink : AnaliticaTokens.border,
+                color: sel ? _scheme.primary : _scheme.outlineVariant,
               ),
             ),
             child: Text(
@@ -1510,7 +1519,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: sel ? Colors.white : AnaliticaTokens.inkMuted,
+                color: sel ? _scheme.onPrimary : _scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -1562,18 +1571,18 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           padding: EdgeInsets.all(compacto ? 20 : 28),
           children: [
             const SizedBox(height: 40),
-            const Icon(
+            Icon(
               Icons.restaurant_menu_outlined,
               size: 40,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Sin productos aún',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.ink,
+                color: _scheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
@@ -1584,8 +1593,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       'Pide al admin o gerente de cadena que copie desde la matriz, '
                       'o crea los platos aquí.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AnaliticaTokens.inkMuted,
+              style: TextStyle(
+                color: _scheme.onSurfaceVariant,
                 fontSize: 13,
               ),
             ),
@@ -1594,7 +1603,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
               child: FilledButton.icon(
                 onPressed: _nuevoProducto,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Crear primer producto'),
@@ -1606,7 +1616,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                 child: TextButton.icon(
                   onPressed: _copiarMenuDesde,
                   style: TextButton.styleFrom(
-                    foregroundColor: AnaliticaTokens.inkMuted,
+                    foregroundColor: _scheme.onSurfaceVariant,
                   ),
                   icon: const Icon(Icons.copy_all_outlined),
                   label: const Text('Copiar menú desde otra sede'),
@@ -1634,26 +1644,26 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Buscar producto…',
-              hintStyle: const TextStyle(color: AnaliticaTokens.inkSoft),
-              prefixIcon: const Icon(
+              hintStyle: TextStyle(color: _scheme.onSurfaceVariant),
+              prefixIcon: Icon(
                 Icons.search,
                 size: 18,
-                color: AnaliticaTokens.inkSoft,
+                color: _scheme.onSurfaceVariant,
               ),
               isDense: true,
               filled: true,
-              fillColor: AnaliticaTokens.surface,
+              fillColor: _scheme.surfaceContainerLow,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.border),
+                borderSide: BorderSide(color: _scheme.outlineVariant),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.border),
+                borderSide: BorderSide(color: _scheme.outlineVariant),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.ink),
+                borderSide: BorderSide(color: _scheme.onSurface),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
@@ -1681,10 +1691,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
         ),
         Expanded(
           child: lista.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     'Ningún producto coincide',
-                    style: TextStyle(color: AnaliticaTokens.inkSoft),
+                    style: TextStyle(color: _scheme.onSurfaceVariant),
                   ),
                 )
               : RefreshIndicator(
@@ -1863,7 +1873,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       Switch.adaptive(
                         value: disponible,
                         activeTrackColor:
-                            AnaliticaTokens.ink.withValues(alpha: .32),
+                            _scheme.onSurface.withValues(alpha: .32),
                         onChanged: (v) async {
                           await _repo.toggleDisponible(id, v);
                           await _cargar();
@@ -1973,24 +1983,24 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           : 'Margen ${margen.toStringAsFixed(0)}%';
     }
     final colorRiesgo = !disponible
-        ? AnaliticaTokens.inkSoft
+        ? _scheme.onSurfaceVariant
         : sinReceta
             ? const Color(0xFFD97706)
             : bajoMargen
                 ? AnaliticaTokens.alertas
                 : sinCocina
                     ? AnaliticaTokens.alertas
-                    : AnaliticaTokens.border;
+                    : _scheme.outlineVariant;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: (sinReceta || bajoMargen || !disponible)
               ? colorRiesgo.withValues(alpha: 0.4)
-              : AnaliticaTokens.border,
+              : _scheme.outlineVariant,
         ),
         boxShadow: const [
           BoxShadow(
@@ -2027,24 +2037,24 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                           errorBuilder: (_, __, ___) => Container(
                             width: 44,
                             height: 44,
-                            color: AnaliticaTokens.surfaceMuted,
-                            child: const Icon(
+                            color: _scheme.surfaceContainerHighest,
+                            child: Icon(
                               Icons.broken_image_outlined,
                               size: 18,
-                              color: AnaliticaTokens.inkSoft,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                         )
                       : Container(
                           width: 44,
                           height: 44,
-                          color: AnaliticaTokens.surfaceMuted,
+                          color: _scheme.surfaceContainerHighest,
                           child: Icon(
                             Icons.restaurant,
                             size: 20,
                             color: !disponible
-                                ? AnaliticaTokens.inkSoft
-                                : AnaliticaTokens.inkMuted,
+                                ? _scheme.onSurfaceVariant
+                                : _scheme.onSurfaceVariant,
                           ),
                         ),
                 ),
@@ -2060,7 +2070,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                           decoration:
                               disponible ? null : TextDecoration.lineThrough,
                         ),
@@ -2070,9 +2080,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         '${_moneda.format(precioNum)} · ${_subtituloPrecios(p)}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -2119,7 +2129,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     Switch.adaptive(
                       value: disponible,
                       activeTrackColor:
-                          AnaliticaTokens.ink.withValues(alpha: 0.35),
+                          _scheme.onSurface.withValues(alpha: 0.35),
                       onChanged: (v) async {
                         await _repo.toggleDisponible(p['id'] as String, v);
                         await _cargar();
@@ -2149,7 +2159,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
         child: FilledButton.icon(
           onPressed: onPressed,
           style: FilledButton.styleFrom(
-            backgroundColor: AnaliticaTokens.ink,
+            backgroundColor: _scheme.primary,
+            foregroundColor: _scheme.onPrimary,
             visualDensity: VisualDensity.compact,
           ),
           icon: const Icon(Icons.add, size: 18),
@@ -2176,9 +2187,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AnaliticaTokens.surface,
+              color: _scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AnaliticaTokens.border),
+              border: Border.all(color: _scheme.outlineVariant),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2188,7 +2199,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       ? Icons.local_drink_outlined
                       : Icons.add_circle_outline,
                   size: 18,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -2199,10 +2210,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             'y al personalizar un plato.'
                         : 'Los toppings son extras por plato. Asígnanos con '
                             '«Toppings del plato» en cada producto (checkboxes).',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       height: 1.35,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -2227,21 +2238,22 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               ? Icons.local_drink_outlined
                               : Icons.restaurant_outlined,
                           size: 40,
-                          color: AnaliticaTokens.inkSoft,
+                          color: _scheme.onSurfaceVariant,
                         ),
                         const SizedBox(height: 12),
                         Text(
                           esBebida ? 'Sin bebidas aún' : 'Sin toppings aún',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: AnaliticaTokens.ink,
+                            color: _scheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 12),
                         FilledButton.icon(
                           onPressed: () => _nuevoExtra(esBebida: esBebida),
                           style: FilledButton.styleFrom(
-                            backgroundColor: AnaliticaTokens.ink,
+                            backgroundColor: _scheme.primary,
+                            foregroundColor: _scheme.onPrimary,
                           ),
                           icon: const Icon(Icons.add, size: 18),
                           label: Text(
@@ -2292,7 +2304,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         return Container(
                           margin: const EdgeInsets.only(bottom: 6),
                           decoration: BoxDecoration(
-                            color: AnaliticaTokens.surface,
+                            color: _scheme.surfaceContainerLow,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: sinReceta || bajoMargen
@@ -2300,7 +2312,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                                           ? const Color(0xFFD97706)
                                           : AnaliticaTokens.alertas)
                                       .withValues(alpha: 0.35)
-                                  : AnaliticaTokens.border,
+                                  : _scheme.outlineVariant,
                             ),
                           ),
                           child: ListTile(
@@ -2313,7 +2325,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13.5,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                                 decoration: disponible
                                     ? null
                                     : TextDecoration.lineThrough,
@@ -2324,9 +2336,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               children: [
                                 Text(
                                   _moneda.format(_num(e['precio'])),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
-                                    color: AnaliticaTokens.inkMuted,
+                                    color: _scheme.onSurfaceVariant,
                                   ),
                                 ),
                                 if (etiquetaCosteo != null) ...[
@@ -2345,7 +2357,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             trailing: Switch.adaptive(
                               value: disponible,
                               activeTrackColor:
-                                  AnaliticaTokens.ink.withValues(alpha: 0.35),
+                                  _scheme.onSurface.withValues(alpha: 0.35),
                               onChanged: (v) async {
                                 await _repo.toggleExtra(
                                   id: e['id'] as String,
@@ -2380,7 +2392,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowColor: WidgetStatePropertyAll(
-                  AnaliticaTokens.surfaceMuted,
+                  _scheme.surfaceContainerHighest,
                 ),
                 dataRowMinHeight: 58,
                 dataRowMaxHeight: 68,
@@ -2416,7 +2428,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       ? const Color(0xFFD97706)
                       : bajoMargen
                           ? AnaliticaTokens.alertas
-                          : AnaliticaTokens.inkMuted;
+                          : _scheme.onSurfaceVariant;
                   return DataRow(
                     cells: [
                       DataCell(
@@ -2429,8 +2441,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: disponible
-                                  ? AnaliticaTokens.ink
-                                  : AnaliticaTokens.inkSoft,
+                                  ? _scheme.onSurface
+                                  : _scheme.onSurfaceVariant,
                               decoration: disponible
                                   ? null
                                   : TextDecoration.lineThrough,
@@ -2455,7 +2467,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         Switch.adaptive(
                           value: disponible,
                           activeTrackColor:
-                              AnaliticaTokens.ink.withValues(alpha: 0.35),
+                              _scheme.onSurface.withValues(alpha: 0.35),
                           onChanged: (value) async {
                             await _repo.toggleExtra(
                               id: id,
@@ -2494,28 +2506,28 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       child: Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: AnaliticaTokens.surface,
+                          color: _scheme.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AnaliticaTokens.border),
+                          border: Border.all(color: _scheme.outlineVariant),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.layers_outlined,
                               size: 36,
-                              color: AnaliticaTokens.inkSoft,
+                              color: _scheme.onSurfaceVariant,
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'Sin combos aún',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                               ),
                             ),
                             const SizedBox(height: 8),
-                            const Text(
+                            Text(
                               'Combo = paquete que el cliente elige en el menú '
                               '(ej. hígado + huevo + jugo con precio total).\n\n'
                               'Si el plato ya trae rosquetes incluidos, configúralo en '
@@ -2523,7 +2535,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: AnaliticaTokens.inkMuted,
+                                color: _scheme.onSurfaceVariant,
                                 height: 1.4,
                               ),
                             ),
@@ -2539,7 +2551,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                                   }
                                 },
                                 style: TextButton.styleFrom(
-                                  foregroundColor: AnaliticaTokens.inkMuted,
+                                  foregroundColor: _scheme.onSurfaceVariant,
                                 ),
                                 icon: const Icon(Icons.pie_chart_outline),
                                 label: const Text('Abrir Costos (incluidos)'),
@@ -2549,7 +2561,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             FilledButton.icon(
                               onPressed: _nuevoCombo,
                               style: FilledButton.styleFrom(
-                                backgroundColor: AnaliticaTokens.ink,
+                                backgroundColor: _scheme.primary,
+                                foregroundColor: _scheme.onPrimary,
                               ),
                               icon: const Icon(Icons.add, size: 18),
                               label: const Text('Crear combo'),
@@ -2579,9 +2592,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         return Container(
                           margin: const EdgeInsets.only(bottom: 6),
                           decoration: BoxDecoration(
-                            color: AnaliticaTokens.surface,
+                            color: _scheme.surfaceContainerLow,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AnaliticaTokens.border),
+                            border: Border.all(color: _scheme.outlineVariant),
                           ),
                           child: ListTile(
                             contentPadding:
@@ -2605,22 +2618,22 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                                       errorBuilder: (_, __, ___) => Container(
                                         width: 44,
                                         height: 44,
-                                        color: AnaliticaTokens.surfaceMuted,
-                                        child: const Icon(
+                                        color: _scheme.surfaceContainerHighest,
+                                        child: Icon(
                                           Icons.layers_outlined,
                                           size: 18,
-                                          color: AnaliticaTokens.inkSoft,
+                                          color: _scheme.onSurfaceVariant,
                                         ),
                                       ),
                                     )
                                   : Container(
                                       width: 44,
                                       height: 44,
-                                      color: AnaliticaTokens.surfaceMuted,
-                                      child: const Icon(
+                                      color: _scheme.surfaceContainerHighest,
+                                      child: Icon(
                                         Icons.layers_outlined,
                                         size: 18,
-                                        color: AnaliticaTokens.inkMuted,
+                                        color: _scheme.onSurfaceVariant,
                                       ),
                                     ),
                             ),
@@ -2630,7 +2643,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                                 decoration: disponible
                                     ? null
                                     : TextDecoration.lineThrough,
@@ -2638,9 +2651,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             ),
                             subtitle: Text(
                               '${_moneda.format(_num(c['precio_fijo']))} · $nItems ítems',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AnaliticaTokens.inkMuted,
+                                color: _scheme.onSurfaceVariant,
                               ),
                             ),
                             trailing: Row(
@@ -2648,10 +2661,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               children: [
                                 PopupMenuButton<String>(
                                   tooltip: 'Más acciones',
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.more_vert,
                                     size: 20,
-                                    color: AnaliticaTokens.inkSoft,
+                                    color: _scheme.onSurfaceVariant,
                                   ),
                                   onSelected: (a) {
                                     if (a == 'foto') {
@@ -2673,8 +2686,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                                 ),
                                 Switch.adaptive(
                                   value: disponible,
-                                  activeTrackColor: AnaliticaTokens.ink
-                                      .withValues(alpha: 0.35),
+                                  activeTrackColor:
+                                      _scheme.primary.withValues(alpha: 0.35),
                                   onChanged: (v) async {
                                     await _repo.toggleCombo(
                                       id: c['id'] as String,
@@ -2707,7 +2720,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 headingRowColor:
-                    WidgetStatePropertyAll(AnaliticaTokens.surfaceMuted),
+                    WidgetStatePropertyAll(_scheme.surfaceContainerHighest),
                 dataRowMinHeight: 62,
                 dataRowMaxHeight: 72,
                 columns: const [
@@ -2733,8 +2746,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: disponible
-                                  ? AnaliticaTokens.ink
-                                  : AnaliticaTokens.inkSoft,
+                                  ? _scheme.onSurface
+                                  : _scheme.onSurfaceVariant,
                               decoration: disponible
                                   ? null
                                   : TextDecoration.lineThrough,
@@ -2750,7 +2763,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         Switch.adaptive(
                           value: disponible,
                           activeTrackColor:
-                              AnaliticaTokens.ink.withValues(alpha: 0.35),
+                              _scheme.onSurface.withValues(alpha: 0.35),
                           onChanged: (value) async {
                             await _repo.toggleCombo(
                               id: combo['id'] as String,

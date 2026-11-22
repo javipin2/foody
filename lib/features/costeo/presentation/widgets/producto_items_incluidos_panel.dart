@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
@@ -161,7 +162,7 @@ class _ProductoItemsIncluidosPanelState
       return;
     }
 
-    final elegido = await showDialog<String>(
+    final elegido = await FoodyDialogo.mostrar<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Agregar del menú'),

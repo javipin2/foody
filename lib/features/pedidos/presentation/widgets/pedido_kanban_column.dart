@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/features/admin/domain/pedido_admin_model.dart';
-import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/widgets/pedido_kanban_card.dart';
 
 /// Columna kanban: título, contador, suma $ y lista de cards.
@@ -33,14 +32,15 @@ class PedidoKanbanColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final suma = pedidos.fold<num>(0, (s, p) => s + p.total);
     return Container(
       width: ancho,
       margin: const EdgeInsets.only(right: 12, bottom: 16),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surfaceMuted,
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -52,10 +52,10 @@ class PedidoKanbanColumn extends StatelessWidget {
                 Expanded(
                   child: Text(
                     titulo,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
-                      color: AnaliticaTokens.ink,
+                      color: scheme.onSurface,
                     ),
                   ),
                 ),
@@ -63,15 +63,15 @@ class PedidoKanbanColumn extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: AnaliticaTokens.ink,
+                    color: scheme.primaryContainer,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${pedidos.length}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
-                      color: Colors.white,
+                      color: scheme.onPrimaryContainer,
                     ),
                   ),
                 ),
@@ -82,20 +82,20 @@ class PedidoKanbanColumn extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: Text(
               formatoMoneda.format(suma),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.inkMuted,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ),
           Expanded(
             child: pedidos.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Sin pedidos',
                       style: TextStyle(
-                        color: AnaliticaTokens.inkSoft,
+                        color: scheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),

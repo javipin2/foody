@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 
 /// Tokens visuales del rediseño operativo (alineado a AnaliticaTokens).
@@ -13,12 +13,12 @@ class OperacionUi {
   static const primarioOscuro = AnaliticaTokens.ink;
 
   /// Borde uniforme (seguro con [BorderRadius]).
-  static BoxDecoration tarjeta() {
+  static BoxDecoration tarjeta({ColorScheme? esquema}) {
     return BoxDecoration(
-      color: AnaliticaTokens.surface,
+      color: esquema?.surfaceContainerLow ?? AnaliticaTokens.surface,
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: borde),
-      boxShadow: AnaliticaTokens.shadowSoft,
+      border: Border.all(color: esquema?.outlineVariant ?? borde),
+      boxShadow: esquema == null ? AnaliticaTokens.shadowSoft : null,
     );
   }
 
@@ -85,6 +85,7 @@ class OperacionTarjeta extends StatelessWidget {
     this.padding = const EdgeInsets.all(14),
     this.onTap,
     this.onLongPress,
+    this.usarTema = false,
   });
 
   final Widget child;
@@ -92,11 +93,14 @@ class OperacionTarjeta extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final bool usarTema;
 
   @override
   Widget build(BuildContext context) {
     final cuerpo = Container(
-      decoration: OperacionUi.tarjeta(),
+      decoration: OperacionUi.tarjeta(
+        esquema: usarTema ? Theme.of(context).colorScheme : null,
+      ),
       child: acentoIzquierdo == null
           ? Padding(padding: padding, child: child)
           : ClipRRect(
@@ -405,15 +409,16 @@ class OperacionMetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: OperacionUi.tarjeta(),
+      decoration: OperacionUi.tarjeta(esquema: scheme),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             etiqueta,
-            style: const TextStyle(fontSize: 11, color: OperacionUi.textoTerciario),
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 4),
           Text(
@@ -421,14 +426,14 @@ class OperacionMetricCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w600,
-              color: colorValor ?? const Color(0xFF0F172A),
+              color: colorValor ?? scheme.onSurface,
             ),
           ),
           if (subtitulo != null) ...[
             const SizedBox(height: 2),
             Text(
               subtitulo!,
-              style: const TextStyle(fontSize: 11, color: OperacionUi.textoTerciario),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
           ],
         ],
@@ -469,7 +474,8 @@ class OperacionTipoToggle extends StatelessWidget {
               onTap: () => onCambio(o.$1),
               borderRadius: BorderRadius.circular(7),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 11),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 6, horizontal: 11),
                 child: Text(
                   o.$2,
                   textAlign: TextAlign.center,

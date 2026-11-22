@@ -36,7 +36,7 @@ class MenuAdminDinamico {
       ),
       MenuAdminItem(
         permiso: 'ver_dashboard',
-        titulo: 'Dashboard',
+        titulo: 'Inicio',
         icono: Icons.dashboard_rounded,
         ruta: 'dashboard',
       ),

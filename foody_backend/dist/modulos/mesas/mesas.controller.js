@@ -156,7 +156,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':sucursal_id'),
     (0, permisos_decorator_1.Permisos)('gestionar_mesas', 'ver_mesas', 'ver_pedidos', 'crear_pedido'),
-    __param(0, (0, common_1.Param)('sucursal_id')),
+    __param(0, (0, common_1.Param)('sucursal_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)('incluir_inactivas')),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),

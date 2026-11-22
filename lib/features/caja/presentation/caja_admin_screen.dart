@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
@@ -9,6 +10,7 @@ import 'package:reserva_canchas/core/realtime/poll_realtime_respaldo.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
 import 'package:reserva_canchas/core/saas_ui/saas_ui.dart';
+import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/operacion_ui.dart';
 import 'package:reserva_canchas/features/admin/providers/operacion_sucursal_provider.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
@@ -30,10 +32,13 @@ class CajaAdminScreen extends ConsumerStatefulWidget {
 
   final String? sucursalId;
   final ValueChanged<String>? onIrPedido;
+
   /// NAV-CJ-02: notifica al shell cajero tras abrir/cerrar turno.
   final ValueChanged<bool>? onCajaEstadoCambiado;
+
   /// NAV-CJ-01: el shell ya tiene AppBar.
   final bool ocultarCabecera;
+
   /// NAV-CJ-14: el cajero no debería auto-activar arqueo ciego.
   final bool permitirArqueoCiego;
 
@@ -43,6 +48,8 @@ class CajaAdminScreen extends ConsumerStatefulWidget {
 
 class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     with WidgetsBindingObserver {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = CajaRepository();
   final _montoApertura = TextEditingController(text: '0');
   final _montoCierre = TextEditingController();
@@ -180,7 +187,8 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   Future<void> _abrir() async {
     final sid = widget.sucursalId!;
-    final monto = double.tryParse(_montoApertura.text.replaceAll(',', '.')) ?? 0;
+    final monto =
+        double.tryParse(_montoApertura.text.replaceAll(',', '.')) ?? 0;
     try {
       await _repo.abrir(
         sucursalId: sid,
@@ -204,8 +212,8 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   Future<void> _cerrar() async {
     final cajaId = _caja!['id'] as String;
-    final monto =
-        double.tryParse(_montoCierre.text.replaceAll(',', '.')) ?? 0;
+    final arqueoCiego = _caja!['arqueo_ciego'] == true;
+    final monto = double.tryParse(_montoCierre.text.replaceAll(',', '.')) ?? 0;
     try {
       final res = await _repo.cerrar(
         cajaId: cajaId,
@@ -214,10 +222,11 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
       if (!mounted) return;
       final diff = (res['diferencia'] as num?)?.toDouble() ?? 0;
       final alertaArqueo = diff.abs() > 5000;
-      showDialog<void>(
+      FoodyDialogo.mostrar<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text(alertaArqueo ? 'Caja cerrada — revisar arqueo' : 'Caja cerrada'),
+          title: Text(
+              alertaArqueo ? 'Caja cerrada — revisar arqueo' : 'Caja cerrada'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,19 +258,21 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   ),
                 ),
               Text(
-                _caja?['arqueo_ciego'] == true
+                arqueoCiego
                     ? 'Contado: ${_moneda.format(res['monto_final_contado'])}\n'
-                      'Diferencia: ${_moneda.format(res['diferencia'])}\n'
-                      '(Arqueo ciego — saldo sistema oculto)'
+                        'Diferencia: ${_moneda.format(res['diferencia'])}\n'
+                        '(Arqueo ciego — saldo sistema oculto)'
                     : 'Sistema: ${_moneda.format(res['monto_final_sistema'])}\n'
-                      'Contado: ${_moneda.format(res['monto_final_contado'])}\n'
-                      'Diferencia: ${_moneda.format(res['diferencia'])}\n'
-                      'Propinas turno: ${_moneda.format(res['propinas_turno'] ?? 0)}',
+                        'Contado: ${_moneda.format(res['monto_final_contado'])}\n'
+                        'Diferencia: ${_moneda.format(res['diferencia'])}\n'
+                        'Propinas turno: ${_moneda.format(res['propinas_turno'] ?? 0)}',
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Entendido')),
           ],
         ),
       );
@@ -280,31 +291,60 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     final nombre = TextEditingController();
     final tel = TextEditingController();
     final monto = TextEditingController();
-    final ok = await showDialog<bool>(
+    final formulario = GlobalKey<FormState>();
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: const Text('Registrar fiado'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nombre,
-              decoration: const InputDecoration(labelText: 'Cliente'),
-            ),
-            TextField(
-              controller: tel,
-              decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
-            ),
-            TextField(
-              controller: monto,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Monto'),
-            ),
-          ],
-        ),
+        content: Form(
+            key: formulario,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: nombre,
+                  decoration: const InputDecoration(labelText: 'Cliente'),
+                  validator: (valor) => (valor?.trim().isEmpty ?? true)
+                      ? 'Escribe el nombre del cliente'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: tel,
+                  keyboardType: TextInputType.phone,
+                  decoration:
+                      const InputDecoration(labelText: 'Teléfono (opcional)'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: monto,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                      labelText: 'Monto', prefixText: r'$ '),
+                  validator: (texto) {
+                    final valor = double.tryParse(
+                        (texto ?? '').trim().replaceAll(',', '.'));
+                    return valor == null || !valor.isFinite || valor <= 0
+                        ? 'Escribe un monto mayor a cero'
+                        : null;
+                  },
+                ),
+              ],
+            )),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          FilledButton(
+              onPressed: () {
+                if (formulario.currentState?.validate() ?? false) {
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Guardar')),
         ],
       ),
     );
@@ -314,7 +354,7 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     nombre.dispose();
     tel.dispose();
     monto.dispose();
-    if (ok != true || m == null || nombreTxt.isEmpty) return;
+    if (ok != true || !mounted || m == null || nombreTxt.isEmpty) return;
     try {
       await _repo.crearCuentaPorCobrar(
         sucursalId: sid,
@@ -332,10 +372,11 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   Future<void> _pagarFiado(Map<String, dynamic> cuenta) async {
     var metodo = 'efectivo';
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
+          scrollable: true,
           title: const Text('Cobrar cuenta por cobrar'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -414,7 +455,8 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
   }
 
   Future<void> _devolucion() async {
-    final monto = double.tryParse(_montoDevolucion.text.replaceAll(',', '.')) ?? 0;
+    final monto =
+        double.tryParse(_montoDevolucion.text.replaceAll(',', '.')) ?? 0;
     final motivo = _motivoDevolucion.text.trim();
     if (monto < 0.01 || motivo.length < 3) {
       if (mounted) {
@@ -427,14 +469,13 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
       return;
     }
 
-    final confirmar = await showDialog<bool>(
+    final confirmar = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Devolver efectivo'),
-        content: const Text(
-          'Usa esto solo para devolver dinero de una venta ya cobrada en este turno.\n\n'
-          'Si cancelaste un pedido que no estaba pagado, no registres devolución: '
-          'la caja no debe restar dinero que nunca entró.',
+        content: Text(
+          'Vas a registrar una devolución de ${_moneda.format(monto)} de una venta cobrada en este turno.\n\n'
+          'Motivo: $motivo',
         ),
         actions: [
           TextButton(
@@ -491,85 +532,68 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   @override
   Widget build(BuildContext context) {
+    final canvas = AnaliticaTokens.canvasOf(context);
     if (_cargando) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: canvas,
         child: AnaliticaSkeleton.tab(),
       );
     }
     if (_error != null) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    color: AnaliticaTokens.inkMuted,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _cargar,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
-                  ),
-                  child: const Text('Reintentar'),
-                ),
-              ],
-            ),
-          ),
+        color: canvas,
+        child: FoodyEstadoUi.errorUi(
+          mensaje: _error!,
+          onReintentar: _cargar,
         ),
       );
     }
 
     if (_caja == null) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: canvas,
         child: _pantallaApertura(),
       );
     }
 
     final ancho = FoodyBreakpoints.widthOf(context);
-    final dosColumnas = FoodyBreakpoints.splitOperacion(ancho);
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
-    final contenido = RefreshIndicator(
-      onRefresh: _cargar,
-      color: AnaliticaTokens.ink,
-      child: dosColumnas
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: _panelPrincipalCaja()),
-                SizedBox(
-                  width: ancho >= 1200 ? 300 : 280,
-                  child: _panelLateralCaja(scrollPropio: true),
+    final contenido = LayoutBuilder(
+      builder: (context, constraints) {
+        final dosColumnas = constraints.maxWidth >= FoodyBreakpoints.large;
+        return RefreshIndicator(
+          onRefresh: _cargar,
+          child: dosColumnas
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _panelPrincipalCaja()),
+                    SizedBox(
+                      width: 320,
+                      child: _panelLateralCaja(scrollPropio: true),
+                    ),
+                  ],
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    _metricasCaja(),
+                    const SizedBox(height: 12),
+                    _panelLateralCaja(scrollPropio: false),
+                    const SizedBox(height: 16),
+                    _listaMovimientos(),
+                  ],
                 ),
-              ],
-            )
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _metricasCaja(),
-                const SizedBox(height: 12),
-                _listaMovimientos(),
-                const SizedBox(height: 16),
-                _panelLateralCaja(scrollPropio: false),
-              ],
-            ),
+        );
+      },
     );
 
     // NAV-CJ-01: shell cajero ya trae AppBar — sin NestedScrollView de cabecera.
     if (widget.ocultarCabecera) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: canvas,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -578,9 +602,9 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
               child: IconButton(
                 tooltip: 'Actualizar',
                 onPressed: _cargar,
-                icon: const Icon(
+                icon: Icon(
                   Icons.refresh,
-                  color: AnaliticaTokens.inkMuted,
+                  color: AnaliticaTokens.inkMutedOf(context),
                 ),
               ),
             ),
@@ -591,7 +615,7 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     }
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: canvas,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -608,11 +632,11 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Admin / Operación',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AnaliticaTokens.inkSoft,
+                          color: AnaliticaTokens.inkMutedOf(context),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -623,16 +647,16 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                           fontSize: compacto ? 18 : 20,
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.4,
-                          color: AnaliticaTokens.ink,
+                          color: AnaliticaTokens.inkOf(context),
                           height: 1.15,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '${_movimientos.length} movimientos · turno abierto',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: AnaliticaTokens.inkMuted,
+                          color: AnaliticaTokens.inkMutedOf(context),
                         ),
                       ),
                     ],
@@ -675,9 +699,9 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   tooltip: 'Actualizar',
                   onPressed: _cargar,
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.refresh,
-                    color: AnaliticaTokens.inkMuted,
+                    color: AnaliticaTokens.inkMutedOf(context),
                   ),
                 ),
               ],
@@ -691,10 +715,9 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   BoxDecoration _decoTarjeta() {
     return BoxDecoration(
-      color: AnaliticaTokens.surface,
+      color: AnaliticaTokens.surfaceOf(context),
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-      border: Border.all(color: AnaliticaTokens.border),
-      boxShadow: AnaliticaTokens.shadowSoft,
+      border: Border.all(color: AnaliticaTokens.borderOf(context)),
     );
   }
 
@@ -775,33 +798,33 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                const Text(
+                Text(
                   'Movimientos',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
                 const Spacer(),
                 Text(
                   '${_movimientos.length} registros',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: AnaliticaTokens.borderSoft),
+          Divider(height: 1, color: _scheme.outlineVariant),
           if (_movimientos.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(24),
               child: Center(
                 child: Text(
                   'Sin movimientos aún',
-                  style: TextStyle(color: AnaliticaTokens.inkSoft),
+                  style: TextStyle(color: _scheme.onSurfaceVariant),
                 ),
               ),
             )
@@ -812,7 +835,7 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
               child: ListView.separated(
                 itemCount: _movimientos.length,
                 separatorBuilder: (_, __) =>
-                    const Divider(height: 1, color: AnaliticaTokens.borderSoft),
+                    Divider(height: 1, color: _scheme.outlineVariant),
                 itemBuilder: (_, i) => _filaMovimiento(_movimientos[i]),
               ),
             ),
@@ -824,217 +847,220 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   Widget _panelLateralCaja({bool scrollPropio = true}) {
     final kids = <Widget>[
-        _seccionFiados(),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: _decoTarjeta(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Registrar gasto',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+      _seccionFiados(),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: _decoTarjeta(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Registrar gasto',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _conceptoGasto,
+              decoration: InputDecoration(
+                hintText: 'Concepto',
+                filled: true,
+                fillColor: _scheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
                 ),
+                isDense: true,
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _conceptoGasto,
-                decoration: InputDecoration(
-                  hintText: 'Concepto',
-                  filled: true,
-                  fillColor: AnaliticaTokens.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _montoGasto,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                hintText: 'Monto',
+                filled: true,
+                fillColor: _scheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
                 ),
+                isDense: true,
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _montoGasto,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'Monto',
-                  filled: true,
-                  fillColor: AnaliticaTokens.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: _gasto,
-                style: FilledButton.styleFrom(backgroundColor: AnaliticaTokens.ink),
-                child: const Text('Guardar gasto'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: _gasto,
+              style: FilledButton.styleFrom(
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary),
+              child: const Text('Guardar gasto'),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: _decoTarjeta(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Retiro parcial',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+      ),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: _decoTarjeta(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Retiro parcial',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _montoRetiro,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                hintText: 'Monto retiro',
+                filled: true,
+                fillColor: _scheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
                 ),
+                isDense: true,
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _montoRetiro,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'Monto retiro',
-                  filled: true,
-                  fillColor: AnaliticaTokens.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: _retiroParcial,
-                child: const Text('Registrar retiro'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _retiroParcial,
+              child: const Text('Registrar retiro'),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: _decoTarjeta(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Devolución',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+      ),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: _decoTarjeta(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Devolución',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Solo efectivo ya cobrado en este turno. Cancelar pedido no cobrado no requiere esto.',
+              style: TextStyle(fontSize: 11, color: _scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _montoDevolucion,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                hintText: 'Monto',
+                filled: true,
+                fillColor: _scheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
                 ),
+                isDense: true,
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Solo efectivo ya cobrado en este turno. Cancelar pedido no cobrado no requiere esto.',
-                style: TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _montoDevolucion,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'Monto',
-                  filled: true,
-                  fillColor: AnaliticaTokens.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _motivoDevolucion,
+              decoration: InputDecoration(
+                hintText: 'Motivo',
+                filled: true,
+                fillColor: _scheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
                 ),
+                isDense: true,
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _motivoDevolucion,
-                decoration: InputDecoration(
-                  hintText: 'Motivo',
-                  filled: true,
-                  fillColor: AnaliticaTokens.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: _devolucion,
-                style: FilledButton.styleFrom(backgroundColor: AnaliticaTokens.inventario),
-                child: const Text('Registrar devolución'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: _devolucion,
+              style: FilledButton.styleFrom(
+                  backgroundColor: AnaliticaTokens.inventario),
+              child: const Text('Registrar devolución'),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: _decoTarjeta(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Cerrar turno',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
-                ),
+      ),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: _decoTarjeta(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Cerrar turno',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: _scheme.onSurface,
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _montoCierre,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Monto contado',
-                  prefixText: r'$ ',
-                  filled: true,
-                  fillColor: AnaliticaTokens.surfaceMuted,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                  isDense: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _montoCierre,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Monto contado',
+                prefixText: r'$ ',
+                filled: true,
+                fillColor: _scheme.surfaceContainerHighest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide.none,
                 ),
+                isDense: true,
               ),
-              const SizedBox(height: 8),
-              Material(
-                color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
+            ),
+            const SizedBox(height: 8),
+            Material(
+              color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                onTap: _cerrar,
                 borderRadius: BorderRadius.circular(8),
-                child: InkWell(
-                  onTap: _cerrar,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AnaliticaTokens.alertas.withValues(alpha: 0.35),
-                      ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AnaliticaTokens.alertas.withValues(alpha: 0.35),
                     ),
-                    child: const Text(
-                      'Cerrar caja',
-                      style: TextStyle(
-                        color: AnaliticaTokens.alertas,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
+                  ),
+                  child: const Text(
+                    'Cerrar caja',
+                    style: TextStyle(
+                      color: AnaliticaTokens.alertas,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
     ];
     if (!scrollPropio) {
       return Column(
@@ -1095,11 +1121,13 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                 children: [
                   Text(
                     tipo,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w500),
                   ),
                   Text(
                     m['descripcion'] as String? ?? '',
-                    style: const TextStyle(fontSize: 11, color: AnaliticaTokens.inkSoft),
+                    style: TextStyle(
+                        fontSize: 11, color: _scheme.onSurfaceVariant),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1111,9 +1139,9 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                           responsable,
                         if (metodo != null && metodo.isNotEmpty) metodo,
                       ].join(' · '),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
-                        color: AnaliticaTokens.inkSoft,
+                        color: _scheme.onSurfaceVariant,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -1130,7 +1158,7 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                 child: Icon(
                   Icons.receipt_long_outlined,
                   size: 16,
-                  color: AnaliticaTokens.inkSoft,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             Text(
@@ -1162,11 +1190,11 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
       ),
       children: [
         if (!widget.ocultarCabecera) ...[
-          const Text(
+          Text(
             'Admin / Operación',
             style: TextStyle(
               fontSize: 11,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -1177,16 +1205,16 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
               fontSize: compacto ? 18 : 20,
               fontWeight: FontWeight.w700,
               letterSpacing: -0.4,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
               height: 1.15,
             ),
           ),
           const SizedBox(height: 2),
-          const Text(
+          Text(
             'Sin turno abierto · indica el efectivo inicial',
             style: TextStyle(
               fontSize: 12.5,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 20),
@@ -1206,55 +1234,55 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                     height: 48,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: AnaliticaTokens.surfaceMuted,
+                      color: _scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.point_of_sale,
                       size: 26,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 14),
-                  const Text(
+                  Text(
                     'Abrir turno de caja',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Indica el monto inicial en efectivo para comenzar.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.35,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 18),
                   if (widget.permitirArqueoCiego)
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text(
+                      title: Text(
                         'Arqueo ciego',
                         style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'El cajero no verá el saldo del sistema',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
-                      activeTrackColor: AnaliticaTokens.ink,
+                      activeTrackColor: _scheme.primary,
                       value: _arqueoCiego,
                       onChanged: (v) => setState(() => _arqueoCiego = v),
                     ),
@@ -1262,31 +1290,31 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   TextField(
                     controller: _montoApertura,
                     keyboardType: TextInputType.number,
-                    style: const TextStyle(color: AnaliticaTokens.ink),
+                    style: TextStyle(color: _scheme.onSurface),
                     decoration: InputDecoration(
                       labelText: 'Monto inicial',
-                      labelStyle: const TextStyle(
-                        color: AnaliticaTokens.inkMuted,
+                      labelStyle: TextStyle(
+                        color: _scheme.onSurfaceVariant,
                       ),
                       prefixText: r'$ ',
                       filled: true,
-                      fillColor: AnaliticaTokens.surfaceMuted,
+                      fillColor: _scheme.surfaceContainerHighest,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: AnaliticaTokens.border,
+                        borderSide: BorderSide(
+                          color: _scheme.outlineVariant,
                         ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: AnaliticaTokens.border,
+                        borderSide: BorderSide(
+                          color: _scheme.outlineVariant,
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(
-                          color: AnaliticaTokens.ink,
+                        borderSide: BorderSide(
+                          color: _scheme.onSurface,
                           width: 1.2,
                         ),
                       ),
@@ -1296,7 +1324,8 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   FilledButton(
                     onPressed: _abrir,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
                       minimumSize: const Size.fromHeight(48),
                     ),
                     child: const Text('Abrir caja'),
@@ -1325,222 +1354,222 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Cuentas por cobrar',
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Cuentas por cobrar',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: _scheme.onSurface,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _nuevoFiado,
+                tooltip: 'Registrar fiado',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.add, color: _scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+          if (resumen != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AnaliticaTokens.inventario.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AnaliticaTokens.inventario.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Pendiente: ${_moneda.format(_num(resumen['total_pendiente']))}',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   ),
-                ),
-                IconButton(
-                  onPressed: _nuevoFiado,
-                  tooltip: 'Registrar fiado',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.add, color: AnaliticaTokens.inkMuted),
-                ),
-              ],
-            ),
-            if (resumen != null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AnaliticaTokens.inventario.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: AnaliticaTokens.inventario.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Pendiente: ${_moneda.format(_num(resumen['total_pendiente']))}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
-                      ),
+                  Text(
+                    '${resumen['cantidad_pendiente'] ?? 0} cuenta(s)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _scheme.onSurfaceVariant,
                     ),
-                    Text(
-                      '${resumen['cantidad_pendiente'] ?? 0} cuenta(s)',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AnaliticaTokens.inkMuted,
-                      ),
-                    ),
-                    if ((_num(resumen['antiguas_7d'])) > 0) ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Chip(
-                          label: Text(
-                            '${resumen['antiguas_7d']} +7 días',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AnaliticaTokens.alertas,
-                            ),
-                          ),
-                          backgroundColor:
-                              AnaliticaTokens.alertas.withValues(alpha: 0.12),
-                          side: BorderSide(
-                            color:
-                                AnaliticaTokens.alertas.withValues(alpha: 0.3),
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                ChoiceChip(
-                  label: const Text('Pendientes'),
-                  selected: !_verHistorialFiados,
-                  selectedColor: AnaliticaTokens.ink,
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: !_verHistorialFiados
-                        ? Colors.white
-                        : AnaliticaTokens.inkMuted,
                   ),
-                  side: BorderSide(
-                    color: !_verHistorialFiados
-                        ? AnaliticaTokens.ink
-                        : AnaliticaTokens.border,
-                  ),
-                  onSelected: (_) {
-                    setState(() => _verHistorialFiados = false);
-                    _cargar(silencioso: true);
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Historial'),
-                  selected: _verHistorialFiados,
-                  selectedColor: AnaliticaTokens.ink,
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: _verHistorialFiados
-                        ? Colors.white
-                        : AnaliticaTokens.inkMuted,
-                  ),
-                  side: BorderSide(
-                    color: _verHistorialFiados
-                        ? AnaliticaTokens.ink
-                        : AnaliticaTokens.border,
-                  ),
-                  onSelected: (_) {
-                    setState(() => _verHistorialFiados = true);
-                    _cargar(silencioso: true);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (lista.isEmpty)
-              Text(
-                _verHistorialFiados
-                    ? 'Sin cuentas registradas'
-                    : 'Sin cuentas pendientes',
-                style: const TextStyle(color: AnaliticaTokens.inkSoft),
-              ),
-            for (final f in lista)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        f['cliente_nombre'] as String? ?? '',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
-                        ),
-                      ),
-                    ),
-                    if (f['estado'] == 'pagada')
-                      Chip(
-                        label: const Text(
-                          'Pagada',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AnaliticaTokens.inventario,
+                  if ((_num(resumen['antiguas_7d'])) > 0) ...[
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Chip(
+                        label: Text(
+                          '${resumen['antiguas_7d']} +7 días',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AnaliticaTokens.alertas,
                           ),
                         ),
                         backgroundColor:
-                            AnaliticaTokens.inventario.withValues(alpha: 0.12),
+                            AnaliticaTokens.alertas.withValues(alpha: 0.12),
+                        side: BorderSide(
+                          color: AnaliticaTokens.alertas.withValues(alpha: 0.3),
+                        ),
                         visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                      ),
-                  ],
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      [
-                        _moneda.format(_num(f['monto'])),
-                        if (f['numero_pedido'] != null)
-                          'Pedido #${f['numero_pedido']}',
-                        if (f['creada_por'] != null &&
-                            '${f['creada_por']}'.isNotEmpty)
-                          'Registró: ${f['creada_por']}',
-                        if (f['estado'] == 'pagada' &&
-                            f['pagada_por'] != null &&
-                            '${f['pagada_por']}'.isNotEmpty)
-                          'Cobró: ${f['pagada_por']}',
-                        if (f['estado'] == 'pendiente' &&
-                            (f['dias_pendiente'] as num? ?? 0) > 0)
-                          '${f['dias_pendiente']} días pendiente',
-                        if (f['cliente_telefono'] != null &&
-                            '${f['cliente_telefono']}'.isNotEmpty)
-                          '${f['cliente_telefono']}',
-                      ].where((s) => s.isNotEmpty).join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: f['alerta_antigua'] == true
-                            ? AnaliticaTokens.alertas
-                            : AnaliticaTokens.inkMuted,
                       ),
                     ),
-                    if (f['estado'] == 'pendiente') ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: FilledButton(
-                          onPressed: () => _pagarFiado(f),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AnaliticaTokens.ink,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
-                            ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text('Cobrar'),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              ChoiceChip(
+                label: const Text('Pendientes'),
+                selected: !_verHistorialFiados,
+                selectedColor: _scheme.primary,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: !_verHistorialFiados
+                      ? _scheme.onPrimary
+                      : _scheme.onSurfaceVariant,
+                ),
+                side: BorderSide(
+                  color: !_verHistorialFiados
+                      ? _scheme.onSurface
+                      : _scheme.outlineVariant,
+                ),
+                onSelected: (_) {
+                  setState(() => _verHistorialFiados = false);
+                  _cargar(silencioso: true);
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Historial'),
+                selected: _verHistorialFiados,
+                selectedColor: _scheme.primary,
+                labelStyle: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _verHistorialFiados
+                      ? _scheme.onPrimary
+                      : _scheme.onSurfaceVariant,
+                ),
+                side: BorderSide(
+                  color: _verHistorialFiados
+                      ? _scheme.onSurface
+                      : _scheme.outlineVariant,
+                ),
+                onSelected: (_) {
+                  setState(() => _verHistorialFiados = true);
+                  _cargar(silencioso: true);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (lista.isEmpty)
+            Text(
+              _verHistorialFiados
+                  ? 'Sin cuentas registradas'
+                  : 'Sin cuentas pendientes',
+              style: TextStyle(color: _scheme.onSurfaceVariant),
+            ),
+          for (final f in lista)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      f['cliente_nombre'] as String? ?? '',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (f['estado'] == 'pagada')
+                    Chip(
+                      label: const Text(
+                        'Pagada',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AnaliticaTokens.inventario,
                         ),
                       ),
-                    ],
-                  ],
-                ),
-                isThreeLine: f['estado'] == 'pendiente',
+                      backgroundColor:
+                          AnaliticaTokens.inventario.withValues(alpha: 0.12),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                    ),
+                ],
               ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    [
+                      _moneda.format(_num(f['monto'])),
+                      if (f['numero_pedido'] != null)
+                        'Pedido #${f['numero_pedido']}',
+                      if (f['creada_por'] != null &&
+                          '${f['creada_por']}'.isNotEmpty)
+                        'Registró: ${f['creada_por']}',
+                      if (f['estado'] == 'pagada' &&
+                          f['pagada_por'] != null &&
+                          '${f['pagada_por']}'.isNotEmpty)
+                        'Cobró: ${f['pagada_por']}',
+                      if (f['estado'] == 'pendiente' &&
+                          (f['dias_pendiente'] as num? ?? 0) > 0)
+                        '${f['dias_pendiente']} días pendiente',
+                      if (f['cliente_telefono'] != null &&
+                          '${f['cliente_telefono']}'.isNotEmpty)
+                        '${f['cliente_telefono']}',
+                    ].where((s) => s.isNotEmpty).join(' · '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: f['alerta_antigua'] == true
+                          ? AnaliticaTokens.alertas
+                          : _scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (f['estado'] == 'pendiente') ...[
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton(
+                        onPressed: () => _pagarFiado(f),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _scheme.primary,
+                          foregroundColor: _scheme.onPrimary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Cobrar'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              isThreeLine: f['estado'] == 'pendiente',
+            ),
         ],
       ),
     );

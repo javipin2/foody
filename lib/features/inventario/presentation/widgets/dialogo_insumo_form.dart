@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/tema/foody_formulario.dart';
@@ -54,7 +55,7 @@ Future<InsumoFormResultado?> mostrarDialogoInsumo({
   /// NAV-MC-04: preselección al crear desde Costos (ej. empaque).
   String? categoriaInicial,
 }) {
-  return showDialog<InsumoFormResultado>(
+  return FoodyDialogo.mostrar<InsumoFormResultado>(
     context: context,
     builder: (ctx) => _DialogoInsumoForm(
       insumoExistente: insumoExistente,

@@ -28,6 +28,8 @@ class HorariosAdminScreen extends StatefulWidget {
 }
 
 class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = SucursalesRepository();
   List<Map<String, dynamic>> _horarios = [];
   bool _cargando = true;
@@ -79,8 +81,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            error ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
+        backgroundColor: error ? AnaliticaTokens.alertas : _scheme.onSurface,
       ),
     );
   }
@@ -159,11 +160,11 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
+                  Text(
                     'Toca una hora para elegirla de la lista',
                     style: TextStyle(
                       fontSize: 12.5,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -262,8 +263,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
     }
   }
 
-  int get _diasAbiertos =>
-      _horarios.where((h) => h['activo'] != false).length;
+  int get _diasAbiertos => _horarios.where((h) => h['activo'] != false).length;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +271,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -284,11 +284,11 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Admin / Sucursal',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -306,7 +306,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                               fontSize: compacto ? 18 : 20,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.4,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                               height: 1.15,
                             ),
                           ),
@@ -315,8 +315,8 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                             _cargando
                                 ? 'Cargando…'
                                 : '$_diasAbiertos días abiertos · zona America/Bogota',
-                            style: const TextStyle(
-                              color: AnaliticaTokens.inkMuted,
+                            style: TextStyle(
+                              color: _scheme.onSurfaceVariant,
                               fontSize: 12.5,
                             ),
                           ),
@@ -327,19 +327,19 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                       tooltip: 'Actualizar',
                       onPressed: _cargar,
                       visualDensity: VisualDensity.compact,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.refresh,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'El menú y los pedidos del cliente solo están disponibles '
                   'dentro de estos horarios.',
                   style: TextStyle(
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                     fontSize: 12.5,
                     height: 1.35,
                   ),
@@ -354,7 +354,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                 ? _estadoError()
                 : RefreshIndicator(
                     onRefresh: _cargar,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     child: ListView(
                       padding: EdgeInsets.fromLTRB(
                         compacto ? 12 : 20,
@@ -381,9 +381,9 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -397,9 +397,9 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -407,7 +407,8 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -422,20 +423,20 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(
                 Icons.visibility_outlined,
                 size: 16,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
               SizedBox(width: 6),
               Text(
@@ -443,7 +444,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 12.5,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
             ],
@@ -461,17 +462,16 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                   ? '$corto ${_formatearHora(h['hora_apertura'])}–${_formatearHora(h['hora_cierre'])}'
                   : '$corto cerrado';
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: activo
-                      ? AnaliticaTokens.ink.withValues(alpha: 0.06)
-                      : AnaliticaTokens.surfaceMuted,
+                      ? _scheme.onSurface.withValues(alpha: 0.06)
+                      : _scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: activo
-                        ? AnaliticaTokens.ink.withValues(alpha: 0.18)
-                        : AnaliticaTokens.border,
+                        ? _scheme.onSurface.withValues(alpha: 0.18)
+                        : _scheme.outlineVariant,
                   ),
                 ),
                 child: Text(
@@ -479,9 +479,8 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: activo
-                        ? AnaliticaTokens.ink
-                        : AnaliticaTokens.inkSoft,
+                    color:
+                        activo ? _scheme.onSurface : _scheme.onSurfaceVariant,
                   ),
                 ),
               );
@@ -500,7 +499,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
         child: InkWell(
           onTap: activo ? () => _editarHorario(h) : null,
@@ -508,7 +507,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-              border: Border.all(color: AnaliticaTokens.border),
+              border: Border.all(color: _scheme.outlineVariant),
               boxShadow: AnaliticaTokens.shadowSoft,
             ),
             child: Padding(
@@ -520,21 +519,20 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                     height: 36,
                     decoration: BoxDecoration(
                       color: activo
-                          ? AnaliticaTokens.ink.withValues(alpha: 0.06)
-                          : AnaliticaTokens.surfaceMuted,
+                          ? _scheme.onSurface.withValues(alpha: 0.06)
+                          : _scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: activo
-                            ? AnaliticaTokens.ink.withValues(alpha: 0.15)
-                            : AnaliticaTokens.border,
+                            ? _scheme.onSurface.withValues(alpha: 0.15)
+                            : _scheme.outlineVariant,
                       ),
                     ),
                     child: Icon(
                       Icons.schedule_outlined,
                       size: 18,
-                      color: activo
-                          ? AnaliticaTokens.ink
-                          : AnaliticaTokens.inkSoft,
+                      color:
+                          activo ? _scheme.onSurface : _scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -548,8 +546,8 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
                             color: activo
-                                ? AnaliticaTokens.ink
-                                : AnaliticaTokens.inkSoft,
+                                ? _scheme.onSurface
+                                : _scheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -558,8 +556,8 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                           style: TextStyle(
                             fontSize: 12.5,
                             color: activo
-                                ? AnaliticaTokens.inkMuted
-                                : AnaliticaTokens.inkSoft,
+                                ? _scheme.onSurfaceVariant
+                                : _scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -573,22 +571,23 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
                       shape: BoxShape.circle,
                       color: activo
                           ? AnaliticaTokens.inventario
-                          : AnaliticaTokens.inkSoft,
+                          : _scheme.onSurfaceVariant,
                     ),
                   ),
                   Switch.adaptive(
                     value: activo,
-                    activeTrackColor: AnaliticaTokens.ink,
+                    activeTrackColor: _scheme.primary,
                     onChanged: (v) => _toggleActivo(h, v),
                   ),
                   IconButton(
-                    tooltip: activo ? 'Editar horario' : 'Activa el día primero',
+                    tooltip:
+                        activo ? 'Editar horario' : 'Activa el día primero',
                     icon: Icon(
                       Icons.edit_outlined,
                       size: 18,
                       color: activo
-                          ? AnaliticaTokens.inkMuted
-                          : AnaliticaTokens.border,
+                          ? _scheme.onSurfaceVariant
+                          : _scheme.outlineVariant,
                     ),
                     onPressed: activo ? () => _editarHorario(h) : null,
                     visualDensity: VisualDensity.compact,
@@ -621,6 +620,8 @@ class _DialogoListaHoras extends StatefulWidget {
 }
 
 class _DialogoListaHorasState extends State<_DialogoListaHoras> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   late final ScrollController _scroll;
 
   @override
@@ -650,20 +651,20 @@ class _DialogoListaHorasState extends State<_DialogoListaHoras> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
+            Text(
               'Elige una hora de la lista',
               style: TextStyle(
                 fontSize: 12.5,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 10),
             Expanded(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surfaceMuted,
+                  color: _scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AnaliticaTokens.border),
+                  border: Border.all(color: _scheme.outlineVariant),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
@@ -676,14 +677,12 @@ class _DialogoListaHorasState extends State<_DialogoListaHoras> {
                       final seleccionado = t.hour == widget.actual.hour &&
                           t.minute == widget.actual.minute;
                       return Material(
-                        color: seleccionado
-                            ? AnaliticaTokens.ink
-                            : Colors.transparent,
+                        color:
+                            seleccionado ? _scheme.primary : Colors.transparent,
                         child: InkWell(
                           onTap: () => Navigator.pop(context, t),
                           child: Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 14),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
                             child: Row(
                               children: [
                                 Expanded(
@@ -694,16 +693,16 @@ class _DialogoListaHorasState extends State<_DialogoListaHoras> {
                                       fontWeight: FontWeight.w600,
                                       letterSpacing: -0.2,
                                       color: seleccionado
-                                          ? Colors.white
-                                          : AnaliticaTokens.ink,
+                                          ? _scheme.onPrimary
+                                          : _scheme.onSurface,
                                     ),
                                   ),
                                 ),
                                 if (seleccionado)
-                                  const Icon(
+                                  Icon(
                                     Icons.check,
                                     size: 18,
-                                    color: Colors.white,
+                                    color: _scheme.onPrimary,
                                   ),
                               ],
                             ),
@@ -741,8 +740,9 @@ class _BotonHora extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: AnaliticaTokens.surfaceMuted,
+      color: scheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
@@ -750,7 +750,7 @@ class _BotonHora extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: scheme.outlineVariant),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
@@ -761,20 +761,20 @@ class _BotonHora extends StatelessWidget {
                   children: [
                     Text(
                       etiqueta,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: AnaliticaTokens.inkMuted,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       hora,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.5,
-                        color: AnaliticaTokens.ink,
+                        color: scheme.onSurface,
                       ),
                     ),
                   ],
@@ -784,14 +784,14 @@ class _BotonHora extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surface,
+                  color: scheme.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AnaliticaTokens.border),
+                  border: Border.all(color: scheme.outlineVariant),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.schedule_outlined,
                   size: 18,
-                  color: AnaliticaTokens.inkMuted,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
             ],

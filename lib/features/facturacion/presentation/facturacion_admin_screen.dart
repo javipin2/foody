@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
@@ -19,9 +20,11 @@ class FacturacionAdminScreen extends StatefulWidget {
     this.pedidoNumeroInicial,
     this.onPedidoSugeridoUsado,
     this.onIrPedido,
+    this.repository,
   });
 
   final String? sucursalId;
+  final FacturacionRepository? repository;
 
   /// NAV-ADM-02: llegar desde sheet de pedidos.
   final String? pedidoIdInicial;
@@ -37,7 +40,7 @@ class FacturacionAdminScreen extends StatefulWidget {
 
 class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     with SingleTickerProviderStateMixin {
-  final _repo = FacturacionRepository();
+  late final _repo = widget.repository ?? FacturacionRepository();
   late TabController _tabs;
 
   final _nit = TextEditingController();
@@ -52,7 +55,10 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
   bool _cargandoConfig = true;
   bool _cargandoFacturas = true;
   bool _guardando = false;
-  String? _error;
+  String? _errorConfig;
+  String? _errorFacturas;
+  final _emitiendoPedidos = <String>{};
+  String? get _errorVista => _errorConfig ?? _errorFacturas;
 
   final _moneda =
       NumberFormat.currency(locale: 'es_CO', symbol: r'$', decimalDigits: 0);
@@ -87,11 +93,14 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     if (sid == null) {
       setState(() {
         _cargandoConfig = false;
-        _error = 'Sin sucursal en sesión';
+        _errorConfig = 'Sin sucursal en sesión';
       });
       return;
     }
-    setState(() => _cargandoConfig = true);
+    setState(() {
+      _errorConfig = null;
+      _cargandoConfig = true;
+    });
     try {
       final config = await _repo.obtenerConfig(sid);
       if (mounted && config != null) {
@@ -107,7 +116,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = mensajeErrorHttp(e, contexto: 'config fiscal');
+          _errorConfig = mensajeErrorHttp(e, contexto: 'config fiscal');
           _cargandoConfig = false;
         });
       }
@@ -116,8 +125,11 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
 
   Future<void> _cargarFacturas() async {
     final sid = widget.sucursalId;
-    if (sid == null) return;
-    setState(() => _cargandoFacturas = true);
+    if (sid == null || !mounted) return;
+    setState(() {
+      _errorFacturas = null;
+      _cargandoFacturas = true;
+    });
     try {
       final lista = await _repo.listarFacturas(sid);
       if (mounted) {
@@ -129,7 +141,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = mensajeErrorHttp(e, contexto: 'facturas');
+          _errorFacturas = mensajeErrorHttp(e, contexto: 'facturas');
           _cargandoFacturas = false;
         });
       }
@@ -177,9 +189,10 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     }
   }
 
-  Future<void> _emitir(String pedidoId) async {
+  Future<bool> _emitir(String pedidoId) async {
     final sid = widget.sucursalId;
-    if (sid == null) return;
+    if (sid == null || _emitiendoPedidos.contains(pedidoId)) return false;
+    setState(() => _emitiendoPedidos.add(pedidoId));
     try {
       await _repo.emitir(pedidoId, sid);
       await _cargarFacturas();
@@ -188,12 +201,16 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
           const SnackBar(content: Text('Factura emitida')),
         );
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'emisión'))),
         );
       }
+      return false;
+    } finally {
+      if (mounted) setState(() => _emitiendoPedidos.remove(pedidoId));
     }
   }
 
@@ -204,7 +221,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
       final datos = await _repo.obtenerPdf(facturaId, sid);
       final html = datos['html'] as String? ?? '';
       if (!mounted) return;
-      await showDialog<void>(
+      await FoodyDialogo.mostrar<void>(
         context: context,
         builder: (ctx) {
           final maxW = MediaQuery.sizeOf(ctx).width.clamp(280.0, 520.0);
@@ -513,21 +530,29 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                       child: const Text('Descartar'),
                     ),
                     FilledButton(
-                      onPressed: () async {
-                        await _emitir(pedidoSug);
-                        widget.onPedidoSugeridoUsado?.call();
-                      },
+                      onPressed: _emitiendoPedidos.contains(pedidoSug)
+                          ? null
+                          : () async {
+                              final emitida = await _emitir(pedidoSug);
+                              if (mounted && emitida) {
+                                widget.onPedidoSugeridoUsado?.call();
+                              }
+                            },
                       style: FilledButton.styleFrom(
                         backgroundColor: Theme.of(context).colorScheme.primary,
                         visualDensity: VisualDensity.compact,
                       ),
-                      child: const Text('Emitir'),
+                      child: Text(
+                        _emitiendoPedidos.contains(pedidoSug)
+                            ? 'Emitiendo…'
+                            : 'Emitir',
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-          if (_error != null)
+          if (_errorVista != null)
             Padding(
               padding: EdgeInsets.fromLTRB(
                 compacto ? 12 : 16,
@@ -554,7 +579,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _error!,
+                        _errorVista!,
                         style: TextStyle(
                           fontSize: 13,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -898,8 +923,9 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
   Future<void> _anularFactura(String facturaId) async {
     final sid = widget.sucursalId;
     if (sid == null) return;
-    final motivoCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final formulario = GlobalKey<FormState>();
+    String? motivoValidado;
+    final motivo = await FoodyDialogo.mostrar<String>(
       context: context,
       builder: (ctx) => FoodyDialogoShell(
         titulo: 'Anular factura',
@@ -909,24 +935,32 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
           titulo: 'Motivo',
           icono: Icons.cancel_outlined,
           acento: AnaliticaTokens.alertas,
-          hijo: TextField(
-            controller: motivoCtrl,
-            decoration: FoodyFormEstilo.campo(
-              label: 'Motivo de anulación',
-              helper: 'Escribe al menos 3 caracteres',
+          hijo: Form(
+            key: formulario,
+            child: TextFormField(
+              decoration: FoodyFormEstilo.campo(label: 'Motivo de anulación'),
+              validator: (valor) => (valor?.trim().length ?? 0) < 3
+                  ? 'Escribe al menos 3 caracteres'
+                  : null,
+              onSaved: (valor) => motivoValidado = valor?.trim(),
+              maxLines: 3,
+              minLines: 2,
             ),
-            maxLines: 3,
-            minLines: 2,
           ),
         ),
         acciones: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, motivoCtrl.text.trim().length >= 3),
+            onPressed: () {
+              final estadoFormulario = formulario.currentState;
+              if (estadoFormulario != null && estadoFormulario.validate()) {
+                estadoFormulario.save();
+                Navigator.pop(ctx, motivoValidado);
+              }
+            },
             style: FilledButton.styleFrom(
               backgroundColor: AnaliticaTokens.alertas,
             ),
@@ -935,17 +969,13 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
         ],
       ),
     );
-    if (ok != true) {
-      motivoCtrl.dispose();
-      return;
-    }
+    if (!mounted || motivo == null) return;
     try {
       await _repo.anular(
         facturaId: facturaId,
         sucursalId: sid,
-        motivo: motivoCtrl.text.trim(),
+        motivo: motivo,
       );
-      motivoCtrl.dispose();
       await _cargarFacturas();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -953,7 +983,6 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
         );
       }
     } catch (e) {
-      motivoCtrl.dispose();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -991,13 +1020,12 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     required bool tienePedido,
   }) {
     return PopupMenuButton<String>(
+      enabled: !_emitiendoPedidos.contains(pedidoId),
       tooltip: 'Acciones de factura',
       onSelected: (accion) {
         switch (accion) {
           case 'pedido':
             if (tienePedido) widget.onIrPedido?.call(pedidoId);
-          case 'preview':
-            _verPdf('${factura['id']}', esBorrador: true);
           case 'emitir':
             _emitir(pedidoId);
           case 'anular':
@@ -1017,16 +1045,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
               title: Text('Ver pedido'),
             ),
           ),
-        if (estado == 'borrador') ...[
-          const PopupMenuItem(
-            value: 'preview',
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.preview_outlined),
-              title: Text('Vista previa'),
-            ),
-          ),
+        if (estado == 'borrador' && tienePedido)
           const PopupMenuItem(
             value: 'emitir',
             child: ListTile(
@@ -1036,8 +1055,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
               title: Text('Emitir'),
             ),
           ),
-        ],
-        if (estado != 'anulada' && estado != 'borrador')
+        if (estado == 'emitida')
           const PopupMenuItem(
             value: 'anular',
             child: ListTile(
@@ -1047,13 +1065,17 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
               title: Text('Anular'),
             ),
           ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'ver',
           child: ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.receipt_long_outlined),
-            title: Text('Ver factura'),
+            leading: Icon(
+              estado == 'borrador'
+                  ? Icons.preview_outlined
+                  : Icons.receipt_long_outlined,
+            ),
+            title: Text(estado == 'borrador' ? 'Vista previa' : 'Ver factura'),
           ),
         ),
       ],

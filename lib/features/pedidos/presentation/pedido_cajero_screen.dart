@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/dialogo_stock_insuficiente.dart';
@@ -41,14 +42,19 @@ class PedidoCajeroScreen extends StatefulWidget {
   final String? mesaIdFija;
   final String? mesaNombreFija;
   final bool modoMesero;
+
   /// Si se indica, los ítems se suman a este pedido (consumo en mesa).
   final String? pedidoIdAgregar;
+
   /// Si se indica junto a [pedidoIdAgregar], tras agregar se elimina este ítem.
   final String? itemIdReemplazar;
+
   /// Tras agregar (y opcional reemplazo). Panel limpia sticky y vuelve a pedidos.
   final VoidCallback? onPedidoModificado;
+
   /// NAV-CJ-01: shell cajero ya muestra el título.
   final bool ocultarCabecera;
+
   /// NAV-ADM2-10: saltar a Caja cuando no hay turno abierto.
   final VoidCallback? onIrCaja;
 
@@ -57,6 +63,8 @@ class PedidoCajeroScreen extends StatefulWidget {
 }
 
 class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _menuRepo = MenuRepository();
   final _pedidosRepo = PedidosRepository();
   final _mesasRepo = MesasRepository();
@@ -188,9 +196,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
     DetalleProductoSheet.mostrar(
       context,
       producto: producto,
-      sugerenciasBebidas: menu == null || menu.productoEsDeCategoriaBebidas(producto)
-          ? const []
-          : menu.productosBebidasVendibles(excluirId: producto.id),
+      sugerenciasBebidas:
+          menu == null || menu.productoEsDeCategoriaBebidas(producto)
+              ? const []
+              : menu.productosBebidasVendibles(excluirId: producto.id),
       onAgregar: (lineas) => setState(() => _carrito.addAll(lineas)),
     );
   }
@@ -290,10 +299,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
 
     setState(() => _enviando = true);
     try {
-      final agregarAPedido = widget.pedidoIdAgregar != null &&
-          widget.pedidoIdAgregar!.isNotEmpty;
-      final mesaVinculada = widget.mesaIdFija ??
-          (_tipoPedido == 'mesa' ? _mesaId : null);
+      final agregarAPedido =
+          widget.pedidoIdAgregar != null && widget.pedidoIdAgregar!.isNotEmpty;
+      final mesaVinculada =
+          widget.mesaIdFija ?? (_tipoPedido == 'mesa' ? _mesaId : null);
 
       List<Map<String, dynamic>>? pagos;
       if (!widget.modoMesero &&
@@ -301,8 +310,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
           _pagoMixto &&
           _metodoPago != 'pendiente') {
         final total = _totalVisual;
-        final m1 = double.tryParse(_montoMixto1Ctrl.text.replaceAll(',', '')) ?? total / 2;
-        final m2 = double.tryParse(_montoMixto2Ctrl.text.replaceAll(',', '')) ?? total - m1;
+        final m1 = double.tryParse(_montoMixto1Ctrl.text.replaceAll(',', '')) ??
+            total / 2;
+        final m2 = double.tryParse(_montoMixto2Ctrl.text.replaceAll(',', '')) ??
+            total - m1;
         pagos = [
           {'metodo_pago': _metodoPago, 'monto': m1},
           {'metodo_pago': _metodoPago2, 'monto': m2},
@@ -328,15 +339,12 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
             ? widget.mesaIdFija
             : mesaVinculada,
         pedidoIdAgregar: agregarAPedido ? widget.pedidoIdAgregar : null,
-        clienteNombre: _tipoPedido == 'domicilio'
-            ? _clienteNombreCtrl.text.trim()
-            : null,
-        clienteTelefono: _tipoPedido == 'domicilio'
-            ? _clienteTelCtrl.text.trim()
-            : null,
-        direccionEntrega: _tipoPedido == 'domicilio'
-            ? _direccionCtrl.text.trim()
-            : null,
+        clienteNombre:
+            _tipoPedido == 'domicilio' ? _clienteNombreCtrl.text.trim() : null,
+        clienteTelefono:
+            _tipoPedido == 'domicilio' ? _clienteTelCtrl.text.trim() : null,
+        direccionEntrega:
+            _tipoPedido == 'domicilio' ? _direccionCtrl.text.trim() : null,
         observaciones: nota.isNotEmpty ? nota : null,
       );
       if (!mounted) return;
@@ -356,9 +364,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
       });
 
       final reemplazarId = widget.itemIdReemplazar;
-      if (agregarAPedido &&
-          reemplazarId != null &&
-          reemplazarId.isNotEmpty) {
+      if (agregarAPedido && reemplazarId != null && reemplazarId.isNotEmpty) {
         try {
           await _pedidosRepo.eliminarItemPedido(
             pedidoId: widget.pedidoIdAgregar!,
@@ -381,6 +387,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         }
       }
 
+      if (!mounted) return;
       final numPedido = datos['numero_pedido'] ?? datos['id'];
       if (widget.modoMesero) {
         Navigator.of(context).pop(true);
@@ -435,7 +442,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
 
     final nombreCtrl = TextEditingController(text: 'Cliente mostrador');
     final telCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Registrar fiado'),
@@ -531,13 +538,13 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
   Widget build(BuildContext context) {
     if (_cargando) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: _scheme.surface,
         child: AnaliticaSkeleton.tab(),
       );
     }
     if (_error != null) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: _scheme.surface,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -547,16 +554,17 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 Text(
                   _error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13.5,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: _cargar,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
+                    backgroundColor: _scheme.primary,
+                    foregroundColor: _scheme.onPrimary,
                   ),
                   child: const Text('Reintentar'),
                 ),
@@ -581,7 +589,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 : 'Nuevo pedido';
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -596,11 +604,11 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Admin / Operación',
                     style: TextStyle(
                       fontSize: 11,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -611,16 +619,16 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       fontSize: compacto ? 18 : 20,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.4,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                       height: 1.15,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     '${productos.length} disponibles · total lo calcula el servidor',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -641,8 +649,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: OperacionAviso(
-                mensaje:
-                    'Elige el producto o combo de reemplazo y confirma. '
+                mensaje: 'Elige el producto o combo de reemplazo y confirma. '
                     'Se agrega al pedido y se quita el ítem anterior.',
                 color: AnaliticaTokens.pedidos.withValues(alpha: 0.1),
                 colorTexto: AnaliticaTokens.pedidos,
@@ -726,14 +733,14 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                     child: ActionChip(
                       label: Text(
                         '${combo.nombre} · ${_moneda.format(combo.precioFijo)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
-                      backgroundColor: AnaliticaTokens.surface,
-                      side: const BorderSide(color: AnaliticaTokens.border),
+                      backgroundColor: _scheme.surfaceContainerLow,
+                      side: BorderSide(color: _scheme.outlineVariant),
                       onPressed: () => _agregarCombo(combo),
                     ),
                   );
@@ -745,7 +752,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: _cargar,
-            color: AnaliticaTokens.ink,
+            color: _scheme.onSurface,
             child: productos.isEmpty
                 ? ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -757,17 +764,17 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                           vertical: 32,
                         ),
                         decoration: BoxDecoration(
-                          color: AnaliticaTokens.surface,
+                          color: _scheme.surfaceContainerLow,
                           borderRadius:
                               BorderRadius.circular(AnaliticaTokens.r12),
-                          border: Border.all(color: AnaliticaTokens.border),
+                          border: Border.all(color: _scheme.outlineVariant),
                         ),
-                        child: const Column(
+                        child: Column(
                           children: [
                             Icon(
                               Icons.restaurant_menu_outlined,
                               size: 32,
-                              color: AnaliticaTokens.inkSoft,
+                              color: _scheme.onSurfaceVariant,
                             ),
                             SizedBox(height: 10),
                             Text(
@@ -775,7 +782,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                               style: TextStyle(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w600,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                               ),
                             ),
                             SizedBox(height: 4),
@@ -784,7 +791,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 12.5,
-                                color: AnaliticaTokens.inkMuted,
+                                color: _scheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -806,7 +813,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                     itemBuilder: (_, i) {
                       final p = productos[i];
                       return Material(
-                        color: AnaliticaTokens.surface,
+                        color: _scheme.surfaceContainerLow,
                         borderRadius:
                             BorderRadius.circular(AnaliticaTokens.r10),
                         child: InkWell(
@@ -819,7 +826,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                               borderRadius:
                                   BorderRadius.circular(AnaliticaTokens.r10),
                               border: Border.all(
-                                color: AnaliticaTokens.border,
+                                color: _scheme.outlineVariant,
                                 width: 0.5,
                               ),
                               boxShadow: AnaliticaTokens.shadowSoft,
@@ -831,12 +838,12 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                                   height: 48,
                                   width: double.infinity,
                                   decoration: BoxDecoration(
-                                    color: AnaliticaTokens.surfaceMuted,
+                                    color: _scheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.restaurant,
-                                    color: AnaliticaTokens.inkMuted,
+                                    color: _scheme.onSurfaceVariant,
                                     size: 22,
                                   ),
                                 ),
@@ -845,20 +852,20 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                                   p.nombre,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: AnaliticaTokens.ink,
+                                    color: _scheme.onSurface,
                                     height: 1.25,
                                   ),
                                 ),
                                 const Spacer(),
                                 Text(
                                   _moneda.format(p.precio),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
-                                    color: AnaliticaTokens.ink,
+                                    color: _scheme.onSurface,
                                   ),
                                 ),
                               ],
@@ -878,28 +885,28 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, size: 18, color: AnaliticaTokens.inkSoft),
+          Icon(Icons.search, size: 18, color: _scheme.onSurfaceVariant),
           const SizedBox(width: 6),
           Expanded(
             child: TextField(
               controller: _busquedaCtrl,
               onChanged: (_) => setState(() {}),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AnaliticaTokens.ink,
+                color: _scheme.onSurface,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Buscar plato, combo…',
                 hintStyle: TextStyle(
                   fontSize: 13,
-                  color: AnaliticaTokens.inkSoft,
+                  color: _scheme.onSurfaceVariant,
                 ),
                 border: InputBorder.none,
                 isDense: true,
@@ -911,7 +918,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
             IconButton(
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.close, size: 16),
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
               onPressed: () {
                 _busquedaCtrl.clear();
                 setState(() {});
@@ -932,15 +939,15 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: activa ? Colors.white : AnaliticaTokens.inkMuted,
+            color: activa ? _scheme.onPrimary : _scheme.onSurfaceVariant,
           ),
         ),
         selected: activa,
         onSelected: (_) => setState(() => _categoriaId = id),
-        selectedColor: AnaliticaTokens.ink,
-        backgroundColor: AnaliticaTokens.surface,
+        selectedColor: _scheme.primary,
+        backgroundColor: _scheme.surfaceContainerLow,
         side: BorderSide(
-          color: activa ? AnaliticaTokens.ink : AnaliticaTokens.border,
+          color: activa ? _scheme.onSurface : _scheme.outlineVariant,
         ),
         showCheckmark: false,
         visualDensity: VisualDensity.compact,
@@ -954,9 +961,9 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
     return Container(
       margin: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: ListView(
@@ -969,20 +976,20 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
               children: [
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'Carrito · ',
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                     Text(
                       '${_carrito.length} items',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -1010,13 +1017,13 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                     ),
                   ],
                   if (widget.modoMesero && widget.pedidoIdAgregar != null)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 6),
                       child: Text(
                         'Se suma al pedido de mesa abierto',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -1093,7 +1100,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       'Sin mapa: ubicación solo cuando el cliente pide por la app',
                       style: TextStyle(
                         fontSize: 11,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -1253,23 +1260,23 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 ],
               ),
             ),
-          const Divider(height: 1, color: AnaliticaTokens.borderSoft),
+          Divider(height: 1, color: _scheme.outlineVariant),
           if (_carrito.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 28),
               child: Column(
                 children: [
                   Icon(
                     Icons.shopping_cart_outlined,
                     size: 32,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                   ),
                   SizedBox(height: 6),
                   Text(
                     'Agrega productos',
                     style: TextStyle(
                       fontSize: 13,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -1285,9 +1292,9 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                     Expanded(
                       child: Text(
                         l.nombre,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -1298,9 +1305,9 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       child: Text(
                         '${l.cantidad}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                     ),
@@ -1311,10 +1318,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       child: Text(
                         _moneda.format(l.subtotalPara(_tipoPedido)),
                         textAlign: TextAlign.right,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                     ),
@@ -1332,55 +1339,55 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                   decoration: InputDecoration(
                     isDense: true,
                     hintText: 'Nota para cocina…',
-                    hintStyle: const TextStyle(
+                    hintStyle: TextStyle(
                       fontSize: 12,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
-                    prefixIcon: const Icon(
+                    prefixIcon: Icon(
                       Icons.notes,
                       size: 18,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                     filled: true,
-                    fillColor: AnaliticaTokens.surfaceMuted,
+                    fillColor: _scheme.surfaceContainerHighest,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide.none,
                     ),
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
+                    Text(
                       'Total',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                     Text(
                       _moneda.format(_totalVisual),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'El total final lo calcula el servidor.',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1388,8 +1395,9 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                   onPressed:
                       _carrito.isEmpty || _enviando ? null : _confirmarPedido,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
-                    disabledBackgroundColor: AnaliticaTokens.border,
+                    backgroundColor: _scheme.primary,
+                    foregroundColor: _scheme.onPrimary,
+                    disabledBackgroundColor: _scheme.outlineVariant,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   child: _enviando
@@ -1419,11 +1427,11 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         width: 22,
         height: 22,
         decoration: BoxDecoration(
-          border: Border.all(color: AnaliticaTokens.border),
+          border: Border.all(color: _scheme.outlineVariant),
           borderRadius: BorderRadius.circular(4),
-          color: AnaliticaTokens.surfaceMuted,
+          color: _scheme.surfaceContainerHighest,
         ),
-        child: Icon(icon, size: 14, color: AnaliticaTokens.inkMuted),
+        child: Icon(icon, size: 14, color: _scheme.onSurfaceVariant),
       ),
     );
   }

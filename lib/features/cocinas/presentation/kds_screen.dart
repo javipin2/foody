@@ -39,6 +39,8 @@ class KdsScreen extends StatefulWidget {
 }
 
 class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = CocinasRepository();
   List<Map<String, dynamic>> _cocinas = [];
   String? _cocinaId;
@@ -51,8 +53,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   final Set<String> _ticketsConocidos = {};
   RealtimeChannel? _canalCocina;
   final Set<String> _marcandoTodo = {};
+
   /// Lock UI por ítem (INFRA-EXT-UI-03): evita doble tap en Listo/Prep/etc.
   final Set<String> _itemsEnVuelo = {};
+
   /// false = Cocina (activos) · true = Listos
   bool _pestanaListos = false;
 
@@ -96,8 +100,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     });
     try {
       final sesion = await SesionStaffService.cargar();
-      final forzarKds =
-          widget.standalone || sesion?.dashboard == 'cocina';
+      final forzarKds = widget.standalone || sesion?.dashboard == 'cocina';
       final cocinas = forzarKds || widget.sucursalId == null
           ? await _repo.cocinasParaKds()
           : await _repo.listarCocinas(widget.sucursalId!);
@@ -282,9 +285,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     );
     if (resultado == null) return;
     final nota = resultado.trim();
-    final texto = urgente
-        ? (nota.isEmpty ? '[URGENTE]' : '[URGENTE] $nota')
-        : nota;
+    final texto =
+        urgente ? (nota.isEmpty ? '[URGENTE]' : '[URGENTE] $nota') : nota;
     await _conLockItem(itemId, () async {
       try {
         await _repo.actualizarObservacionesItem(
@@ -464,15 +466,14 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   }
 
   Widget _cuerpo() {
-    final canvas = widget.standalone
-        ? const Color(0xFF0F172A)
-        : AnaliticaTokens.canvas;
+    final canvas =
+        widget.standalone ? const Color(0xFF0F172A) : _scheme.surface;
 
     if (_cargandoInicial) {
       return ColoredBox(
         color: canvas,
-        child: const Center(
-          child: CircularProgressIndicator(color: AnaliticaTokens.inkMuted),
+        child: Center(
+          child: CircularProgressIndicator(color: _scheme.onSurfaceVariant),
         ),
       );
     }
@@ -490,7 +491,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   size: 48,
                   color: widget.standalone
                       ? Colors.white38
-                      : AnaliticaTokens.inkSoft,
+                      : _scheme.onSurfaceVariant,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -499,7 +500,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 15,
                     height: 1.4,
-                    color: widget.standalone ? Colors.white : AnaliticaTokens.ink,
+                    color: widget.standalone ? Colors.white : _scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -510,14 +511,15 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                     fontSize: 13,
                     color: widget.standalone
                         ? Colors.white70
-                        : AnaliticaTokens.inkMuted,
+                        : _scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _inicializar,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
+                    backgroundColor: _scheme.primary,
+                    foregroundColor: _scheme.onPrimary,
                   ),
                   child: const Text('Reintentar'),
                 ),
@@ -541,7 +543,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   size: 48,
                   color: widget.standalone
                       ? Colors.white38
-                      : AnaliticaTokens.inkSoft,
+                      : _scheme.onSurfaceVariant,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -552,9 +554,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
-                    color: widget.standalone
-                        ? Colors.white
-                        : AnaliticaTokens.ink,
+                    color: widget.standalone ? Colors.white : _scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -567,7 +567,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                     fontSize: 13,
                     color: widget.standalone
                         ? Colors.white70
-                        : AnaliticaTokens.inkMuted,
+                        : _scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -575,7 +575,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   FilledButton.icon(
                     onPressed: widget.onIrConfigCocinas,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
                     ),
                     icon: const Icon(Icons.settings_outlined),
                     label: const Text('Configurar cocinas'),
@@ -584,7 +585,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   FilledButton(
                     onPressed: _inicializar,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
                     ),
                     child: const Text('Reintentar'),
                   ),
@@ -604,7 +606,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           Expanded(
             child: RefreshIndicator(
               onRefresh: () => _cargarTickets(),
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
               child: _ticketsVista.isEmpty
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -623,7 +625,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                                   color: widget.standalone
                                       ? Colors.white38
                                       : (_pestanaListos
-                                          ? AnaliticaTokens.inkSoft
+                                          ? _scheme.onSurfaceVariant
                                           : AnaliticaTokens.inventario),
                                 ),
                                 const SizedBox(height: 12),
@@ -636,7 +638,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                                     fontWeight: FontWeight.w700,
                                     color: widget.standalone
                                         ? Colors.white
-                                        : AnaliticaTokens.ink,
+                                        : _scheme.onSurface,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -649,7 +651,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                                     fontSize: 14,
                                     color: widget.standalone
                                         ? Colors.white70
-                                        : AnaliticaTokens.inkMuted,
+                                        : _scheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
@@ -670,8 +672,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                                     ? 2
                                     : 1;
                         final pad = 12.0;
-                        final cardW =
-                            (w - pad * 2 - gap * (cols - 1)) / cols;
+                        final cardW = (w - pad * 2 - gap * (cols - 1)) / cols;
                         return SingleChildScrollView(
                           physics: const AlwaysScrollableScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
@@ -732,7 +733,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                         Icons.refresh,
                         color: overDark
                             ? Colors.white70
-                            : AnaliticaTokens.inkMuted,
+                            : _scheme.onSurfaceVariant,
                       ),
               ),
             ],
@@ -765,21 +766,21 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                             ? Colors.white
                             : (overDark
                                 ? Colors.white70
-                                : AnaliticaTokens.inkMuted),
+                                : _scheme.onSurfaceVariant),
                       ),
                     ),
                     selected: _cocinaId == c['id'],
-                    selectedColor: AnaliticaTokens.ink,
+                    selectedColor: _scheme.primary,
                     backgroundColor: overDark
                         ? Colors.white.withValues(alpha: 0.08)
-                        : AnaliticaTokens.surface,
+                        : _scheme.surfaceContainerLow,
                     showCheckmark: false,
                     side: BorderSide(
                       color: _cocinaId == c['id']
-                          ? AnaliticaTokens.ink
+                          ? _scheme.onSurface
                           : (overDark
                               ? Colors.white24
-                              : AnaliticaTokens.border),
+                              : _scheme.outlineVariant),
                     ),
                     visualDensity: VisualDensity.compact,
                     onSelected: (_) {
@@ -807,10 +808,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: overDark
             ? Colors.white.withValues(alpha: 0.08)
-            : AnaliticaTokens.surfaceMuted,
+            : _scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: overDark ? Colors.white24 : AnaliticaTokens.border,
+          color: overDark ? Colors.white24 : _scheme.outlineVariant,
         ),
       ),
       child: Row(
@@ -821,7 +822,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
               count: nCocina,
               selected: !_pestanaListos,
               overDark: overDark,
-              accent: AnaliticaTokens.ink,
+              accent: _scheme.onSurface,
               onTap: () => setState(() => _pestanaListos = false),
             ),
           ),
@@ -867,8 +868,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: selected
-                      ? (overDark ? Colors.white : AnaliticaTokens.ink)
-                      : (overDark ? Colors.white60 : AnaliticaTokens.inkMuted),
+                      ? (overDark ? Colors.white : _scheme.onSurface)
+                      : (overDark ? Colors.white60 : _scheme.onSurfaceVariant),
                 ),
               ),
               const SizedBox(width: 6),
@@ -881,7 +882,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                           : accent.withValues(alpha: 0.12))
                       : (overDark
                           ? Colors.white.withValues(alpha: 0.06)
-                          : AnaliticaTokens.border.withValues(alpha: 0.5)),
+                          : _scheme.outlineVariant.withValues(alpha: 0.5)),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -894,7 +895,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                         ? (overDark ? Colors.white : accent)
                         : (overDark
                             ? Colors.white54
-                            : AnaliticaTokens.inkMuted),
+                            : _scheme.onSurfaceVariant),
                   ),
                 ),
               ),
@@ -911,10 +912,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: overDark
             ? Colors.white.withValues(alpha: 0.08)
-            : AnaliticaTokens.surface,
+            : _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: overDark ? Colors.white24 : AnaliticaTokens.border,
+          color: overDark ? Colors.white24 : _scheme.outlineVariant,
         ),
       ),
       child: Text(
@@ -964,7 +965,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     if (urgente) return _amber;
     if (minutos >= 20) return _rojo;
     if (minutos >= 10) return _amber;
-    return AnaliticaTokens.ink;
+    return _scheme.onSurface;
   }
 
   Widget _ticketCard(
@@ -994,19 +995,16 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       urgente: urgente,
       todosListos: todosListos,
     );
-    final pendientes = items
-        .where((i) {
-          final e = i['estado_cocina'] as String? ?? 'pendiente';
-          return e != 'listo' && e != 'no_disponible';
-        })
-        .length;
-    final pedidoKey = t['pedido_id'] as String? ??
-        t['numero_pedido'] as String? ??
-        '';
+    final pendientes = items.where((i) {
+      final e = i['estado_cocina'] as String? ?? 'pendiente';
+      return e != 'listo' && e != 'no_disponible';
+    }).length;
+    final pedidoKey =
+        t['pedido_id'] as String? ?? t['numero_pedido'] as String? ?? '';
     final marcando = _marcandoTodo.contains(pedidoKey);
 
     return Material(
-      color: AnaliticaTokens.surface,
+      color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(12),
       elevation: 0,
       child: Ink(
@@ -1015,7 +1013,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           border: Border.all(
             color: demorado
                 ? _rojo.withValues(alpha: 0.45)
-                : AnaliticaTokens.border,
+                : _scheme.outlineVariant,
             width: demorado ? 1.5 : 1,
           ),
           boxShadow: AnaliticaTokens.shadowSoft,
@@ -1047,12 +1045,12 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                               t['numero_pedido'] as String? ?? '—',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
                                 fontFamily: 'monospace',
                                 letterSpacing: -0.3,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                               ),
                             ),
                           ),
@@ -1069,14 +1067,12 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                         runSpacing: 4,
                         children: [
                           if (!modoListos && urgente) _chip('URGENTE', _amber),
-                          if (!modoListos && demorado)
-                            _chip('Demorado', _rojo),
+                          if (!modoListos && demorado) _chip('Demorado', _rojo),
                           if (!modoListos && avisado && !urgente)
                             _chip('Atención', _amber),
                           if (pagado) _chip('Cobrado', AnaliticaTokens.pedidos),
-                          if (modoListos || todosListos)
-                            _chip('Listo', _verde),
-                          _chip(etiqueta, AnaliticaTokens.inkMuted),
+                          if (modoListos || todosListos) _chip('Listo', _verde),
+                          _chip(etiqueta, _scheme.onSurfaceVariant),
                         ],
                       ),
                       Align(
@@ -1093,10 +1089,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                           'Nota: ${obsPedido!.trim()}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             fontStyle: FontStyle.italic,
-                            color: AnaliticaTokens.inkMuted,
+                            color: _scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -1112,9 +1108,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                       if (!modoListos && pendientes > 1) ...[
                         const SizedBox(height: 4),
                         FilledButton.icon(
-                          onPressed: marcando
-                              ? null
-                              : () => _marcarTodoListo(t),
+                          onPressed:
+                              marcando ? null : () => _marcarTodoListo(t),
                           style: FilledButton.styleFrom(
                             backgroundColor: _verde,
                             visualDensity: VisualDensity.compact,
@@ -1152,7 +1147,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                           icon: const Icon(Icons.undo, size: 16),
                           label: const Text('Volver a cocina'),
                           style: TextButton.styleFrom(
-                            foregroundColor: AnaliticaTokens.inkMuted,
+                            foregroundColor: _scheme.onSurfaceVariant,
                             visualDensity: VisualDensity.compact,
                           ),
                         ),
@@ -1174,12 +1169,11 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: demorado
             ? _rojo.withValues(alpha: 0.12)
-            : AnaliticaTokens.surfaceMuted,
+            : _scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: demorado
-              ? _rojo.withValues(alpha: 0.35)
-              : AnaliticaTokens.border,
+          color:
+              demorado ? _rojo.withValues(alpha: 0.35) : _scheme.outlineVariant,
         ),
       ),
       child: Text(
@@ -1188,7 +1182,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           fontSize: 12,
           fontWeight: FontWeight.w800,
           fontFamily: 'monospace',
-          color: demorado ? _rojo : AnaliticaTokens.inkMuted,
+          color: demorado ? _rojo : _scheme.onSurfaceVariant,
         ),
       ),
     );
@@ -1226,7 +1220,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       'preparando' => _amber,
       'listo' => _verde,
       'no_disponible' => _rojo,
-      _ => AnaliticaTokens.inkSoft,
+      _ => _scheme.onSurfaceVariant,
     };
     final itemId = item['item_id']?.toString();
     if (itemId == null || itemId.isEmpty) {
@@ -1240,9 +1234,9 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surfaceMuted,
+        color: _scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1270,8 +1264,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                         fontSize: 13.5,
                         decoration: cerrado ? TextDecoration.lineThrough : null,
                         color: cerrado
-                            ? AnaliticaTokens.inkSoft
-                            : AnaliticaTokens.ink,
+                            ? _scheme.onSurfaceVariant
+                            : _scheme.onSurface,
                       ),
                     ),
                     if (item['incluidos'] is List &&
@@ -1280,15 +1274,14 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           '+ ${(item['incluidos'] as List).map((inc) {
-                            final m =
-                                Map<String, dynamic>.from(inc as Map);
+                            final m = Map<String, dynamic>.from(inc as Map);
                             return '${m['cantidad']}× ${m['nombre']}';
                           }).join(', ')}',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AnaliticaTokens.inkMuted,
+                            color: _scheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -1299,10 +1292,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                           item['observaciones'] as String,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontStyle: FontStyle.italic,
                             fontSize: 12,
-                            color: AnaliticaTokens.inkMuted,
+                            color: _scheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -1327,9 +1320,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                 Expanded(
                   flex: 3,
                   child: FilledButton(
-                    onPressed: enVuelo
-                        ? null
-                        : () => _cambiarEstado(itemId, 'listo'),
+                    onPressed:
+                        enVuelo ? null : () => _cambiarEstado(itemId, 'listo'),
                     style: FilledButton.styleFrom(
                       backgroundColor: _verde,
                       visualDensity: VisualDensity.compact,
@@ -1360,7 +1352,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                     Icons.local_fire_department,
                     color: estado == 'preparando'
                         ? _amber
-                        : AnaliticaTokens.inkMuted,
+                        : _scheme.onSurfaceVariant,
                   ),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1371,7 +1363,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                       : () => _togglePrioridad(itemId, !itemUrgente),
                   icon: Icon(
                     Icons.priority_high,
-                    color: itemUrgente ? _amber : AnaliticaTokens.inkMuted,
+                    color: itemUrgente ? _amber : _scheme.onSurfaceVariant,
                   ),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1382,15 +1374,18 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                       : () => _editarObservacionesItem(itemId, obsItem),
                   icon: Icon(
                     Icons.sticky_note_2_outlined,
-                    color: obsItem.replaceFirst(RegExp(r'^\[URGENTE\]\s*'), '').isNotEmpty
+                    color: obsItem
+                            .replaceFirst(RegExp(r'^\[URGENTE\]\s*'), '')
+                            .isNotEmpty
                         ? AnaliticaTokens.pedidos
-                        : AnaliticaTokens.inkMuted,
+                        : _scheme.onSurfaceVariant,
                   ),
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton.outlined(
                   tooltip: 'Fallo / No se pudo',
-                  onPressed: enVuelo ? null : () => _dialogoNoDisponible(itemId),
+                  onPressed:
+                      enVuelo ? null : () => _dialogoNoDisponible(itemId),
                   icon: const Icon(Icons.block, color: _rojo),
                   visualDensity: VisualDensity.compact,
                 ),
@@ -1400,12 +1395,11 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: enVuelo
-                    ? null
-                    : () => _cambiarEstado(itemId, 'pendiente'),
+                onPressed:
+                    enVuelo ? null : () => _cambiarEstado(itemId, 'pendiente'),
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  foregroundColor: AnaliticaTokens.inkMuted,
+                  foregroundColor: _scheme.onSurfaceVariant,
                 ),
                 child: const Text('Reabrir'),
               ),

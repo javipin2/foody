@@ -6,7 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:reserva_canchas/core/auth/roles_foody.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/manejo_error_sesion.dart';
-import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
+import 'package:reserva_canchas/core/rutas/redireccion_staff.dart'
+    show cerrarSesionStaff;
 import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/core/tema/tema_mode_provider.dart';
@@ -17,13 +18,12 @@ import 'package:reserva_canchas/features/admin/presentation/configuracion_admin_
 import 'package:reserva_canchas/features/admin/presentation/widgets/realtime_aviso_banner.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/modulo_bloqueado_placeholder.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/suscripcion_aviso_banner.dart';
-import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/admin_busqueda_dialog.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/panel_sidebar_nav.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/dashboard_consolidado_widget.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/dashboard_graficos_widget.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/dashboard_resumen_widget.dart';
-import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/mesas_grid_widget.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/pedidos_kanban_widget.dart';
 import 'package:reserva_canchas/features/caja/presentation/caja_admin_screen.dart';
@@ -72,10 +72,13 @@ class PanelRestauranteScreen extends StatefulWidget {
   final String? seccionInicial;
   final String? pagoIdInicial;
   final String? mesaIdInicial;
+
   /// Deep-link Costos (NAV-MC-20): `?seccion=costos_margenes&producto_id=…`.
   final String? productoIdInicial;
+
   /// NAV-ADM2-01: FCM / alertas / caja → abrir sheet del pedido.
   final String? pedidoIdInicial;
+
   /// NAV-ADM2-04: alerta stock → destacar insumo.
   final String? ingredienteIdInicial;
 
@@ -108,12 +111,15 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
   String? _pedidoIdAgregar;
   String? _itemIdReemplazar;
   String? _insumosIngredienteId;
+
   /// NAV-ADM2-17: fuerza remount al pulsar refresh.
   int _refreshTick = 0;
+  bool _sidebarPlegada = false;
+  bool _cambiandoSucursal = false;
+  bool _cerrandoSesion = false;
   bool _bannerSuscripcionOculto = false;
 
-  String? get _sucursalIdEfectiva =>
-      _sucursalActivaId ?? _sesion?.sucursalId;
+  String? get _sucursalIdEfectiva => _sucursalActivaId ?? _sesion?.sucursalId;
 
   bool get _puedeOperarMultiSucursal => esCorporativoStaff(
         rol: _sesion?.rol,
@@ -226,9 +232,8 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
         usuario: sesion.usuario,
         plan: perfil.plan,
         modulos: perfil.modulos,
-        realtimeCanales: canalesFresh.isNotEmpty
-            ? canalesFresh
-            : sesion.realtimeCanales,
+        realtimeCanales:
+            canalesFresh.isNotEmpty ? canalesFresh : sesion.realtimeCanales,
       );
       _suscripcion = perfil.suscripcion;
     } catch (e) {
@@ -283,9 +288,19 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
   }
 
   Future<void> _cambiarSucursal(String? id) async {
-    if (id == null || id == _sucursalIdEfectiva) return;
+    if (id == null || id == _sucursalIdEfectiva || _cambiandoSucursal) return;
     if (!_puedeOperarMultiSucursal) return;
-    await SesionStaffService.actualizarSucursalId(id);
+    setState(() => _cambiandoSucursal = true);
+    try {
+      await SesionStaffService.actualizarSucursalId(id);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cambiandoSucursal = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo cambiar de sucursal.')),
+      );
+      return;
+    }
     try {
       await AuthRepository().refrescarRealtimeCanales(sucursalId: id);
     } catch (_) {
@@ -293,6 +308,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
     }
     if (!mounted) return;
     setState(() {
+      _cambiandoSucursal = false;
       _sucursalActivaId = id;
       if (_sesion != null) {
         final usuario = Map<String, dynamic>.from(_sesion!.usuario);
@@ -312,7 +328,19 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
   }
 
   Future<void> _cerrarSesion() async {
-    await cerrarSesionStaff(context);
+    if (_cerrandoSesion) return;
+    setState(() => _cerrandoSesion = true);
+    try {
+      await cerrarSesionStaff(context);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo cerrar sesión. Reintenta.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cerrandoSesion = false);
+    }
   }
 
   String _nombreSucursalActiva() {
@@ -331,9 +359,21 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
 
   Widget _contenido() {
     final sucursalId = _sucursalIdEfectiva;
-    // Al cambiar sede (admin multi-sucursal) forzar recarga de cada módulo.
-    return KeyedSubtree(
+    // Un solo módulo montado: los salientes no mantienen suscripciones activas.
+    return TweenAnimationBuilder<double>(
       key: ValueKey('panel-$sucursalId-$_seccion-$_refreshTick'),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 180),
+      tween: Tween(begin: 0, end: 1),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: 0.76 + value * 0.24,
+        child: Transform.translate(
+          offset: Offset(0, (1 - value) * 5),
+          child: child,
+        ),
+      ),
       child: _contenidoSeccion(sucursalId),
     );
   }
@@ -355,8 +395,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
       final sesionFresh = await SesionStaffService.cargar();
       if (!mounted) return;
       final token = sesionFresh?.token ?? _sesion!.token;
-      final cambio =
-          PlanesComercialesFoody.nivel(perfil.plan) >
+      final cambio = PlanesComercialesFoody.nivel(perfil.plan) >
           PlanesComercialesFoody.nivel(planAntes);
 
       setState(() {
@@ -433,7 +472,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
         );
       case 'dashboard':
         return ColoredBox(
-          color: AnaliticaTokens.canvas,
+          color: SaaSTokens.canvas(context),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: SingleChildScrollView(
@@ -443,27 +482,27 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
                   if (_puedeOperarMultiSucursal && _sucursales.length > 1) ...[
                     DashboardConsolidadoWidget(
                       onSeleccionarSucursal: _cambiarSucursal,
-                      onIrAlertas: () => setState(() => _seccion = 'alertas'),
+                      onIrAlertas: () => _seleccionarSeccion('alertas'),
                       onIrPedidos: () => _seleccionarSeccion('pedidos'),
                       onIrReportes: () => _seleccionarSeccion('reportes'),
                     ),
                     const SizedBox(height: 24),
-                    const Divider(color: AnaliticaTokens.border),
+                    Divider(color: SaaSTokens.border(context)),
                     const SizedBox(height: 8),
                     Text(
                       'Sede seleccionada: ${_nombreSucursalActiva()}',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: AnaliticaTokens.ink,
+                            color: SaaSTokens.ink(context),
                           ),
                     ),
                     const SizedBox(height: 12),
                   ],
                   DashboardResumenWidget(
                     sucursalId: sucursalId,
-                    onIrPedidos: () => setState(() => _seccion = 'pedidos'),
-                    onIrMesas: () => setState(() => _seccion = 'mesas'),
-                    onIrAlertas: () => setState(() => _seccion = 'alertas'),
-                    onIrCaja: () => setState(() => _seccion = 'caja'),
+                    onIrPedidos: () => _seleccionarSeccion('pedidos'),
+                    onIrMesas: () => _seleccionarSeccion('mesas'),
+                    onIrAlertas: () => _seleccionarSeccion('alertas'),
+                    onIrCaja: () => _seleccionarSeccion('caja'),
                     onIrReportes: () => _seleccionarSeccion('reportes'),
                     onIrInsumos: () => _seleccionarSeccion('insumos'),
                     onIrDomiciliarios: () =>
@@ -607,8 +646,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
         return AnaliticaScreen(
           sucursalId: sucursalId,
           esCorporativo: _puedeOperarMultiSucursal,
-          puedeVerFinanzas:
-              _sesion?.permisos.contains('ver_finanzas') ?? false,
+          puedeVerFinanzas: _sesion?.permisos.contains('ver_finanzas') ?? false,
           onIrReportes: () => _seleccionarSeccion('reportes'),
           tabInicial: _analiticaTabInicial,
         );
@@ -743,38 +781,46 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
   }
 
   Future<void> _mostrarSelectorSucursalMovil() async {
-    if (!_puedeOperarMultiSucursal || _sucursales.length < 2) return;
+    if (!_puedeOperarMultiSucursal ||
+        _sucursales.length < 2 ||
+        _cambiandoSucursal) {
+      return;
+    }
     final elegida = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                'Cambiar sucursal',
-                style: Theme.of(ctx).textTheme.titleMedium,
-              ),
-            ),
-            for (final s in _sucursales)
-              ListTile(
-                leading: Icon(
-                  s['id'] == _sucursalIdEfectiva
-                      ? Icons.store
-                      : Icons.store_outlined,
-                  color: s['id'] == _sucursalIdEfectiva
-                      ? ColoresFoody.primario
-                      : null,
+        child: ConstrainedBox(
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.7),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  'Cambiar sucursal',
+                  style: Theme.of(ctx).textTheme.titleMedium,
                 ),
-                title: Text(s['nombre'] as String? ?? 'Sucursal'),
-                selected: s['id'] == _sucursalIdEfectiva,
-                onTap: () => Navigator.pop(ctx, s['id'] as String),
               ),
-            const SizedBox(height: 8),
-          ],
+              for (final s in _sucursales)
+                ListTile(
+                  leading: Icon(
+                    s['id'] == _sucursalIdEfectiva
+                        ? Icons.store
+                        : Icons.store_outlined,
+                    color: s['id'] == _sucursalIdEfectiva
+                        ? ColoresFoody.primario
+                        : null,
+                  ),
+                  title: Text(s['nombre'] as String? ?? 'Sucursal'),
+                  selected: s['id'] == _sucursalIdEfectiva,
+                  onTap: () => Navigator.pop(ctx, s['id'] as String),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -874,18 +920,37 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
     return 'Panel';
   }
 
+  String get _grupoSeccionActual {
+    for (final grupo in _gruposMenu) {
+      if (grupo.items.any((item) => item.ruta == _seccion)) {
+        return grupo.grupo.titulo;
+      }
+    }
+    return 'Restaurante';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
       return Scaffold(
-        body: FoodyEstadoUi.cargando(mensaje: 'Cargando panel…'),
+        backgroundColor: SaaSTokens.canvas(context),
+        appBar: AppBar(title: const Text('Foody')),
+        body: Semantics(
+          liveRegion: true,
+          label: 'Cargando panel del restaurante',
+          child: AnaliticaSkeleton.tab(),
+        ),
       );
     }
 
     final ancho = MediaQuery.sizeOf(context).width;
     final esMovil = PanelLayoutBreakpoints.esMovil(ancho);
+    final barraEstrecha = ancho < 480;
     final esTablet = PanelLayoutBreakpoints.esTablet(ancho);
-    final anchoSidebar = PanelLayoutBreakpoints.anchoSidebar(ancho);
+    final compacto = esTablet || _sidebarPlegada;
+    final anchoSidebar = !esMovil && compacto
+        ? 72.0
+        : PanelLayoutBreakpoints.anchoSidebar(ancho);
 
     return Scaffold(
       backgroundColor: SaaSTokens.canvas(context),
@@ -895,11 +960,37 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
         backgroundColor: SaaSTokens.surface(context),
         foregroundColor: SaaSTokens.ink(context),
         surfaceTintColor: Colors.transparent,
+        toolbarHeight: esMovil ? 60 : 68,
+        leading: esMovil
+            ? Builder(
+                builder: (context) => IconButton(
+                  tooltip: 'Abrir menú',
+                  icon: const Icon(Icons.menu_rounded),
+                  onPressed: Scaffold.of(context).openDrawer,
+                ),
+              )
+            : esTablet
+                ? null
+                : IconButton(
+                    tooltip: _sidebarPlegada ? 'Ampliar menú' : 'Plegar menú',
+                    icon: Icon(
+                      _sidebarPlegada
+                          ? Icons.menu_open_rounded
+                          : Icons.segment_rounded,
+                    ),
+                    onPressed: () =>
+                        setState(() => _sidebarPlegada = !_sidebarPlegada),
+                  ),
+        shape: Border(
+          bottom: BorderSide(color: SaaSTokens.border(context)),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               _tituloSeccionActual(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 17,
@@ -908,7 +999,11 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
               ),
             ),
             Text(
-              _sesion?.usuario['nombre'] as String? ?? 'Staff',
+              esMovil
+                  ? _nombreSucursalConocido() ?? _grupoSeccionActual
+                  : _grupoSeccionActual,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
@@ -918,27 +1013,29 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
           ],
         ),
         actions: [
-          Consumer(
-            builder: (context, ref, _) {
-              final mode = ref.watch(temaModeProvider);
-              final oscuro = mode == ThemeMode.dark ||
-                  (mode == ThemeMode.system &&
-                      MediaQuery.platformBrightnessOf(context) ==
-                          Brightness.dark);
-              return IconButton(
-                tooltip: oscuro ? 'Modo claro' : 'Modo oscuro',
-                icon: Icon(
-                  oscuro
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined,
-                  color: SaaSTokens.inkMuted(context),
-                ),
-                onPressed: () =>
-                    ref.read(temaModeProvider.notifier).alternar(),
-              );
-            },
-          ),
+          if (!barraEstrecha)
+            Consumer(
+              builder: (context, ref, _) {
+                final mode = ref.watch(temaModeProvider);
+                final oscuro = mode == ThemeMode.dark ||
+                    (mode == ThemeMode.system &&
+                        MediaQuery.platformBrightnessOf(context) ==
+                            Brightness.dark);
+                return IconButton(
+                  tooltip: oscuro ? 'Modo claro' : 'Modo oscuro',
+                  icon: Icon(
+                    oscuro
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
+                    color: SaaSTokens.inkMuted(context),
+                  ),
+                  onPressed: () =>
+                      ref.read(temaModeProvider.notifier).alternar(),
+                );
+              },
+            ),
           if (esMovil &&
+              !barraEstrecha &&
               _puedeOperarMultiSucursal &&
               _sucursales.length > 1)
             IconButton(
@@ -947,7 +1044,8 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
                 Icons.storefront_outlined,
                 color: SaaSTokens.inkMuted(context),
               ),
-              onPressed: _mostrarSelectorSucursalMovil,
+              onPressed:
+                  _cambiandoSucursal ? null : _mostrarSelectorSucursalMovil,
             )
           else if (!esMovil &&
               _puedeOperarMultiSucursal &&
@@ -962,35 +1060,45 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
                   border: Border.all(color: SaaSTokens.border(context)),
                 ),
                 child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _sucursalIdEfectiva,
-                    hint: Text(
-                      'Sucursal',
-                      style: TextStyle(
-                        fontSize: 12,
+                  child: SizedBox(
+                    width: 164,
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value:
+                          _sucursales.any((s) => s['id'] == _sucursalIdEfectiva)
+                              ? _sucursalIdEfectiva
+                              : null,
+                      hint: Text(
+                        'Sucursal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: SaaSTokens.inkMuted(context),
+                        ),
+                      ),
+                      icon: Icon(
+                        Icons.expand_more,
+                        size: 18,
                         color: SaaSTokens.inkMuted(context),
                       ),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: SaaSTokens.ink(context),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      dropdownColor: SaaSTokens.surface(context),
+                      items: _sucursales
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s['id'] as String,
+                              child: Text(
+                                s['nombre'] as String? ?? '',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _cambiandoSucursal ? null : _cambiarSucursal,
                     ),
-                    icon: Icon(
-                      Icons.expand_more,
-                      size: 18,
-                      color: SaaSTokens.inkMuted(context),
-                    ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: SaaSTokens.ink(context),
-                      fontWeight: FontWeight.w600,
-                    ),
-                    dropdownColor: SaaSTokens.surface(context),
-                    items: _sucursales
-                        .map(
-                          (s) => DropdownMenuItem(
-                            value: s['id'] as String,
-                            child: Text(s['nombre'] as String? ?? ''),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: _cambiarSucursal,
                   ),
                 ),
               ),
@@ -999,7 +1107,8 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: SaaSTokens.surfaceMuted(context),
                   borderRadius: BorderRadius.circular(8),
@@ -1014,106 +1123,150 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
                       color: SaaSTokens.inkMuted(context),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      _nombreSucursalActiva(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: SaaSTokens.ink(context),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(
+                        _nombreSucursalActiva(),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: SaaSTokens.ink(context),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          IconButton(
-            tooltip: 'Actualizar',
-            icon: Icon(
-              Icons.refresh_rounded,
-              color: SaaSTokens.inkMuted(context),
+          if (!barraEstrecha)
+            IconButton(
+              tooltip: 'Actualizar',
+              icon: Icon(
+                Icons.refresh_rounded,
+                color: SaaSTokens.inkMuted(context),
+              ),
+              onPressed: () => setState(() => _refreshTick++),
             ),
-            onPressed: () => setState(() => _refreshTick++),
-          ),
           IconButton(
             tooltip: 'Buscar módulo',
             icon: Icon(Icons.search, color: SaaSTokens.inkMuted(context)),
-            onPressed: _abrirBusquedaAdmin,
+            onPressed: _sucursalIdEfectiva == null ? null : _abrirBusquedaAdmin,
           ),
-          if (esMovil)
-            PopupMenuButton<String>(
-              tooltip: 'Más',
-              icon: Icon(
-                Icons.more_vert,
-                color: SaaSTokens.inkMuted(context),
-              ),
-              onSelected: (v) {
-                if (v == 'cliente') {
-                  AbrirAppCliente.ejecutar(context);
-                } else if (v == 'sucursal') {
-                  unawaited(_mostrarSelectorSucursalMovil());
-                } else if (v == 'logout') {
-                  _cerrarSesion();
-                }
-              },
-              itemBuilder: (_) => [
-                if (_puedeOperarMultiSucursal && _sucursales.length > 1)
-                  PopupMenuItem(
-                    value: 'sucursal',
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.storefront_outlined),
-                      title: Text('Sucursal: ${_nombreSucursalActiva()}'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
+          PopupMenuButton<String>(
+            enabled: !_cerrandoSesion,
+            tooltip: esMovil ? 'Más opciones' : 'Cuenta y opciones',
+            icon: esMovil
+                ? const Icon(Icons.more_vert_rounded)
+                : CircleAvatar(
+                    radius: 16,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
+                    foregroundColor:
+                        Theme.of(context).colorScheme.onPrimaryContainer,
+                    child: const Icon(Icons.person_outline_rounded, size: 19),
                   ),
-                const PopupMenuItem(
-                  value: 'cliente',
+            onSelected: (v) {
+              if (v == 'cliente') {
+                AbrirAppCliente.ejecutar(context);
+              } else if (v == 'sucursal') {
+                unawaited(_mostrarSelectorSucursalMovil());
+              } else if (v == 'logout') {
+                _cerrarSesion();
+              } else if (v == 'actualizar') {
+                setState(() => _refreshTick++);
+              } else if (v == 'tema') {
+                ProviderScope.containerOf(context)
+                    .read(temaModeProvider.notifier)
+                    .alternar();
+              }
+            },
+            itemBuilder: (_) => [
+              if (!esMovil)
+                PopupMenuItem(
+                  enabled: false,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                        _sesion?.usuario['nombre'] as String? ?? 'Mi cuenta'),
+                    subtitle: Text(etiquetaRolStaff(_sesion?.rol)),
+                  ),
+                ),
+              if (barraEstrecha)
+                PopupMenuItem(
+                  value: 'tema',
                   child: ListTile(
                     dense: true,
-                    leading: Icon(Icons.storefront_outlined),
-                    title: Text('Ir a cliente'),
+                    leading: const Icon(Icons.contrast_outlined),
+                    title: Text(Theme.of(context).brightness == Brightness.dark
+                        ? 'Modo claro'
+                        : 'Modo oscuro'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
+              if (barraEstrecha)
                 const PopupMenuItem(
-                  value: 'logout',
+                  value: 'actualizar',
                   child: ListTile(
                     dense: true,
-                    leading: Icon(Icons.logout_outlined),
-                    title: Text('Cerrar sesión'),
+                    leading: Icon(Icons.refresh_rounded),
+                    title: Text('Actualizar sección'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
-              ],
-            )
-          else ...[
-            IconButton(
-              tooltip: 'Ir a cliente',
-              icon: Icon(
-                Icons.storefront_outlined,
-                color: SaaSTokens.inkMuted(context),
+              if (barraEstrecha &&
+                  _puedeOperarMultiSucursal &&
+                  _sucursales.length > 1)
+                PopupMenuItem(
+                  value: 'sucursal',
+                  child: ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.storefront_outlined),
+                    title: Text('Sucursal: ${_nombreSucursalActiva()}'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              const PopupMenuItem(
+                value: 'cliente',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.storefront_outlined),
+                  title: Text('Ir a cliente'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-              onPressed: () => AbrirAppCliente.ejecutar(context),
-            ),
-            IconButton(
-              tooltip: 'Cerrar sesión',
-              icon: Icon(
-                Icons.logout_outlined,
-                color: SaaSTokens.inkMuted(context),
+              const PopupMenuItem(
+                value: 'logout',
+                child: ListTile(
+                  dense: true,
+                  leading: Icon(Icons.logout_outlined),
+                  title: Text('Cerrar sesión'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-              onPressed: _cerrarSesion,
-            ),
-          ],
+            ],
+          ),
         ],
       ),
       drawer: esMovil
           ? Drawer(
-              width: anchoSidebar.clamp(280.0, 320.0),
-              child: _sidebar(compacto: false),
+              width: anchoSidebar.clamp(0.0, 320.0),
+              child: Builder(
+                builder: (drawerContext) => _sidebar(
+                  compacto: false,
+                  onCerrar: Scaffold.of(drawerContext).closeDrawer,
+                ),
+              ),
             )
           : null,
       body: Column(
         children: [
+          if (_cambiandoSucursal || _cerrandoSesion)
+            LinearProgressIndicator(
+              minHeight: 2,
+              semanticsLabel:
+                  _cerrandoSesion ? 'Cerrando sesión' : 'Cambiando sucursal',
+            ),
           if (!_bannerSuscripcionOculto)
             SuscripcionAvisoBanner(
               suscripcion: _suscripcion,
@@ -1128,16 +1281,16 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
                 if (!esMovil)
                   SizedBox(
                     width: anchoSidebar,
-                    child: _sidebar(compacto: esTablet),
+                    child: _sidebar(compacto: compacto),
                   ),
                 Expanded(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: AnaliticaTokens.surface,
+                      color: SaaSTokens.canvas(context),
                       border: Border(
                         left: esMovil
                             ? BorderSide.none
-                            : const BorderSide(color: AnaliticaTokens.border),
+                            : BorderSide(color: SaaSTokens.border(context)),
                       ),
                     ),
                     child: ClipRect(child: _contenido()),
@@ -1151,7 +1304,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
     );
   }
 
-  Widget _sidebar({required bool compacto}) {
+  Widget _sidebar({required bool compacto, VoidCallback? onCerrar}) {
     return PanelSidebarNav(
       grupos: _gruposMenu,
       seccionActiva: _seccion,
@@ -1161,9 +1314,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
       nombreSucursal: _nombreSucursalConocido(),
       onSeleccionar: (ruta) {
         _seleccionarSeccion(ruta);
-        if (Scaffold.maybeOf(context)?.isDrawerOpen ?? false) {
-          Navigator.pop(context);
-        }
+        onCerrar?.call();
       },
     );
   }

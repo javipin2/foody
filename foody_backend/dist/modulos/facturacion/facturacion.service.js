@@ -241,19 +241,26 @@ let FacturacionService = class FacturacionService {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         });
-        const emisor = config?.razon_social ?? 'Restaurante';
-        const nitEmisor = config?.nit ?? '—';
-        const resolucion = '—';
+        const texto = (valor, respaldo = '—') => String(valor ?? respaldo)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        const emisor = texto(config?.razon_social, 'Restaurante');
+        const nitEmisor = texto(config?.nit);
         const estado = String(factura.estado ?? 'borrador');
-        const titulo = estado === 'emitida' ? 'Factura electrónica' : 'Borrador de factura';
+        const titulo = estado === 'anulada'
+            ? 'Factura anulada'
+            : estado === 'emitida'
+                ? 'Factura interna'
+                : 'Borrador de factura';
         return `<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="utf-8"><title>${titulo}</title>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${titulo}</title>
 <style>
-  body{font-family:Arial,sans-serif;max-width:640px;margin:24px auto;color:#1e293b}
+  body{font-family:Arial,sans-serif;max-width:640px;margin:24px auto;padding:0 16px;color:#1e293b}
   h1{font-size:20px;color:#FF6B35}
   table{width:100%;border-collapse:collapse;margin-top:16px}
-  td{padding:6px 0;border-bottom:1px solid #e2e8f0}
+  td{padding:6px 8px 6px 0;border-bottom:1px solid #e2e8f0;overflow-wrap:anywhere}
   .total{font-weight:bold;font-size:18px}
   .muted{color:#64748b;font-size:13px}
 </style></head>
@@ -262,17 +269,17 @@ let FacturacionService = class FacturacionService {
   <p class="muted">${emisor} · NIT ${nitEmisor}</p>
   <p class="muted">DIAN electrónico pausado (CUFE/XML no enviado)</p>
   <table>
-    <tr><td>Número</td><td>${factura.numero_factura ?? 'Pendiente'}</td></tr>
-    <tr><td>Pedido</td><td>${factura.numero_pedido ?? '—'}</td></tr>
-    <tr><td>Cliente</td><td>${factura.nombre_fiscal_cliente ?? '—'}</td></tr>
-    <tr><td>NIT/C.C.</td><td>${factura.nit_cliente ?? '—'}</td></tr>
-    <tr><td>Email</td><td>${factura.email_cliente ?? '—'}</td></tr>
-    <tr><td>Estado</td><td>${estado}</td></tr>
+    <tr><td>Número</td><td>${texto(factura.numero_factura, 'Pendiente')}</td></tr>
+    <tr><td>Pedido</td><td>${texto(factura.numero_pedido)}</td></tr>
+    <tr><td>Cliente</td><td>${texto(factura.nombre_fiscal_cliente)}</td></tr>
+    <tr><td>NIT/C.C.</td><td>${texto(factura.nit_cliente)}</td></tr>
+    <tr><td>Email</td><td>${texto(factura.email_cliente)}</td></tr>
+    <tr><td>Estado</td><td>${texto(estado)}</td></tr>
     <tr><td>Subtotal</td><td>$ ${fmt(factura.subtotal)}</td></tr>
     <tr><td>IVA</td><td>$ ${fmt(factura.iva)}</td></tr>
     <tr class="total"><td>Total</td><td>$ ${fmt(factura.total)}</td></tr>
   </table>
-  <p class="muted" style="margin-top:24px">Generado por Foody · Documento informativo (DIAN vía proveedor FE en producción)</p>
+  <p class="muted" style="margin-top:24px">Generado por Foody · Documento informativo</p>
 </body></html>`;
     }
     async consultarConfigCliente(client, sucursalId) {

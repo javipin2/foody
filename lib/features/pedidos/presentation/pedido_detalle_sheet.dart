@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
@@ -145,7 +146,7 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
   }
 
   Future<void> _eliminarItem(PedidoItemResumen item) async {
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Quitar ítem'),
@@ -226,7 +227,7 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
 
   Future<void> _cambiarProducto(PedidoItemResumen item) async {
     if (widget.onAgregarItems == null) return;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cambiar producto'),

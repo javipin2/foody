@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/auth/roles_foody.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
@@ -290,7 +291,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     final proveedor = TextEditingController();
 
     try {
-      final ok = await showDialog<bool>(
+      final ok = await FoodyDialogo.mostrar<bool>(
         context: context,
         builder: (ctx) => FoodyDialogoShell(
           titulo: 'Registrar compra',
@@ -508,7 +509,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     final motivo = TextEditingController(text: 'Conteo físico');
 
     try {
-      final ok = await showDialog<bool>(
+      final ok = await FoodyDialogo.mostrar<bool>(
         context: context,
         builder: (ctx) => FoodyDialogoShell(
           titulo: 'Ajustar stock',
@@ -592,7 +593,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     final obs = TextEditingController();
 
     try {
-      final ok = await showDialog<bool>(
+      final ok = await FoodyDialogo.mostrar<bool>(
         context: context,
         builder: (ctx) => FoodyDialogoShell(
           titulo: 'Preparar lote',
@@ -1874,74 +1875,81 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     final sid = widget.sucursalId;
     if (sid == null || _ingredientes.isEmpty) return;
 
+    final ingredientes = List.of(_ingredientes);
     final cantidades = <String, TextEditingController>{};
-    for (final ing in _ingredientes) {
+    final formulario = GlobalKey<FormState>();
+    double? leerCantidad(String texto) {
+      final valor = double.tryParse(texto.trim().replaceAll(',', '.'));
+      return valor != null && valor.isFinite && valor >= 0 ? valor : null;
+    }
+
+    for (final ing in ingredientes) {
       cantidades[ing['id'] as String] = TextEditingController(
         text: '${ing['stock_actual']}',
       );
     }
 
     try {
-      final ok = await showDialog<bool>(
+      final ok = await FoodyDialogo.mostrar<bool>(
         context: context,
         builder: (ctx) => FoodyDialogoShell(
           titulo: 'Conteo físico',
           subtitulo:
               'Registra las cantidades reales. El sistema ajusta diferencias.',
           maxWidth: 480,
-          contenido: FoodyFormSeccion(
-            titulo: 'Ingredientes',
-            icono: Icons.fact_check_outlined,
-            hijo: SizedBox(
-              height: 320,
-              child: ListView(
-                children: _ingredientes.map((ing) {
-                  final id = ing['id'] as String;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: TextField(
-                      controller: cantidades[id],
-                      keyboardType: TextInputType.number,
-                      decoration: FoodyFormEstilo.campo(
-                        label: ing['nombre'] as String? ?? '',
-                        helper:
-                            'Teórico: ${ing['stock_actual']} ${ing['unidad_base'] ?? ''}',
-                        suffix: ing['unidad_base'] as String? ?? '',
+          contenido: Form(
+              key: formulario,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: FoodyFormSeccion(
+                titulo: 'Ingredientes',
+                icono: Icons.fact_check_outlined,
+                hijo: Column(
+                  children: ingredientes.map((ing) {
+                    final id = ing['id'] as String;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: TextFormField(
+                        controller: cantidades[id],
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        validator: (texto) => leerCantidad(texto ?? '') == null
+                            ? 'Ingresa una cantidad de 0 o más'
+                            : null,
+                        decoration: FoodyFormEstilo.campo(
+                          label: ing['nombre'] as String? ?? '',
+                          helper:
+                              'Teórico: ${ing['stock_actual']} ${ing['unidad_base'] ?? ''}',
+                          suffix: ing['unidad_base'] as String? ?? '',
+                        ),
                       ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
+                    );
+                  }).toList(),
+                ),
+              )),
           acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text('Cerrar conteo'),
+              onPressed: () {
+                if (formulario.currentState?.validate() ?? false) {
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Aplicar conteo'),
             ),
           ],
         ),
       );
       if (ok != true || !mounted) return;
 
-      final items = _ingredientes
+      final items = ingredientes
           .map(
             (ing) => {
               'ingrediente_id': ing['id'] as String,
-              'cantidad_real': double.tryParse(
-                    cantidades[ing['id'] as String]!.text.replaceAll(',', '.'),
-                  ) ??
-                  0,
+              'cantidad_real':
+                  leerCantidad(cantidades[ing['id'] as String]!.text)!,
             },
           )
           .toList();
@@ -1971,6 +1979,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     }
   }
 
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   Widget _tabConteo() {
     final compacto = FoodyBreakpoints.esCompact(
       FoodyBreakpoints.widthOf(context),
@@ -1983,9 +1993,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
           child: Container(
             padding: EdgeInsets.all(compacto ? 20 : 24),
             decoration: BoxDecoration(
-              color: AnaliticaTokens.surface,
+              color: _scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AnaliticaTokens.border),
+              border: Border.all(color: _scheme.outlineVariant),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1994,13 +2004,13 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: AnaliticaTokens.surfaceMuted,
+                    color: _scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.fact_check_outlined,
                     size: 24,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -2009,29 +2019,38 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: compacto ? 16 : 18,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     letterSpacing: -0.3,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Registra las cantidades reales de cada ingrediente. '
                   'El sistema ajustará el stock donde haya diferencia.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                     fontSize: 13,
                     height: 1.4,
                   ),
                 ),
+                if (_ingredientes.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Agrega insumos en Mercado para iniciar un conteo.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _scheme.onSurfaceVariant),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 FilledButton.icon(
                   onPressed: _ingredientes.isEmpty ? null : _ejecutarConteo,
                   icon: const Icon(Icons.play_arrow, size: 18),
                   label: const Text('Iniciar conteo'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
+                    backgroundColor: _scheme.primary,
+                    foregroundColor: _scheme.onPrimary,
                     minimumSize: Size(compacto ? double.infinity : 180, 40),
                   ),
                 ),
@@ -2057,24 +2076,24 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.account_tree_outlined,
               size: 40,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Sin subrecetas aún',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.ink,
+                color: _scheme.onSurface,
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Por defecto el stock de insumos baja al vender el plato. '
               'Solo activa «lote» si cocinas el preparado de antemano.',
-              style: TextStyle(color: AnaliticaTokens.inkSoft, fontSize: 13),
+              style: TextStyle(color: _scheme.onSurfaceVariant, fontSize: 13),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -2083,7 +2102,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Crear subreceta'),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
               ),
             ),
             if (widget.onIrCostos != null) ...[
@@ -2091,7 +2111,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
               TextButton.icon(
                 onPressed: widget.onIrCostos,
                 style: TextButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.inkMuted,
+                  foregroundColor: _scheme.onSurfaceVariant,
                 ),
                 icon: const Icon(Icons.pie_chart_outline, size: 18),
                 label: const Text('Luego armar receta en Costos'),
@@ -2126,10 +2146,10 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             final precio = costoUnit != null
                 ? Text(
                     '${monedaDetalle.format(costoUnit)}/$unidad',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   )
                 : null;
@@ -2137,12 +2157,12 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             return Container(
               margin: const EdgeInsets.only(bottom: 6),
               decoration: BoxDecoration(
-                color: AnaliticaTokens.surface,
+                color: _scheme.surfaceContainerLow,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: sinPreparar
                       ? AnaliticaTokens.pedidos.withValues(alpha: 0.45)
-                      : AnaliticaTokens.border,
+                      : _scheme.outlineVariant,
                 ),
                 boxShadow: const [
                   BoxShadow(
@@ -2171,14 +2191,14 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                         decoration: BoxDecoration(
                           color: sinPreparar
                               ? AnaliticaTokens.pedidos.withValues(alpha: 0.12)
-                              : AnaliticaTokens.surfaceMuted,
+                              : _scheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
                           Icons.account_tree_outlined,
                           color: sinPreparar
                               ? AnaliticaTokens.pedidos
-                              : AnaliticaTokens.inkMuted,
+                              : _scheme.onSurfaceVariant,
                           size: 18,
                         ),
                       ),
@@ -2190,10 +2210,10 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                             if (estrecho) ...[
                               Text(
                                 sr['nombre'] as String? ?? '',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,
-                                  color: AnaliticaTokens.ink,
+                                  color: _scheme.onSurface,
                                 ),
                               ),
                               if (precio != null) ...[
@@ -2207,10 +2227,10 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                                   Expanded(
                                     child: Text(
                                       sr['nombre'] as String? ?? '',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        color: AnaliticaTokens.ink,
+                                        color: _scheme.onSurface,
                                       ),
                                     ),
                                   ),
@@ -2223,17 +2243,17 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                             const SizedBox(height: 4),
                             Text(
                               'Rinde ${sr['cantidad_resultado']} $unidad · $numItems insumo${numItems == 1 ? '' : 's'}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AnaliticaTokens.inkSoft,
+                                color: _scheme.onSurfaceVariant,
                               ),
                             ),
                             if (costoTotal != null)
                               Text(
                                 'Total ${_moneda.format(costoTotal)}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
-                                  color: AnaliticaTokens.inkSoft,
+                                  color: _scheme.onSurfaceVariant,
                                 ),
                               ),
                             if (usaLote) ...[
@@ -2291,10 +2311,10 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                       // NAV-MC-06: acciones secundarias en ⋮ (evita overflow móvil).
                       PopupMenuButton<String>(
                         tooltip: 'Más acciones',
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.more_vert,
                           size: 20,
-                          color: AnaliticaTokens.inkSoft,
+                          color: _scheme.onSurfaceVariant,
                         ),
                         onSelected: (v) {
                           switch (v) {

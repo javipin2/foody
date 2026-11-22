@@ -59,12 +59,14 @@ class PedidoKanbanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final colorTiempo = colorReloj(minutos);
     final items = pedido.itemsResumen;
     final preview = items.take(3).toList();
     final resto = items.length - preview.length;
 
     return OperacionTarjeta(
+      usarTema: true,
       acentoIzquierdo: _franjaUrgencia,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       onTap: onTap,
@@ -78,10 +80,10 @@ class PedidoKanbanCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   _tituloPrincipal,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: AnaliticaTokens.ink,
+                    color: scheme.onSurface,
                     height: 1.2,
                     letterSpacing: -0.2,
                   ),
@@ -98,9 +100,9 @@ class PedidoKanbanCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               pedido.clienteNombre!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AnaliticaTokens.inkMuted,
+                color: scheme.onSurfaceVariant,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -109,9 +111,9 @@ class PedidoKanbanCard extends StatelessWidget {
           if (pedido.meseraNombre?.trim().isNotEmpty == true)
             Text(
               'Mesera: ${pedido.meseraNombre}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: AnaliticaTokens.inkSoft,
+                color: scheme.onSurfaceVariant,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -130,10 +132,10 @@ class PedidoKanbanCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       pedido.domiciliarioNombre!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: AnaliticaTokens.ink,
+                        color: scheme.onSurface,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -149,19 +151,19 @@ class PedidoKanbanCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.place_outlined,
                     size: 14,
-                    color: AnaliticaTokens.inkSoft,
+                    color: scheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
                       pedido.direccionEntrega!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
-                        color: AnaliticaTokens.inkMuted,
+                        color: scheme.onSurfaceVariant,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -175,7 +177,7 @@ class PedidoKanbanCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AnaliticaTokens.surfaceMuted,
+                color: scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -186,9 +188,9 @@ class PedidoKanbanCard extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 2),
                       child: Text(
                         it.lineaPreview,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
-                          color: AnaliticaTokens.ink,
+                          color: scheme.onSurface,
                           height: 1.3,
                         ),
                         maxLines: 1,
@@ -198,10 +200,10 @@ class PedidoKanbanCard extends StatelessWidget {
                   if (resto > 0)
                     Text(
                       '+$resto más',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,
-                        color: AnaliticaTokens.inkMuted,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                 ],
@@ -213,10 +215,10 @@ class PedidoKanbanCard extends StatelessWidget {
             children: [
               Text(
                 '#${pedido.numeroPedido}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: AnaliticaTokens.inkSoft,
+                  color: scheme.onSurfaceVariant,
                 ),
               ),
               if (!pedido.esTerminal) ...[
@@ -235,10 +237,10 @@ class PedidoKanbanCard extends StatelessWidget {
               const Spacer(),
               Text(
                 formatoMoneda.format(pedido.total),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+                  color: scheme.onSurface,
                 ),
               ),
             ],
@@ -256,7 +258,8 @@ class PedidoKanbanCard extends StatelessWidget {
                 ),
                 child: Text(
                   '${pedido.etiquetaAccionRapida} →',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
             ),

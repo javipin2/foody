@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:reserva_canchas/core/config/app_flavor.dart';
@@ -83,18 +85,19 @@ class AuthRepository {
     final d = envoltura.datos ?? {};
     return (
       abierto: d['abierto'] == true,
-      mensaje: (d['mensaje'] as String?) ?? envoltura.mensaje ?? '',
+      mensaje: (d['mensaje'] as String?) ?? envoltura.mensaje,
     );
   }
 
   /// Login con token de Supabase (Google OAuth). Si no hay cuenta, devuelve [necesitaRegistro].
-  Future<({
-    bool necesitaRegistro,
-    LoginResultado? sesion,
-    String? email,
-    String? nombre,
-    String? accessToken,
-  })> loginGoogle({required String accessToken}) async {
+  Future<
+      ({
+        bool necesitaRegistro,
+        LoginResultado? sesion,
+        String? email,
+        String? nombre,
+        String? accessToken,
+      })> loginGoogle({required String accessToken}) async {
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/auth/login-google',
       data: {'access_token': accessToken},
@@ -174,7 +177,9 @@ class AuthRepository {
     );
     FoodyRealtime.aplicarCanalesStaff(canales);
 
-    await ServicioFcmFoody.instancia.registrarTrasLoginStaff();
+    unawaited(
+      ServicioFcmFoody.instancia.registrarTrasLoginStaff(tokenSesion: token),
+    );
 
     return LoginResultado(
       dashboard: dashboard,
@@ -247,12 +252,13 @@ class AuthRepository {
     return permisos;
   }
 
-  Future<({
-    List<String> permisos,
-    String plan,
-    List<String> modulos,
-    Map<String, dynamic>? suscripcion,
-  })> sincronizarPerfil() async {
+  Future<
+      ({
+        List<String> permisos,
+        String plan,
+        List<String> modulos,
+        Map<String, dynamic>? suscripcion,
+      })> sincronizarPerfil() async {
     final dio = ClienteDio.instancia(conAuthStaff: true);
     final respuesta = await dio.get<Map<String, dynamic>>('/auth/perfil');
     final data = respuesta.data;
@@ -311,7 +317,9 @@ class AuthRepository {
     // FCM primero: logout server sube token_version y deja el JWT inválido.
     if (AppFlavor.actual.esEquipo && AppBackend.firebaseReady) {
       try {
-        final token = await FirebaseMessaging.instance.getToken();
+        final token = await FirebaseMessaging.instance
+            .getToken(vapidKey: kVapidKeyWebFoody)
+            .timeout(const Duration(seconds: 2));
         final dio = ClienteDio.instancia(conAuthStaff: true);
         await dio.post<Map<String, dynamic>>(
           '/auth/desactivar-fcm',

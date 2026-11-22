@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
@@ -31,10 +32,13 @@ class AnaliticaScreen extends StatefulWidget {
 
   final String? sucursalId;
   final bool esCorporativo;
+
   /// HUER-PERM-01: tab Rentabilidad exige `ver_finanzas`.
   final bool puedeVerFinanzas;
+
   /// NAV-ADM2-12: puente a Reportes exportables.
   final VoidCallback? onIrReportes;
+
   /// Deep-link desde Finanzas: `rentabilidad`.
   final String? tabInicial;
 
@@ -44,6 +48,8 @@ class AnaliticaScreen extends StatefulWidget {
 
 class _AnaliticaScreenState extends State<AnaliticaScreen>
     with SingleTickerProviderStateMixin {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = AnaliticaRepository();
   late TabController _tabs;
 
@@ -89,8 +95,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     return n;
   }
 
-  int get _tabComparativaIndex =>
-      widget.esCorporativo ? _tabCount - 1 : -1;
+  int get _tabComparativaIndex => widget.esCorporativo ? _tabCount - 1 : -1;
   int get _tabRentabilidadIndex => widget.puedeVerFinanzas ? 7 : -1;
   int get _tabRiesgoIndex => widget.puedeVerFinanzas ? 8 : 7;
 
@@ -223,8 +228,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           _cocinasResumen = cocinas;
           _topProductos = ranking.take(8).toList();
           _menosProductos = menos.take(6).toList();
-          _pedidosRecientes =
-              recientes['pedidos'] as List<dynamic>? ?? [];
+          _pedidosRecientes = recientes['pedidos'] as List<dynamic>? ?? [];
           _cargandoResumen = false;
           _actualizadoEn = DateTime.now();
         });
@@ -240,7 +244,9 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
   }
 
   Future<void> _cargarTab(int index) async {
-    if (index == 0 || _cache.containsKey(index) || _cargandoTab[index] == true) {
+    if (index == 0 ||
+        _cache.containsKey(index) ||
+        _cargandoTab[index] == true) {
       return;
     }
     if (index == _tabComparativaIndex) {
@@ -374,7 +380,8 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     final ahora = DateTime.now();
     final inicial = DateTimeRange(
       start: _rangoDesde != null
-          ? DateTime.tryParse(_rangoDesde!) ?? ahora.subtract(const Duration(days: 7))
+          ? DateTime.tryParse(_rangoDesde!) ??
+              ahora.subtract(const Duration(days: 7))
           : ahora.subtract(const Duration(days: 7)),
       end: _rangoHasta != null
           ? DateTime.tryParse(_rangoHasta!) ?? ahora
@@ -493,7 +500,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     if (!_comparar) return;
     final desdeCtrl = TextEditingController(text: _compararDesde ?? '');
     final hastaCtrl = TextEditingController(text: _compararHasta ?? '');
-    final result = await showDialog<bool>(
+    final result = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Periodo de comparación'),
@@ -574,7 +581,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
         ? AnaliticaTokens.inventario
         : tendencia == 'baja'
             ? AnaliticaTokens.alertas
-            : AnaliticaTokens.inkSoft;
+            : _scheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: AnaliticaSurface(
@@ -595,21 +602,21 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'vs periodo anterior',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   ),
                   Text(
                     ant != null
                         ? '${ant['desde']} — ${ant['hasta']} · $subtitulo'
                         : subtitulo,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -626,7 +633,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      backgroundColor: AnaliticaTokens.surface,
+      backgroundColor: _scheme.surfaceContainerLow,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -836,9 +843,9 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 16),
@@ -894,7 +901,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     final porCategoria = data['por_categoria'] as List<dynamic>? ?? [];
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -1141,7 +1148,8 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
             side: const BorderSide(color: Color(0xFFE8EAF0)),
           ),
           child: ListTile(
-            leading: Icon(Icons.inventory_2_outlined, color: Colors.grey.shade600),
+            leading:
+                Icon(Icons.inventory_2_outlined, color: Colors.grey.shade600),
             title: Text(p['nombre'] as String? ?? ''),
           ),
         );
@@ -1246,7 +1254,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     final topConsumo = data['top_consumo'] as List<dynamic>? ?? [];
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -1256,10 +1264,10 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 (data['fuentes_cogs'] as Map)['nota'] as String,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.35,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -1372,7 +1380,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     final tot = data['totales'] as Map<String, dynamic>? ?? {};
     final ranking = data['ranking'] as List<dynamic>? ?? [];
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -1430,9 +1438,9 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                       '${r['tipo']} · tardías ${r['pct_tardias']}%\n'
                       'Ingresos ${_moneda.format(_num(r['ingresos_domicilio']))} · '
                       '${_num(r['distancia_promedio_km']).toStringAsFixed(2)} km prom.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                         height: 1.35,
                       ),
                     ),
@@ -1455,98 +1463,100 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
         _num((data['cuentas_por_cobrar'] as Map?)?['pendiente']);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        _bannerComparativa(data),
-        AnaliticaKpiGrid(
-          children: [
-            AnaliticaKpiCard(
-              etiqueta: 'Ventas pedidos',
-              valor: _moneda.format(_num(cuadre['ventas_pedidos'])),
-              icono: Icons.receipt_long_outlined,
-              acento: AnaliticaTokens.ventas,
-            ),
-            AnaliticaKpiCard(
-              etiqueta: 'Mov. caja',
-              valor: _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
-              icono: Icons.point_of_sale_outlined,
-              acento: AnaliticaTokens.pedidos,
-            ),
-            AnaliticaKpiCard(
-              etiqueta: 'Diferencia',
-              valor: _moneda.format(diff),
-              icono: Icons.balance_outlined,
-              acento: cuadre['descuadre_relevante'] == true
-                  ? AnaliticaTokens.cancelacion
-                  : AnaliticaTokens.margen,
-            ),
-            AnaliticaKpiCard(
-              etiqueta: 'CxC pendiente',
-              valor: _moneda.format(cxcPendiente),
-              icono: Icons.account_balance_wallet_outlined,
-              acento: AnaliticaTokens.alertas,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _fila('Retiros', _moneda.format(_num(data['retiros_total']))),
-        if (gastos.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          AnaliticaChartCard(
-            titulo: 'Gastos por categoría',
-            icono: Icons.payments_rounded,
-            acento: AnaliticaTokens.cancelacion,
-            child: BarChart(
-              AnaliticaCharts.barrasHorizontales(
-                gastos,
-                valorKey: 'total',
-                nombreKey: 'categoria',
-                color: AnaliticaTokens.cancelacion,
+        padding: const EdgeInsets.all(20),
+        children: [
+          _bannerComparativa(data),
+          AnaliticaKpiGrid(
+            children: [
+              AnaliticaKpiCard(
+                etiqueta: 'Ventas pedidos',
+                valor: _moneda.format(_num(cuadre['ventas_pedidos'])),
+                icono: Icons.receipt_long_outlined,
+                acento: AnaliticaTokens.ventas,
               ),
-            ),
+              AnaliticaKpiCard(
+                etiqueta: 'Mov. caja',
+                valor: _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
+                icono: Icons.point_of_sale_outlined,
+                acento: AnaliticaTokens.pedidos,
+              ),
+              AnaliticaKpiCard(
+                etiqueta: 'Diferencia',
+                valor: _moneda.format(diff),
+                icono: Icons.balance_outlined,
+                acento: cuadre['descuadre_relevante'] == true
+                    ? AnaliticaTokens.cancelacion
+                    : AnaliticaTokens.margen,
+              ),
+              AnaliticaKpiCard(
+                etiqueta: 'CxC pendiente',
+                valor: _moneda.format(cxcPendiente),
+                icono: Icons.account_balance_wallet_outlined,
+                acento: AnaliticaTokens.alertas,
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          ...gastos.map((item) {
-            final g = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${g['categoria']}'),
-              subtitle: Text('${g['cantidad']} mov.'),
-              trailing: Text(_moneda.format(_num(g['total']))),
-            );
-          }),
-        ],
-        if (cierres.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Cierres de caja', style: Theme.of(context).textTheme.titleMedium),
-          ...cierres.map((item) {
-            final c = item as Map<String, dynamic>;
-            final fecha = c['cierre_at'] as String? ?? '';
-            return Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: AnaliticaSurface(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        fecha.length > 16 ? fecha.substring(0, 16) : fecha,
-                      ),
-                    ),
-                    Text(
-                      _moneda.format(_num(c['diferencia'])),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ],
+          const SizedBox(height: 12),
+          _fila('Retiros', _moneda.format(_num(data['retiros_total']))),
+          if (gastos.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            AnaliticaChartCard(
+              titulo: 'Gastos por categoría',
+              icono: Icons.payments_rounded,
+              acento: AnaliticaTokens.cancelacion,
+              child: BarChart(
+                AnaliticaCharts.barrasHorizontales(
+                  gastos,
+                  valorKey: 'total',
+                  nombreKey: 'categoria',
+                  color: AnaliticaTokens.cancelacion,
                 ),
               ),
-            );
-          }),
+            ),
+            const SizedBox(height: 8),
+            ...gastos.map((item) {
+              final g = item as Map<String, dynamic>;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${g['categoria']}'),
+                subtitle: Text('${g['cantidad']} mov.'),
+                trailing: Text(_moneda.format(_num(g['total']))),
+              );
+            }),
+          ],
+          if (cierres.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Cierres de caja',
+                style: Theme.of(context).textTheme.titleMedium),
+            ...cierres.map((item) {
+              final c = item as Map<String, dynamic>;
+              final fecha = c['cierre_at'] as String? ?? '';
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: AnaliticaSurface(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          fecha.length > 16 ? fecha.substring(0, 16) : fecha,
+                        ),
+                      ),
+                      Text(
+                        _moneda.format(_num(c['diferencia'])),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
         ],
-      ],
-    ),
+      ),
     );
   }
 
@@ -1563,7 +1573,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     final deltaUtil = comp == null ? null : _num(comp['delta_utilidad_pct']);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -1586,7 +1596,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                         ? AnaliticaTokens.cancelacion
                         : nivel == 'aviso'
                             ? Colors.orange[800]
-                            : AnaliticaTokens.inkMuted;
+                            : _scheme.onSurfaceVariant;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Row(
@@ -1611,9 +1621,9 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                           : deltaUtil < 0
                               ? 'Utilidad neta ${deltaUtil.abs().toStringAsFixed(0)}% peor que el periodo comparado.'
                               : 'Utilidad neta igual al periodo comparado.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                 ],
@@ -1724,23 +1734,23 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
             ),
           _fila('Cobertura de costo en ventas', '$cobertura%'),
           if (cobertura < 80)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
               child: Text(
                 'Varias ventas no tienen costo registrado. '
                 'Revisa recetas en Costos y márgenes.',
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ),
           if (compras > 0) ...[
             const SizedBox(height: 12),
             _fila('Compras a proveedores (ref.)', _moneda.format(compras)),
-            const Text(
+            Text(
               'No se restan del P&L para evitar contar dos veces el mismo insumo.',
-              style: TextStyle(fontSize: 12, color: AnaliticaTokens.inkMuted),
+              style: TextStyle(fontSize: 12, color: _scheme.onSurfaceVariant),
             ),
           ],
         ],
@@ -1782,187 +1792,201 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
   Widget _tabRiesgo(Map<String, dynamic> data) {
     final niveles = data['alertas_por_nivel'] as List<dynamic>? ?? [];
     final descuentos = data['descuentos_atipicos'] as List<dynamic>? ?? [];
-    final cancelUsuarios = data['cancelaciones_por_usuario'] as List<dynamic>? ?? [];
+    final cancelUsuarios =
+        data['cancelaciones_por_usuario'] as List<dynamic>? ?? [];
     final senales = data['senales'] as Map<String, dynamic>? ?? {};
-    final prodCancel = data['productos_cancelados_post_cocina_aprox'] as List<dynamic>? ?? [];
+    final prodCancel =
+        data['productos_cancelados_post_cocina_aprox'] as List<dynamic>? ?? [];
     final prepDelta = data['cocinas_prep_delta'] as List<dynamic>? ?? [];
     final catCaida = data['categorias_caida'] as List<dynamic>? ?? [];
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        _bannerComparativa(data),
-        AnaliticaChartsGrid(
-          children: [
-            AnaliticaChartCard(
-              titulo: 'Alertas por nivel',
-              icono: Icons.warning_amber_rounded,
-              acento: AnaliticaTokens.alertas,
-              vacio: niveles.isEmpty,
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: PieChart(AnaliticaCharts.donutNiveles(niveles)),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: AnaliticaCharts.leyendaPie(
-                      niveles,
-                      'nivel',
-                      'total',
+        padding: const EdgeInsets.all(20),
+        children: [
+          _bannerComparativa(data),
+          AnaliticaChartsGrid(
+            children: [
+              AnaliticaChartCard(
+                titulo: 'Alertas por nivel',
+                icono: Icons.warning_amber_rounded,
+                acento: AnaliticaTokens.alertas,
+                vacio: niveles.isEmpty,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: PieChart(AnaliticaCharts.donutNiveles(niveles)),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: AnaliticaCharts.leyendaPie(
+                        niveles,
+                        'nivel',
+                        'total',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (prepDelta.isNotEmpty)
+                AnaliticaChartCard(
+                  titulo: 'Δ prep cocina (%)',
+                  icono: Icons.soup_kitchen_rounded,
+                  acento: AnaliticaTokens.cocina,
+                  child: BarChart(
+                    AnaliticaCharts.barrasHorizontales(
+                      prepDelta,
+                      valorKey: 'delta_pct',
+                      nombreKey: 'nombre',
+                      color: AnaliticaTokens.cocina,
                     ),
                   ),
-                ],
-              ),
-            ),
-            if (prepDelta.isNotEmpty)
-              AnaliticaChartCard(
-                titulo: 'Δ prep cocina (%)',
-                icono: Icons.soup_kitchen_rounded,
-                acento: AnaliticaTokens.cocina,
-                child: BarChart(
-                  AnaliticaCharts.barrasHorizontales(
-                    prepDelta,
-                    valorKey: 'delta_pct',
-                    nombreKey: 'nombre',
-                    color: AnaliticaTokens.cocina,
+                ),
+              if (catCaida.isNotEmpty)
+                AnaliticaChartCard(
+                  titulo: 'Caída por categoría (%)',
+                  icono: Icons.trending_down_rounded,
+                  acento: AnaliticaTokens.cancelacion,
+                  child: BarChart(
+                    AnaliticaCharts.barrasHorizontales(
+                      catCaida,
+                      valorKey: 'delta_pct',
+                      nombreKey: 'nombre',
+                      color: AnaliticaTokens.cancelacion,
+                    ),
                   ),
                 ),
-              ),
-            if (catCaida.isNotEmpty)
-              AnaliticaChartCard(
-                titulo: 'Caída por categoría (%)',
-                icono: Icons.trending_down_rounded,
-                acento: AnaliticaTokens.cancelacion,
-                child: BarChart(
-                  AnaliticaCharts.barrasHorizontales(
-                    catCaida,
-                    valorKey: 'delta_pct',
-                    nombreKey: 'nombre',
-                    color: AnaliticaTokens.cancelacion,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        if (senales.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Señales', style: Theme.of(context).textTheme.titleMedium),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Color(0xFFE8EAF0)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  _fila('Transferencias mesa', '${senales['transferencias_mesa'] ?? 0}'),
-                  _fila('Salió sin pagar', '${senales['salio_sin_pagar'] ?? 0}'),
-                  _fila(
-                    'Usuarios cancelación alerta',
-                    '${senales['usuarios_cancelacion_alerta'] ?? 0}',
-                  ),
-                  _fila('Cocinas prep ↑', '${senales['cocinas_prep_alerta'] ?? 0}'),
-                  _fila('Categorías en caída', '${senales['categorias_caida_alerta'] ?? 0}'),
-                ],
-              ),
-            ),
+            ],
           ),
-        ],
-        if (prepDelta.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Δ prep cocina', style: Theme.of(context).textTheme.titleMedium),
-          ...prepDelta.take(10).map((item) {
-            final c = item as Map<String, dynamic>;
-            final alerta = c['alerta_subida'] == true;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: alerta
-                  ? Icon(Icons.trending_up, color: ColoresFoody.primario, size: 20)
-                  : null,
-              title: Text(c['nombre'] as String? ?? ''),
-              subtitle: Text(
-                '${_num(c['minutos_actual']).toStringAsFixed(1)} min vs ${_num(c['minutos_anterior']).toStringAsFixed(1)}',
+          if (senales.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Señales', style: Theme.of(context).textTheme.titleMedium),
+            Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFFE8EAF0)),
               ),
-              trailing: Text('${_num(c['delta_pct']).toStringAsFixed(1)}%'),
-            );
-          }),
-        ],
-        if (catCaida.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Caída por categoría', style: Theme.of(context).textTheme.titleMedium),
-          ...catCaida.map((item) {
-            final c = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(c['nombre'] as String? ?? ''),
-              subtitle: Text(
-                '${c['unidades_actual']} vs ${c['unidades_anterior']} u',
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    _fila('Transferencias mesa',
+                        '${senales['transferencias_mesa'] ?? 0}'),
+                    _fila('Salió sin pagar',
+                        '${senales['salio_sin_pagar'] ?? 0}'),
+                    _fila(
+                      'Usuarios cancelación alerta',
+                      '${senales['usuarios_cancelacion_alerta'] ?? 0}',
+                    ),
+                    _fila('Cocinas prep ↑',
+                        '${senales['cocinas_prep_alerta'] ?? 0}'),
+                    _fila('Categorías en caída',
+                        '${senales['categorias_caida_alerta'] ?? 0}'),
+                  ],
+                ),
               ),
-              trailing: Text('${_num(c['delta_pct']).toStringAsFixed(1)}%'),
+            ),
+          ],
+          if (prepDelta.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Δ prep cocina',
+                style: Theme.of(context).textTheme.titleMedium),
+            ...prepDelta.take(10).map((item) {
+              final c = item as Map<String, dynamic>;
+              final alerta = c['alerta_subida'] == true;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: alerta
+                    ? Icon(Icons.trending_up,
+                        color: ColoresFoody.primario, size: 20)
+                    : null,
+                title: Text(c['nombre'] as String? ?? ''),
+                subtitle: Text(
+                  '${_num(c['minutos_actual']).toStringAsFixed(1)} min vs ${_num(c['minutos_anterior']).toStringAsFixed(1)}',
+                ),
+                trailing: Text('${_num(c['delta_pct']).toStringAsFixed(1)}%'),
+              );
+            }),
+          ],
+          if (catCaida.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Caída por categoría',
+                style: Theme.of(context).textTheme.titleMedium),
+            ...catCaida.map((item) {
+              final c = item as Map<String, dynamic>;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(c['nombre'] as String? ?? ''),
+                subtitle: Text(
+                  '${c['unidades_actual']} vs ${c['unidades_anterior']} u',
+                ),
+                trailing: Text('${_num(c['delta_pct']).toStringAsFixed(1)}%'),
+              );
+            }),
+          ],
+          const SizedBox(height: 16),
+          Text('Alertas por nivel',
+              style: Theme.of(context).textTheme.titleMedium),
+          ...niveles.map((item) {
+            final a = item as Map<String, dynamic>;
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('${a['nivel']}'),
+              trailing: Text('${a['total']} (${a['abiertas']} abiertas)'),
             );
           }),
+          const SizedBox(height: 16),
+          Text('Cancelaciones por usuario',
+              style: Theme.of(context).textTheme.titleMedium),
+          if (cancelUsuarios.isEmpty)
+            const Text('Ninguna en el periodo')
+          else
+            ...cancelUsuarios.take(10).map((item) {
+              final c = item as Map<String, dynamic>;
+              final alerta = c['supera_umbral_diario'] == true;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: alerta
+                    ? Icon(Icons.warning_amber,
+                        color: ColoresFoody.primario, size: 20)
+                    : null,
+                title: Text(c['nombre'] as String? ?? ''),
+                trailing: Text('${c['cancelaciones']} cancel.'),
+              );
+            }),
+          const SizedBox(height: 16),
+          Text('Productos cancelados post-cocina',
+              style: Theme.of(context).textTheme.titleMedium),
+          if (prodCancel.isEmpty)
+            const Text('Ninguno detectado')
+          else
+            ...prodCancel.map((item) {
+              final p = item as Map<String, dynamic>;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(p['nombre'] as String? ?? ''),
+                trailing: Text('${p['cantidad']} u'),
+              );
+            }),
+          const SizedBox(height: 16),
+          Text('Descuentos atípicos',
+              style: Theme.of(context).textTheme.titleMedium),
+          if (descuentos.isEmpty)
+            const Text('Ninguno en el periodo')
+          else
+            ...descuentos.take(10).map((item) {
+              final d = item as Map<String, dynamic>;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Pedido ${d['numero_pedido']}'),
+                trailing: Text('${d['pct_descuento']}%'),
+              );
+            }),
         ],
-        const SizedBox(height: 16),
-        Text('Alertas por nivel', style: Theme.of(context).textTheme.titleMedium),
-        ...niveles.map((item) {
-          final a = item as Map<String, dynamic>;
-          return ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('${a['nivel']}'),
-            trailing: Text('${a['total']} (${a['abiertas']} abiertas)'),
-          );
-        }),
-        const SizedBox(height: 16),
-        Text('Cancelaciones por usuario', style: Theme.of(context).textTheme.titleMedium),
-        if (cancelUsuarios.isEmpty)
-          const Text('Ninguna en el periodo')
-        else
-          ...cancelUsuarios.take(10).map((item) {
-            final c = item as Map<String, dynamic>;
-            final alerta = c['supera_umbral_diario'] == true;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: alerta
-                  ? Icon(Icons.warning_amber, color: ColoresFoody.primario, size: 20)
-                  : null,
-              title: Text(c['nombre'] as String? ?? ''),
-              trailing: Text('${c['cancelaciones']} cancel.'),
-            );
-          }),
-        const SizedBox(height: 16),
-        Text('Productos cancelados post-cocina', style: Theme.of(context).textTheme.titleMedium),
-        if (prodCancel.isEmpty)
-          const Text('Ninguno detectado')
-        else
-          ...prodCancel.map((item) {
-            final p = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(p['nombre'] as String? ?? ''),
-              trailing: Text('${p['cantidad']} u'),
-            );
-          }),
-        const SizedBox(height: 16),
-        Text('Descuentos atípicos', style: Theme.of(context).textTheme.titleMedium),
-        if (descuentos.isEmpty)
-          const Text('Ninguno en el periodo')
-        else
-          ...descuentos.take(10).map((item) {
-            final d = item as Map<String, dynamic>;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('Pedido ${d['numero_pedido']}'),
-              trailing: Text('${d['pct_descuento']}%'),
-            );
-          }),
-      ],
-    ),
+      ),
     );
   }
 
@@ -2045,7 +2069,8 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           Expanded(child: Text(k)),
           Text(
             v,
-            style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w600),
+            style:
+                TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w600),
           ),
         ],
       ),

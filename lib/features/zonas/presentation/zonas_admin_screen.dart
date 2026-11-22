@@ -28,6 +28,8 @@ class ZonasAdminScreen extends StatefulWidget {
 }
 
 class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = ZonasRepository();
   List<Map<String, dynamic>> _zonas = [];
   double? _sucursalLat;
@@ -119,8 +121,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            error ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
+        backgroundColor: error ? AnaliticaTokens.alertas : _scheme.onSurface,
       ),
     );
   }
@@ -132,7 +133,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AnaliticaTokens.surface,
+      backgroundColor: _scheme.surfaceContainerLow,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -268,8 +269,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
 
   List<AnilloZonaFoody> _anillosMapa() {
     if (_sucursalLat == null || _sucursalLng == null) return [];
-    final activas =
-        _zonasOrdenadas.where((z) => z['activa'] != false).toList();
+    final activas = _zonasOrdenadas.where((z) => z['activa'] != false).toList();
     return activas.asMap().entries.map((entry) {
       final z = entry.value;
       final color = _coloresAnillos[entry.key % _coloresAnillos.length];
@@ -294,8 +294,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     return 11;
   }
 
-  int get _activas =>
-      _zonas.where((z) => z['activa'] != false).length;
+  int get _activas => _zonas.where((z) => z['activa'] != false).length;
 
   @override
   Widget build(BuildContext context) {
@@ -305,7 +304,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     final tieneUbicacion = _sucursalLat != null && _sucursalLng != null;
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -318,11 +317,11 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Admin / Domicilio',
                   style: TextStyle(
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    color: _scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -340,7 +339,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                               fontSize: compacto ? 18 : 20,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.4,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                               height: 1.15,
                             ),
                           ),
@@ -349,8 +348,8 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                             _cargando
                                 ? 'Cargando…'
                                 : '$_activas anillos · cobro por distancia desde $_sucursalNombre',
-                            style: const TextStyle(
-                              color: AnaliticaTokens.inkMuted,
+                            style: TextStyle(
+                              color: _scheme.onSurfaceVariant,
                               fontSize: 12.5,
                             ),
                           ),
@@ -363,16 +362,15 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                           setState(() => _mostrarAyuda = !_mostrarAyuda),
                       visualDensity: VisualDensity.compact,
                       icon: Icon(
-                        _mostrarAyuda
-                            ? Icons.help
-                            : Icons.help_outline,
-                        color: AnaliticaTokens.inkMuted,
+                        _mostrarAyuda ? Icons.help : Icons.help_outline,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                     FilledButton.icon(
                       onPressed: () => _dialogoZona(),
                       style: FilledButton.styleFrom(
-                        backgroundColor: AnaliticaTokens.ink,
+                        backgroundColor: _scheme.primary,
+                        foregroundColor: _scheme.onPrimary,
                         visualDensity: VisualDensity.compact,
                       ),
                       icon: const Icon(Icons.add, size: 18),
@@ -394,7 +392,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                 ? _estadoError()
                 : RefreshIndicator(
                     onRefresh: _cargar,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                     child: dual
                         ? _layoutDual(tieneUbicacion)
                         : _layoutApilado(tieneUbicacion, compacto),
@@ -407,11 +405,11 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -419,7 +417,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           SizedBox(height: 6),
@@ -431,7 +429,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
             style: TextStyle(
               fontSize: 12.5,
               height: 1.45,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -448,10 +446,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 4, 10, 32),
             children: [
-              if (!tieneUbicacion)
-                _avisoSinUbicacion()
-              else
-                _mapa(altura: 420),
+              if (!tieneUbicacion) _avisoSinUbicacion() else _mapa(altura: 420),
             ],
           ),
         ),
@@ -494,21 +489,21 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
   Widget _encabezadoLista() {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Text(
             'Anillos (cerca → lejos)',
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
         ),
         Text(
           '$_activas activos',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
-            color: AnaliticaTokens.inkMuted,
+            color: _scheme.onSurfaceVariant,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -545,9 +540,9 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Column(
@@ -561,9 +556,9 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.4,
                 ),
               ),
@@ -571,7 +566,8 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -587,15 +583,15 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
       margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.place_outlined, color: Color(0xFFD97706)),
               SizedBox(width: 8),
@@ -605,27 +601,28 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Sin coordenadas no se pueden dibujar los anillos ni calcular '
             'distancia al cliente. Marca el punto en el mapa.',
             style: TextStyle(
               fontSize: 13,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _ubicarSucursal,
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
             ),
             icon: const Icon(Icons.my_location, size: 18),
             label: const Text('Marcar ubicación en el mapa'),
@@ -639,7 +636,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       clipBehavior: Clip.antiAlias,
@@ -655,7 +652,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                 lat: _sucursalLat!,
                 lng: _sucursalLng!,
                 etiqueta: _sucursalNombre,
-                color: AnaliticaTokens.ink,
+                color: _scheme.onSurface,
                 icono: Icons.store,
               ),
             ],
@@ -670,13 +667,13 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
             right: 10,
             top: 10,
             child: Material(
-              color: AnaliticaTokens.surface.withValues(alpha: 0.95),
+              color: _scheme.surfaceContainerLow.withValues(alpha: 0.95),
               borderRadius: BorderRadius.circular(8),
               elevation: 2,
               child: InkWell(
                 onTap: _ubicarSucursal,
                 borderRadius: BorderRadius.circular(8),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -684,7 +681,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                       Icon(
                         Icons.edit_location_alt_outlined,
                         size: 16,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                       SizedBox(width: 6),
                       Text(
@@ -692,7 +689,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                     ],
@@ -707,12 +704,11 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
   }
 
   Widget _leyendaMapa() {
-    final activas =
-        _zonasOrdenadas.where((z) => z['activa'] != false).toList();
+    final activas = _zonasOrdenadas.where((z) => z['activa'] != false).toList();
     if (activas.isEmpty) return const SizedBox.shrink();
 
     return Material(
-      color: AnaliticaTokens.surface.withValues(alpha: 0.95),
+      color: _scheme.surfaceContainerLow.withValues(alpha: 0.95),
       borderRadius: BorderRadius.circular(8),
       elevation: 2,
       child: Padding(
@@ -738,13 +734,11 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                     const SizedBox(width: 6),
                     Text(
                       '${activas[i]['nombre']} · '
-                      '${parsearDouble(activas[i]['distancia_max_km'])
-                              .toString()
-                              .replaceAll(RegExp(r'\.0$'), '')} km',
-                      style: const TextStyle(
+                      '${parsearDouble(activas[i]['distancia_max_km']).toString().replaceAll(RegExp(r'\.0$'), '')} km',
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                   ],
@@ -760,19 +754,19 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Column(
         children: [
-          const Text(
+          Text(
             'Paso 2 · Crea tus anillos',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           const SizedBox(height: 8),
@@ -780,10 +774,10 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
             'Sin anillos se cobra ${_formato.format(5000)} fijo. '
             'Empieza con 2–3 zonas (cerca / medio / lejos).',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 14),
@@ -795,23 +789,24 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
               OutlinedButton(
                 onPressed: () => _crearRapido('Cerca', 2, 4000),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                 ),
                 child: const Text('Cerca 2 km'),
               ),
               OutlinedButton(
                 onPressed: () => _crearRapido('Medio', 4, 6000),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                 ),
                 child: const Text('Medio 4 km'),
               ),
               FilledButton(
                 onPressed: () => _dialogoZona(),
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Personalizar'),
               ),
@@ -855,7 +850,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
         child: InkWell(
           onTap: () => _dialogoZona(zona: z),
@@ -863,7 +858,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-              border: Border.all(color: AnaliticaTokens.border),
+              border: Border.all(color: _scheme.outlineVariant),
               boxShadow: AnaliticaTokens.shadowSoft,
             ),
             child: IntrinsicHeight(
@@ -873,7 +868,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                   Container(
                     width: 4,
                     decoration: BoxDecoration(
-                      color: activa ? color : AnaliticaTokens.border,
+                      color: activa ? color : _scheme.outlineVariant,
                       borderRadius: const BorderRadius.horizontal(
                         left: Radius.circular(12),
                       ),
@@ -891,7 +886,8 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                                 width: 10,
                                 height: 10,
                                 decoration: BoxDecoration(
-                                  color: activa ? color : AnaliticaTokens.inkSoft,
+                                  color:
+                                      activa ? color : _scheme.onSurfaceVariant,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -900,7 +896,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                                   child: Container(
                                     width: 2,
                                     margin: const EdgeInsets.only(top: 4),
-                                    color: AnaliticaTokens.border,
+                                    color: _scheme.outlineVariant,
                                   ),
                                 ),
                             ],
@@ -921,8 +917,8 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                                           fontSize: 13.5,
                                           fontWeight: FontWeight.w600,
                                           color: activa
-                                              ? AnaliticaTokens.ink
-                                              : AnaliticaTokens.inkSoft,
+                                              ? _scheme.onSurface
+                                              : _scheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ),
@@ -954,29 +950,29 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                                   children: [
                                     Text(
                                       _formato.format(costo),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w700,
                                         letterSpacing: -0.4,
-                                        color: AnaliticaTokens.ink,
+                                        color: _scheme.onSurface,
                                       ),
                                     ),
                                     const SizedBox(width: 10),
                                     Text(
                                       'hasta $kmLabel km',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
-                                        color: AnaliticaTokens.inkMuted,
+                                        color: _scheme.onSurfaceVariant,
                                       ),
                                     ),
                                     if (!activa) ...[
                                       const SizedBox(width: 8),
-                                      const Text(
+                                      Text(
                                         'Inactiva',
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: AnaliticaTokens.inkSoft,
+                                          color: _scheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ],
@@ -988,17 +984,17 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
                           IconButton(
                             tooltip: 'Editar',
                             onPressed: () => _dialogoZona(zona: z),
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.edit_outlined,
                               size: 18,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                           PopupMenuButton<String>(
                             tooltip: 'Más',
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.more_vert,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                             onSelected: (v) {
                               if (v == 'editar') _dialogoZona(zona: z);
@@ -1061,6 +1057,8 @@ class _DialogoAnillo extends StatefulWidget {
 }
 
 class _DialogoAnilloState extends State<_DialogoAnillo> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _costoCtrl;
   late final TextEditingController _distCtrl;
@@ -1073,7 +1071,8 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
     final z = widget.zona;
     _nombreCtrl = TextEditingController(text: z?['nombre'] as String? ?? '');
     _costoCtrl = TextEditingController(
-      text: z != null ? '${parsearNumero(z['costo_domicilio']).round()}' : '5000',
+      text:
+          z != null ? '${parsearNumero(z['costo_domicilio']).round()}' : '5000',
     );
     final km = z != null ? parsearDouble(z['distancia_max_km']) : 3.0;
     _distCtrl = TextEditingController(
@@ -1119,9 +1118,9 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surfaceMuted,
+                  color: _scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AnaliticaTokens.border),
+                  border: Border.all(color: _scheme.outlineVariant),
                 ),
                 child: Text(
                   kmPreview > 0 && precioPreview > 0
@@ -1130,10 +1129,10 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
                           '(salvo que un anillo más cercano lo cubra).'
                       : 'Elige radio y precio. El anillo más cercano que '
                           'cubra la distancia del cliente es el que cobra.',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
                     height: 1.4,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -1147,12 +1146,12 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
                 textCapitalization: TextCapitalization.sentences,
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 'Radio (km)',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1168,9 +1167,8 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
                       selected:
                           (double.tryParse(_distCtrl.text.trim()) ?? -1) == km,
                       onSelected: (_) => setState(() {
-                        _distCtrl.text = km == km.roundToDouble()
-                            ? '${km.toInt()}'
-                            : '$km';
+                        _distCtrl.text =
+                            km == km.roundToDouble() ? '${km.toInt()}' : '$km';
                       }),
                       visualDensity: VisualDensity.compact,
                     ),
@@ -1192,12 +1190,12 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 'Precio domicilio',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 8),

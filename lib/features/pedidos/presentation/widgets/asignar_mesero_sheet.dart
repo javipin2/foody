@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/features/admin/domain/pedido_admin_model.dart';
@@ -13,7 +14,7 @@ Future<String?> mostrarAsignarMeseroSheet({
 }) {
   final ancho = MediaQuery.sizeOf(context).width;
   if (FoodyBreakpoints.esExpanded(ancho)) {
-    return showDialog<String>(
+    return FoodyDialogo.mostrar<String>(
       context: context,
       builder: (ctx) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),

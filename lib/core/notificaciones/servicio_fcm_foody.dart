@@ -21,7 +21,8 @@ import 'package:reserva_canchas/services/ciudad_preference_service.dart';
 
 /// VAPID web — Firebase Console → Cloud Messaging → Web Push certificates.
 /// Proyecto foody-pin2. Si está vacío, FCM web no obtiene token.
-const String kVapidKeyWebFoody = 'BLaunARY9xaUqroB4gukrDfQts4tzPByEsIb9_lHyc7QVukMv1Q_Xv4CY2KQ9aFiYYSXjinSp7fJQUenhjKuI0U';
+const String kVapidKeyWebFoody =
+    'BLaunARY9xaUqroB4gukrDfQts4tzPByEsIb9_lHyc7QVukMv1Q_Xv4CY2KQ9aFiYYSXjinSp7fJQUenhjKuI0U';
 
 const String _canalAndroidFoody = 'promociones';
 
@@ -61,10 +62,12 @@ class ServicioFcmFoody {
   }
 
   /// Llamar tras login staff/domiciliario (app equipo).
-  Future<void> registrarTrasLoginStaff() async {
+  Future<void> registrarTrasLoginStaff({String? tokenSesion}) async {
     if (!AppFlavor.actual.esEquipo || !AppBackend.firebaseReady) return;
     final token = await _obtenerToken();
-    if (token != null) await _registrarToken(token);
+    if (token != null) {
+      await _registrarToken(token, tokenSesion: tokenSesion);
+    }
   }
 
   /// Tras elegir/cambiar ciudad: actualiza device + FCM con `ciudad_id`.
@@ -203,7 +206,7 @@ class ServicioFcmFoody {
     }
   }
 
-  Future<void> _registrarToken(String token) async {
+  Future<void> _registrarToken(String token, {String? tokenSesion}) async {
     try {
       if (AppFlavor.actual.esCliente) {
         String? ciudadId;
@@ -220,9 +223,11 @@ class ServicioFcmFoody {
 
       final sesion = await SesionStaffService.cargar();
       if (sesion == null) {
-        debugPrint('ServicioFcmFoody: equipo sin sesión, token pendiente de login');
+        debugPrint(
+            'ServicioFcmFoody: equipo sin sesión, token pendiente de login');
         return;
       }
+      if (tokenSesion != null && sesion.token != tokenSesion) return;
       final dio = ClienteDio.instancia(conAuthStaff: true);
       await dio.post('/auth/registrar-fcm', data: {
         'fcm_token': token,

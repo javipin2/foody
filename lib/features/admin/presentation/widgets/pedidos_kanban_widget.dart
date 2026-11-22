@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
@@ -56,6 +57,7 @@ class PedidosKanbanWidget extends ConsumerStatefulWidget {
   final void Function(String pedidoId, String numeroPedido)? onIrFacturacion;
   final VoidCallback? onIrCocinaKds;
   final VoidCallback? onNuevoPedido;
+
   /// Abrir POS para sumar ítems a un pedido existente (o reemplazar uno).
   final void Function(PedidoAdminModel pedido, {String? itemIdReemplazar})?
       onAgregarItems;
@@ -68,6 +70,8 @@ class PedidosKanbanWidget extends ConsumerStatefulWidget {
 
 class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     with WidgetsBindingObserver {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = PedidosRepository();
   final _domRepo = DomiciliariosRepository();
   late Future<List<PedidoAdminModel>> _future;
@@ -85,8 +89,10 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
   PollRealtimeRespaldo? _pollRespaldo;
   final _busquedaCtrl = TextEditingController();
   String _filtroTipo = 'todos';
+
   /// Pestaña de estado activa (clave de PedidoColumnaDef o cerrados_hoy).
   String _tabClave = 'pendiente';
+
   /// Opcional: columnas kanban (off por defecto — tabs + grid).
   bool _vistaKanban = false;
   bool _cobrando = false;
@@ -463,7 +469,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
         if (nuevoEstado == 'cancelado' || nuevoEstado == 'rechazado') {
           final caja = datos?['caja'];
           if (caja is Map) {
-            final devolucion = (caja['devolucion_automatica'] as num?)?.toDouble() ?? 0;
+            final devolucion =
+                (caja['devolucion_automatica'] as num?)?.toDouble() ?? 0;
             if (devolucion > 0) {
               mensaje +=
                   '\nSe revirtieron ${_formatoMoneda.format(devolucion)} en caja.';
@@ -562,7 +569,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'rechazar pedido'))),
+          SnackBar(
+              content: Text(mensajeErrorHttp(e, contexto: 'rechazar pedido'))),
         );
       }
     }
@@ -618,7 +626,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
   Future<void> _cobrarParaLlevar(PedidoAdminModel pedido) async {
     if (_cobrando) return;
     final propinaCtrl = TextEditingController(text: '0');
-    final metodo = await showDialog<String>(
+    final metodo = await FoodyDialogo.mostrar<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Cobrar ${pedido.numeroPedido}'),
@@ -682,12 +690,13 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     } catch (e) {
       if (codigoErrorApi(e) == 'COCINA_INCOMPLETA_PARA_PAGADO' && mounted) {
         final sesion = await SesionStaffService.cargar();
+        if (!mounted) return;
         final rol = sesion?.rol ?? '';
         final puede =
             rol == 'admin' || rol == 'gerente' || rol == 'gerente_cadena';
         if (puede) {
           final motivoCtrl = TextEditingController();
-          final ok = await showDialog<bool>(
+          final ok = await FoodyDialogo.mostrar<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
               title: const Text('Cocina incompleta'),
@@ -762,7 +771,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
         _recargar();
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'cobrar pedido'))),
+          SnackBar(
+              content: Text(mensajeErrorHttp(e, contexto: 'cobrar pedido'))),
         );
       }
     } finally {
@@ -790,7 +800,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
 
   Future<void> _dialogoRechazar(PedidoAdminModel pedido) async {
     final motivoCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Rechazar pedido'),
@@ -802,9 +812,12 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
           maxLines: 2,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, motivoCtrl.text.trim().isNotEmpty),
+            onPressed: () =>
+                Navigator.pop(ctx, motivoCtrl.text.trim().isNotEmpty),
             child: const Text('Rechazar'),
           ),
         ],
@@ -818,7 +831,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
 
   Future<void> _dialogoCancelar(PedidoAdminModel pedido) async {
     final motivoCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cancelar pedido'),
@@ -845,9 +858,12 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Volver')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Volver')),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, motivoCtrl.text.trim().isNotEmpty),
+            onPressed: () =>
+                Navigator.pop(ctx, motivoCtrl.text.trim().isNotEmpty),
             style: FilledButton.styleFrom(backgroundColor: ColoresFoody.error),
             child: const Text('Cancelar pedido'),
           ),
@@ -865,7 +881,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     final valorCtrl = TextEditingController();
     final motivoCtrl = TextEditingController();
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Descuento · ${pedido.numeroPedido}'),
@@ -894,13 +910,16 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
             const SizedBox(height: 8),
             TextField(
               controller: motivoCtrl,
-              decoration: const InputDecoration(labelText: 'Motivo (obligatorio)'),
+              decoration:
+                  const InputDecoration(labelText: 'Motivo (obligatorio)'),
               maxLines: 2,
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
           FilledButton(
             onPressed: () => Navigator.pop(
               ctx,
@@ -982,22 +1001,22 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     final mostrarToggleVista = FoodyBreakpoints.esExpanded(ancho);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!widget.ocultarCabecera)
             OperacionPageHeader(
               titulo: 'Pedidos',
-              subtitulo: widget.modoMesero
-                  ? 'Tu turno en salón'
-                  : 'Operación en vivo',
+              subtitulo:
+                  widget.modoMesero ? 'Tu turno en salón' : 'Operación en vivo',
               acciones: [
                 if (!widget.modoMesero && widget.onNuevoPedido != null)
                   FilledButton.icon(
                     onPressed: widget.onNuevoPedido,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: _scheme.primary,
+                      foregroundColor: _scheme.onPrimary,
                       visualDensity: VisualDensity.compact,
                     ),
                     icon: const Icon(Icons.add, size: 18),
@@ -1010,13 +1029,13 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                         setState(() => _vistaKanban = !_vistaKanban),
                     icon: Icon(
                       usarKanban ? Icons.grid_view : Icons.view_column,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   ),
                 IconButton(
                   tooltip: 'Actualizar',
                   onPressed: _recargar,
-                  icon: const Icon(Icons.refresh, color: AnaliticaTokens.ink),
+                  icon: Icon(Icons.refresh, color: _scheme.onSurface),
                 ),
               ],
             ),
@@ -1025,9 +1044,9 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
               future: _future,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
+                  return Center(
                     child: CircularProgressIndicator(
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   );
                 }
@@ -1047,18 +1066,18 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.lock_outline,
                             size: 40,
-                            color: AnaliticaTokens.inkSoft,
+                            color: _scheme.onSurfaceVariant,
                           ),
                           const SizedBox(height: 12),
                           Text(
                             mensajeErrorHttp(err, contexto: 'cargar pedidos'),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -1066,7 +1085,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                             onPressed: () =>
                                 ManejoErrorSesion.manejarEnPantalla(err),
                             style: FilledButton.styleFrom(
-                              backgroundColor: AnaliticaTokens.ink,
+                              backgroundColor: _scheme.primary,
+                              foregroundColor: _scheme.onPrimary,
                             ),
                             child: const Text('Iniciar sesión'),
                           ),
@@ -1085,10 +1105,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                   ignorarTab: mostrarKanban,
                 );
                 final tabs = _tabsEstado;
-                final activos =
-                    pedidos.where((p) => !p.esTerminal).length;
-                final totalTurno =
-                    pedidos.fold<num>(0, (s, p) => s + p.total);
+                final activos = pedidos.where((p) => !p.esTerminal).length;
+                final totalTurno = pedidos.fold<num>(0, (s, p) => s + p.total);
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1128,15 +1146,15 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                                   usarKanban
                                       ? Icons.grid_view
                                       : Icons.view_column,
-                                  color: AnaliticaTokens.ink,
+                                  color: _scheme.onSurface,
                                 ),
                               ),
                             IconButton(
                               tooltip: 'Actualizar',
                               onPressed: _recargar,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.refresh,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                               ),
                             ),
                             if (!widget.modoMesero &&
@@ -1144,7 +1162,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                               FilledButton.icon(
                                 onPressed: widget.onNuevoPedido,
                                 style: FilledButton.styleFrom(
-                                  backgroundColor: AnaliticaTokens.ink,
+                                  backgroundColor: _scheme.primary,
+                                  foregroundColor: _scheme.onPrimary,
                                   visualDensity: VisualDensity.compact,
                                 ),
                                 icon: const Icon(Icons.add, size: 18),
@@ -1201,7 +1220,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                       ),
                     Expanded(
                       child: RefreshIndicator(
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                         onRefresh: () async => _recargar(),
                         child: mostrarKanban
                             ? _vistaColumnasKanban(filtrados)
@@ -1233,12 +1252,12 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
   Widget _vistaGridPedidos(List<PedidoAdminModel> pedidos) {
     if (pedidos.isEmpty) {
       return ListView(
-        children: const [
+        children: [
           SizedBox(height: 80),
           Center(
             child: Text(
               'Sin pedidos con ese filtro',
-              style: TextStyle(color: AnaliticaTokens.inkSoft),
+              style: TextStyle(color: _scheme.onSurfaceVariant),
             ),
           ),
         ],
@@ -1299,7 +1318,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
             final end = (start + cols).clamp(0, pedidos.length);
             final slice = pedidos.sublist(start, end);
             return Padding(
-              padding: EdgeInsets.only(bottom: row == filasPedidos - 1 ? 0 : gap),
+              padding:
+                  EdgeInsets.only(bottom: row == filasPedidos - 1 ? 0 : gap),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1376,12 +1396,13 @@ class _KpiPedidosChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Row(
@@ -1389,19 +1410,19 @@ class _KpiPedidosChip extends StatelessWidget {
         children: [
           Text(
             etiqueta,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w500,
-              color: AnaliticaTokens.inkSoft,
+              color: scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: 6),
           Text(
             valor,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: scheme.onSurface,
             ),
           ),
         ],

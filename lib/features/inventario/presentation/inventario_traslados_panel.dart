@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
@@ -86,7 +87,7 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
     final cantidadCtrl = TextEditingController(text: '1');
     final motivoCtrl = TextEditingController();
 
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialog) => FoodyDialogoShell(
@@ -221,7 +222,7 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
   }
 
   Future<void> _cancelar(String id) async {
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cancelar traslado'),

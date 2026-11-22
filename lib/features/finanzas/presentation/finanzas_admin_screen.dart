@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
@@ -663,7 +664,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     );
 
     String categoria = categoriaInicial;
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -1027,7 +1028,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final conceptoCtrl = TextEditingController();
     final montoCtrl = TextEditingController();
     String categoria = 'servicios';
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -1104,7 +1105,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final cargoCtrl = TextEditingController();
     final sueldoCtrl = TextEditingController();
     String frecuencia = 'quincenal';
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -1185,7 +1186,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final conceptoCtrl = TextEditingController();
     final montoCtrl = TextEditingController();
     String categoria = 'otros';
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
@@ -1327,7 +1328,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     );
     final desdeCtrl = TextEditingController();
     final hastaCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(titulo),

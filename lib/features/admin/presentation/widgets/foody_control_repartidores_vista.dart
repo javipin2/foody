@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/features/admin/data/super_admin_repository.dart';
@@ -15,7 +17,8 @@ class FoodyControlRepartidoresVista extends StatefulWidget {
       _FoodyControlRepartidoresVistaState();
 }
 
-class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidoresVista> {
+class _FoodyControlRepartidoresVistaState
+    extends State<FoodyControlRepartidoresVista> {
   late Future<List<Map<String, dynamic>>> _future;
   late Future<List<Map<String, dynamic>>> _docsFuture;
 
@@ -93,7 +96,7 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
 
   Future<void> _rechazar(String domiciliarioId, String documentoId) async {
     final motivoCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Rechazar documento'),
@@ -134,7 +137,7 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
   }
 
   void _verImagen(String url, String titulo) {
-    showDialog<void>(
+    FoodyDialogo.mostrar<void>(
       context: context,
       builder: (ctx) => Dialog(
         child: Column(
@@ -142,7 +145,8 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
           children: [
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(titulo, style: const TextStyle(fontWeight: FontWeight.w700)),
+              child: Text(titulo,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
             InteractiveViewer(
               child: Image.network(
@@ -190,7 +194,8 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                             backgroundColor: ColoresFoody.primario,
                             child: Text(
                               '$n',
-                              style: const TextStyle(fontSize: 10, color: Colors.white),
+                              style: const TextStyle(
+                                  fontSize: 10, color: Colors.white),
                             ),
                           ),
                         ],
@@ -208,11 +213,16 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                   future: _future,
                   builder: (context, snap) {
                     if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: AnaliticaSkeleton.seccion(
+                            etiqueta: 'Cargando datos de la plataforma'),
+                      );
                     }
                     final lista = snap.data!;
                     if (lista.isEmpty) {
-                      return const Center(child: Text('Sin repartidores registrados'));
+                      return const Center(
+                          child: Text('Sin repartidores registrados'));
                     }
                     return RefreshIndicator(
                       onRefresh: () async => _recargar(),
@@ -244,11 +254,14 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                                 final est = estado == 'activo'
                                     ? 'suspendido'
                                     : 'activo';
-                                final confirmar = await showDialog<bool>(
+                                final confirmar =
+                                    await FoodyDialogo.mostrar<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
                                     title: Text(
-                                      est == 'activo' ? 'Activar cuenta' : 'Suspender cuenta',
+                                      est == 'activo'
+                                          ? 'Activar cuenta'
+                                          : 'Suspender cuenta',
                                     ),
                                     content: Text(
                                       est == 'activo'
@@ -257,11 +270,13 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                                     ),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
                                         child: const Text('Cancelar'),
                                       ),
                                       FilledButton(
-                                        onPressed: () => Navigator.pop(ctx, true),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
                                         child: const Text('Confirmar'),
                                       ),
                                     ],
@@ -269,12 +284,14 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                                 );
                                 if (confirmar != true) return;
                                 try {
-                                  await widget.repo.domiciliarioEstado('${d['id']}', est);
+                                  await widget.repo
+                                      .domiciliarioEstado('${d['id']}', est);
                                   _recargar();
                                 } catch (e) {
                                   if (!mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(mensajeErrorHttp(e))),
+                                    SnackBar(
+                                        content: Text(mensajeErrorHttp(e))),
                                   );
                                 }
                               },
@@ -289,10 +306,15 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                   future: _docsFuture,
                   builder: (context, snap) {
                     if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: AnaliticaSkeleton.seccion(
+                            etiqueta: 'Cargando datos de la plataforma'),
+                      );
                     }
                     if (snap.data!.isEmpty) {
-                      return const Center(child: Text('Sin documentos pendientes'));
+                      return const Center(
+                          child: Text('Sin documentos pendientes'));
                     }
                     final grupos = _agruparDocumentos(snap.data!);
                     return RefreshIndicator(
@@ -302,15 +324,21 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                         children: grupos.entries.map((entry) {
                           final docs = entry.value;
                           final primero = docs.first;
-                          final nombre = primero['domiciliario_nombre'] as String? ?? '';
-                          final email = primero['domiciliario_email'] as String? ?? '';
-                          final telefono = primero['telefono'] as String? ?? '—';
-                          final ciudad = primero['ciudad_nombre'] as String? ?? '—';
+                          final nombre =
+                              primero['domiciliario_nombre'] as String? ?? '';
+                          final email =
+                              primero['domiciliario_email'] as String? ?? '';
+                          final telefono =
+                              primero['telefono'] as String? ?? '—';
+                          final ciudad =
+                              primero['ciudad_nombre'] as String? ?? '—';
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),
                             child: ExpansionTile(
-                              title: Text(nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              title: Text(nombre,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
                               subtitle: Text('$email · $ciudad · $telefono'),
                               children: docs.map((doc) {
                                 final tipo = doc['tipo'] as String? ?? '';
@@ -324,7 +352,8 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                                   title: Text(etiqueta),
                                   subtitle: url != null
                                       ? TextButton(
-                                          onPressed: () => _verImagen(url, etiqueta),
+                                          onPressed: () =>
+                                              _verImagen(url, etiqueta),
                                           child: const Text('Ver documento'),
                                         )
                                       : null,
@@ -333,7 +362,8 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                                     children: [
                                       IconButton(
                                         tooltip: 'Aprobar',
-                                        icon: const Icon(Icons.check_circle_outline,
+                                        icon: const Icon(
+                                            Icons.check_circle_outline,
                                             color: ColoresFoody.exito),
                                         onPressed: () => _aprobar(domId, docId),
                                       ),
@@ -341,7 +371,8 @@ class _FoodyControlRepartidoresVistaState extends State<FoodyControlRepartidores
                                         tooltip: 'Rechazar',
                                         icon: Icon(Icons.cancel_outlined,
                                             color: ColoresFoody.error),
-                                        onPressed: () => _rechazar(domId, docId),
+                                        onPressed: () =>
+                                            _rechazar(domId, docId),
                                       ),
                                     ],
                                   ),

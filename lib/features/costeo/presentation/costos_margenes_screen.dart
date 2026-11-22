@@ -30,8 +30,10 @@ class CostosMargenesScreen extends StatefulWidget {
 
   final String? sucursalId;
   final String? productoIdInicial;
+
   /// NAV-ADM-20: regresar a Menú tras venir desde un producto.
   final VoidCallback? onVolverAlMenu;
+
   /// NAV-MG-03: atajo a Insumos (subrecetas / mercado).
   final VoidCallback? onIrInsumos;
 
@@ -41,6 +43,8 @@ class CostosMargenesScreen extends StatefulWidget {
 
 class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     with SingleTickerProviderStateMixin {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _costeoRepo = CosteoRepository();
   final _inventarioRepo = InventarioRepository();
   final _catalogoRepo = CatalogoAdminRepository();
@@ -364,8 +368,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     final sid = widget.sucursalId;
     if (sid == null || _guardandoMargenesSede) return;
 
-    final margenDef =
-        (_margenObjetivoDefault ?? 35).clamp(5, 80).toDouble();
+    final margenDef = (_margenObjetivoDefault ?? 35).clamp(5, 80).toDouble();
     final umbral = (_umbralMargen ?? 35).clamp(5, 80).toDouble();
 
     setState(() => _guardandoMargenesSede = true);
@@ -399,7 +402,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
   }
 
   Color _colorFoodCost(num? foodCost) {
-    if (foodCost == null) return AnaliticaTokens.inkSoft;
+    if (foodCost == null) return _scheme.onSurfaceVariant;
     if (foodCost < 35) return AnaliticaTokens.inventario;
     if (foodCost <= 50) return const Color(0xFFD97706);
     return AnaliticaTokens.alertas;
@@ -409,7 +412,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
   Widget build(BuildContext context) {
     if (_cargando) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: _scheme.surface,
         child: AnaliticaSkeleton.tab(),
       );
     }
@@ -527,7 +530,8 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                 )
               else
                 SliverPadding(
-                  padding: EdgeInsets.fromLTRB(padH, 4, padH, compacto ? 96 : 32),
+                  padding:
+                      EdgeInsets.fromLTRB(padH, 4, padH, compacto ? 96 : 32),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (_, i) => _tarjetaProducto(
@@ -643,7 +647,8 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: CosteoStitch.coral),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       ),
     );
   }
@@ -791,15 +796,13 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     ];
   }
 
-
   ({int saludable, int bajo, int sinDatos, double? margenGlobal})
       _conteosEstado(double umbral) {
     var s = 0, b = 0, n = 0;
     var suma = 0.0;
     var conMargen = 0;
     for (final p in _productos) {
-      final sinReceta =
-          p['receta_id'] == null && p['costo_calculado'] == null;
+      final sinReceta = p['receta_id'] == null && p['costo_calculado'] == null;
       final margen = num.tryParse('${p['margen_porcentaje']}');
       final nivel = costeoNivelDe(
         margenPct: margen,
@@ -859,7 +862,8 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     ];
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(compacto ? 12 : 16, 10, compacto ? 12 : 16, 4),
+      padding:
+          EdgeInsets.fromLTRB(compacto ? 12 : 16, 10, compacto ? 12 : 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -972,7 +976,8 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _guardandoMargenesSede ? null : _guardarMargenesSede,
+                  onPressed:
+                      _guardandoMargenesSede ? null : _guardarMargenesSede,
                   icon: _guardandoMargenesSede
                       ? const SizedBox(
                           width: 16,
@@ -1299,10 +1304,10 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                 const SizedBox(height: 16),
                 Text(
                   '${margenObj.toStringAsFixed(0)}%',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -1311,7 +1316,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                   min: 5,
                   max: 80,
                   divisions: 75,
-                  activeColor: AnaliticaTokens.ink,
+                  activeColor: _scheme.primary,
                   onChanged: _guardandoMargen
                       ? null
                       : (v) => setSheet(() => margenObj = v),
@@ -1329,7 +1334,8 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                           );
                         },
                   style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
+                    backgroundColor: _scheme.primary,
+                    foregroundColor: _scheme.onPrimary,
                   ),
                   icon: _guardandoMargen
                       ? const SizedBox(
@@ -1392,8 +1398,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
   }) {
     final id = p['id'] as String;
     final margen = num.tryParse('${p['margen_porcentaje']}');
-    final sinReceta =
-        p['receta_id'] == null && p['costo_calculado'] == null;
+    final sinReceta = p['receta_id'] == null && p['costo_calculado'] == null;
     final nivel = costeoNivelDe(
       margenPct: margen,
       sinReceta: sinReceta,
@@ -1639,8 +1644,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                 const SizedBox(height: 12),
                 CosteoResumenPie(
                   tituloCosto: 'Costo calculado',
-                  costoTotal:
-                      costo != null ? _moneda.format(costo) : '—',
+                  costoTotal: costo != null ? _moneda.format(costo) : '—',
                   foodCostPct: foodCost?.toDouble(),
                   margenBruto: '—',
                   margenPct: margenReal != null
@@ -1719,8 +1723,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
           const SizedBox(height: 14),
           CosteoPricingActionBar(
             costoLabel: costo != null ? _moneda.format(costo) : '—',
-            precioSugLabel:
-                precioSug != null ? _moneda.format(precioSug) : '—',
+            precioSugLabel: precioSug != null ? _moneda.format(precioSug) : '—',
             margenObjetivo: margenObj,
             guardando: _guardandoMargen,
             puedeAplicar: costo != null && costo > 0,
@@ -1801,7 +1804,8 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     );
   }
 
-  Widget _filaCanalLlevar(String etiqueta, String valor, {bool destacado = false}) {
+  Widget _filaCanalLlevar(String etiqueta, String valor,
+      {bool destacado = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1809,9 +1813,9 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
           Expanded(
             child: Text(
               etiqueta,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -1819,12 +1823,11 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
             valor,
             style: TextStyle(
               fontWeight: destacado ? FontWeight.w700 : FontWeight.w600,
-              color: destacado ? AnaliticaTokens.ink : AnaliticaTokens.inkMuted,
+              color: destacado ? _scheme.onSurface : _scheme.onSurfaceVariant,
             ),
           ),
         ],
       ),
     );
   }
-
 }

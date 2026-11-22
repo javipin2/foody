@@ -773,7 +773,7 @@ class _MesaPedidosSheetState extends State<MesaPedidosSheet>
     if (!puede || !mounted) return false;
 
     final motivoCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
+    final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cocina incompleta'),

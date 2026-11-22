@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/features/admin/data/dashboard_repository.dart';
@@ -26,6 +27,8 @@ class DashboardGraficosWidget extends StatefulWidget {
 }
 
 class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = DashboardRepository();
   late Future<Map<String, dynamic>> _future;
 
@@ -83,13 +86,13 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
       children: [
         Row(
           children: [
-            const Icon(
+            Icon(
               Icons.show_chart,
               size: 16,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
             ),
             const SizedBox(width: 6),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -99,14 +102,14 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.1,
-                      color: AnaliticaTokens.ink,
+                      color: _scheme.onSurface,
                     ),
                   ),
                   Text(
                     'Tendencia de la sede (7 días)',
                     style: TextStyle(
                       fontSize: 11.5,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -117,7 +120,7 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                 onPressed: widget.onIrReportes,
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  foregroundColor: AnaliticaTokens.inkMuted,
+                  foregroundColor: _scheme.onSurfaceVariant,
                 ),
                 child: const Text('Reportes'),
               ),
@@ -126,7 +129,7 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                 onPressed: widget.onIrAnalitica,
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  foregroundColor: AnaliticaTokens.inkMuted,
+                  foregroundColor: _scheme.onSurfaceVariant,
                 ),
                 child: const Text('Análisis'),
               ),
@@ -134,10 +137,10 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
               tooltip: 'Actualizar',
               onPressed: _recargar,
               visualDensity: VisualDensity.compact,
-              icon: const Icon(
+              icon: Icon(
                 Icons.refresh,
                 size: 20,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -147,13 +150,9 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
           future: _future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 180,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: AnaliticaTokens.inkMuted,
-                  ),
-                ),
+              return AnaliticaSkeleton.seccion(
+                etiqueta: 'Cargando gráficos de la sede',
+                altura: 180,
               );
             }
             if (snapshot.hasError) {
@@ -237,8 +236,8 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                   width: 7,
                   height: 7,
                   decoration: BoxDecoration(
-                    color: AnaliticaCharts.colores[
-                        i % AnaliticaCharts.colores.length],
+                    color: AnaliticaCharts
+                        .colores[i % AnaliticaCharts.colores.length],
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -246,19 +245,19 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                 Expanded(
                   child: Text(
                     '${mix[i]['metodo_pago']}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Text(
                   '${AnaliticaCharts.numOf(mix[i]['pedidos']).toInt()} · ${_moneda.format(mix[i]['ventas'])}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
               ],

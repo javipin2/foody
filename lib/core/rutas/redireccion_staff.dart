@@ -22,7 +22,11 @@ void irDashboardStaff(BuildContext context, String dashboard) {
       context.go('/admin/cocina');
     default:
       final pagoId = PagosDeepLinkService.consumirPagoIdPendiente();
-      context.go(AppLinkConfig.rutaPanelTrasPago(pagoId: pagoId));
+      context.go(
+        pagoId == null
+            ? '/admin/panel'
+            : AppLinkConfig.rutaPanelTrasPago(pagoId: pagoId),
+      );
   }
 }
 

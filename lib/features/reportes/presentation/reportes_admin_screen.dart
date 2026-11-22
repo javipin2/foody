@@ -25,6 +25,7 @@ class ReportesAdminScreen extends StatefulWidget {
   });
 
   final String? sucursalId;
+
   /// NAV-ADM2-12: puente a Centro de Análisis.
   final VoidCallback? onIrAnalitica;
 
@@ -34,6 +35,8 @@ class ReportesAdminScreen extends StatefulWidget {
 
 class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     with SingleTickerProviderStateMixin {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = ReportesRepository();
   final _auditoriaRepo = AuditoriaRepository();
   late TabController _tabs;
@@ -216,7 +219,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      backgroundColor: AnaliticaTokens.surface,
+      backgroundColor: _scheme.surfaceContainerLow,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -260,7 +263,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     final hora = DateFormat('HH:mm').format(_actualizadoEn);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -272,31 +275,31 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Admin / Reportes',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AnaliticaTokens.inkSoft,
+                          color: _scheme.onSurfaceVariant,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'Reportes',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.4,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                           height: 1.15,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '$desde → $hasta · Act. $hora',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -306,24 +309,25 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                   TextButton(
                     onPressed: widget.onIrAnalitica,
                     style: TextButton.styleFrom(
-                      foregroundColor: AnaliticaTokens.inkMuted,
+                      foregroundColor: _scheme.onSurfaceVariant,
                       visualDensity: VisualDensity.compact,
                     ),
                     child: const Text('Análisis'),
                   ),
                 IconButton(
                   tooltip: 'Exportar',
-                  onPressed: _cargando || _error != null ? null : _mostrarExportar,
+                  onPressed:
+                      _cargando || _error != null ? null : _mostrarExportar,
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.download_rounded, size: 20),
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
                 IconButton(
                   tooltip: 'Actualizar',
                   onPressed: _cargar,
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.refresh_rounded, size: 20),
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ],
             ),
@@ -358,18 +362,18 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: AnaliticaTokens.borderSoft),
+                    bottom: BorderSide(color: _scheme.outlineVariant),
                   ),
                 ),
                 child: TabBar(
                   controller: _tabs,
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
-                  labelColor: AnaliticaTokens.ink,
-                  unselectedLabelColor: AnaliticaTokens.inkSoft,
-                  indicatorColor: AnaliticaTokens.ink,
+                  labelColor: _scheme.onSurface,
+                  unselectedLabelColor: _scheme.onSurfaceVariant,
+                  indicatorColor: _scheme.onSurface,
                   indicatorWeight: 2,
                   dividerColor: Colors.transparent,
                   labelStyle: const TextStyle(
@@ -419,18 +423,18 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.cloud_off_outlined,
                 size: 36,
-                color: AnaliticaTokens.inkSoft,
+                color: _scheme.onSurfaceVariant,
               ),
               const SizedBox(height: 10),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 14),
@@ -439,7 +443,8 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                 icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text('Reintentar'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
               ),
             ],
@@ -458,7 +463,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
 
     Color colorDiferencia() {
       if (diferencia.abs() < 1) return AnaliticaTokens.inventario;
-      if (diferencia.abs() <= 5000) return AnaliticaTokens.inkMuted;
+      if (diferencia.abs() <= 5000) return _scheme.onSurfaceVariant;
       return AnaliticaTokens.alertas;
     }
 
@@ -497,7 +502,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
               etiqueta: 'Domicilios',
               valor: _moneda.format(_num(r['costo_domicilio'])),
               icono: Icons.delivery_dining_outlined,
-              acento: AnaliticaTokens.inkMuted,
+              acento: _scheme.onSurfaceVariant,
             ),
           ],
         ),
@@ -522,7 +527,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                     'Cobrado en caja (neto)',
                 _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
               ),
-              const Divider(height: 20, color: AnaliticaTokens.borderSoft),
+              Divider(height: 20, color: _scheme.outlineVariant),
               _filaCuadre(
                 'Diferencia',
                 _moneda.format(diferencia),
@@ -538,9 +543,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                         : diferencia > 0
                             ? 'Hay más en tickets que en caja (cobros pendientes o sin registrar).'
                             : 'Hay más en caja que en tickets (revisar movimientos manuales o duplicados).',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                   height: 1.35,
                 ),
               ),
@@ -549,9 +554,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     '${cuadre['movimientos_venta']} movimiento(s) de venta en caja',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AnaliticaTokens.inkSoft,
+                      color: _scheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -592,9 +597,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           icono: Icons.hub_outlined,
         ),
         if (porTipo.isEmpty)
-          const Text(
+          Text(
             'Sin datos en el período',
-            style: TextStyle(color: AnaliticaTokens.inkSoft),
+            style: TextStyle(color: _scheme.onSurfaceVariant),
           )
         else
           ...porTipo.map((item) {
@@ -631,10 +636,10 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     final ranking = _productos?['ranking'] as List<dynamic>? ?? [];
 
     if (ranking.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'Sin ventas de productos en el período',
-          style: TextStyle(color: AnaliticaTokens.inkSoft),
+          style: TextStyle(color: _scheme.onSurfaceVariant),
         ),
       );
     }
@@ -676,9 +681,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                     width: 28,
                     child: Text(
                       '${i + 1}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: AnaliticaTokens.inkSoft,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -692,9 +697,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                         ),
                         Text(
                           '${(ranking[i] as Map)['cantidad']} unidades',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AnaliticaTokens.inkSoft,
+                            color: _scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -738,9 +743,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           icono: Icons.flag_outlined,
         ),
         if (porEstado.isEmpty)
-          const Text(
+          Text(
             'Sin pedidos',
-            style: TextStyle(color: AnaliticaTokens.inkSoft),
+            style: TextStyle(color: _scheme.onSurfaceVariant),
           )
         else
           ...porEstado.map((item) {
@@ -775,9 +780,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           icono: Icons.calendar_today_outlined,
         ),
         if (porDia.isEmpty)
-          const Text(
+          Text(
             'Sin datos',
-            style: TextStyle(color: AnaliticaTokens.inkSoft),
+            style: TextStyle(color: _scheme.onSurfaceVariant),
           )
         else
           ...porDia.map((item) {
@@ -815,10 +820,10 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     final eventos = (_timeline?['eventos'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     if (eventos.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'Sin eventos en el período',
-          style: TextStyle(color: AnaliticaTokens.inkSoft),
+          style: TextStyle(color: _scheme.onSurfaceVariant),
         ),
       );
     }
@@ -845,15 +850,15 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                     height: 28,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: AnaliticaTokens.surfaceMuted,
+                      color: _scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       fuente.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -871,9 +876,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                         ),
                         Text(
                           cuando != null ? horaFmt.format(cuando) : '',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: AnaliticaTokens.inkSoft,
+                            color: _scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -885,15 +890,15 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: AnaliticaTokens.surfaceMuted,
+                      color: _scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       fuente,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -919,9 +924,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           Expanded(
             child: Text(
               etiqueta,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -930,7 +935,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
             style: TextStyle(
               fontWeight: destacado ? FontWeight.w700 : FontWeight.w600,
               fontSize: destacado ? 17 : 14,
-              color: color ?? AnaliticaTokens.ink,
+              color: color ?? _scheme.onSurface,
             ),
           ),
         ],

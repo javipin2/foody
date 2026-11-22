@@ -6,6 +6,20 @@ import 'package:reserva_canchas/features/analitica/presentation/widgets/analitic
 class AnaliticaSkeleton {
   AnaliticaSkeleton._();
 
+  static Widget seccion({required String etiqueta, double altura = 120}) {
+    return Semantics(
+      liveRegion: true,
+      label: etiqueta,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: SizedBox(
+          width: double.infinity,
+          child: _bloque(altura: altura, radio: AnaliticaTokens.r16),
+        ),
+      ),
+    );
+  }
+
   static Widget resumen() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -26,7 +40,8 @@ class AnaliticaSkeleton {
               mainAxisSpacing: 14,
               crossAxisSpacing: 14,
               childAspectRatio: 1.45,
-              children: List.generate(6, (_) => _bloque(radio: AnaliticaTokens.r20)),
+              children:
+                  List.generate(6, (_) => _bloque(radio: AnaliticaTokens.r20)),
             );
           },
         ),
@@ -70,16 +85,24 @@ class AnaliticaSkeleton {
   }
 
   static Widget _bloque({double? altura, double radio = 12}) {
-    return Shimmer.fromColors(
-      baseColor: const Color(0xFFE8EDF3),
-      highlightColor: const Color(0xFFF7FAFC),
-      child: Container(
-        height: altura,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(radio),
-        ),
-      ),
+    return Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        final forma = Container(
+          height: altura,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(radio),
+          ),
+        );
+        if (MediaQuery.disableAnimationsOf(context)) return forma;
+        return Shimmer.fromColors(
+          baseColor: scheme.surfaceContainerHighest,
+          highlightColor: scheme.surfaceContainerLow,
+          period: const Duration(milliseconds: 1500),
+          child: forma,
+        );
+      },
     );
   }
 }

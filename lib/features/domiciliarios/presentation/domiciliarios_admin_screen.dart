@@ -37,6 +37,8 @@ class DomiciliariosAdminScreen extends StatefulWidget {
 }
 
 class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _repo = DomiciliariosRepository();
   final _usuariosRepo = UsuariosRepository();
   List<Map<String, dynamic>> _domiciliarios = [];
@@ -101,8 +103,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            error ? AnaliticaTokens.alertas : AnaliticaTokens.ink,
+        backgroundColor: error ? AnaliticaTokens.alertas : _scheme.onSurface,
       ),
     );
   }
@@ -305,8 +306,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
     _avisar('Enlace de registro copiado');
   }
 
-  int get _enRuta =>
-      _domiciliarios.where((d) => d['ocupado'] == true).length;
+  int get _enRuta => _domiciliarios.where((d) => d['ocupado'] == true).length;
 
   int get _disponibles =>
       _domiciliarios.where((d) => d['ocupado'] != true).length;
@@ -328,7 +328,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
     final dual = ancho >= 980;
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: _scheme.surface,
       child: SaasScrollableShell(
         header: [
           _header(compacto),
@@ -339,10 +339,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 ? _estadoError()
                 : RefreshIndicator(
                     onRefresh: _refrescarTodo,
-                    color: AnaliticaTokens.ink,
-                    child: dual
-                        ? _layoutDual(compacto)
-                        : _layoutApilado(compacto),
+                    color: _scheme.onSurface,
+                    child:
+                        dual ? _layoutDual(compacto) : _layoutApilado(compacto),
                   ),
       ),
     );
@@ -359,11 +358,11 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Admin / Domicilio',
             style: TextStyle(
               fontSize: 11,
-              color: AnaliticaTokens.inkSoft,
+              color: _scheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -381,7 +380,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                         fontSize: compacto ? 18 : 20,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.4,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                         height: 1.15,
                       ),
                     ),
@@ -391,8 +390,8 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                           ? 'Cargando…'
                           : '${_domiciliarios.length} de planta · '
                               '$_disponibles libres · $_enRuta en ruta',
-                      style: const TextStyle(
-                        color: AnaliticaTokens.inkMuted,
+                      style: TextStyle(
+                        color: _scheme.onSurfaceVariant,
                         fontSize: 12.5,
                       ),
                     ),
@@ -403,7 +402,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 TextButton(
                   onPressed: widget.onIrPedidosDomicilio,
                   style: TextButton.styleFrom(
-                    foregroundColor: AnaliticaTokens.inkMuted,
+                    foregroundColor: _scheme.onSurfaceVariant,
                     visualDensity: VisualDensity.compact,
                   ),
                   child: Text(compacto ? 'Pedidos' : 'Pedidos domicilio'),
@@ -411,7 +410,8 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               FilledButton.icon(
                 onPressed: _agregarDomiciliarioPlanta,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.person_add_outlined, size: 18),
@@ -421,9 +421,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 tooltip: 'Actualizar',
                 onPressed: _refrescarTodo,
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(
+                icon: Icon(
                   Icons.refresh,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -456,13 +456,13 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         _formato.format(_totalPendienteLiquidar),
         _totalPendienteLiquidar > 0
             ? AnaliticaTokens.alertas
-            : AnaliticaTokens.inkMuted,
+            : _scheme.onSurfaceVariant,
         Icons.account_balance_wallet_outlined,
       ),
       _Kpi(
         'Payout indep.',
         _formato.format(_totalPayoutIndep),
-        AnaliticaTokens.ink,
+        _scheme.onSurface,
         Icons.payments_outlined,
       ),
     ];
@@ -473,7 +473,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         runSpacing: 8,
         children: [
           for (final k in items)
-            SizedBox(width: (FoodyBreakpoints.widthOf(context) - 40) / 2, child: _kpiCard(k)),
+            SizedBox(
+                width: (FoodyBreakpoints.widthOf(context) - 40) / 2,
+                child: _kpiCard(k)),
         ],
       );
     }
@@ -492,9 +494,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       child: Row(
@@ -515,21 +517,21 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               children: [
                 Text(
                   k.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AnaliticaTokens.inkMuted,
+                    color: _scheme.onSurfaceVariant,
                   ),
                 ),
                 Text(
                   k.value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.3,
-                    color: AnaliticaTokens.ink,
+                    color: _scheme.onSurface,
                   ),
                 ),
               ],
@@ -622,9 +624,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
           ),
           child: Column(
             children: [
@@ -637,16 +639,17 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 14),
               FilledButton(
                 onPressed: _cargar,
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: _scheme.primary,
+                  foregroundColor: _scheme.onPrimary,
                 ),
                 child: const Text('Reintentar'),
               ),
@@ -660,9 +663,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
   Widget _card({required Widget child}) {
     return Container(
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: _scheme.outlineVariant),
         boxShadow: AnaliticaTokens.shadowSoft,
       ),
       padding: const EdgeInsets.all(14),
@@ -676,10 +679,10 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         Expanded(
           child: Text(
             titulo,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
         ),
@@ -704,11 +707,11 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 : null,
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Cómo se maneja el dinero del domicilio en esta sede.',
             style: TextStyle(
               fontSize: 12.5,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 10),
@@ -719,7 +722,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
             value: _permiteFiado,
             onChanged: _toggleFiado,
           ),
-          const Divider(height: 20, color: AnaliticaTokens.borderSoft),
+          Divider(height: 20, color: _scheme.outlineVariant),
           _toggleFila(
             titulo: 'Domicilio entra a caja',
             detalle: _domicilioEnCaja
@@ -748,19 +751,19 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
             children: [
               Text(
                 titulo,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w600,
-                  color: AnaliticaTokens.ink,
+                  color: _scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 detalle,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12.5,
                   height: 1.35,
-                  color: AnaliticaTokens.inkMuted,
+                  color: _scheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -769,7 +772,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         const SizedBox(width: 8),
         Switch.adaptive(
           value: value,
-          activeTrackColor: AnaliticaTokens.ink,
+          activeTrackColor: _scheme.primary,
           onChanged: onChanged,
         ),
       ],
@@ -790,25 +793,25 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 fontWeight: FontWeight.w700,
                 color: _totalPendienteLiquidar > 0
                     ? AnaliticaTokens.alertas
-                    : AnaliticaTokens.inkMuted,
+                    : _scheme.onSurfaceVariant,
               ),
             ),
           ),
           const SizedBox(height: 8),
           if (!_permiteFiado)
-            const Text(
+            Text(
               'Fiado apagado. Actívalo arriba si quieres que lleven pedidos a crédito.',
               style: TextStyle(
                 fontSize: 12.5,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             )
           else if (_liquidaciones.isEmpty)
-            const Text(
+            Text(
               'Nadie debe efectivo a la sede.',
               style: TextStyle(
                 fontSize: 12.5,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             )
           else
@@ -820,9 +823,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
                   decoration: BoxDecoration(
-                    color: AnaliticaTokens.surfaceMuted,
+                    color: _scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AnaliticaTokens.border),
+                    border: Border.all(color: _scheme.outlineVariant),
                   ),
                   child: Row(
                     children: [
@@ -832,16 +835,16 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                           children: [
                             Text(
                               nombre,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: AnaliticaTokens.ink,
+                                color: _scheme.onSurface,
                               ),
                             ),
                             Text(
                               '${d['pedidos'] ?? 0} domicilios · ${_formato.format(total)}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12.5,
-                                color: AnaliticaTokens.inkMuted,
+                                color: _scheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -850,7 +853,8 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                       FilledButton(
                         onPressed: () => _liquidar(d),
                         style: FilledButton.styleFrom(
-                          backgroundColor: AnaliticaTokens.ink,
+                          backgroundColor: _scheme.primary,
+                          foregroundColor: _scheme.onPrimary,
                           visualDensity: VisualDensity.compact,
                         ),
                         child: const Text('Liquidar'),
@@ -873,11 +877,11 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
           _tituloSeccion('Entregas por repartidor (planta)'),
           const SizedBox(height: 8),
           if (_domicilios.isEmpty)
-            const Text(
+            Text(
               'Aún no hay domicilios entregados en el resumen.',
               style: TextStyle(
                 fontSize: 12.5,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             )
           else
@@ -887,34 +891,34 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.two_wheeler_outlined,
                       size: 18,
-                      color: AnaliticaTokens.inkMuted,
+                      color: _scheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         d['nombre']?.toString() ?? 'Domiciliario',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                     ),
                     Text(
                       '${d['pedidos_entregados'] ?? 0} entregas',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AnaliticaTokens.inkMuted,
+                        color: _scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(width: 10),
                     Text(
                       _formato.format(total),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                   ],
@@ -933,13 +937,13 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         children: [
           _tituloSeccion('Repartidores independientes'),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Se registran solos en la app. Foody aprueba documentos; '
             'deben iniciar turno para recibir ofertas de esta sede.',
             style: TextStyle(
               fontSize: 12.5,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
@@ -950,8 +954,8 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               OutlinedButton.icon(
                 onPressed: () => context.push('/domiciliario/registro'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.open_in_new, size: 16),
@@ -960,8 +964,8 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               OutlinedButton.icon(
                 onPressed: _copiarEnlaceRegistro,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.ink,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: _scheme.onSurface,
+                  side: BorderSide(color: _scheme.outlineVariant),
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.link, size: 16),
@@ -1007,11 +1011,11 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               ),
             )
           else if (_comisiones.isEmpty)
-            const Text(
+            Text(
               'Sin entregas de independientes aún.',
               style: TextStyle(
                 fontSize: 12.5,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             )
           else
@@ -1027,17 +1031,17 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                         children: [
                           Text(
                             c['nombre']?.toString() ?? 'Repartidor',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              color: AnaliticaTokens.ink,
+                              color: _scheme.onSurface,
                             ),
                           ),
                           Text(
                             '${c['entregas'] ?? 0} entregas · comisión Foody '
                             '${_formato.format(c['comision_foody'] ?? 0)}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AnaliticaTokens.inkMuted,
+                              color: _scheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -1045,10 +1049,10 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                     ),
                     Text(
                       _formato.format(porPagar),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: AnaliticaTokens.ink,
+                        color: _scheme.onSurface,
                       ),
                     ),
                   ],
@@ -1063,22 +1067,22 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
   Widget _encabezadoEquipo() {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Text(
             'Equipo de planta',
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
         ),
         Text(
           '${_domiciliarios.length}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: AnaliticaTokens.inkMuted,
+            color: _scheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -1093,39 +1097,40 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: AnaliticaTokens.surfaceMuted,
+              color: _scheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.two_wheeler_outlined,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Sin domiciliarios de planta',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
-              color: AnaliticaTokens.ink,
+              color: _scheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Crea un empleado repartidor (login staff) o invita '
             'independientes con el enlace de registro.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
               height: 1.4,
-              color: AnaliticaTokens.inkMuted,
+              color: _scheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 14),
           FilledButton.icon(
             onPressed: _agregarDomiciliarioPlanta,
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: _scheme.primary,
+              foregroundColor: _scheme.onPrimary,
               visualDensity: VisualDensity.compact,
             ),
             icon: const Icon(Icons.person_add_outlined, size: 18),
@@ -1146,12 +1151,12 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AnaliticaTokens.surface,
+        color: _scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: _scheme.outlineVariant),
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Padding(
@@ -1183,10 +1188,10 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                         nombre,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
+                          color: _scheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -1194,9 +1199,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                         telefono != null && telefono.isNotEmpty
                             ? telefono
                             : 'Domiciliario de planta',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: AnaliticaTokens.inkMuted,
+                          color: _scheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1268,6 +1273,8 @@ class _DialogoNuevoPlanta extends StatefulWidget {
 }
 
 class _DialogoNuevoPlantaState extends State<_DialogoNuevoPlanta> {
+  ColorScheme get _scheme => Theme.of(context).colorScheme;
+
   final _nombre = TextEditingController();
   final _email = TextEditingController();
   final _pass = TextEditingController();
@@ -1300,12 +1307,12 @@ class _DialogoNuevoPlantaState extends State<_DialogoNuevoPlanta> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               'Empleado de tu restaurante. Entrará en /admin/login con este correo.',
               style: TextStyle(
                 fontSize: 12.5,
                 height: 1.35,
-                color: AnaliticaTokens.inkMuted,
+                color: _scheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 12),

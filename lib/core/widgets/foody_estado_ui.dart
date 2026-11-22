@@ -8,21 +8,28 @@ class FoodyEstadoUi {
   FoodyEstadoUi._();
 
   static Widget cargando({String? mensaje}) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(color: ColoresFoody.primario),
-          if (mensaje != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              mensaje,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ],
-      ),
+    return Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                  color: scheme.primary, semanticsLabel: mensaje ?? 'Cargando'),
+              if (mensaje != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  mensaje,
+                  style:
+                      TextStyle(color: scheme.onSurfaceVariant, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -178,40 +185,47 @@ class FoodyEstadoUi {
     VoidCallback? onAccionSecundaria,
     String? etiquetaAccionSecundaria,
   }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 48, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              mensaje,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, height: 1.4),
-            ),
-            if (onReintentar != null) ...[
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: onReintentar,
-                style: FilledButton.styleFrom(
-                  backgroundColor: ColoresFoody.primario,
+    return Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cloud_off_outlined,
+                    size: 48, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 16),
+                Text(
+                  mensaje,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 15, height: 1.4),
                 ),
-                child: Text(etiquetaReintentar),
-              ),
-            ],
-            if (onAccionSecundaria != null &&
-                etiquetaAccionSecundaria != null) ...[
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: onAccionSecundaria,
-                child: Text(etiquetaAccionSecundaria),
-              ),
-            ],
-          ],
-        ),
-      ),
+                if (onReintentar != null) ...[
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: onReintentar,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                    ),
+                    child: Text(etiquetaReintentar),
+                  ),
+                ],
+                if (onAccionSecundaria != null &&
+                    etiquetaAccionSecundaria != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: onAccionSecundaria,
+                    child: Text(etiquetaAccionSecundaria),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -222,47 +236,53 @@ class FoodyEstadoUi {
     String? etiquetaAccion,
     VoidCallback? onAccion,
   }) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icono, size: 56, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              titulo,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-              ),
+    return Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icono, size: 56, color: scheme.onSurfaceVariant),
+                const SizedBox(height: 16),
+                Text(
+                  titulo,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (subtitulo != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    subtitulo,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                if (etiquetaAccion != null && onAccion != null) ...[
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: onAccion,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                    ),
+                    child: Text(etiquetaAccion),
+                  ),
+                ],
+              ],
             ),
-            if (subtitulo != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                subtitulo,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                  height: 1.35,
-                ),
-              ),
-            ],
-            if (etiquetaAccion != null && onAccion != null) ...[
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: onAccion,
-                style: FilledButton.styleFrom(
-                  backgroundColor: ColoresFoody.primario,
-                ),
-                child: Text(etiquetaAccion),
-              ),
-            ],
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

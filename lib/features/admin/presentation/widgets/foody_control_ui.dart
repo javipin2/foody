@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 
 /// Estilo compartido del panel Foody Control (super admin).
@@ -10,16 +11,29 @@ class FoodyControlUi {
 
   static const secciones = [
     (id: 'resumen', titulo: 'Resumen', icono: Icons.insights_outlined),
-    (id: 'restaurantes', titulo: 'Restaurantes', icono: Icons.storefront_outlined),
+    (
+      id: 'restaurantes',
+      titulo: 'Restaurantes',
+      icono: Icons.storefront_outlined
+    ),
     (id: 'planes', titulo: 'Planes', icono: Icons.card_membership_outlined),
     (id: 'usuarios', titulo: 'Usuarios', icono: Icons.people_outline_rounded),
     (id: 'ciudades', titulo: 'Ciudades', icono: Icons.location_city_outlined),
-    (id: 'config', titulo: 'Config', icono: Icons.tune_outlined),
-    (id: 'repartidores', titulo: 'Repartidores', icono: Icons.delivery_dining_outlined),
+    (id: 'config', titulo: 'Configuración', icono: Icons.tune_outlined),
+    (
+      id: 'repartidores',
+      titulo: 'Repartidores',
+      icono: Icons.delivery_dining_outlined
+    ),
   ];
 
   static const planes = ['basico', 'pro', 'enterprise'];
-  static const estadosSuscripcion = ['prueba', 'activa', 'vencida', 'bloqueada'];
+  static const estadosSuscripcion = [
+    'prueba',
+    'activa',
+    'vencida',
+    'bloqueada'
+  ];
 
   static const rolesStaff = [
     ('admin', 'Administrador'),
@@ -93,7 +107,7 @@ class FoodyControlTarjetaKpi extends StatelessWidget {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: Colors.grey.shade200),
+          side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -104,7 +118,9 @@ class FoodyControlTarjetaKpi extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 titulo,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 4),
               Text(
@@ -196,14 +212,16 @@ class FoodyControlBarraBusqueda extends StatelessWidget {
                 prefixIcon: const Icon(Icons.search, size: 20),
                 isDense: true,
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant),
                 ),
               ),
             ),
@@ -224,7 +242,7 @@ Future<T?> foodyControlConCarga<T>(
   Future<T> Function() operacion, {
   String mensaje = 'Procesando…',
 }) async {
-  showDialog<void>(
+  FoodyDialogo.mostrar<void>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => PopScope(
