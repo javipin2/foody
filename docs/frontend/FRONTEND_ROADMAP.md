@@ -5,7 +5,27 @@
 
 **Última actualización:** 2026-11-22 — Insumos UI responsive.
 
-**Próximo paso:** Smoke flavor `cliente` (CL-P0) · oleada B CL-10… · o marcar guion F0 en `docs/archivo/qa-sesiones/2026-07-31-f0-ui.md`.
+**Próximo paso:** continuar el rediseño vista por vista y registrar cobertura/pendientes; mantener `MODO=tunel` para las pruebas remotas solicitadas. La revisión visual global del usuario se hará al terminar la oleada.
+
+### Secuencia del rediseño Foody (2026-11-22)
+
+| Etapa | Estado | Evidencia / salida |
+|---|---|---|
+| 1. Auditoría técnica y funcional | ✅ Cerrada por instrucción del producto | Diagnóstico previo de módulos, plan, comisiones y aislamiento |
+| 2. Arquitectura de navegación | 🟡 Aplicada inicialmente | `FRONTEND_NAVIGATION_MAP.md`; centro Configuración y agrupación de ajustes existentes; deep links preservados |
+| 3. Sistema visual | 🟡 Definido con referencias visuales del usuario | `FRONTEND_DESIGN_AUDIT.md`; cuatro referencias mapeadas por contexto; queda aterrizar tokens/componentes y migrar vistas gradualmente |
+| 4. Implementación progresiva | 🔄 En curso | Centro Configuración e Insumos/Inventario ya intervenidos; continúa recorrido por vistas, sin bloquear el avance por QA global pendiente |
+| 5. Comercial y escalabilidad | 🟡 Revisión inicial documentada; decisión comercial pendiente | `MEMORIA.md` y `AUDITORIA_ARQUITECTONICA_FOODY.md` contrastados con Nest; revisar Free/Pro y liquidaciones antes de cualquier cambio |
+
+La etapa 2 requiere validación de uso por roles durante QA. La etapa 3 se materializará vista por vista, usando las referencias del usuario según dispositivo y tarea, no como plantilla global. No se deben cambiar planes ni cargos sin decisión comercial explícita.
+
+### Etapa 5 — decisiones a preservar
+
+- **Suscripción Foody:** ingreso periódico del negocio por nivel contratado; el código actual define gratis/básico/pro/enterprise y precios backend que no coinciden con la visión inicial Free → Pro a $50.000 COP. No cambiar catálogo ni preservar Basic/Enterprise sin definir compatibilidad de clientes/suscripciones existentes.
+- **Comisión sobre ventas:** no se encontró cálculo general porcentual aplicado al subtotal de ventas. No asumir que existe.
+- **Cargo de domicilios:** `MEMORIA.md`, migración `011_super_admin.sql` y `ConfiguracionGlobalModule` documentan/configuran 15% como comisión sobre la entrega independiente; el servicio de domiciliarios calcula comisión e ingreso estimado del repartidor. Definir si Foody la cobra, quién paga, base (tarifa antes/después de ajustes), impuestos y cuándo se registra.
+- **Pago al domiciliario:** `ganancias_domiciliario` almacena montos estimados y estado de pago; la auditoría previa no localizó un flujo de liquidación que cierre esta comisión end-to-end. Requiere revisión de endpoints/pantallas antes de darla por resuelta.
+- **Multi-tenant:** conservar aislamiento por organización (`restaurante_id`) y autorización/alcance por sede (`sucursal_id`) como invariantes a verificar. Preparar módulos verticales para otros sectores sin añadirlos al producto hasta que gastronomía tenga adopción probada.
 
 ---
 

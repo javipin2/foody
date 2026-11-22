@@ -1286,31 +1286,170 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                 )
               : RefreshIndicator(
                   onRefresh: _cargar,
-                  child: ancho >= FoodyBreakpoints.expanded
-                      ? GridView.builder(
-                          padding: EdgeInsets.fromLTRB(
-                              compacto ? 12 : 24, 4, compacto ? 12 : 24, 88),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount:
-                                ancho >= FoodyBreakpoints.large ? 3 : 2,
-                            crossAxisSpacing: 14,
-                            mainAxisSpacing: 14,
-                            mainAxisExtent: 190,
-                          ),
-                          itemCount: lista.length,
-                          itemBuilder: (_, i) => _tarjetaInsumo(lista[i]),
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
-                          itemCount: lista.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (_, i) => _tarjetaInsumo(lista[i]),
-                        ),
+                  child: ancho >= FoodyBreakpoints.large
+                      ? _tablaIngredientes(lista)
+                      : ancho >= FoodyBreakpoints.expanded
+                          ? GridView.builder(
+                              padding: EdgeInsets.fromLTRB(compacto ? 12 : 24,
+                                  4, compacto ? 12 : 24, 88),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 14,
+                                mainAxisExtent: 190,
+                              ),
+                              itemCount: lista.length,
+                              itemBuilder: (_, i) => _tarjetaInsumo(lista[i]),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+                              itemCount: lista.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 10),
+                              itemBuilder: (_, i) => _tarjetaInsumo(lista[i]),
+                            ),
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _tablaIngredientes(List<Map<String, dynamic>> lista) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: AnaliticaTokens.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AnaliticaTokens.border),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowHeight: 44,
+            dataRowMinHeight: 56,
+            dataRowMaxHeight: 64,
+            horizontalMargin: 18,
+            columnSpacing: 32,
+            headingTextStyle: const TextStyle(
+              color: AnaliticaTokens.inkMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+            columns: const [
+              DataColumn(label: Text('INSUMO')),
+              DataColumn(label: Text('CATEGORÍA')),
+              DataColumn(label: Text('STOCK'), numeric: true),
+              DataColumn(label: Text('COSTO UNITARIO'), numeric: true),
+              DataColumn(label: Text('COMPRA'), numeric: true),
+              DataColumn(label: Text('ACCIONES')),
+            ],
+            rows: lista.map((ing) {
+              final stock = num.tryParse('${ing['stock_actual']}') ?? 0;
+              final minimo = num.tryParse('${ing['stock_minimo']}') ?? 0;
+              final costo = num.tryParse(
+                    '${ing['costo_real'] ?? ing['costo_unitario_actual']}',
+                  ) ??
+                  0;
+              final unidad = ing['unidad_base'] as String? ?? 'und';
+              final soloCosto = ing['descontar_stock'] == false;
+              final estado = stockEstadoDesde(
+                stock: stock,
+                minimo: minimo,
+                descontarStock: !soloCosto,
+              );
+              final color = colorStockEstado(estado);
+              final categoria = (ing['categoria_insumo'] as String? ?? '')
+                  .replaceAll('_', ' ');
+              final compra = num.tryParse('${ing['precio_compra']}');
+              return DataRow(
+                cells: [
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 240),
+                      child: Row(children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: AnaliticaTokens.ventas.withValues(alpha: .1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            soloCosto
+                                ? Icons.payments_outlined
+                                : Icons.inventory_2_outlined,
+                            size: 16,
+                            color: AnaliticaTokens.ventas,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            ing['nombre'] as String? ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AnaliticaTokens.ink,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  DataCell(Text(categoria.isEmpty ? '—' : categoria)),
+                  DataCell(
+                    soloCosto
+                        ? const Text('No controla stock')
+                        : Row(mainAxisSize: MainAxisSize.min, children: [
+                            Text('$stock $unidad'),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: .12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                etiquetaStockEstado(estado),
+                                style: TextStyle(
+                                    color: color,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ]),
+                  ),
+                  DataCell(Text('${_moneda.format(costo)} / $unidad')),
+                  DataCell(Text(compra == null ? '—' : _moneda.format(compra))),
+                  DataCell(PopupMenuButton<String>(
+                    tooltip: 'Acciones del insumo',
+                    onSelected: (accion) {
+                      if (accion == 'editar') _dialogoEditarIngrediente(ing);
+                      if (accion == 'compra') _dialogoCompra(ing);
+                      if (accion == 'ajuste') _dialogoAjuste(ing);
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                          value: 'editar', child: Text('Editar')),
+                      if (!soloCosto)
+                        const PopupMenuItem(
+                            value: 'compra', child: Text('Registrar compra')),
+                      if (!soloCosto)
+                        const PopupMenuItem(
+                            value: 'ajuste', child: Text('Ajustar stock')),
+                    ],
+                  )),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
     );
   }
 

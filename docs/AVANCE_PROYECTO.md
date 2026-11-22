@@ -7,13 +7,22 @@
 > Regla Cursor: `.cursor/rules/foody-avance-documentar.mdc`
 > Especificación objetivo: `INFRAESTRUCTURA/GUIA_DESARROLLO_FOODY_CURSOR.md` (sprints 1–11).
 
-**Última actualización:** 2026-11-22 — rediseño UI responsive de Insumos e Inventario.
+**Última actualización:** 2026-11-22 — Configuración admin responsive implementada; análisis focalizado limpio, QA visual pendiente.
 
-**Próximo paso:** resto 🟡 (aceptados/ops/escala) · VIRAL-SYNC · térmica/VPS al comprar.
+**Próximo paso:** continuar rediseño UI vista por vista; preservar Cloudflare Tunnel para pruebas remotas y dejar la revisión visual completa al usuario cuando cierre esta oleada. Reevaluar VPS/deploy al terminar la app.
 
 ### Últimos cambios (changelog)
 
+- **2026-11-22:** **UX-CFG-VIEW-01** — `ConfiguracionAdminScreen` reorganizada en grupos Negocio/Servicio/Equipo, ancho máximo 1120, 1/2/3 columnas según ancho disponible y opciones por permisos. Navegación sigue usando callbacks/rutas existentes. `flutter analyze` focalizado en cuatro archivos: OK; faltan QA visual real en móvil/tablet/escritorio y modo claro/oscuro.
+- **2026-11-22:** **QA-CFG-LOGIN-01** — flavor `equipo` sirvió Flutter web en `localhost:8083`; API `/salud` confirmó BD conectada, pero el login demo quedó en spinner tras enviar formulario. Se detuvo el servidor web de prueba; no se validó pantalla autenticada ni se cambiaron datos de negocio.
+- **2026-11-22:** **ENV-TUNNEL-KEEP-01 / QA-ENV-REMOTE-01** — el founder reafirma `MODO=tunel` y `usarTunel=true`: aún no hay VPS y Cloudflare Tunnel permite usar Foody fuera de casa. El destino API público del preview local coincide con esa estrategia. Mantener como decisión aceptada hasta terminar la app; al cierre revisar VPS, deploy y configuración final.
+- **2026-11-22:** **NAV-CFG-HUB-01 / DS-BASE-01** — agregado `ConfiguracionAdminScreen` como índice de pantallas de ajustes existentes; opciones filtradas por permisos. Se reorganizó el grupo Configuración sin retirar deep links ni añadir API. Guía visual documentada en `FRONTEND_DESIGN_AUDIT.md`; QA visual por rol pendiente.
+- **2026-11-22:** **DS-REF-01** — registradas cuatro referencias aportadas por el usuario: dashboard SaaS oscuro, analítica móvil, dashboard tablet claro y tabla de inventario densa. Se especificó qué patrón adaptar por contexto y qué identidad/contenido ajeno no copiar. Rediseño vista por vista pendiente.
+- **2026-11-22:** **QA-UI-REDISENO-01** — `flutter analyze` sobre 4 archivos tocados: sin issues. Análisis global: 65 infos + 1 warning previo (`lib/features/auth/data/auth_repository.dart:86`, `dead_null_aware_expression`). `verificar-ci.ps1`: 26 OK / 1 fallo por RLS ausente en `cobros_idempotencia`, `rate_limit_entries`, `usuario_permisos`; API/BD y módulos principales responden. La suite también encuentra `verificar-p2-pulido.ps1` roto al llamar `GetResponseStream` sobre `HttpResponseMessage`; salud local imprime agente de impresión offline y cola con 264 errores, por lo que no se pudo certificar impresión hardware.
+
 - **2026-11-22:** **UX-INV-REDISENO-01** — hero azul oscuro con acento naranja, CTA escritorio y tabs con iconos y resumen derivado de datos existentes; guía redundante retirada. Sin cambios backend/API/modelos ni flujos. `dart analyze` sin incidencias; QA visual/manual pendiente.
+- **2026-11-22:** **UX-INV-TRASLADOS-01** — formulario «Nuevo traslado» con shell de formulario compartido; cabecera adaptable, tarjetas de traslado con estado/acción claros y estados vacío/error/sin permiso mejorados. Solo UI; `dart analyze` limpio; QA manual pendiente.
+- **2026-11-22:** **UX-INV-TABLA-01** — vista Mercado usa tabla densa en escritorio ancho siguiendo la referencia visual, grid en tablet y cards en compacto; filtros, costos/stock y menú de acciones existentes preservados. `dart analyze --fatal-infos` focalizado limpio; QA visual pendiente.
 
 - **2026-08-20:** **CAJ-TURNO / ANA-FILT-PROD / ANA-ESTADOS / COC-REIMP** — `horas_abierta` + alerta `caja_turno_longevo` (>12 h, sin auto-cierre) + banner caja; KPI/series con filtro ítem = `SQL_VENTA_LINEA_ITEM`; `estados` sin cancelados salvo `incluir_cancelados`; `POST /impresion/reimprimir` + botón KDS. Check: `verificar-lote-turno-ana-reimp.ps1`.
 - **2026-08-19:** **Lote 🟡** — `tipo=mesa` exige `mesa_id`; descuento manual limpia `promocion_id`; DELETE promo SET NULL (mig 089); cancel domicilio libera sesión + cierra ofertas; ajuste stock alerta mínimo + movimientos con `usuario_id`; transfer copia mesera y UI cajero; filter no aplana detalle caja/códigos mesa; CHECK estados pedido. Check: `verificar-lote-amarillo.ps1` · `dart analyze` mesas_grid.

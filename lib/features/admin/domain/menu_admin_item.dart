@@ -29,6 +29,12 @@ class MenuAdminDinamico {
   }) {
     const catalogo = [
       MenuAdminItem(
+        permiso: 'configurar_establecimiento',
+        titulo: 'Configuración',
+        icono: Icons.settings_outlined,
+        ruta: 'configuracion',
+      ),
+      MenuAdminItem(
         permiso: 'ver_dashboard',
         titulo: 'Dashboard',
         icono: Icons.dashboard_rounded,
@@ -165,6 +171,7 @@ class MenuAdminDinamico {
 
     const orden = [
       'dashboard',
+      'configuracion',
       'pedidos',
       'nuevo_pedido',
       'menu',
@@ -189,12 +196,20 @@ class MenuAdminDinamico {
     ];
 
     final filtrados = catalogo.where((i) {
+      if (i.ruta == 'configuracion') {
+        return permisos.any(const {
+          'gestionar_sucursales',
+          'editar_productos',
+          'gestionar_usuarios',
+        }.contains);
+      }
       if (i.ruta == 'analitica') {
         return permisos.contains('ver_analitica') ||
             permisos.contains('ver_reportes');
       }
       return permisos.contains(i.permiso);
     }).map((i) {
+      if (i.ruta == 'configuracion') return i;
       if (PlanModulosFoody.rutaPermitidaPorPlan(i.ruta, modulosPlan)) {
         return i;
       }

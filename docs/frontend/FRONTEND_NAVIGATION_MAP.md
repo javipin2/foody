@@ -1,5 +1,31 @@
 # Foody — Mapa de navegación y arquitectura UX
 
+## Propuesta y estado de navegación (2026-11-22)
+
+El inventario histórico de este documento es una fotografía de julio de 2026; no usar sus recuentos como estado actual. El panel hoy conserva `?seccion=` y enlaces profundos con parámetros contextuales.
+
+### Organización objetivo aplicada en el panel admin
+
+- **Inicio:** dashboard.
+- **Configuración:** entrada índice y accesos existentes de establecimiento/sedes, horarios, zonas de domicilio, cocinas/impresoras y equipo. El índice no duplica CRUD: enlaza a las pantallas actuales.
+- **Operación:** pedidos, caja y mesas; nuevo pedido se conserva como destino explícito por compatibilidad y acciones rápidas.
+- **Menú e inventario:** menú, insumos, costos/márgenes y promociones.
+- **Cocina:** KDS como operación en vivo; configuración de cocinas se agrupa bajo Configuración.
+- **Domicilio:** gestión de domiciliarios; zonas de cobertura se agrupan bajo Configuración.
+- **Finanzas:** reportes, análisis, gastos/nómina y facturación interna.
+- **Cuenta Foody:** Plan y pagos (suscripción, separado de ventas y finanzas operativas del establecimiento).
+- **Alertas:** se mantiene como grupo transversal hasta definir si su punto principal debe ser Inicio.
+
+Las entradas de sucursales, horarios, zonas, cocinas y usuarios se conservan dentro de Configuración además del índice para ofrecer navegación directa. Visibilidad sigue usando permisos existentes; el índice filtra cada opción por los mismos permisos. Las rutas `/admin/panel?seccion=...` y los deep links existentes se mantienen.
+
+**Pendiente funcional real:** no se identificó un módulo central de métodos de pago del establecimiento. Los medios capturados al cobrar pedidos no equivalen a una preferencia de aceptación/configuración; la suscripción de Foody (Wompi) es otro dominio. No se presenta un enlace ficticio.
+
+### Decisiones de arquitectura preparadas
+
+Mantener el shell admin y las capacidades compartidas por organización (`restaurante_id`) con alcance operativo por sede (`sucursal_id`). La navegación se compone de capacidades autorizadas por backend y nivel de plan; futuros sectores deben aportar módulos verticales especializados sin convertir la UI Flutter en fuente de autorización. No generalizar gastronomía a otros sectores antes de tener requisitos confirmados.
+
+---
+
 > **Rol:** UX Architect  
 > **Fuente:** `app_router.dart`, `menu_admin_*.dart`, `redireccion_staff.dart`, flavors  
 > **Última actualización:** 2026-07-02  

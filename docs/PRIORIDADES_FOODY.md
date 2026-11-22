@@ -6,7 +6,7 @@
 >
 > Al cerrar un ítem: `- [ ]` → `- [x]`, actualizar **Estado**, 1 línea en `AVANCE_PROYECTO.md` y el ID en `MASTER_STATUS.md`.
 
-**Última actualización:** 2026-08-20 — lote 🟡 turno/ana/reimp  
+**Última actualización:** 2026-11-22 — se reafirma piloto PC + Cloudflare Tunnel hasta terminar la app y decidir VPS.
 **Próximo foco recomendado:** resto 🟡 aceptados/ops · VIRAL-SYNC · térmica/VPS.
 
 ### Decisiones founder (2026-08-08)
@@ -15,7 +15,7 @@
 |------|----------|----------------------------------------|
 | **A1 impresión** | **Waiver piloto = modo archivo** (aún sin térmica) | Comprar térmica → IP en cocina + `FOODY_PRINTER_MODE=auto\|red` · `IMPRESION_RESTAURANTE.md` |
 | **A2 Wompi** | Webhook + eventos + **pago sandbox → plan activo** ✅ (founder) | Prod = mismas URLs cuando Wompi apruebe cuenta |
-| **A3 infra** | **Piloto = PC + Cloudflare Tunnel** (no VPS aún) | Comprar VPS → mover cloudflared + Docker; **dominios/Wompi/Uptime no cambian** · `MIGRACION_VPS_QUE_CAMBIA.md` |
+| **A3 infra** | **Piloto = PC + Cloudflare Tunnel** (no VPS aún); mantener `MODO=tunel` para poder probar fuera de casa durante el desarrollo | Al terminar la app, revisar VPS/deploy y configurar según decisión; **dominios/Wompi/Uptime no cambian** · `MIGRACION_VPS_QUE_CAMBIA.md` |
 
 ---
 

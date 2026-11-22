@@ -24,6 +24,10 @@ Modelo de negocio: Suscripción mensual por restaurante + comisión domiciliario
 Stack: Flutter + NestJS + Supabase self-hosted + FCM + Python printer server
 ```
 
+### Entorno de desarrollo y acceso remoto — decisión del founder (2026-11-22)
+
+Mantener `MODO=tunel` en `config/foody-entorno.env` y `usarTunel=true` en la configuración Flutter generada. Aún no se ha comprado VPS; Cloudflare Tunnel es el acceso que permite probar Foody fuera de casa. No cambiar a modo local mientras avanza el rediseño. Revaluar la configuración de deploy cuando la app esté terminada y exista una decisión sobre VPS. Sincronizar cambios de entorno con `scripts/sincronizar-entorno.ps1`.
+
 ---
 
 ## LA COLUMNA VERTEBRAL — sucursal_id

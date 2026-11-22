@@ -1,5 +1,44 @@
 # Foody — Auditoría visual / Product Design (Flutter)
 
+## Sistema visual: base y dirección acordada (2026-11-22)
+
+La auditoría original es histórica y sus puntuaciones no se recalificaron en esta fase. El código ya cuenta con `ColoresFoody`, `TemaFoody` claro/oscuro, `SaaSTokens`, `OperacionUi` y `FoodyBreakpoints`; el trabajo es unificar uso, no crear otra paleta paralela.
+
+- **Color:** tokens semánticos por función (marca/acción, superficie, texto, borde, éxito, atención, error); conservar acentos existentes y validar contraste en ambos temas.
+- **Tipografía:** jerarquía desde `ThemeData.textTheme`; estilos inline solo para ajustes contextuales, evitando familias distintas por módulo.
+- **Espaciado y forma:** escala existente SaaS `4/8/12/16/20/24/32`, radios `8/10/12/16`; reutilizarla.
+- **Controles:** formularios con etiquetas persistentes, validación junto al campo y estados disabled/loading/error; tablas densas con acciones visibles y adaptación móvil mediante cards/listas.
+- **Estados:** reutilizar `FoodyEstadoUi` / `FoodyAsyncBody`; distinguir sin conexión, carga, vacío, error y éxito sin depender solo del color.
+- **Responsive:** breakpoints centrales `600/720/1100/1440`, contenido admin hasta `1280`; validar compacto, tablet y escritorio.
+- **Evolución sectorial:** tokens/componentes genéricos en `core`; vocabulario, flujos y pantallas verticales en features de gastronomía. No crear un checkout genérico especulativo.
+
+**Criterio de aceptación:** nuevas pantallas usan tokens existentes; patrones inconsistentes se migran incrementalmente sin mover reglas de negocio a Dart.
+
+### Referencias visuales recibidas (2026-11-22)
+
+Las cuatro imágenes adjuntas orientan composición, densidad y adaptación por dispositivo; no son una instrucción para copiar marca, datos ni módulos ajenos a Foody.
+
+| Ref. | Qué aporta | Cómo trasladarlo a Foody | Qué no trasladar |
+|---|---|---|---|
+| 1 — dashboard SaaS oscuro | Navegación lateral compacta, jerarquía de títulos, superficies, indicadores resumidos y tabla operativa | Para paneles de administración y vistas de plataforma; aplicar azul oscuro estructural, naranja Foody para acciones y semántica consistente | Marca Stocky/morado, contenido de tenants genérico y cuatro KPI-card grandes en cada vista |
+| 2 — panel móvil analítico | Resumen en una columna, visualizaciones pequeñas, tarjetas compactas y navegación táctil inferior | Referencia para lectura móvil de métricas e insights, respetando navegación y tareas reales de Foody | Copiar etiqueta, métricas, colores o el mismo patrón de navegación a POS/caja |
+| 3 — panel tablet claro | Composición híbrida, menú lateral, barra superior, KPIs en fila, gráficos y actividad en columnas | Referencia para dashboard en tablet/desktop; colapsar o adaptar navegación bajo el breakpoint de escritorio | Escalar sin cambios el dashboard ancho a tablet |
+| 4 — tabla de inventario | Barra de búsqueda/filtros, tabla compacta, jerarquía de stock y acciones contextuales | Referencia para la vista de listado de inventario en escritorio; en móvil transformar filas a cards priorizadas y mantener acciones accesibles | Datos de productos/equipos ajenos y tabla horizontal comprimida en móvil |
+
+**Orden inicial de aplicación:** Configuración admin ya añadida como primer patrón de navegación, pendiente QA visual; después inventariar y abordar individualmente las vistas de Inventario (listado → detalle/formularios/diálogos), usando la referencia 4, y luego las vistas operativas priorizadas por la auditoría. En cada vista se registra propósito, elementos/acciones, tamaños, temas, estados y resultado de verificación. Las referencias 1–3 se aplican solo a dashboards/contextos equivalentes.
+
+### Registro de rediseño por vista
+
+| Vista | Propósito / acciones | Implementación | Verificación | Estado |
+|---|---|---|---|---|
+| Centro Configuración admin — `lib/features/admin/presentation/configuracion_admin_screen.dart` | Índice para establecimiento/sedes, horarios, cobertura, cocinas/impresión y equipo; abre pantallas existentes, no duplica formularios ni servicios | Composición por tarea; filas compactas; 1 columna compacto, 2 tablet, hasta 3 escritorio; superficie y tipografía del tema; enlaces filtrados por permisos | `flutter analyze` focalizado en 4 archivos: sin issues. QA visual autenticado, tamaños y temas aún pendientes | 🟡 Implementada; pendiente validación visual del usuario |
+| Insumos — listado Mercado — `lib/features/inventario/presentation/inventario_admin_screen.dart` | Buscar/filtrar, inspeccionar niveles de stock y abrir edición, compra o ajuste | Escritorio ancho: tabla densa con insumo, categoría, stock/estado, costo unitario, compra y acciones; tablet: grid; compacto: tarjetas apiladas | `dart analyze --fatal-infos` de Inventario y Traslados: sin issues; QA visual manual pendiente | 🟡 Implementada; verificar densidad/tablet/móvil durante revisión |
+| Traslados entre sedes — `lib/features/inventario/presentation/inventario_traslados_panel.dart` | Crear/envíar traslado, recibir en sede destino, cancelar en origen y consultar historial | Formulario con shell Foody; cabecera adaptable; cards con origen/destino, cantidad, estado semántico y acción en fila propia para móvil; estados vacío, carga, error y sin permiso explícitos | `dart analyze` del archivo: sin issues; no se realizó QA visual manual en navegador/dispositivo | 🟡 Implementada; QA visual pendiente |
+
+Siguiente recorrido: **Inventario — mercado/listado y formularios**; luego Movimientos, Subrecetas, Conteo y los demás módulos admin priorizados. Se continúa implementando por vista mientras el acceso de QA mantiene el modo túnel elegido por el usuario; la revisión visual global queda para el usuario al concluir la oleada.
+
+---
+
 > **Rol:** Senior Product Designer · Flutter  
 > **Alcance:** 40 pantallas en `lib/features/` + widgets compartidos  
 > **Última actualización:** 2026-07-02  

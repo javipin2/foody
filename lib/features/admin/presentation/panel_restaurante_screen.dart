@@ -13,6 +13,7 @@ import 'package:reserva_canchas/core/tema/tema_mode_provider.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_grupo.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_item.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/api_offline_banner.dart';
+import 'package:reserva_canchas/features/admin/presentation/configuracion_admin_screen.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/realtime_aviso_banner.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/modulo_bloqueado_placeholder.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/suscripcion_aviso_banner.dart';
@@ -425,6 +426,11 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
     }
 
     switch (_seccion) {
+      case 'configuracion':
+        return ConfiguracionAdminScreen(
+          permisos: _sesion?.permisos ?? const [],
+          onAbrir: _seleccionarSeccion,
+        );
       case 'dashboard':
         return ColoredBox(
           color: AnaliticaTokens.canvas,
