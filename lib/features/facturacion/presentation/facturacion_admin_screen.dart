@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/saas_ui/saas_ui.dart';
+import 'package:reserva_canchas/core/tema/foody_formulario.dart';
 import 'package:reserva_canchas/core/widgets/foody_scroll_horizontal_fade.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
@@ -21,10 +22,12 @@ class FacturacionAdminScreen extends StatefulWidget {
   });
 
   final String? sucursalId;
+
   /// NAV-ADM-02: llegar desde sheet de pedidos.
   final String? pedidoIdInicial;
   final String? pedidoNumeroInicial;
   final VoidCallback? onPedidoSugeridoUsado;
+
   /// NAV-ADM-17: desde factura → kanban del pedido.
   final ValueChanged<String>? onIrPedido;
 
@@ -151,9 +154,8 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
         'regimen': _regimen,
         'aplica_iva': _aplicaIva,
         'porcentaje_iva': _pctIva,
-        'resolucion_dian': _resolucion.text.trim().isEmpty
-            ? null
-            : _resolucion.text.trim(),
+        'resolucion_dian':
+            _resolucion.text.trim().isEmpty ? null : _resolucion.text.trim(),
         'prefijo_factura':
             _prefijo.text.trim().isEmpty ? 'FE' : _prefijo.text.trim(),
       });
@@ -207,41 +209,65 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
         builder: (ctx) {
           final maxW = MediaQuery.sizeOf(ctx).width.clamp(280.0, 520.0);
           final maxH = MediaQuery.sizeOf(ctx).height * 0.7;
-          return AlertDialog(
-            title: Text(
-              esBorrador ? 'Vista previa borrador' : 'Vista previa factura',
-            ),
-            content: SizedBox(
-              width: maxW,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: maxH),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          final factura = datos['factura'] as Map<String, dynamic>?;
+          return FoodyDialogoShell(
+            titulo:
+                esBorrador ? 'Vista previa borrador' : 'Vista previa factura',
+            subtitulo: 'Resumen de los datos de facturación',
+            maxWidth: maxW,
+            maxHeightFactor: maxH / MediaQuery.sizeOf(ctx).height,
+            contenido: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (esBorrador)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'Revisa los datos fiscales antes de emitir. El número oficial se asigna al emitir.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                FoodyFormSeccion(
+                  titulo: factura?['numero_factura']?.toString() ?? 'Borrador',
+                  icono: Icons.receipt_long_outlined,
+                  hijo: Column(
                     children: [
-                      if (esBorrador)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            'Revisa datos fiscales antes de emitir. El número oficial se asigna al emitir.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AnaliticaTokens.inkMuted,
-                            ),
-                          ),
-                        ),
-                      SelectableText(
-                        _resumenTexto(
-                          datos['factura'] as Map<String, dynamic>?,
-                        ),
-                        style: const TextStyle(fontSize: 13),
+                      _filaVistaPrevia('Pedido', factura?['numero_pedido']),
+                      _filaVistaPrevia(
+                          'Cliente', factura?['nombre_fiscal_cliente']),
+                      _filaVistaPrevia('NIT', factura?['nit_cliente']),
+                      _filaVistaPrevia('Estado', factura?['estado']),
+                      const Divider(height: 20),
+                      _filaVistaPrevia(
+                        'Subtotal',
+                        _moneda.format(
+                            double.tryParse('${factura?['subtotal']}') ?? 0),
+                      ),
+                      _filaVistaPrevia(
+                        'IVA',
+                        _moneda
+                            .format(double.tryParse('${factura?['iva']}') ?? 0),
+                      ),
+                      _filaVistaPrevia(
+                        'Total',
+                        _moneda.format(
+                            double.tryParse('${factura?['total']}') ?? 0),
+                        destacado: true,
                       ),
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
-            actions: [
+            acciones: [
               TextButton(
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: html));
@@ -271,18 +297,39 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     }
   }
 
-  String _resumenTexto(Map<String, dynamic>? f) {
-    if (f == null) return 'Sin datos';
-    return [
-      'Número: ${f['numero_factura'] ?? 'Pendiente'}',
-      'Pedido: ${f['numero_pedido'] ?? '—'}',
-      'Cliente: ${f['nombre_fiscal_cliente'] ?? '—'}',
-      'NIT: ${f['nit_cliente'] ?? '—'}',
-      'Estado: ${f['estado'] ?? '—'}',
-      'Subtotal: ${_moneda.format(double.tryParse('${f['subtotal']}') ?? 0)}',
-      'IVA: ${_moneda.format(double.tryParse('${f['iva']}') ?? 0)}',
-      'Total: ${_moneda.format(double.tryParse('${f['total']}') ?? 0)}',
-    ].join('\n');
+  Widget _filaVistaPrevia(String etiqueta, Object? valor,
+      {bool destacado = false}) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              etiqueta,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              valor?.toString().trim().isNotEmpty == true
+                  ? valor.toString()
+                  : '—',
+              textAlign: TextAlign.end,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: destacado ? FontWeight.w700 : FontWeight.w500,
+                fontSize: destacado ? 16 : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Color _colorEstado(String? estado) {
@@ -294,29 +341,30 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
       case 'borrador':
         return const Color(0xFFD97706);
       default:
-        return AnaliticaTokens.inkMuted;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
 
   InputDecoration _campo(String label, {String? helper, String? hint}) {
+    final scheme = Theme.of(context).colorScheme;
     return InputDecoration(
       labelText: label,
       helperText: helper,
       hintText: hint,
       isDense: true,
       filled: true,
-      fillColor: AnaliticaTokens.surface,
+      fillColor: scheme.surfaceContainerLow,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AnaliticaTokens.border),
+        borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AnaliticaTokens.border),
+        borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AnaliticaTokens.ink),
+        borderSide: BorderSide(color: scheme.primary, width: 1.5),
       ),
     );
   }
@@ -326,34 +374,29 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     String? subtitulo,
     required List<Widget> children,
   }) {
+    final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AnaliticaTokens.border),
-        boxShadow: AnaliticaTokens.shadowSoft,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             titulo,
-            style: const TextStyle(
+            style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
-              fontSize: 13.5,
-              color: AnaliticaTokens.ink,
             ),
           ),
           if (subtitulo != null) ...[
             const SizedBox(height: 2),
             Text(
               subtitulo,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AnaliticaTokens.inkMuted,
-              ),
+              style: theme.textTheme.bodySmall,
             ),
           ],
           const SizedBox(height: 12),
@@ -371,7 +414,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
     return ColoredBox(
-      color: AnaliticaTokens.canvas,
+      color: AnaliticaTokens.canvasOf(context),
       child: SaasScrollableShell(
         header: [
           Padding(
@@ -383,11 +426,11 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Admin / Finanzas',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AnaliticaTokens.inkSoft,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -398,16 +441,16 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                           fontSize: compacto ? 18 : 20,
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.4,
-                          color: AnaliticaTokens.ink,
+                          color: Theme.of(context).colorScheme.onSurface,
                           height: 1.15,
                         ),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'Borradores y PDF · DIAN electrónico pausado',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkMuted,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -418,7 +461,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                   onPressed: _cargarTodo,
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.refresh_rounded, size: 20),
-                  color: AnaliticaTokens.inkMuted,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ],
             ),
@@ -434,7 +477,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
               child: Container(
                 padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surface,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: AnaliticaTokens.pedidos.withValues(alpha: 0.35),
@@ -453,17 +496,18 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                         numSug != null && numSug.isNotEmpty
                             ? 'Emitir factura del pedido $numSug'
                             : 'Emitir factura del pedido seleccionado',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: AnaliticaTokens.ink,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),
                     TextButton(
                       onPressed: () => widget.onPedidoSugeridoUsado?.call(),
                       style: TextButton.styleFrom(
-                        foregroundColor: AnaliticaTokens.inkMuted,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
                         visualDensity: VisualDensity.compact,
                       ),
                       child: const Text('Descartar'),
@@ -474,7 +518,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                         widget.onPedidoSugeridoUsado?.call();
                       },
                       style: FilledButton.styleFrom(
-                        backgroundColor: AnaliticaTokens.ink,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         visualDensity: VisualDensity.compact,
                       ),
                       child: const Text('Emitir'),
@@ -494,7 +538,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surface,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: AnaliticaTokens.alertas.withValues(alpha: 0.35),
@@ -511,9 +555,9 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                     Expanded(
                       child: Text(
                         _error!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: AnaliticaTokens.inkMuted,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -536,9 +580,11 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: AnaliticaTokens.borderSoft),
+                    bottom: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
                 ),
                 child: FoodyScrollHorizontalFade(
@@ -546,9 +592,10 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                     controller: _tabs,
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
-                    labelColor: AnaliticaTokens.ink,
-                    unselectedLabelColor: AnaliticaTokens.inkSoft,
-                    indicatorColor: AnaliticaTokens.ink,
+                    labelColor: Theme.of(context).colorScheme.onSurface,
+                    unselectedLabelColor:
+                        Theme.of(context).colorScheme.onSurfaceVariant,
+                    indicatorColor: Theme.of(context).colorScheme.primary,
                     indicatorWeight: 2,
                     dividerColor: Colors.transparent,
                     labelStyle: const TextStyle(
@@ -585,7 +632,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
   Widget _tabConfig({required bool compacto}) {
     if (_cargandoConfig) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: AnaliticaTokens.canvasOf(context),
         child: AnaliticaSkeleton.tab(),
       );
     }
@@ -611,17 +658,19 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AnaliticaTokens.surface,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AnaliticaTokens.border),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
-                  child: const Row(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
                         Icons.info_outline,
                         size: 18,
-                        color: AnaliticaTokens.inkMuted,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       SizedBox(width: 10),
                       Expanded(
@@ -631,7 +680,8 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.35,
-                            color: AnaliticaTokens.inkMuted,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -654,7 +704,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _regimen,
+                        initialValue: _regimen,
                         decoration: _campo('Régimen'),
                         items: const [
                           DropdownMenuItem(
@@ -702,7 +752,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _regimen,
+                        initialValue: _regimen,
                         decoration: _campo('Régimen'),
                         items: const [
                           DropdownMenuItem(
@@ -737,44 +787,46 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                   children: [
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text(
+                      title: Text(
                         'Aplica IVA en factura',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: AnaliticaTokens.ink,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
-                      subtitle: const Text(
+                      subtitle: Text(
                         'Desglosa IVA al emitir',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AnaliticaTokens.inkSoft,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       value: _aplicaIva,
-                      activeThumbColor: AnaliticaTokens.ink,
+                      activeThumbColor: Theme.of(context).colorScheme.primary,
                       onChanged: (v) => setState(() => _aplicaIva = v),
                     ),
                     if (_aplicaIva) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'Porcentaje IVA',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: AnaliticaTokens.inkMuted,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                           ),
                           Text(
                             '${_pctIva.toInt()}%',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 16,
-                              color: AnaliticaTokens.ink,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                         ],
@@ -785,7 +837,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                         max: 19,
                         divisions: 19,
                         label: '${_pctIva.toInt()}%',
-                        activeColor: AnaliticaTokens.ink,
+                        activeColor: Theme.of(context).colorScheme.primary,
                         onChanged: (v) => setState(() => _pctIva = v),
                       ),
                     ],
@@ -817,7 +869,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                   child: FilledButton.icon(
                     onPressed: _guardando ? null : _guardarConfig,
                     style: FilledButton.styleFrom(
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
                       minimumSize: Size(compacto ? double.infinity : 200, 44),
                     ),
                     icon: _guardando
@@ -849,17 +901,25 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     final motivoCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Anular factura'),
-        content: TextField(
-          controller: motivoCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Motivo de anulación',
-            border: OutlineInputBorder(),
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Anular factura',
+        subtitulo: 'Registra el motivo para identificar esta acción después.',
+        maxWidth: 440,
+        contenido: FoodyFormSeccion(
+          titulo: 'Motivo',
+          icono: Icons.cancel_outlined,
+          acento: AnaliticaTokens.alertas,
+          hijo: TextField(
+            controller: motivoCtrl,
+            decoration: FoodyFormEstilo.campo(
+              label: 'Motivo de anulación',
+              helper: 'Escribe al menos 3 caracteres',
+            ),
+            maxLines: 3,
+            minLines: 2,
           ),
-          maxLines: 2,
         ),
-        actions: [
+        acciones: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
@@ -924,10 +984,161 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
     );
   }
 
+  Widget _accionesFactura(
+    Map<String, dynamic> factura, {
+    required String estado,
+    required String pedidoId,
+    required bool tienePedido,
+  }) {
+    return PopupMenuButton<String>(
+      tooltip: 'Acciones de factura',
+      onSelected: (accion) {
+        switch (accion) {
+          case 'pedido':
+            if (tienePedido) widget.onIrPedido?.call(pedidoId);
+          case 'preview':
+            _verPdf('${factura['id']}', esBorrador: true);
+          case 'emitir':
+            _emitir(pedidoId);
+          case 'anular':
+            _anularFactura('${factura['id']}');
+          case 'ver':
+            _verPdf('${factura['id']}', esBorrador: estado == 'borrador');
+        }
+      },
+      itemBuilder: (_) => [
+        if (tienePedido && widget.onIrPedido != null)
+          const PopupMenuItem(
+            value: 'pedido',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.shopping_bag_outlined),
+              title: Text('Ver pedido'),
+            ),
+          ),
+        if (estado == 'borrador') ...[
+          const PopupMenuItem(
+            value: 'preview',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.preview_outlined),
+              title: Text('Vista previa'),
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'emitir',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.send_rounded),
+              title: Text('Emitir'),
+            ),
+          ),
+        ],
+        if (estado != 'anulada' && estado != 'borrador')
+          const PopupMenuItem(
+            value: 'anular',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.cancel_outlined),
+              title: Text('Anular'),
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'ver',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.receipt_long_outlined),
+            title: Text('Ver factura'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tablaFacturas() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      children: [
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1280),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowColor: WidgetStatePropertyAll(
+                    Theme.of(context).colorScheme.surfaceContainerLow,
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('FACTURA')),
+                    DataColumn(label: Text('CLIENTE')),
+                    DataColumn(label: Text('FECHA')),
+                    DataColumn(label: Text('TOTAL'), numeric: true),
+                    DataColumn(label: Text('ESTADO')),
+                    DataColumn(label: Text('ACCIONES')),
+                  ],
+                  rows: _facturas.map((factura) {
+                    final estado = '${factura['estado']}';
+                    final pedidoId = '${factura['pedido_id']}';
+                    final tienePedido =
+                        pedidoId.isNotEmpty && pedidoId != 'null';
+                    final titulo = factura['numero_factura']?.toString() ??
+                        'Borrador · pedido ${factura['numero_pedido']}';
+                    final fecha = factura['created_at'] != null
+                        ? _fecha.format(
+                            DateTime.parse('${factura['created_at']}')
+                                .toLocal(),
+                          )
+                        : '—';
+                    return DataRow(cells: [
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(
+                            titulo,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      DataCell(Text(
+                        factura['nombre_fiscal_cliente']?.toString() ?? '—',
+                      )),
+                      DataCell(Text(fecha)),
+                      DataCell(Text(_moneda.format(
+                        double.tryParse('${factura['total']}') ?? 0,
+                      ))),
+                      DataCell(_badgeEstado(estado)),
+                      DataCell(_accionesFactura(
+                        factura,
+                        estado: estado,
+                        pedidoId: pedidoId,
+                        tienePedido: tienePedido,
+                      )),
+                    ]);
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _tabFacturas({required bool compacto}) {
+    final scheme = Theme.of(context).colorScheme;
     if (_cargandoFacturas) {
       return ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: AnaliticaTokens.canvasOf(context),
         child: AnaliticaSkeleton.tab(),
       );
     }
@@ -940,24 +1151,24 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
             child: Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: AnaliticaTokens.surface,
+                color: scheme.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AnaliticaTokens.border),
+                border: Border.all(color: scheme.outlineVariant),
               ),
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.receipt_long_outlined,
                     size: 40,
-                    color: AnaliticaTokens.inkSoft,
+                    color: scheme.onSurfaceVariant,
                   ),
                   SizedBox(height: 12),
                   Text(
                     'Sin facturas aún',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: AnaliticaTokens.ink,
+                      color: scheme.onSurface,
                     ),
                   ),
                   SizedBox(height: 6),
@@ -966,7 +1177,7 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
-                      color: AnaliticaTokens.inkMuted,
+                      color: scheme.onSurfaceVariant,
                       height: 1.4,
                     ),
                   ),
@@ -980,190 +1191,119 @@ class _FacturacionAdminScreenState extends State<FacturacionAdminScreen>
 
     return RefreshIndicator(
       onRefresh: _cargarFacturas,
-      child: ListView.builder(
-        padding: EdgeInsets.fromLTRB(
-          compacto ? 12 : 16,
-          12,
-          compacto ? 12 : 16,
-          24,
-        ),
-        itemCount: _facturas.length,
-        itemBuilder: (context, i) {
-          final f = _facturas[i];
-          final estado = '${f['estado']}';
-          final pedidoId = '${f['pedido_id']}';
-          final tienePedido = pedidoId.isNotEmpty && pedidoId != 'null';
-          final color = _colorEstado(estado);
-          final titulo = f['numero_factura']?.toString() ??
-              'Borrador · pedido ${f['numero_pedido']}';
-          final fecha = f['created_at'] != null
-              ? _fecha.format(
-                  DateTime.parse('${f['created_at']}').toLocal(),
-                )
-              : '';
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            decoration: BoxDecoration(
-              color: AnaliticaTokens.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: estado == 'anulada' || estado == 'borrador'
-                    ? color.withValues(alpha: 0.35)
-                    : AnaliticaTokens.border,
+      child: FoodyBreakpoints.esLarge(FoodyBreakpoints.widthOf(context))
+          ? _tablaFacturas()
+          : ListView.builder(
+              padding: EdgeInsets.fromLTRB(
+                compacto ? 12 : 16,
+                12,
+                compacto ? 12 : 16,
+                24,
               ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0A111827),
-                  blurRadius: 6,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(compacto ? 10 : 12, 10, 4, 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+              itemCount: _facturas.length,
+              itemBuilder: (context, i) {
+                final f = _facturas[i];
+                final estado = '${f['estado']}';
+                final pedidoId = '${f['pedido_id']}';
+                final tienePedido = pedidoId.isNotEmpty && pedidoId != 'null';
+                final color = _colorEstado(estado);
+                final titulo = f['numero_factura']?.toString() ??
+                    'Borrador · pedido ${f['numero_pedido']}';
+                final fecha = f['created_at'] != null
+                    ? _fecha.format(
+                        DateTime.parse('${f['created_at']}').toLocal(),
+                      )
+                    : '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: scheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: estado == 'anulada' || estado == 'borrador'
+                          ? color.withValues(alpha: 0.35)
+                          : scheme.outlineVariant,
                     ),
-                    child: Icon(
-                      Icons.receipt_long_outlined,
-                      size: 18,
-                      color: color,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          titulo,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: AnaliticaTokens.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${f['nombre_fiscal_cliente']} · '
-                          '${_moneda.format(double.tryParse('${f['total']}') ?? 0)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            color: AnaliticaTokens.inkMuted,
-                          ),
-                        ),
-                        if (fecha.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            fecha,
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              color: AnaliticaTokens.inkSoft,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 6),
-                        _badgeEstado(estado),
-                      ],
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: 'Acciones',
-                    icon: const Icon(
-                      Icons.more_vert,
-                      size: 20,
-                      color: AnaliticaTokens.inkSoft,
-                    ),
-                    onSelected: (a) {
-                      switch (a) {
-                        case 'pedido':
-                          if (tienePedido) widget.onIrPedido!(pedidoId);
-                        case 'preview':
-                          _verPdf('${f['id']}', esBorrador: true);
-                        case 'emitir':
-                          _emitir(pedidoId);
-                        case 'anular':
-                          _anularFactura('${f['id']}');
-                        case 'ver':
-                          _verPdf(
-                            '${f['id']}',
-                            esBorrador: estado == 'borrador',
-                          );
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      if (tienePedido && widget.onIrPedido != null)
-                        const PopupMenuItem(
-                          value: 'pedido',
-                          child: ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.shopping_bag_outlined),
-                            title: Text('Ver pedido'),
-                          ),
-                        ),
-                      if (estado == 'borrador') ...[
-                        const PopupMenuItem(
-                          value: 'preview',
-                          child: ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.preview_outlined),
-                            title: Text('Vista previa'),
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'emitir',
-                          child: ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(Icons.send_rounded),
-                            title: Text('Emitir'),
-                          ),
-                        ),
-                      ],
-                      if (estado != 'anulada' && estado != 'borrador')
-                        const PopupMenuItem(
-                          value: 'anular',
-                          child: ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(
-                              Icons.cancel_outlined,
-                              color: AnaliticaTokens.alertas,
-                            ),
-                            title: Text('Anular'),
-                          ),
-                        ),
-                      const PopupMenuItem(
-                        value: 'ver',
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.receipt_long_outlined),
-                          title: Text('Ver factura'),
-                        ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0A111827),
+                        blurRadius: 6,
+                        offset: Offset(0, 1),
                       ),
                     ],
                   ),
-                ],
-              ),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(compacto ? 10 : 12, 10, 4, 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.receipt_long_outlined,
+                            size: 18,
+                            color: color,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                titulo,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  color: scheme.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${f['nombre_fiscal_cliente']} · '
+                                '${_moneda.format(double.tryParse('${f['total']}') ?? 0)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                              if (fecha.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  fecha,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 6),
+                              _badgeEstado(estado),
+                            ],
+                          ),
+                        ),
+                        _accionesFactura(
+                          f,
+                          estado: estado,
+                          pedidoId: pedidoId,
+                          tienePedido: tienePedido,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }

@@ -28,6 +28,7 @@ class MenuAdminScreen extends StatefulWidget {
   });
 
   final String? sucursalId;
+
   /// Otras sedes del restaurante (copiar menú maestro).
   final List<Map<String, dynamic>> sucursalesOrigen;
   final void Function(String productoId)? onVerCostos;
@@ -51,6 +52,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   List<Map<String, dynamic>> _bebidas = [];
   List<Map<String, dynamic>> _combos = [];
   List<Map<String, dynamic>> _cocinas = [];
+
   /// NAV-MC-07: id → {costo_calculado, margen_porcentaje} desde /costeo/resumen.
   Map<String, Map<String, dynamic>> _costeoPorProducto = {};
   double _umbralMargen = 35;
@@ -105,8 +107,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final toppings = await intentar(_repo.toppings(sid), 'toppings');
     final bebidas = await intentar(_repo.bebidas(sid), 'bebidas');
     final combos = await intentar(_repo.combos(sid), 'combos');
-    final cocinas =
-        await intentar(_cocinasRepo.listarCocinas(sid), 'cocinas');
+    final cocinas = await intentar(_cocinasRepo.listarCocinas(sid), 'cocinas');
 
     // NAV-MC-07: resumen costeo en paralelo (fallo no bloquea el menú).
     Map<String, Map<String, dynamic>> costeoMap = {};
@@ -123,6 +124,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
           if (id != null) costeoMap[id] = m;
         }
       }
+
       indexar(resumen['productos']);
       indexar(resumen['bebidas']);
       indexar(resumen['toppings']);
@@ -154,36 +156,31 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialog) => AlertDialog(
-          title: const Text('Copiar menú desde otra sede'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Se copian categorías, productos, toppings y bebidas. '
-                'Los nombres ya existentes en esta sede no se duplican.',
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: origenId,
-                decoration: const InputDecoration(
-                  labelText: 'Sede origen',
-                  border: OutlineInputBorder(),
-                ),
-                items: opciones
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: s['id'] as String,
-                        child: Text(s['nombre'] as String? ?? 'Sede'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setDialog(() => origenId = v),
-              ),
-            ],
+        builder: (context, setDialog) => FoodyDialogoShell(
+          titulo: 'Copiar menú desde otra sede',
+          subtitulo:
+              'Elige una sede origen para reutilizar su carta en esta sucursal.',
+          maxWidth: 480,
+          contenido: FoodyFormSeccion(
+            titulo: 'Qué se copia',
+            icono: Icons.copy_all_outlined,
+            subtitulo:
+                'Categorías, productos, toppings y bebidas. Los nombres existentes no se duplican. Los combos no se incluyen.',
+            hijo: DropdownButtonFormField<String>(
+              initialValue: origenId,
+              decoration: FoodyFormEstilo.campo(label: 'Sede origen'),
+              items: opciones
+                  .map(
+                    (s) => DropdownMenuItem(
+                      value: s['id'] as String,
+                      child: Text(s['nombre'] as String? ?? 'Sede'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => setDialog(() => origenId = v),
+            ),
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -260,7 +257,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     ctrl.dispose();
     if (ok == true && nombre.isNotEmpty) {
       try {
-        await _repo.crearCategoria(sucursalId: widget.sucursalId!, nombre: nombre);
+        await _repo.crearCategoria(
+            sucursalId: widget.sucursalId!, nombre: nombre);
         await _cargar();
       } catch (e) {
         if (mounted) {
@@ -282,7 +280,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final nombreCtrl = TextEditingController();
     final precioCtrl = TextEditingController();
     String? catId = _categorias.first['id'] as String?;
-    String? cocinaId = _cocinas.isNotEmpty ? _cocinas.first['id'] as String : null;
+    String? cocinaId =
+        _cocinas.isNotEmpty ? _cocinas.first['id'] as String : null;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -508,23 +507,47 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Categorías'),
-        content: SizedBox(
-          width: 360,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _categorias.length,
-            itemBuilder: (_, i) {
-              final cat = _categorias[i];
-              final imagenUrl = cat['imagen_url'] as String?;
-              return ListTile(
-                leading: imagenUrl != null && imagenUrl.isNotEmpty
-                    ? CircleAvatar(backgroundImage: NetworkImage(imagenUrl))
-                    : const CircleAvatar(child: Icon(Icons.category)),
-                title: Text(cat['nombre'] as String? ?? ''),
-                trailing: IconButton(
-                  tooltip: 'Subir foto',
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Categorías del menú',
+        subtitulo:
+            'Organiza las secciones de la carta y añade una imagen representativa.',
+        maxWidth: 520,
+        contenido: Column(
+          children: _categorias.map((cat) {
+            final imagenUrl = cat['imagen_url'] as String?;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: Theme.of(ctx).colorScheme.outlineVariant),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(9),
+                  child: imagenUrl != null && imagenUrl.isNotEmpty
+                      ? Image.network(
+                          imagenUrl,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _iconoCategoria(),
+                        )
+                      : _iconoCategoria(),
+                ),
+                title: Text(
+                  cat['nombre'] as String? ?? '',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  imagenUrl != null && imagenUrl.isNotEmpty
+                      ? 'Imagen configurada'
+                      : 'Sin imagen',
+                ),
+                trailing: IconButton.filledTonal(
+                  tooltip: 'Cambiar imagen de categoría',
                   icon: const Icon(Icons.photo_camera_outlined),
                   onPressed: () async {
                     Navigator.pop(ctx);
@@ -532,11 +555,11 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     if (mounted) await _gestionarCategorias();
                   },
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          }).toList(),
         ),
-        actions: [
+        acciones: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cerrar'),
@@ -546,6 +569,17 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     );
   }
 
+  Widget _iconoCategoria() => Container(
+        width: 44,
+        height: 44,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.category_outlined,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      );
+
   Future<void> _reasignarCocina(Map<String, dynamic> producto) async {
     if (_cocinas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -553,31 +587,41 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       );
       return;
     }
-    String cocinaId = (producto['cocina_id'] as String?) ??
-        _cocinas.first['id'] as String;
+    String cocinaId =
+        (producto['cocina_id'] as String?) ?? _cocinas.first['id'] as String;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: Text('Cocina · ${producto['nombre']}'),
-          content: DropdownButtonFormField<String>(
-            initialValue: _cocinas.any((c) => c['id'] == cocinaId)
-                ? cocinaId
-                : _cocinas.first['id'] as String,
-            decoration: const InputDecoration(labelText: 'Cocina'),
-            items: _cocinas
-                .map(
-                  (c) => DropdownMenuItem(
-                    value: c['id'] as String,
-                    child: Text(c['nombre'] as String? ?? '—'),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setDlg(() => cocinaId = v ?? cocinaId),
+        builder: (ctx, setDlg) => FoodyDialogoShell(
+          titulo: 'Asignar cocina',
+          subtitulo: producto['nombre'] as String? ?? '',
+          maxWidth: 420,
+          contenido: FoodyFormSeccion(
+            titulo: 'Preparación',
+            icono: Icons.soup_kitchen_outlined,
+            hijo: DropdownButtonFormField<String>(
+              initialValue: _cocinas.any((c) => c['id'] == cocinaId)
+                  ? cocinaId
+                  : _cocinas.first['id'] as String,
+              decoration: FoodyFormEstilo.campo(label: 'Cocina'),
+              items: _cocinas
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c['id'] as String,
+                      child: Text(c['nombre'] as String? ?? '—'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => setDlg(() => cocinaId = v ?? cocinaId),
+            ),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Guardar')),
+          acciones: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Guardar')),
           ],
         ),
       ),
@@ -589,7 +633,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'asignar cocina'))),
+          SnackBar(
+              content: Text(mensajeErrorHttp(e, contexto: 'asignar cocina'))),
         );
       }
     }
@@ -605,9 +650,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     );
     final costeo = _costeoPorProducto[producto['id'] as String];
     final costo = costeo != null ? _num(costeo['costo_calculado']) : null;
-    final margen = costeo != null
-        ? num.tryParse('${costeo['margen_porcentaje']}')
-        : null;
+    final margen =
+        costeo != null ? num.tryParse('${costeo['margen_porcentaje']}') : null;
     final sugerido = costeo != null ? _num(costeo['precio_sugerido']) : null;
     final sinReceta = costeo != null && costeo['costo_calculado'] == null;
 
@@ -628,9 +672,11 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: Theme.of(ctx).colorScheme.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade200),
+                    border: Border.all(
+                      color: Theme.of(ctx).colorScheme.outlineVariant,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -648,7 +694,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               ].join(' · '),
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade800,
+                          color: Theme.of(ctx).colorScheme.onSurface,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -728,10 +774,12 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     }
   }
 
-  Future<void> _configurarToppingsProducto(Map<String, dynamic> producto) async {
+  Future<void> _configurarToppingsProducto(
+      Map<String, dynamic> producto) async {
     if (_toppings.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Crea toppings primero (pestaña Toppings)')),
+        const SnackBar(
+            content: Text('Crea toppings primero (pestaña Toppings)')),
       );
       return;
     }
@@ -752,43 +800,38 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          title: Text('Toppings · ${producto['nombre']}'),
-          content: SizedBox(
-            width: 360,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Marca los toppings que aplican a este plato. '
-                    'Los no marcados no aparecen al cliente.',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+        builder: (ctx, setDlg) => FoodyDialogoShell(
+          titulo: 'Toppings del plato',
+          subtitulo: producto['nombre'] as String? ?? '',
+          maxWidth: 520,
+          contenido: FoodyFormSeccion(
+            titulo: 'Opciones que ve el cliente',
+            subtitulo: 'Desmarca los extras que no se ofrecen con este plato.',
+            icono: Icons.add_circle_outline,
+            hijo: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final t in _toppings)
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: seleccionados.contains(t['id'] as String),
+                    title: Text(t['nombre'] as String? ?? ''),
+                    subtitle: Text(_moneda.format(_num(t['precio']))),
+                    activeColor: AnaliticaTokens.ink,
+                    onChanged: (v) => setDlg(() {
+                      final id = t['id'] as String;
+                      if (v == true) {
+                        seleccionados = {...seleccionados, id};
+                      } else {
+                        seleccionados = {...seleccionados}..remove(id);
+                      }
+                    }),
                   ),
-                  const SizedBox(height: 12),
-                  for (final t in _toppings)
-                    CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      value: seleccionados.contains(t['id'] as String),
-                      title: Text(t['nombre'] as String? ?? ''),
-                      subtitle: Text(_moneda.format(_num(t['precio']))),
-                      activeColor: AnaliticaTokens.ink,
-                      onChanged: (v) => setDlg(() {
-                        final id = t['id'] as String;
-                        if (v == true) {
-                          seleccionados = {...seleccionados, id};
-                        } else {
-                          seleccionados = {...seleccionados}..remove(id);
-                        }
-                      }),
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -885,7 +928,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   Future<void> _nuevoCombo() async {
     if (_productos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Necesitas al menos 1 producto en el menú')),
+        const SnackBar(
+            content: Text('Necesitas al menos 1 producto en el menú')),
       );
       return;
     }
@@ -1094,8 +1138,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       final c = _costeoPorProducto[p['id'] as String];
       return c != null && c['costo_calculado'] == null;
     }).length;
-    final noDispN =
-        _productos.where((p) => p['disponible'] == false).length;
+    final noDispN = _productos.where((p) => p['disponible'] == false).length;
 
     return ColoredBox(
       color: AnaliticaTokens.canvas,
@@ -1219,7 +1262,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     tooltip: 'Nueva categoría',
                     onPressed: _nuevaCategoria,
                     visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                    icon:
+                        const Icon(Icons.create_new_folder_outlined, size: 20),
                     color: AnaliticaTokens.inkMuted,
                   ),
                   FilledButton.icon(
@@ -1429,8 +1473,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       final margen = costeo != null
           ? num.tryParse('${costeo['margen_porcentaje']}')
           : null;
-      final bajoMargen =
-          margen != null && margen < _umbralMargen && !sinReceta;
+      final bajoMargen = margen != null && margen < _umbralMargen && !sinReceta;
       switch (_filtroProductos) {
         case 'sin_receta':
           return sinReceta;
@@ -1646,19 +1689,264 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                 )
               : RefreshIndicator(
                   onRefresh: _cargar,
-                  child: ListView.builder(
-                    padding: EdgeInsets.fromLTRB(
-                      compacto ? 12 : 16,
-                      4,
-                      compacto ? 12 : 16,
-                      24,
-                    ),
-                    itemCount: lista.length,
-                    itemBuilder: (_, i) =>
-                        _tarjetaProducto(lista[i], compacto: compacto),
-                  ),
+                  child: FoodyBreakpoints.esLarge(
+                    FoodyBreakpoints.widthOf(context),
+                  )
+                      ? _tablaProductos(lista)
+                      : ListView.builder(
+                          padding: EdgeInsets.fromLTRB(
+                            compacto ? 12 : 16,
+                            4,
+                            compacto ? 12 : 16,
+                            24,
+                          ),
+                          itemCount: lista.length,
+                          itemBuilder: (_, i) =>
+                              _tarjetaProducto(lista[i], compacto: compacto),
+                        ),
                 ),
         ),
+      ],
+    );
+  }
+
+  Widget _tablaProductos(List<Map<String, dynamic>> productos) {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: AnaliticaTokens.surfaceOf(context),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AnaliticaTokens.borderOf(context)),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowHeight: 42,
+              dataRowMinHeight: 58,
+              dataRowMaxHeight: 66,
+              horizontalMargin: 16,
+              columnSpacing: 20,
+              headingTextStyle: theme.textTheme.labelSmall?.copyWith(
+                color: AnaliticaTokens.inkMutedOf(context),
+                fontWeight: FontWeight.w700,
+                letterSpacing: .35,
+              ),
+              dataTextStyle: theme.textTheme.bodySmall?.copyWith(
+                color: AnaliticaTokens.inkOf(context),
+              ),
+              columns: const [
+                DataColumn(label: Text('PRODUCTO')),
+                DataColumn(label: Text('PRECIO LOCAL'), numeric: true),
+                DataColumn(label: Text('PARA LLEVAR'), numeric: true),
+                DataColumn(label: Text('COCINA')),
+                DataColumn(label: Text('COSTEO / MARGEN')),
+                DataColumn(label: Text('DISPONIBLE')),
+                DataColumn(label: Text('ACCIONES')),
+              ],
+              rows: productos.map((p) {
+                final id = p['id'] as String;
+                final disponible = p['disponible'] as bool? ?? true;
+                final costeo = _costeoPorProducto[id];
+                final sinReceta =
+                    costeo != null && costeo['costo_calculado'] == null;
+                final margen = costeo == null
+                    ? null
+                    : num.tryParse('${costeo['margen_porcentaje']}');
+                final bajoMargen =
+                    margen != null && margen < _umbralMargen && !sinReceta;
+                final categoria = p['categoria_nombre'] as String? ?? '';
+                final cocina =
+                    _cocinas.cast<Map<String, dynamic>?>().firstWhere(
+                          (c) => c?['id'] == p['cocina_id'],
+                          orElse: () => null,
+                        );
+                final imagenUrl = p['imagen_url'] as String?;
+                final llevar = p['precio_para_llevar'];
+
+                return DataRow(
+                  onSelectChanged: (_) => _editarPrecios(p),
+                  cells: [
+                    DataCell(
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 270),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: imagenUrl != null && imagenUrl.isNotEmpty
+                                  ? Image.network(
+                                      imagenUrl,
+                                      width: 34,
+                                      height: 34,
+                                      fit: BoxFit.cover,
+                                      cacheWidth: (34 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                  context))
+                                          .round(),
+                                      cacheHeight: (34 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                  context))
+                                          .round(),
+                                      errorBuilder: (_, __, ___) =>
+                                          _productoSinFoto(),
+                                    )
+                                  : _productoSinFoto(),
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    p['nombre'] as String? ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: AnaliticaTokens.inkOf(context),
+                                      decoration: disponible
+                                          ? null
+                                          : TextDecoration.lineThrough,
+                                    ),
+                                  ),
+                                  if (categoria.isNotEmpty)
+                                    Text(
+                                      categoria,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style:
+                                          theme.textTheme.labelSmall?.copyWith(
+                                        color:
+                                            AnaliticaTokens.inkMutedOf(context),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    DataCell(Text(_moneda.format(_num(p['precio'])))),
+                    DataCell(Text(
+                      llevar == null
+                          ? 'Igual a local'
+                          : _moneda.format(_num(llevar)),
+                    )),
+                    DataCell(Text(
+                      cocina?['nombre'] as String? ?? 'Sin asignar',
+                      style: TextStyle(
+                        color: cocina == null
+                            ? AnaliticaTokens.alertas
+                            : AnaliticaTokens.inkOf(context),
+                      ),
+                    )),
+                    DataCell(
+                      widget.onVerCostos == null || costeo == null
+                          ? const Text('—')
+                          : _badgeCosteo(
+                              texto: sinReceta
+                                  ? 'Sin receta'
+                                  : margen == null
+                                      ? 'Ver costos'
+                                      : 'Margen ${margen.toStringAsFixed(0)}%',
+                              sinReceta: sinReceta,
+                              bajoMargen: bajoMargen,
+                              onTap: () => widget.onVerCostos!(id),
+                            ),
+                    ),
+                    DataCell(
+                      Switch.adaptive(
+                        value: disponible,
+                        activeTrackColor:
+                            AnaliticaTokens.ink.withValues(alpha: .32),
+                        onChanged: (v) async {
+                          await _repo.toggleDisponible(id, v);
+                          await _cargar();
+                        },
+                      ),
+                    ),
+                    DataCell(_menuAccionesProducto(p)),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _productoSinFoto() => Container(
+        width: 34,
+        height: 34,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Icon(
+          Icons.restaurant_outlined,
+          size: 17,
+          color: AnaliticaTokens.inkMutedOf(context),
+        ),
+      );
+
+  Widget _menuAccionesProducto(Map<String, dynamic> p) {
+    return PopupMenuButton<String>(
+      tooltip: 'Acciones del producto',
+      icon: const Icon(Icons.more_horiz, size: 20),
+      onSelected: (accion) {
+        switch (accion) {
+          case 'foto':
+            unawaited(_subirFotoProducto(p));
+          case 'cocina':
+            unawaited(_reasignarCocina(p));
+          case 'extras':
+            unawaited(_configurarToppingsProducto(p));
+          case 'costos':
+            widget.onVerCostos?.call(p['id'] as String);
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'foto',
+          child: ListTile(
+              dense: true,
+              leading: Icon(Icons.photo_camera_outlined),
+              title: Text('Subir foto'),
+              contentPadding: EdgeInsets.zero),
+        ),
+        PopupMenuItem(
+          value: 'cocina',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.soup_kitchen_outlined,
+                color: p['cocina_id'] == null
+                    ? AnaliticaTokens.alertas
+                    : AnaliticaTokens.pedidos),
+            title: Text(
+                p['cocina_id'] == null ? 'Asignar cocina' : 'Cambiar cocina'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'extras',
+          child: ListTile(
+              dense: true,
+              leading: Icon(Icons.link),
+              title: Text('Toppings del plato'),
+              contentPadding: EdgeInsets.zero),
+        ),
+        if (widget.onVerCostos != null)
+          const PopupMenuItem(
+            value: 'costos',
+            child: ListTile(
+                dense: true,
+                leading: Icon(Icons.pie_chart_outline),
+                title: Text('Ver costos'),
+                contentPadding: EdgeInsets.zero),
+          ),
       ],
     );
   }
@@ -1672,9 +1960,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     final imagenUrl = p['imagen_url'] as String?;
     final costeo = _costeoPorProducto[p['id'] as String];
     final sinReceta = costeo != null && costeo['costo_calculado'] == null;
-    final margen = costeo != null
-        ? num.tryParse('${costeo['margen_porcentaje']}')
-        : null;
+    final margen =
+        costeo != null ? num.tryParse('${costeo['margen_porcentaje']}') : null;
     final bajoMargen = margen != null && margen < _umbralMargen && !sinReceta;
     final sinCocina = p['cocina_id'] == null;
     String? etiquetaCosteo;
@@ -1839,74 +2126,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                       },
                     ),
                     // NAV-ADM-05: acciones secundarias en menú (evita overflow móvil).
-                    PopupMenuButton<String>(
-                      tooltip: 'Más acciones',
-                      icon: const Icon(
-                        Icons.more_vert,
-                        size: 20,
-                        color: AnaliticaTokens.inkSoft,
-                      ),
-                      onSelected: (accion) {
-                        switch (accion) {
-                          case 'foto':
-                            unawaited(_subirFotoProducto(p));
-                          case 'cocina':
-                            unawaited(_reasignarCocina(p));
-                          case 'extras':
-                            unawaited(_configurarToppingsProducto(p));
-                          case 'costos':
-                            widget.onVerCostos?.call(p['id'] as String);
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: 'foto',
-                          child: ListTile(
-                            dense: true,
-                            leading: Icon(Icons.photo_camera_outlined),
-                            title: Text('Subir foto'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'cocina',
-                          child: ListTile(
-                            dense: true,
-                            leading: Icon(
-                              Icons.soup_kitchen_outlined,
-                              color: p['cocina_id'] == null
-                                  ? AnaliticaTokens.alertas
-                                  : AnaliticaTokens.pedidos,
-                            ),
-                            title: Text(
-                              p['cocina_id'] == null
-                                  ? 'Asignar cocina'
-                                  : 'Cambiar cocina',
-                            ),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'extras',
-                          child: ListTile(
-                            dense: true,
-                            leading: Icon(Icons.link),
-                            title: Text('Toppings del plato'),
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ),
-                        if (widget.onVerCostos != null)
-                          const PopupMenuItem(
-                            value: 'costos',
-                            child: ListTile(
-                              dense: true,
-                              leading: Icon(Icons.pie_chart_outline),
-                              title: Text('Ver costos'),
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                      ],
-                    ),
+                    _menuAccionesProducto(p),
                   ],
                 ),
               ],
@@ -2032,112 +2252,228 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: EdgeInsets.fromLTRB(
-                    compacto ? 12 : 16,
-                    8,
-                    compacto ? 12 : 16,
-                    24,
-                  ),
-                  itemCount: items.length,
-                  itemBuilder: (_, i) {
-                    final e = items[i];
-                    final disponible = e['disponible'] as bool? ?? true;
-                    final costeo = _costeoPorProducto[e['id'] as String];
-                    final sinReceta = costeo != null
-                        ? costeo['costo_calculado'] == null
-                        : (e['receta_id'] == null &&
-                            e['costo_calculado'] == null);
-                    final margen = costeo != null
-                        ? num.tryParse('${costeo['margen_porcentaje']}')
-                        : null;
-                    final bajoMargen = margen != null &&
-                        margen < _umbralMargen &&
-                        !sinReceta;
-                    String? etiquetaCosteo;
-                    if (widget.onVerCostos != null) {
-                      if (sinReceta) {
-                        etiquetaCosteo = 'Sin receta · ver costos';
-                      } else if (margen != null) {
-                        etiquetaCosteo = bajoMargen
-                            ? 'Margen ${margen.toStringAsFixed(0)}% · ajustar'
-                            : 'Margen ${margen.toStringAsFixed(0)}%';
-                      } else if (e['costo_calculado'] != null) {
-                        etiquetaCosteo =
-                            'Costo ${_moneda.format(_num(e['costo_calculado']))}';
-                      }
-                    }
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      decoration: BoxDecoration(
-                        color: AnaliticaTokens.surface,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: sinReceta || bajoMargen
-                              ? (sinReceta
-                                      ? const Color(0xFFD97706)
-                                      : AnaliticaTokens.alertas)
-                                  .withValues(alpha: 0.35)
-                              : AnaliticaTokens.border,
-                        ),
+              : FoodyBreakpoints.esLarge(FoodyBreakpoints.widthOf(context))
+                  ? _tablaExtras(items, esBebida: esBebida)
+                  : ListView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        compacto ? 12 : 16,
+                        8,
+                        compacto ? 12 : 16,
+                        24,
                       ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
-                        title: Text(
-                          e['nombre'] as String? ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13.5,
-                            color: AnaliticaTokens.ink,
-                            decoration: disponible
-                                ? null
-                                : TextDecoration.lineThrough,
+                      itemCount: items.length,
+                      itemBuilder: (_, i) {
+                        final e = items[i];
+                        final disponible = e['disponible'] as bool? ?? true;
+                        final costeo = _costeoPorProducto[e['id'] as String];
+                        final sinReceta = costeo != null
+                            ? costeo['costo_calculado'] == null
+                            : (e['receta_id'] == null &&
+                                e['costo_calculado'] == null);
+                        final margen = costeo != null
+                            ? num.tryParse('${costeo['margen_porcentaje']}')
+                            : null;
+                        final bajoMargen = margen != null &&
+                            margen < _umbralMargen &&
+                            !sinReceta;
+                        String? etiquetaCosteo;
+                        if (widget.onVerCostos != null) {
+                          if (sinReceta) {
+                            etiquetaCosteo = 'Sin receta · ver costos';
+                          } else if (margen != null) {
+                            etiquetaCosteo = bajoMargen
+                                ? 'Margen ${margen.toStringAsFixed(0)}% · ajustar'
+                                : 'Margen ${margen.toStringAsFixed(0)}%';
+                          } else if (e['costo_calculado'] != null) {
+                            etiquetaCosteo =
+                                'Costo ${_moneda.format(_num(e['costo_calculado']))}';
+                          }
+                        }
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: AnaliticaTokens.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: sinReceta || bajoMargen
+                                  ? (sinReceta
+                                          ? const Color(0xFFD97706)
+                                          : AnaliticaTokens.alertas)
+                                      .withValues(alpha: 0.35)
+                                  : AnaliticaTokens.border,
+                            ),
                           ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _moneda.format(_num(e['precio'])),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AnaliticaTokens.inkMuted,
+                          child: ListTile(
+                            contentPadding:
+                                const EdgeInsets.fromLTRB(12, 4, 8, 4),
+                            title: Text(
+                              e['nombre'] as String? ?? '',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
+                                color: AnaliticaTokens.ink,
+                                decoration: disponible
+                                    ? null
+                                    : TextDecoration.lineThrough,
                               ),
                             ),
-                            if (etiquetaCosteo != null) ...[
-                              const SizedBox(height: 4),
-                              _badgeCosteo(
-                                texto: etiquetaCosteo,
-                                sinReceta: sinReceta,
-                                bajoMargen: bajoMargen,
-                                onTap: () =>
-                                    widget.onVerCostos!(e['id'] as String),
-                              ),
-                            ],
-                          ],
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _moneda.format(_num(e['precio'])),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AnaliticaTokens.inkMuted,
+                                  ),
+                                ),
+                                if (etiquetaCosteo != null) ...[
+                                  const SizedBox(height: 4),
+                                  _badgeCosteo(
+                                    texto: etiquetaCosteo,
+                                    sinReceta: sinReceta,
+                                    bajoMargen: bajoMargen,
+                                    onTap: () =>
+                                        widget.onVerCostos!(e['id'] as String),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            isThreeLine: etiquetaCosteo != null,
+                            trailing: Switch.adaptive(
+                              value: disponible,
+                              activeTrackColor:
+                                  AnaliticaTokens.ink.withValues(alpha: 0.35),
+                              onChanged: (v) async {
+                                await _repo.toggleExtra(
+                                  id: e['id'] as String,
+                                  disponible: v,
+                                  esBebida: esBebida,
+                                );
+                                await _cargar();
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tablaExtras(
+    List<Map<String, dynamic>> items, {
+    required bool esBebida,
+  }) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStatePropertyAll(
+                  AnaliticaTokens.surfaceMuted,
+                ),
+                dataRowMinHeight: 58,
+                dataRowMaxHeight: 68,
+                columns: [
+                  DataColumn(label: Text(esBebida ? 'BEBIDA' : 'TOPPING')),
+                  const DataColumn(label: Text('PRECIO'), numeric: true),
+                  const DataColumn(label: Text('COSTEO / MARGEN')),
+                  const DataColumn(label: Text('DISPONIBLE')),
+                ],
+                rows: items.map((item) {
+                  final id = item['id'] as String;
+                  final disponible = item['disponible'] as bool? ?? true;
+                  final costeo = _costeoPorProducto[id];
+                  final sinReceta = costeo != null
+                      ? costeo['costo_calculado'] == null
+                      : item['receta_id'] == null &&
+                          item['costo_calculado'] == null;
+                  final margen = costeo != null
+                      ? num.tryParse('${costeo['margen_porcentaje']}')
+                      : null;
+                  final bajoMargen =
+                      margen != null && margen < _umbralMargen && !sinReceta;
+                  final etiqueta = widget.onVerCostos == null
+                      ? '—'
+                      : sinReceta
+                          ? 'Sin receta'
+                          : margen != null
+                              ? 'Margen ${margen.toStringAsFixed(0)}%'
+                              : item['costo_calculado'] != null
+                                  ? 'Costo ${_moneda.format(_num(item['costo_calculado']))}'
+                                  : '—';
+                  final tonoCosteo = sinReceta
+                      ? const Color(0xFFD97706)
+                      : bajoMargen
+                          ? AnaliticaTokens.alertas
+                          : AnaliticaTokens.inkMuted;
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 280),
+                          child: Text(
+                            item['nombre'] as String? ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: disponible
+                                  ? AnaliticaTokens.ink
+                                  : AnaliticaTokens.inkSoft,
+                              decoration: disponible
+                                  ? null
+                                  : TextDecoration.lineThrough,
+                            ),
+                          ),
                         ),
-                        isThreeLine: etiquetaCosteo != null,
-                        trailing: Switch.adaptive(
+                      ),
+                      DataCell(Text(_moneda.format(_num(item['precio'])))),
+                      DataCell(
+                        TextButton(
+                          onPressed: widget.onVerCostos == null
+                              ? null
+                              : () => widget.onVerCostos!(id),
+                          style: TextButton.styleFrom(
+                            foregroundColor: tonoCosteo,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          child: Text(etiqueta),
+                        ),
+                      ),
+                      DataCell(
+                        Switch.adaptive(
                           value: disponible,
                           activeTrackColor:
                               AnaliticaTokens.ink.withValues(alpha: 0.35),
-                          onChanged: (v) async {
+                          onChanged: (value) async {
                             await _repo.toggleExtra(
-                              id: e['id'] as String,
-                              disponible: v,
+                              id: id,
+                              disponible: value,
                               esBebida: esBebida,
                             );
                             await _cargar();
                           },
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
         ),
-      ],
+      ),
     );
   }
 
@@ -2224,132 +2560,221 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: EdgeInsets.fromLTRB(
-                    compacto ? 12 : 16,
-                    8,
-                    compacto ? 12 : 16,
-                    24,
-                  ),
-                  itemCount: _combos.length,
-                  itemBuilder: (_, i) {
-                    final c = _combos[i];
-                    final items = c['items'];
-                    final nItems = items is List ? items.length : 0;
-                    final imagenUrl = c['imagen_url'] as String?;
-                    final disponible = c['disponible'] as bool? ?? true;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      decoration: BoxDecoration(
-                        color: AnaliticaTokens.surface,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AnaliticaTokens.border),
+              : FoodyBreakpoints.esLarge(FoodyBreakpoints.widthOf(context))
+                  ? _tablaCombos()
+                  : ListView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        compacto ? 12 : 16,
+                        8,
+                        compacto ? 12 : 16,
+                        24,
                       ),
-                      child: ListTile(
-                        contentPadding:
-                            const EdgeInsets.fromLTRB(12, 6, 8, 6),
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: imagenUrl != null && imagenUrl.isNotEmpty
-                              ? Image.network(
-                                  imagenUrl,
-                                  width: 44,
-                                  height: 44,
-                                  fit: BoxFit.cover,
-                                  cacheWidth:
-                                      (44 * MediaQuery.devicePixelRatioOf(context))
+                      itemCount: _combos.length,
+                      itemBuilder: (_, i) {
+                        final c = _combos[i];
+                        final items = c['items'];
+                        final nItems = items is List ? items.length : 0;
+                        final imagenUrl = c['imagen_url'] as String?;
+                        final disponible = c['disponible'] as bool? ?? true;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: AnaliticaTokens.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AnaliticaTokens.border),
+                          ),
+                          child: ListTile(
+                            contentPadding:
+                                const EdgeInsets.fromLTRB(12, 6, 8, 6),
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: imagenUrl != null && imagenUrl.isNotEmpty
+                                  ? Image.network(
+                                      imagenUrl,
+                                      width: 44,
+                                      height: 44,
+                                      fit: BoxFit.cover,
+                                      cacheWidth: (44 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                  context))
                                           .round(),
-                                  cacheHeight:
-                                      (44 * MediaQuery.devicePixelRatioOf(context))
+                                      cacheHeight: (44 *
+                                              MediaQuery.devicePixelRatioOf(
+                                                  context))
                                           .round(),
-                                  errorBuilder: (_, __, ___) => Container(
-                                    width: 44,
-                                    height: 44,
-                                    color: AnaliticaTokens.surfaceMuted,
-                                    child: const Icon(
-                                      Icons.layers_outlined,
-                                      size: 18,
-                                      color: AnaliticaTokens.inkSoft,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        width: 44,
+                                        height: 44,
+                                        color: AnaliticaTokens.surfaceMuted,
+                                        child: const Icon(
+                                          Icons.layers_outlined,
+                                          size: 18,
+                                          color: AnaliticaTokens.inkSoft,
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 44,
+                                      height: 44,
+                                      color: AnaliticaTokens.surfaceMuted,
+                                      child: const Icon(
+                                        Icons.layers_outlined,
+                                        size: 18,
+                                        color: AnaliticaTokens.inkMuted,
+                                      ),
                                     ),
-                                  ),
-                                )
-                              : Container(
-                                  width: 44,
-                                  height: 44,
-                                  color: AnaliticaTokens.surfaceMuted,
-                                  child: const Icon(
-                                    Icons.layers_outlined,
-                                    size: 18,
-                                    color: AnaliticaTokens.inkMuted,
-                                  ),
-                                ),
-                        ),
-                        title: Text(
-                          c['nombre'] as String? ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AnaliticaTokens.ink,
-                            decoration: disponible
-                                ? null
-                                : TextDecoration.lineThrough,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${_moneda.format(_num(c['precio_fijo']))} · $nItems ítems',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AnaliticaTokens.inkMuted,
-                          ),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            PopupMenuButton<String>(
-                              tooltip: 'Más acciones',
-                              icon: const Icon(
-                                Icons.more_vert,
-                                size: 20,
-                                color: AnaliticaTokens.inkSoft,
+                            ),
+                            title: Text(
+                              c['nombre'] as String? ?? '',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: AnaliticaTokens.ink,
+                                decoration: disponible
+                                    ? null
+                                    : TextDecoration.lineThrough,
                               ),
-                              onSelected: (a) {
-                                if (a == 'foto') {
-                                  unawaited(_subirFotoCombo(c));
-                                }
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'foto',
-                                  child: ListTile(
-                                    dense: true,
-                                    leading: Icon(Icons.photo_camera_outlined),
-                                    title: Text('Subir foto'),
-                                    contentPadding: EdgeInsets.zero,
+                            ),
+                            subtitle: Text(
+                              '${_moneda.format(_num(c['precio_fijo']))} · $nItems ítems',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AnaliticaTokens.inkMuted,
+                              ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                PopupMenuButton<String>(
+                                  tooltip: 'Más acciones',
+                                  icon: const Icon(
+                                    Icons.more_vert,
+                                    size: 20,
+                                    color: AnaliticaTokens.inkSoft,
                                   ),
+                                  onSelected: (a) {
+                                    if (a == 'foto') {
+                                      unawaited(_subirFotoCombo(c));
+                                    }
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'foto',
+                                      child: ListTile(
+                                        dense: true,
+                                        leading:
+                                            Icon(Icons.photo_camera_outlined),
+                                        title: Text('Subir foto'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Switch.adaptive(
+                                  value: disponible,
+                                  activeTrackColor: AnaliticaTokens.ink
+                                      .withValues(alpha: 0.35),
+                                  onChanged: (v) async {
+                                    await _repo.toggleCombo(
+                                      id: c['id'] as String,
+                                      disponible: v,
+                                    );
+                                    await _cargar();
+                                  },
                                 ),
                               ],
                             ),
-                            Switch.adaptive(
-                              value: disponible,
-                              activeTrackColor:
-                                  AnaliticaTokens.ink.withValues(alpha: 0.35),
-                              onChanged: (v) async {
-                                await _repo.toggleCombo(
-                                  id: c['id'] as String,
-                                  disponible: v,
-                                );
-                                await _cargar();
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                          ),
+                        );
+                      },
+                    ),
         ),
       ],
+    );
+  }
+
+  Widget _tablaCombos() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor:
+                    WidgetStatePropertyAll(AnaliticaTokens.surfaceMuted),
+                dataRowMinHeight: 62,
+                dataRowMaxHeight: 72,
+                columns: const [
+                  DataColumn(label: Text('COMBO')),
+                  DataColumn(label: Text('PRECIO'), numeric: true),
+                  DataColumn(label: Text('CONTENIDO')),
+                  DataColumn(label: Text('DISPONIBLE')),
+                  DataColumn(label: Text('ACCIONES')),
+                ],
+                rows: _combos.map((combo) {
+                  final items = combo['items'];
+                  final count = items is List ? items.length : 0;
+                  final disponible = combo['disponible'] as bool? ?? true;
+                  return DataRow(
+                    cells: [
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 280),
+                          child: Text(
+                            combo['nombre'] as String? ?? '',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: disponible
+                                  ? AnaliticaTokens.ink
+                                  : AnaliticaTokens.inkSoft,
+                              decoration: disponible
+                                  ? null
+                                  : TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ),
+                      ),
+                      DataCell(Text(
+                        _moneda.format(_num(combo['precio_fijo'])),
+                      )),
+                      DataCell(Text('$count ítems')),
+                      DataCell(
+                        Switch.adaptive(
+                          value: disponible,
+                          activeTrackColor:
+                              AnaliticaTokens.ink.withValues(alpha: 0.35),
+                          onChanged: (value) async {
+                            await _repo.toggleCombo(
+                              id: combo['id'] as String,
+                              disponible: value,
+                            );
+                            await _cargar();
+                          },
+                        ),
+                      ),
+                      DataCell(
+                        IconButton(
+                          tooltip: 'Subir foto del combo',
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          onPressed: () => unawaited(_subirFotoCombo(combo)),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

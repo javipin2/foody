@@ -67,6 +67,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   String? _errorFactura;
   String? _errorEncargo;
   final _scrollCtrl = ScrollController();
+
   /// Totales de `POST /pedidos/estimar` (autoritativos).
   num? _totalServidor;
   bool _estimando = false;
@@ -409,8 +410,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           _nombreFiscal.text.trim().isEmpty ||
           _email.text.trim().isEmpty) {
         setState(() {
-          _errorFactura =
-              'Completa NIT, nombre fiscal y email para la factura';
+          _errorFactura = 'Completa NIT, nombre fiscal y email para la factura';
           _errorFormulario = _errorFactura;
         });
         return;
@@ -463,6 +463,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } catch (e) {
       if (mounted) {
         final mostrado = await mostrarDialogoStockSiAplica(context, e);
+        if (!mounted) return;
         if (!mostrado) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -484,6 +485,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     String? prefixText,
     Widget? suffixIcon,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     return InputDecoration(
       labelText: label,
       hintText: hint,
@@ -492,24 +494,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       prefixText: prefixText,
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: AnaliticaTokens.surface,
-      labelStyle: const TextStyle(color: AnaliticaTokens.inkMuted),
-      hintStyle: const TextStyle(color: AnaliticaTokens.inkSoft),
-      helperStyle: const TextStyle(
-        color: AnaliticaTokens.inkMuted,
-        fontSize: 12,
-      ),
+      fillColor: scheme.surfaceContainerLow,
+      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
+      hintStyle: TextStyle(color: scheme.onSurfaceVariant),
+      helperStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        borderSide: const BorderSide(color: AnaliticaTokens.border),
+        borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        borderSide: const BorderSide(color: AnaliticaTokens.border),
+        borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        borderSide: const BorderSide(color: AnaliticaTokens.ink, width: 1.4),
+        borderSide: BorderSide(color: scheme.primary, width: 1.4),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
@@ -521,29 +520,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   Widget _tituloSeccion(String texto) {
     return Text(
       texto,
-      style: const TextStyle(
-        fontWeight: FontWeight.w700,
-        fontSize: 15,
-        color: AnaliticaTokens.ink,
-        letterSpacing: -0.2,
-      ),
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+            letterSpacing: -0.2,
+          ),
     );
   }
 
   Widget _chipPago(String valor, String etiqueta) {
     final selected = _metodoPago == valor;
+    final scheme = Theme.of(context).colorScheme;
     return FilterChip(
       label: Text(etiqueta),
       selected: selected,
       showCheckmark: false,
       onSelected: (_) => setState(() => _metodoPago = valor),
-      selectedColor: AnaliticaTokens.ink,
-      backgroundColor: AnaliticaTokens.surface,
+      selectedColor: scheme.primary,
+      backgroundColor: scheme.surface,
       side: BorderSide(
-        color: selected ? AnaliticaTokens.ink : AnaliticaTokens.border,
+        color: selected ? scheme.primary : scheme.outlineVariant,
       ),
       labelStyle: TextStyle(
-        color: selected ? Colors.white : AnaliticaTokens.ink,
+        color: selected ? scheme.onPrimary : scheme.onSurface,
         fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
         fontSize: 13,
       ),
@@ -554,25 +553,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   Widget build(BuildContext context) {
     final carrito = ref.watch(carritoProvider);
     final total = _totalMostrar(carrito);
+    final scheme = Theme.of(context).colorScheme;
 
     return FoodyScaffoldCliente(
       mostrarNavInferior: false,
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 1,
-        backgroundColor: AnaliticaTokens.surface,
-        foregroundColor: AnaliticaTokens.ink,
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Confirmar pedido',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 18,
-                color: AnaliticaTokens.ink,
+                color: scheme.onSurface,
                 letterSpacing: -0.3,
               ),
             ),
@@ -580,613 +580,628 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               widget.sucursalNombre,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
-                color: AnaliticaTokens.inkMuted,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
         ),
       ),
       body: ColoredBox(
-        color: AnaliticaTokens.canvas,
-        child: ListView(
-          controller: _scrollCtrl,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          children: [
-            const FoodyPasosPedido(pasoActual: 2),
-            const Text(
-              'Completa tus datos. El restaurante confirma el total al aceptar.',
-              style: TextStyle(
-                fontSize: 12.5,
-                color: AnaliticaTokens.inkMuted,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 14),
-            if (_errorFormulario != null) ...[
-              Material(
-                color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: AnaliticaTokens.alertas,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _errorFormulario!,
-                          style: const TextStyle(
-                            color: AnaliticaTokens.alertas,
-                            fontSize: 14,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (widget.mesaId != null) ...[
-              Card(
-                elevation: 0,
-                color: AnaliticaTokens.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                  side: const BorderSide(color: AnaliticaTokens.border),
-                ),
-                child: ListTile(
-                  leading: Icon(
-                    Icons.table_restaurant_rounded,
-                    color: AnaliticaTokens.ink.withValues(alpha: 0.75),
-                  ),
-                  title: Text(
-                    'Mesa ${widget.mesaNombre ?? ''}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: AnaliticaTokens.ink,
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'El pedido irá a aprobación de la mesera',
-                    style: TextStyle(color: AnaliticaTokens.inkMuted),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ] else if (_carritoSoloEncargo(carrito)) ...[
-              Card(
-                elevation: 0,
-                color: AnaliticaTokens.surface,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                  side: const BorderSide(color: AnaliticaTokens.border),
-                ),
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(
-                        Icons.event_available_rounded,
-                        color: AnaliticaTokens.ink.withValues(alpha: 0.75),
-                      ),
-                      title: const Text(
-                        'Pedido de encargo',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AnaliticaTokens.ink,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        'El restaurante confirmará disponibilidad y tiempo antes de prepararlo.',
-                        style: TextStyle(color: AnaliticaTokens.inkMuted),
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(
-                        Icons.calendar_today_rounded,
-                        color: AnaliticaTokens.inkMuted,
-                      ),
-                      title: Text(
-                        _fechaEncargo == null
-                            ? 'Fecha de entrega deseada'
-                            : DateFormat.yMMMd('es').format(_fechaEncargo!),
-                        style: const TextStyle(color: AnaliticaTokens.ink),
-                      ),
-                      subtitle: Text(
-                        _errorEncargo ?? 'Mínimo 2 días de anticipación',
-                        style: TextStyle(
-                          color: _errorEncargo != null
-                              ? AnaliticaTokens.alertas
-                              : AnaliticaTokens.inkMuted,
-                        ),
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () async {
-                        final hoy = DateTime.now();
-                        final minima =
-                            DateTime(hoy.year, hoy.month, hoy.day + 2);
-                        final maxima =
-                            DateTime(hoy.year + 1, hoy.month, hoy.day);
-                        final elegida = await showDatePicker(
-                          context: context,
-                          initialDate: _fechaEncargo ?? minima,
-                          firstDate: minima,
-                          lastDate: maxima,
-                          locale: const Locale('es'),
-                        );
-                        if (elegida != null) {
-                          setState(() {
-                            _fechaEncargo = elegida;
-                            _errorEncargo = null;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ] else ...[
-              _tituloSeccion('Tipo de pedido'),
-              const SizedBox(height: 8),
-              SegmentedButton<String>(
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.selected)) {
-                      return AnaliticaTokens.ink;
-                    }
-                    return AnaliticaTokens.surface;
-                  }),
-                  foregroundColor: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.selected)) {
-                      return Colors.white;
-                    }
-                    return AnaliticaTokens.ink;
-                  }),
-                  side: WidgetStateProperty.all(
-                    const BorderSide(color: AnaliticaTokens.border),
-                  ),
-                ),
-                segments: const [
-                  ButtonSegment(
-                    value: 'para_llevar',
-                    label: Text('paso por el local'),
-                    icon: Icon(Icons.shopping_bag_outlined, size: 18),
-                  ),
-                  ButtonSegment(
-                    value: 'domicilio',
-                    label: Text('Domicilio'),
-                    icon: Icon(Icons.delivery_dining_outlined, size: 18),
-                  ),
-                ],
-                selected: {_tipo},
-                onSelectionChanged: (s) {
-                  setState(() => _tipo = s.first);
-                  _cotizarDomicilio().then((_) {
-                    if (mounted) _refrescarEstimar(carrito);
-                  });
-                },
-              ),
-              if (_usaPrecioLlevar(_tipo) &&
-                  _cantidadConPrecioLlevar(carrito) > 0) ...[
-                const SizedBox(height: 12),
-                Card(
-                  elevation: 0,
-                  color: AnaliticaTokens.surfaceMuted,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                    side: const BorderSide(color: AnaliticaTokens.border),
-                  ),
-                  child: ListTile(
-                    dense: true,
-                    leading: const Icon(
-                      Icons.info_outline,
-                      size: 20,
-                      color: AnaliticaTokens.inkMuted,
-                    ),
-                    title: Text(
-                      '${_cantidadConPrecioLlevar(carrito)} producto(s) con precio para llevar',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AnaliticaTokens.ink,
-                      ),
-                    ),
-                    subtitle: const Text(
-                      'El total usa el precio de canal llevar/domicilio donde aplique.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AnaliticaTokens.inkMuted,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-            ],
-            _tituloSeccion('Tus datos'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nombre,
-              textCapitalization: TextCapitalization.words,
-              style: const TextStyle(color: AnaliticaTokens.ink),
-              decoration: _campo(label: 'Nombre'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _telefono,
-              keyboardType: TextInputType.phone,
-              style: const TextStyle(color: AnaliticaTokens.ink),
-              decoration: _campo(label: 'Teléfono'),
-            ),
-            if (_tipo == 'domicilio') ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _direccion,
-                maxLines: 2,
-                style: const TextStyle(color: AnaliticaTokens.ink),
-                onChanged: (_) {
-                  if (_errorDireccion != null) {
-                    setState(() => _errorDireccion = null);
-                  }
-                },
-                decoration: _campo(
-                  label: 'Dirección de entrega',
-                  errorText: _errorDireccion,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed:
-                        _obteniendoUbicacion ? null : _usarUbicacionActual,
-                    icon: _obteniendoUbicacion
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AnaliticaTokens.ink,
-                            ),
-                          )
-                        : const Icon(Icons.my_location),
-                    label: const Text('Usar mi ubicación'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AnaliticaTokens.ink,
-                      side: const BorderSide(color: AnaliticaTokens.border),
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _abrirMapaEntrega,
-                    icon: const Icon(Icons.map_outlined),
-                    label: const Text('Elegir en mapa'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AnaliticaTokens.ink,
-                      side: const BorderSide(color: AnaliticaTokens.border),
-                    ),
-                  ),
-                ],
-              ),
-              if (_lat != null && _lng != null) ...[
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                  child: MapaFoody(
-                    altura: 140,
-                    centro: LatLng(_lat!, _lng!),
-                    zoom: 16,
-                    interactuable: false,
-                    mostrarControles: false,
-                    marcadores: [
-                      MarcadorFoody(lat: _lat!, lng: _lng!),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              if (_cotizandoDomicilio)
-                const LinearProgressIndicator(
-                  minHeight: 2,
-                  color: AnaliticaTokens.ink,
-                )
-              else if (_errorDomicilio != null)
+        color: AnaliticaTokens.canvasOf(context),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: ListView(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              children: [
+                const FoodyPasosPedido(pasoActual: 2),
                 Text(
-                  _errorDomicilio!,
-                  style: const TextStyle(
-                    color: AnaliticaTokens.alertas,
-                    fontSize: 13,
-                  ),
-                )
-              else
-                Text(
-                  'Costo domicilio: ${_formato.format(_costoDomicilio)}'
-                  '${_zonaNombre != null ? ' ($_zonaNombre)' : ''}',
-                  style: const TextStyle(
-                    color: AnaliticaTokens.inkMuted,
-                    fontSize: 13,
+                  'Completa tus datos. El restaurante confirma el total al aceptar.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-            ],
-            const SizedBox(height: 20),
-            Theme(
-              data: Theme.of(context).copyWith(
-                dividerColor: Colors.transparent,
-                colorScheme: Theme.of(context).colorScheme.copyWith(
-                      primary: AnaliticaTokens.ink,
-                    ),
-              ),
-              child: ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                collapsedIconColor: AnaliticaTokens.inkMuted,
-                iconColor: AnaliticaTokens.ink,
-                title: const Text(
-                  'Factura (opcional)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AnaliticaTokens.ink,
-                  ),
-                ),
-                subtitle: const Text(
-                  'Solo si necesitas datos fiscales',
-                  style: TextStyle(
-                    color: AnaliticaTokens.inkMuted,
-                    fontSize: 12.5,
-                  ),
-                ),
-                initiallyExpanded: false,
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    activeThumbColor: AnaliticaTokens.ink,
-                    title: const Text(
-                      'Necesito factura',
-                      style: TextStyle(color: AnaliticaTokens.ink),
-                    ),
-                    subtitle: const Text(
-                      'Te pediremos NIT y razón social',
-                      style: TextStyle(color: AnaliticaTokens.inkMuted),
-                    ),
-                    value: _requiereFactura,
-                    onChanged: (v) => setState(() => _requiereFactura = v),
-                  ),
-                  if (_requiereFactura) ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _nit,
-                      style: const TextStyle(color: AnaliticaTokens.ink),
-                      decoration: _campo(
-                        label: 'NIT o cédula',
-                        errorText: _errorFactura,
+                const SizedBox(height: 14),
+                if (_errorFormulario != null) ...[
+                  Material(
+                    color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: AnaliticaTokens.alertas,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _errorFormulario!,
+                              style: const TextStyle(
+                                color: AnaliticaTokens.alertas,
+                                fontSize: 14,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _nombreFiscal,
-                      style: const TextStyle(color: AnaliticaTokens.ink),
-                      decoration: _campo(label: 'Nombre o razón social'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (widget.mesaId != null) ...[
+                  Card(
+                    elevation: 0,
+                    color: scheme.surface,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                      side: BorderSide(color: scheme.outlineVariant),
                     ),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.table_restaurant_rounded,
+                        color: scheme.primary,
+                      ),
+                      title: Text(
+                        'Mesa ${widget.mesaNombre ?? ''}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'El pedido irá a aprobación de la mesera',
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ] else if (_carritoSoloEncargo(carrito)) ...[
+                  Card(
+                    elevation: 0,
+                    color: scheme.surface,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                      side: BorderSide(color: scheme.outlineVariant),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: Icon(
+                            Icons.event_available_rounded,
+                            color: scheme.primary,
+                          ),
+                          title: Text(
+                            'Pedido de encargo',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'El restaurante confirmará disponibilidad y tiempo antes de prepararlo.',
+                            style: TextStyle(color: scheme.onSurfaceVariant),
+                          ),
+                        ),
+                        ListTile(
+                          leading: Icon(
+                            Icons.calendar_today_rounded,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          title: Text(
+                            _fechaEncargo == null
+                                ? 'Fecha de entrega deseada'
+                                : DateFormat.yMMMd('es').format(_fechaEncargo!),
+                            style: TextStyle(color: scheme.onSurface),
+                          ),
+                          subtitle: Text(
+                            _errorEncargo ?? 'Mínimo 2 días de anticipación',
+                            style: TextStyle(
+                              color: _errorEncargo != null
+                                  ? AnaliticaTokens.alertas
+                                  : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () async {
+                            final hoy = DateTime.now();
+                            final minima =
+                                DateTime(hoy.year, hoy.month, hoy.day + 2);
+                            final maxima =
+                                DateTime(hoy.year + 1, hoy.month, hoy.day);
+                            final elegida = await showDatePicker(
+                              context: context,
+                              initialDate: _fechaEncargo ?? minima,
+                              firstDate: minima,
+                              lastDate: maxima,
+                              locale: const Locale('es'),
+                            );
+                            if (elegida != null) {
+                              setState(() {
+                                _fechaEncargo = elegida;
+                                _errorEncargo = null;
+                              });
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  _tituloSeccion('Tipo de pedido'),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
+                    style: ButtonStyle(
+                      backgroundColor:
+                          WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return scheme.primary;
+                        }
+                        return scheme.surface;
+                      }),
+                      foregroundColor:
+                          WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return scheme.onPrimary;
+                        }
+                        return scheme.onSurface;
+                      }),
+                      side: WidgetStateProperty.all(
+                        BorderSide(color: scheme.outlineVariant),
+                      ),
+                    ),
+                    segments: const [
+                      ButtonSegment(
+                        value: 'para_llevar',
+                        label: Text('paso por el local'),
+                        icon: Icon(Icons.shopping_bag_outlined, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: 'domicilio',
+                        label: Text('Domicilio'),
+                        icon: Icon(Icons.delivery_dining_outlined, size: 18),
+                      ),
+                    ],
+                    selected: {_tipo},
+                    onSelectionChanged: (s) {
+                      setState(() => _tipo = s.first);
+                      _cotizarDomicilio().then((_) {
+                        if (mounted) _refrescarEstimar(carrito);
+                      });
+                    },
+                  ),
+                  if (_usaPrecioLlevar(_tipo) &&
+                      _cantidadConPrecioLlevar(carrito) > 0) ...[
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      style: const TextStyle(color: AnaliticaTokens.ink),
-                      decoration: _campo(label: 'Email'),
+                    Card(
+                      elevation: 0,
+                      color: scheme.surfaceContainerLow,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AnaliticaTokens.r12),
+                        side: BorderSide(color: scheme.outlineVariant),
+                      ),
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(
+                          Icons.info_outline,
+                          size: 20,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        title: Text(
+                          '${_cantidadConPrecioLlevar(carrito)} producto(s) con precio para llevar',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'El total usa el precio de canal llevar/domicilio donde aplique.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
+                  const SizedBox(height: 20),
                 ],
-              ),
-            ),
-            if (widget.mesaId == null) ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: _propina,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: AnaliticaTokens.ink),
-                decoration: _campo(
-                  label: 'Propina (opcional)',
-                  hint: '0',
-                  prefixText: r'$ ',
-                  helperText: 'Se registra al cobrar tu pedido',
+                _tituloSeccion('Tus datos'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _nombre,
+                  textCapitalization: TextCapitalization.words,
+                  style: TextStyle(color: scheme.onSurface),
+                  decoration: _campo(label: 'Nombre'),
                 ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            _tituloSeccion('Método de pago'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _chipPago('efectivo', 'Efectivo'),
-                _chipPago('nequi', 'Nequi'),
-                _chipPago('tarjeta', 'Tarjeta'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _telefono,
+                  keyboardType: TextInputType.phone,
+                  style: TextStyle(color: scheme.onSurface),
+                  decoration: _campo(label: 'Teléfono'),
+                ),
+                if (_tipo == 'domicilio') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _direccion,
+                    maxLines: 2,
+                    style: TextStyle(color: scheme.onSurface),
+                    onChanged: (_) {
+                      if (_errorDireccion != null) {
+                        setState(() => _errorDireccion = null);
+                      }
+                    },
+                    decoration: _campo(
+                      label: 'Dirección de entrega',
+                      errorText: _errorDireccion,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed:
+                            _obteniendoUbicacion ? null : _usarUbicacionActual,
+                        icon: _obteniendoUbicacion
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: scheme.primary,
+                                ),
+                              )
+                            : const Icon(Icons.my_location),
+                        label: const Text('Usar mi ubicación'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.primary,
+                          side: BorderSide(color: scheme.outlineVariant),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _abrirMapaEntrega,
+                        icon: const Icon(Icons.map_outlined),
+                        label: const Text('Elegir en mapa'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: scheme.primary,
+                          side: BorderSide(color: scheme.outlineVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_lat != null && _lng != null) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                      child: MapaFoody(
+                        altura: 140,
+                        centro: LatLng(_lat!, _lng!),
+                        zoom: 16,
+                        interactuable: false,
+                        mostrarControles: false,
+                        marcadores: [
+                          MarcadorFoody(lat: _lat!, lng: _lng!),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  if (_cotizandoDomicilio)
+                    LinearProgressIndicator(
+                      minHeight: 2,
+                      color: scheme.primary,
+                    )
+                  else if (_errorDomicilio != null)
+                    Text(
+                      _errorDomicilio!,
+                      style: const TextStyle(
+                        color: AnaliticaTokens.alertas,
+                        fontSize: 13,
+                      ),
+                    )
+                  else
+                    Text(
+                      'Costo domicilio: ${_formato.format(_costoDomicilio)}'
+                      '${_zonaNombre != null ? ' ($_zonaNombre)' : ''}',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 20),
+                Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.transparent,
+                    colorScheme: Theme.of(context).colorScheme.copyWith(
+                          primary: scheme.primary,
+                        ),
+                  ),
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    collapsedIconColor: scheme.onSurfaceVariant,
+                    iconColor: scheme.primary,
+                    title: Text(
+                      'Factura (opcional)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Solo si necesitas datos fiscales',
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    initiallyExpanded: false,
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        activeThumbColor: scheme.primary,
+                        title: Text(
+                          'Necesito factura',
+                          style: TextStyle(color: scheme.onSurface),
+                        ),
+                        subtitle: Text(
+                          'Te pediremos NIT y razón social',
+                          style: TextStyle(color: scheme.onSurfaceVariant),
+                        ),
+                        value: _requiereFactura,
+                        onChanged: (v) => setState(() => _requiereFactura = v),
+                      ),
+                      if (_requiereFactura) ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _nit,
+                          style: TextStyle(color: scheme.onSurface),
+                          decoration: _campo(
+                            label: 'NIT o cédula',
+                            errorText: _errorFactura,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _nombreFiscal,
+                          style: TextStyle(color: scheme.onSurface),
+                          decoration: _campo(label: 'Nombre o razón social'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          style: TextStyle(color: scheme.onSurface),
+                          decoration: _campo(label: 'Email'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (widget.mesaId == null) ...[
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _propina,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(color: scheme.onSurface),
+                    decoration: _campo(
+                      label: 'Propina (opcional)',
+                      hint: '0',
+                      prefixText: r'$ ',
+                      helperText: 'Se registra al cobrar tu pedido',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                _tituloSeccion('Método de pago'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chipPago('efectivo', 'Efectivo'),
+                    _chipPago('nequi', 'Nequi'),
+                    _chipPago('tarjeta', 'Tarjeta'),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _tituloSeccion('Código promocional'),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _codigoPromo,
+                        textCapitalization: TextCapitalization.characters,
+                        style: TextStyle(color: scheme.onSurface),
+                        decoration: _campo(
+                          label: 'Código',
+                          suffixIcon: _codigoPromoAplicado != null
+                              ? const Icon(
+                                  Icons.check_circle,
+                                  color: AnaliticaTokens.inventario,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _validandoCodigo
+                          ? null
+                          : () => _aplicarCodigoPromo(carrito),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: scheme.primary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(96, 52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(AnaliticaTokens.r12),
+                        ),
+                      ),
+                      child: _validandoCodigo
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Aplicar'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Card(
+                  elevation: 0,
+                  color: scheme.surface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                    side: BorderSide(color: scheme.outlineVariant),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '${carrito.totalItems} ${carrito.totalItems == 1 ? 'producto' : 'productos'}',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (_tipo == 'domicilio') ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Domicilio: ${_formato.format(_costoDomicilio)}',
+                            style: TextStyle(color: scheme.onSurface),
+                          ),
+                        ],
+                        if (_descuentoPromo > 0) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Descuento ($_codigoPromoAplicado): -${_formato.format(_descuentoPromo)}',
+                            style: const TextStyle(
+                              color: AnaliticaTokens.inventario,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                        Divider(height: 20, color: scheme.outlineVariant),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _estimando
+                                  ? 'Calculando…'
+                                  : (_totalServidor != null
+                                      ? 'Total'
+                                      : 'Total estimado'),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                color: scheme.onSurface,
+                              ),
+                            ),
+                            Text(
+                              _formato.format(total),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18,
+                                color: scheme.onSurface,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_errorEstimar != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            _errorEstimar!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AnaliticaTokens.alertas,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Text(
+                          'El total final lo confirma el restaurante al aceptar tu pedido.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 20),
-            _tituloSeccion('Código promocional'),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _codigoPromo,
-                    textCapitalization: TextCapitalization.characters,
-                    style: const TextStyle(color: AnaliticaTokens.ink),
-                    decoration: _campo(
-                      label: 'Código',
-                      suffixIcon: _codigoPromoAplicado != null
-                          ? const Icon(
-                              Icons.check_circle,
-                              color: AnaliticaTokens.inventario,
-                            )
-                          : null,
-                    ),
+          ),
+        ),
+      ),
+      bottomBar: Material(
+        elevation: 0,
+        color: scheme.surface,
+        child: SafeArea(
+          child: Align(
+            alignment: Alignment.center,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: scheme.outlineVariant),
                   ),
                 ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: _validandoCodigo
-                      ? null
-                      : () => _aplicarCodigoPromo(carrito),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: FilledButton(
+                  onPressed: _enviando ? null : _confirmar,
                   style: FilledButton.styleFrom(
-                    backgroundColor: AnaliticaTokens.ink,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(96, 52),
+                    backgroundColor: scheme.primary,
+                    foregroundColor: scheme.onPrimary,
+                    disabledBackgroundColor: scheme.surfaceContainerHighest,
+                    minimumSize: const Size.fromHeight(52),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AnaliticaTokens.r12),
+                      borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
                     ),
                   ),
-                  child: _validandoCodigo
+                  child: _enviando
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
+                          height: 22,
+                          width: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Aplicar'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Card(
-              elevation: 0,
-              color: AnaliticaTokens.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                side: const BorderSide(color: AnaliticaTokens.border),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '${carrito.totalItems} ${carrito.totalItems == 1 ? 'producto' : 'productos'}',
-                      style: const TextStyle(
-                        color: AnaliticaTokens.inkMuted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    if (_tipo == 'domicilio') ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Domicilio: ${_formato.format(_costoDomicilio)}',
-                        style: const TextStyle(color: AnaliticaTokens.ink),
-                      ),
-                    ],
-                    if (_descuentoPromo > 0) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Descuento ($_codigoPromoAplicado): -${_formato.format(_descuentoPromo)}',
-                        style: const TextStyle(
-                          color: AnaliticaTokens.inventario,
-                          fontWeight: FontWeight.w600,
+                      : Text(
+                          'Hacer pedido · ${_formato.format(total)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
-                      ),
-                    ],
-                    const Divider(height: 20, color: AnaliticaTokens.border),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _estimando
-                              ? 'Calculando…'
-                              : (_totalServidor != null
-                                  ? 'Total'
-                                  : 'Total estimado'),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                            color: AnaliticaTokens.ink,
-                          ),
-                        ),
-                        Text(
-                          _formato.format(total),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                            color: AnaliticaTokens.ink,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_errorEstimar != null) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        _errorEstimar!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AnaliticaTokens.alertas,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 6),
-                    const Text(
-                      'El total final lo confirma el restaurante al aceptar tu pedido.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AnaliticaTokens.inkMuted,
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-      bottomBar: Material(
-        elevation: 0,
-        color: AnaliticaTokens.surface,
-        child: SafeArea(
-          child: Container(
-            decoration: const BoxDecoration(
-              border: Border(
-                top: BorderSide(color: AnaliticaTokens.border),
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: FilledButton(
-              onPressed: _enviando ? null : _confirmar,
-              style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: AnaliticaTokens.inkSoft,
-                minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-                ),
-              ),
-              child: _enviando
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      'Hacer pedido · ${_formato.format(total)}',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
             ),
           ),
         ),

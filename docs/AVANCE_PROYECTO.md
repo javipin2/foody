@@ -7,9 +7,9 @@
 > Regla Cursor: `.cursor/rules/foody-avance-documentar.mdc`
 > Especificación objetivo: `INFRAESTRUCTURA/GUIA_DESARROLLO_FOODY_CURSOR.md` (sprints 1–11).
 
-**Última actualización:** 2026-11-22 — Configuración admin responsive implementada; análisis focalizado limpio, QA visual pendiente.
+**Última actualización:** 2026-11-22 — Menú/Facturación responsive y jornada Carrito→Checkout con tema activo; análisis focalizado limpio, QA visual pendiente.
 
-**Próximo paso:** continuar rediseño UI vista por vista; preservar Cloudflare Tunnel para pruebas remotas y dejar la revisión visual completa al usuario cuando cierre esta oleada. Reevaluar VPS/deploy al terminar la app.
+**Próximo paso:** seguir por Caja/Pedidos operativos, Insumos y vistas admin priorizadas; después QA visual claro/oscuro, estados y dimensiones de cada vista intervenida. Preservar Cloudflare Tunnel para pruebas remotas; revisión completa del usuario al cerrar la oleada. Reevaluar VPS/deploy al terminar la app.
 
 ### Últimos cambios (changelog)
 
@@ -26,6 +26,15 @@
 - **2026-11-22:** **UX-INV-MOV-01** — movimientos reorganizados como registro compacto con transición de stock destacada, metadatos secundarios y acceso preservado al insumo relacionado. Solo UI; análisis focalizado sin errores.
 - **2026-11-22:** **DS-FORM-THEME-01** — shell común de formularios dejó de forzar blancos/grises; superficies, textos y bordes se derivan del tema Foody y los campos heredan el input theme global, extendiendo soporte claro/oscuro a 43 usos existentes.
 - **2026-11-22:** **UX-SUBRECETA-THEME-01** — diálogo de subreceta ajustado para usar superficies y colores semánticos del tema en opción de stock, alerta de lote, filas de insumos y subtotal; no se altera cálculo ni guardado.
+- **2026-11-22:** **UX-MENU-PRODUCTOS-01** — listado de productos presenta tabla compacta desde 1100 px y conserva tarjetas en móvil/tablet; incluye precio local/para llevar, cocina, estado de costeo, disponibilidad y acciones existentes. Menú de acciones compartido; sin cambios en repositorio/API/reglas; falta QA visual.
+- **2026-11-22:** **UX-MENU-EXTRAS-01** — Toppings y Bebidas usan tabla compacta en escritorio ancho y conservan tarjetas en móvil/tablet; precio, costeo/margen, switch de disponibilidad y acceso a Costos preservados. `dart analyze` focalizado limpio; QA visual pendiente.
+- **2026-11-22:** **UX-MENU-CAT-COMBOS-01** — gestión de Categorías usa diálogo responsive tema-aware; listado de Combos adopta tabla de escritorio y tarjetas compactas/tablet con contenido, precio, disponibilidad y carga de foto preservados. Análisis focalizado limpio; QA visual pendiente.
+- **2026-11-22:** **UX-MENU-DIALOGOS-01** — asignar cocina y configurar toppings de plato ahora usan el shell de diálogo responsive Foody; el resumen de costo/precio usa superficies del tema. Análisis focalizado limpio; QA visual pendiente.
+- **2026-11-22:** **UX-MENU-COPIAR-01** — diálogo de copiar menú adaptado a Foody con selección de sede agrupada y alcance explícito (incluye categorías/productos/toppings/bebidas; combos no se copian). Solo UI; análisis focalizado limpio.
+- **2026-11-22:** **UX-FAC-LISTADO-01** — listado de facturas pasa a tabla en escritorio ancho y conserva tarjetas compactas; columnas estado, cliente, fecha, total y acciones existentes. `dart analyze` focalizado sin incidencias; QA visual pendiente.
+- **2026-11-22:** **UX-FAC-FORM-01** — config fiscal, vista previa y anulación usan tema/shell compartido; vista previa tiene jerarquía de comprobante y motivo incluye ayuda visible. DIAN/elegibilidad fiscal no se modifican. `dart analyze` focalizado limpio.
+- **2026-11-22:** **UX-CHECKOUT-01** — formulario de checkout limitado a 760 px en escritorio y centrado; tokens de entrada/selección/superficie/botones toman el tema activo y barra final se alinea al contenido. Solo UI; cálculo/envío permanecen backend-first. `dart analyze` limpio.
+- **2026-11-22:** **UX-CARRITO-01** — lista, CTA fija y detalle de línea limitados a 760 px en escritorio; superficies, textos, controles y hoja inferior usan el tema activo. Swipe, stepper, extras y subtotal siguen intactos. `dart analyze` limpio.
 
 - **2026-08-20:** **CAJ-TURNO / ANA-FILT-PROD / ANA-ESTADOS / COC-REIMP** — `horas_abierta` + alerta `caja_turno_longevo` (>12 h, sin auto-cierre) + banner caja; KPI/series con filtro ítem = `SQL_VENTA_LINEA_ITEM`; `estados` sin cancelados salvo `incluir_cancelados`; `POST /impresion/reimprimir` + botón KDS. Check: `verificar-lote-turno-ana-reimp.ps1`.
 - **2026-08-19:** **Lote 🟡** — `tipo=mesa` exige `mesa_id`; descuento manual limpia `promocion_id`; DELETE promo SET NULL (mig 089); cancel domicilio libera sesión + cierra ofertas; ajuste stock alerta mínimo + movimientos con `usuario_id`; transfer copia mesera y UI cajero; filter no aplana detalle caja/códigos mesa; CHECK estados pedido. Check: `verificar-lote-amarillo.ps1` · `dart analyze` mesas_grid.

@@ -49,7 +49,7 @@ class CarritoScreen extends ConsumerWidget {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: AnaliticaTokens.ink,
+              backgroundColor: Theme.of(ctx).colorScheme.primary,
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Vaciar'),
@@ -84,6 +84,7 @@ class CarritoScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final carrito = ref.watch(carritoProvider);
     final notifier = ref.read(carritoProvider.notifier);
     final lineas = carrito.lineas.values.toList();
@@ -93,19 +94,19 @@ class CarritoScreen extends ConsumerWidget {
       appBar: AppBar(
         elevation: 0,
         scrolledUnderElevation: 1,
-        backgroundColor: AnaliticaTokens.surface,
-        foregroundColor: AnaliticaTokens.ink,
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Carrito',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 18,
-                color: AnaliticaTokens.ink,
+                color: scheme.onSurface,
                 letterSpacing: -0.3,
               ),
             ),
@@ -113,10 +114,10 @@ class CarritoScreen extends ConsumerWidget {
               sucursalNombre,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
-                color: AnaliticaTokens.inkMuted,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -126,10 +127,10 @@ class CarritoScreen extends ConsumerWidget {
             : [
                 TextButton(
                   onPressed: () => _confirmarVaciar(context, ref),
-                  child: const Text(
+                  child: Text(
                     'Vaciar',
                     style: TextStyle(
-                      color: AnaliticaTokens.inkMuted,
+                      color: scheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -137,7 +138,7 @@ class CarritoScreen extends ConsumerWidget {
               ],
       ),
       body: ColoredBox(
-        color: AnaliticaTokens.canvas,
+        color: AnaliticaTokens.canvasOf(context),
         child: carrito.lineas.isEmpty
             ? FoodyEstadoUi.vacio(
                 titulo: 'Tu carrito está vacío',
@@ -146,133 +147,146 @@ class CarritoScreen extends ConsumerWidget {
                 etiquetaAccion: 'Ver menú',
                 onAccion: () => context.pop(),
               )
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                children: [
-                  const FoodyPasosPedido(pasoActual: 1),
-                  const Text(
-                    'Toca un ítem para ver qué incluye. Desliza para quitarlo.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: AnaliticaTokens.inkMuted,
-                      fontWeight: FontWeight.w500,
-                    ),
+            : Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                    children: [
+                      const FoodyPasosPedido(pasoActual: 1),
+                      Text(
+                        'Toca un ítem para ver qué incluye. Desliza para quitarlo.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (var i = 0; i < lineas.length; i++)
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0, end: 1),
+                          duration: Duration(
+                            milliseconds: 180 + (i.clamp(0, 6) * 30),
+                          ),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, t, child) {
+                            return Opacity(
+                              opacity: t,
+                              child: Transform.translate(
+                                offset: Offset(0, 8 * (1 - t)),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Dismissible(
+                            key: ValueKey(lineas[i].clave),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.only(right: 20),
+                              decoration: BoxDecoration(
+                                color: AnaliticaTokens.alertas
+                                    .withValues(alpha: 0.12),
+                                borderRadius:
+                                    BorderRadius.circular(AnaliticaTokens.r12),
+                              ),
+                              child: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: AnaliticaTokens.alertas,
+                              ),
+                            ),
+                            onDismissed: (_) {
+                              HapticFeedback.mediumImpact();
+                              notifier.eliminarLinea(lineas[i].clave);
+                            },
+                            child: _LineaCarritoCard(
+                              linea: lineas[i],
+                              onTap: () =>
+                                  _mostrarDetalle(context, ref, lineas[i]),
+                              onMenos: () {
+                                HapticFeedback.selectionClick();
+                                notifier.quitarUno(lineas[i].clave);
+                              },
+                              onMas: () {
+                                HapticFeedback.selectionClick();
+                                notifier.agregarUno(lineas[i].clave);
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  for (var i = 0; i < lineas.length; i++)
-                    TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: 1),
-                      duration: Duration(
-                        milliseconds: 180 + (i.clamp(0, 6) * 30),
-                      ),
-                      curve: Curves.easeOutCubic,
-                      builder: (context, t, child) {
-                        return Opacity(
-                          opacity: t,
-                          child: Transform.translate(
-                            offset: Offset(0, 8 * (1 - t)),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: Dismissible(
-                        key: ValueKey(lineas[i].clave),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.only(right: 20),
-                          decoration: BoxDecoration(
-                            color: AnaliticaTokens.alertas.withValues(alpha: 0.12),
-                            borderRadius:
-                                BorderRadius.circular(AnaliticaTokens.r12),
-                          ),
-                          child: const Icon(
-                            Icons.delete_outline_rounded,
-                            color: AnaliticaTokens.alertas,
-                          ),
-                        ),
-                        onDismissed: (_) {
-                          HapticFeedback.mediumImpact();
-                          notifier.eliminarLinea(lineas[i].clave);
-                        },
-                        child: _LineaCarritoCard(
-                          linea: lineas[i],
-                          onTap: () =>
-                              _mostrarDetalle(context, ref, lineas[i]),
-                          onMenos: () {
-                            HapticFeedback.selectionClick();
-                            notifier.quitarUno(lineas[i].clave);
-                          },
-                          onMas: () {
-                            HapticFeedback.selectionClick();
-                            notifier.agregarUno(lineas[i].clave);
-                          },
-                        ),
-                      ),
-                    ),
-                ],
+                ),
               ),
       ),
       bottomBar: carrito.lineas.isEmpty
           ? null
           : Material(
               elevation: 0,
-              color: AnaliticaTokens.surface,
+              color: scheme.surface,
               child: SafeArea(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: AnaliticaTokens.border),
-                    ),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: scheme.outlineVariant),
+                        ),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            '${carrito.totalItems} ${carrito.totalItems == 1 ? 'producto' : 'productos'}',
-                            style: const TextStyle(
-                              color: AnaliticaTokens.inkMuted,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '${carrito.totalItems} ${carrito.totalItems == 1 ? 'producto' : 'productos'}',
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                FoodyFormato.monedaDe(carrito.totalPrecio),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                  color: scheme.onSurface,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            FoodyFormato.monedaDe(carrito.totalPrecio),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 18,
-                              color: AnaliticaTokens.ink,
-                              letterSpacing: -0.3,
+                          const SizedBox(height: 10),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: scheme.primary,
+                              foregroundColor: scheme.onPrimary,
+                              minimumSize: const Size.fromHeight(52),
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(AnaliticaTokens.r12),
+                              ),
+                            ),
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _irCheckout(context);
+                            },
+                            child: const Text(
+                              'Continuar al checkout',
+                              style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AnaliticaTokens.ink,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size.fromHeight(52),
-                          shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(AnaliticaTokens.r12),
-                          ),
-                        ),
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          _irCheckout(context);
-                        },
-                        child: const Text(
-                          'Continuar al checkout',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -296,6 +310,7 @@ class _LineaCarritoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final extras = <String>[
       if (linea.toppings.isNotEmpty)
         linea.toppings.map((t) => t.nombre).join(', '),
@@ -307,7 +322,7 @@ class _LineaCarritoCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: AnaliticaTokens.surface,
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
         child: InkWell(
           onTap: onTap,
@@ -315,7 +330,7 @@ class _LineaCarritoCard extends StatelessWidget {
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-              border: Border.all(color: AnaliticaTokens.border),
+              border: Border.all(color: scheme.outlineVariant),
               boxShadow: AnaliticaTokens.shadowSoft,
             ),
             child: Padding(
@@ -332,10 +347,10 @@ class _LineaCarritoCard extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 linea.nombre,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 15,
-                                  color: AnaliticaTokens.ink,
+                                  color: scheme.onSurface,
                                   letterSpacing: -0.2,
                                 ),
                               ),
@@ -346,15 +361,15 @@ class _LineaCarritoCard extends StatelessWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: AnaliticaTokens.surfaceMuted,
+                                color: scheme.surfaceContainerLow,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 linea.etiquetaTipoResuelta,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: AnaliticaTokens.inkMuted,
+                                  color: scheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -366,9 +381,9 @@ class _LineaCarritoCard extends StatelessWidget {
                             previewIncluye,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AnaliticaTokens.inkMuted,
+                              color: scheme.onSurfaceVariant,
                               height: 1.25,
                             ),
                           ),
@@ -380,9 +395,9 @@ class _LineaCarritoCard extends StatelessWidget {
                               '+ ${extras.join(' · ')}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AnaliticaTokens.inkSoft,
+                                color: scheme.onSurfaceVariant,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -392,19 +407,19 @@ class _LineaCarritoCard extends StatelessWidget {
                           children: [
                             Text(
                               FoodyFormato.monedaDe(linea.subtotal),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 14,
-                                color: AnaliticaTokens.ink,
+                                color: scheme.onSurface,
                               ),
                             ),
                             const SizedBox(width: 8),
-                            const Text(
+                            Text(
                               'Ver detalle',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: AnaliticaTokens.inkSoft,
+                                color: scheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -445,12 +460,13 @@ class _QtyPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surfaceMuted,
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -465,10 +481,10 @@ class _QtyPill extends StatelessWidget {
               child: Text(
                 '$cantidad',
                 key: ValueKey(cantidad),
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 15,
-                  color: AnaliticaTokens.ink,
+                  color: scheme.onSurface,
                 ),
               ),
             ),
@@ -493,8 +509,9 @@ class _QtyBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: filled ? AnaliticaTokens.ink : Colors.transparent,
+      color: filled ? scheme.primary : Colors.transparent,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -504,7 +521,7 @@ class _QtyBtn extends StatelessWidget {
           child: Icon(
             icon,
             size: 18,
-            color: filled ? Colors.white : AnaliticaTokens.ink,
+            color: filled ? scheme.onPrimary : scheme.onSurface,
           ),
         ),
       ),
@@ -525,13 +542,14 @@ class _DetalleLineaSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final incluye = (linea.detalleIncluye ?? '').trim();
     final bottom = MediaQuery.paddingOf(context).bottom;
+    final scheme = Theme.of(context).colorScheme;
 
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.85,
       ),
-      decoration: const BoxDecoration(
-        color: AnaliticaTokens.surface,
+      decoration: BoxDecoration(
+        color: scheme.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -542,7 +560,7 @@ class _DetalleLineaSheet extends StatelessWidget {
             width: 44,
             height: 5,
             decoration: BoxDecoration(
-              color: AnaliticaTokens.inkSoft.withValues(alpha: 0.55),
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
               borderRadius: BorderRadius.circular(3),
             ),
           ),
@@ -561,10 +579,10 @@ class _DetalleLineaSheet extends StatelessWidget {
                           children: [
                             Text(
                               linea.nombre,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w800,
-                                color: AnaliticaTokens.ink,
+                                color: scheme.onSurface,
                                 letterSpacing: -0.4,
                               ),
                             ),
@@ -575,18 +593,18 @@ class _DetalleLineaSheet extends StatelessWidget {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: AnaliticaTokens.surfaceMuted,
+                                color: scheme.surfaceContainerLow,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: AnaliticaTokens.border,
+                                  color: scheme.outlineVariant,
                                 ),
                               ),
                               child: Text(
                                 linea.etiquetaTipoResuelta,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: AnaliticaTokens.inkMuted,
+                                  color: scheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -611,12 +629,12 @@ class _DetalleLineaSheet extends StatelessWidget {
                   ),
                   if (incluye.isNotEmpty) ...[
                     const SizedBox(height: 18),
-                    const Text(
+                    Text(
                       'Incluye',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: AnaliticaTokens.ink,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -629,15 +647,14 @@ class _DetalleLineaSheet extends StatelessWidget {
                                 Icon(
                                   Icons.check_circle_outline_rounded,
                                   size: 18,
-                                  color: AnaliticaTokens.ink
-                                      .withValues(alpha: 0.55),
+                                  color: scheme.primary.withValues(alpha: 0.7),
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     part.trim(),
-                                    style: const TextStyle(
-                                      color: AnaliticaTokens.ink,
+                                    style: TextStyle(
+                                      color: scheme.onSurface,
                                       height: 1.3,
                                     ),
                                   ),
@@ -649,12 +666,12 @@ class _DetalleLineaSheet extends StatelessWidget {
                   ],
                   if (linea.toppings.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    const Text(
+                    Text(
                       'Extras',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: AnaliticaTokens.ink,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -670,12 +687,12 @@ class _DetalleLineaSheet extends StatelessWidget {
                   ],
                   if (linea.bebidas.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    const Text(
+                    Text(
                       'Bebidas',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: AnaliticaTokens.ink,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -690,25 +707,25 @@ class _DetalleLineaSheet extends StatelessWidget {
                   ],
                   if ((linea.observaciones ?? '').trim().isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    const Text(
+                    Text(
                       'Observaciones',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: AnaliticaTokens.ink,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       linea.observaciones!.trim(),
-                      style: const TextStyle(
-                        color: AnaliticaTokens.inkMuted,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
                         height: 1.35,
                       ),
                     ),
                   ],
                   const SizedBox(height: 18),
-                  const Divider(color: AnaliticaTokens.border),
+                  Divider(color: scheme.outlineVariant),
                   const SizedBox(height: 10),
                   _FilaPrecio(
                     nombre:
@@ -719,20 +736,20 @@ class _DetalleLineaSheet extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Subtotal',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
-                          color: AnaliticaTokens.ink,
+                          color: scheme.onSurface,
                         ),
                       ),
                       Text(
                         FoodyFormato.monedaDe(linea.subtotal),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
-                          color: AnaliticaTokens.ink,
+                          color: scheme.onSurface,
                         ),
                       ),
                     ],
@@ -780,6 +797,7 @@ class _FilaPrecio extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -791,17 +809,17 @@ class _FilaPrecio extends StatelessWidget {
               children: [
                 Text(
                   nombre,
-                  style: const TextStyle(
-                    color: AnaliticaTokens.ink,
+                  style: TextStyle(
+                    color: scheme.onSurface,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
                 if (nota != null)
                   Text(
                     nota!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: AnaliticaTokens.inkSoft,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
               ],
@@ -809,9 +827,9 @@ class _FilaPrecio extends StatelessWidget {
           ),
           Text(
             FoodyFormato.monedaDe(precio),
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w600,
-              color: AnaliticaTokens.ink,
+              color: scheme.onSurface,
             ),
           ),
         ],

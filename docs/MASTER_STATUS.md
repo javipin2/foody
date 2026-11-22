@@ -4,7 +4,7 @@
 > Consolidación inteligente de 34 documentos en `docs/`, 10 en `INFRAESTRUCTURA/`, `MEMORIA.md` y verificación contra código (2026-06-28).  
 > **Mantener este archivo** al cerrar tareas. Specs técnicas detalladas siguen en `INFRAESTRUCTURA/`; procedimientos en `docs/ENTORNO_LOCAL.md`.
 
-**Última consolidación:** 2026-11-22 — centro Configuración implementado con layout responsive por ancho y agrupación por tarea.
+**Última consolidación:** 2026-11-22 — centro Configuración y vistas responsive iniciales de Inventario y Menú implementadas; revisión visual final pendiente.
 **Próxima prioridad:** continuar el rediseño progresivo de vistas admin, preservando `MODO=tunel`; la revisión visual completa del usuario queda para cuando termine esta oleada.
 **Doc cierre Nest/Auth:** [`REMEDIACION_NEST_AUTH_2026-08-07.md`](REMEDIACION_NEST_AUTH_2026-08-07.md)
 
@@ -1174,6 +1174,15 @@ Cuando dos fuentes trataban el mismo tema, **prevalece la fecha más reciente ve
 | 2026-11-22 | **UX-INV-MOV-01** — historial de movimientos con transición de stock priorizada y fila táctil adaptable; análisis focalizado sin errores |
 | 2026-11-22 | **DS-FORM-THEME-01** — formularios compartidos ahora derivan superficies y tipografía del tema, evitando blancos forzados en modo oscuro |
 | 2026-11-22 | **UX-SUBRECETA-THEME-01** — editor de subreceta migra sus superficies/alertas a colores del tema; lógica intacta |
+| 2026-11-22 | **UX-MENU-PRODUCTOS-01** — Productos del Menú con tabla desktop tema-aware y tarjetas compactas/tablet; acciones existentes preservadas, análisis focalizado pendiente |
+| 2026-11-22 | **UX-MENU-EXTRAS-01** — Toppings/Bebidas con tabla desde 1100 px y tarjetas móvil/tablet; precio, costeo y disponibilidad preservados; análisis focalizado limpio |
+| 2026-11-22 | **UX-MENU-CAT-COMBOS-01** — gestión de Categorías con diálogo responsive tema-aware y Combos con tabla desktop/cards compacto; análisis focalizado limpio |
+| 2026-11-22 | **UX-MENU-DIALOGOS-01** — asignación de cocina/toppings y resumen precio/costo usan diálogo Foody y superficies adaptables al tema; análisis focalizado limpio |
+| 2026-11-22 | **UX-MENU-COPIAR-01** — diálogo de copiar menú muestra sede origen y alcance confirmado en servicio Nest; análisis focalizado limpio |
+| 2026-11-22 | **UX-FAC-LISTADO-01** — Facturación usa tabla de escritorio y tarjetas compacto; acciones existentes compartidas; análisis focalizado limpio |
+| 2026-11-22 | **UX-FAC-FORM-01** — config/preview/anulación con colores tema-aware y diálogo de comprobante; reglas fiscales intactas; análisis limpio |
+| 2026-11-22 | **UX-CHECKOUT-01** — checkout centrado hasta 760 px, controles tema-aware y barra alineada; backend sigue siendo autoridad; análisis limpio |
+| 2026-11-22 | **UX-CARRITO-01** — carrito y detalle de línea responsivos/tema-aware hasta 760 px; interacciones actuales preservadas; análisis limpio |
 | 2026-11-22 | **NAV-CFG-HUB-01 / DS-BASE-01** — configuración admin agrupada por tarea, índice de opciones con permisos, `?seccion=` preservado; dirección visual documentada en FRONTEND_DESIGN_AUDIT; QA por rol pendiente |
 | 2026-11-22 | **DS-REF-01** — cuatro referencias visuales del usuario clasificadas por dispositivo/tarea; registradas en FRONTEND_DESIGN_AUDIT como guía contextual, no plantilla global |
 | 2026-11-22 | **QA-UI-REDISENO-01** — análisis puntual de 4 Dart: sin issues; análisis global: 1 warning previo en `auth_repository.dart:86`; puerta `verificar-ci.ps1`: 26 OK / 1 fallo por tablas sin RLS (`cobros_idempotencia`, `rate_limit_entries`, `usuario_permisos`), y `verificar-p2-pulido.ps1` falla en su lectura de respuesta HTTP (`GetResponseStream` inexistente) |

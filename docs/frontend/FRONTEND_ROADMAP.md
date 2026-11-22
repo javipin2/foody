@@ -3,9 +3,9 @@
 > **Fuente de verdad del trabajo Flutter/UI.**  
 > Actualizar al cerrar cada sesión de frontend. Sincronizar resumen en [`../MASTER_STATUS.md`](../MASTER_STATUS.md).
 
-**Última actualización:** 2026-11-22 — Insumos UI responsive.
+**Última actualización:** 2026-11-22 — Menú, Facturación, Carrito y Checkout responsive/tema.
 
-**Próximo paso:** continuar el rediseño vista por vista y registrar cobertura/pendientes; mantener `MODO=tunel` para las pruebas remotas solicitadas. La revisión visual global del usuario se hará al terminar la oleada.
+**Próximo paso:** continuar por Caja/Pedidos operativos y vistas admin priorizadas; después revisar claro/oscuro, estados y dimensiones visuales de las vistas intervenidas. Mantener `MODO=tunel`; la revisión visual global del usuario se hará al terminar la oleada.
 
 ### Secuencia del rediseño Foody (2026-11-22)
 
@@ -312,6 +312,7 @@ Detalle UX staff/cliente baseline: **FRONTEND_UX_AUDITORIA.md**. Cliente profund
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-11-22 | **Menú admin / Productos** — tabla densa tema-aware para escritorio y tarjetas existentes para móvil/tablet; acciones de disponibilidad, precios, cocina, toppings, foto y costos intactas; falta analyzer final y QA visual. |
 | 2026-11-22 | **Oleada admin / inventario** — listado Mercado con tabla desktop/grid tablet/cards móvil; registro de movimientos prioriza transición de stock; Traslados responsivo; shells de formulario y editor de Subreceta respetan tema claro/oscuro. API y flujos intactos; análisis focalizado sin errores (1 info previo en interpolación de subreceta); QA visual pendiente. |
 | 2026-11-22 | **Insumos responsive** — hero azul oscuro/naranja, acción Nuevo insumo en escritorio, resumen con datos disponibles y tabs iconográficas; lógica/backend intactos |
 | 2026-08-04 | **Checkout cliente UX** — ink AppBar/tipo/pago/campos/CTA; tip confirmación |
