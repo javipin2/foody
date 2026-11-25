@@ -13,6 +13,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificacionesService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
+const qa_safety_1 = require("../../core/config/qa-safety");
 const fcm_service_1 = require("./fcm.service");
 let NotificacionesService = NotificacionesService_1 = class NotificacionesService {
     database;
@@ -80,6 +81,15 @@ let NotificacionesService = NotificacionesService_1 = class NotificacionesServic
         return Number.isFinite(n) && n > 0 ? Math.floor(n) : 10;
     }
     async procesarPendientes(limite = 50) {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.log.warn('Procesamiento FCM bloqueado en QA aislada');
+            return {
+                procesadas: 0,
+                enviados: 0,
+                abandonadas: 0,
+                modo: 'qa_sin_efectos',
+            };
+        }
         const maxIntentos = this.maxIntentosFcm();
         const pendientes = await this.database.consultar(`SELECT id, sucursal_id, tipo, destinatario_rol, destinatario_usuario_id,
               payload, intentos

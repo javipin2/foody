@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
 import { NotificacionesService } from './notificaciones.service';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 /** Reintenta la cola FCM cada minuto si Firebase Admin no estaba listo. */
 @Injectable()
@@ -16,6 +17,10 @@ export class NotificacionesCronService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Cron de notificaciones pausado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     setInterval(
       () =>
         void this.database.intentarAdvisoryLock(

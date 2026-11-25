@@ -35,6 +35,10 @@ class _AsignarDomiciliarioSlotState extends State<AsignarDomiciliarioSlot> {
     final libres = widget.domiciliarios
         .where((d) => d['ocupado'] != true)
         .toList();
+    final idsLibres = libres.map((d) => d['id'] as String).toList();
+    final seleccion = idsLibres.contains(_seleccion)
+        ? _seleccion
+        : (idsLibres.isEmpty ? null : idsLibres.first);
 
     if (libres.isEmpty) {
       return Padding(
@@ -79,7 +83,8 @@ class _AsignarDomiciliarioSlotState extends State<AsignarDomiciliarioSlot> {
               ),
             ),
           DropdownButtonFormField<String>(
-            initialValue: _seleccion,
+            key: ValueKey(idsLibres.join('|')),
+            initialValue: seleccion,
             isExpanded: true,
             decoration: InputDecoration(
               labelText: widget.reasignar ? 'Nuevo domiciliario' : 'Domiciliario',
@@ -97,11 +102,11 @@ class _AsignarDomiciliarioSlotState extends State<AsignarDomiciliarioSlot> {
           ),
           const SizedBox(height: 6),
           FilledButton(
-            onPressed: _seleccion == null
+            onPressed: seleccion == null
                 ? null
                 : () => widget.onAsignar(
                       widget.pedido,
-                      _seleccion!,
+                      seleccion,
                       reasignar: widget.reasignar,
                     ),
             style: FilledButton.styleFrom(backgroundColor: AnaliticaTokens.ink),

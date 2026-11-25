@@ -88,6 +88,18 @@ let AlertasRiesgoService = AlertasRiesgoService_1 = class AlertasRiesgoService {
             await this.registrarEnTransaccion(client, params);
         });
     }
+    async registrarVariasEnTransaccion(alertas) {
+        if (!alertas.length)
+            return 0;
+        return this.database.enTransaccion(async (client) => {
+            let generadas = 0;
+            for (const alerta of alertas) {
+                if (await this.registrarEnTransaccion(client, alerta))
+                    generadas++;
+            }
+            return generadas;
+        });
+    }
     despuesDeInsertar(params) {
         void this.realtime.alertaNueva(params.sucursalId, {
             tipo: params.tipo,

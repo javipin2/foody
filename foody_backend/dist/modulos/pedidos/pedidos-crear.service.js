@@ -23,6 +23,7 @@ const pedidos_soporte_service_1 = require("./pedidos-soporte.service");
 const pedidos_cuenta_mesa_service_1 = require("./pedidos-cuenta-mesa.service");
 const pedidos_inventario_service_1 = require("./pedidos-inventario.service");
 const pedido_estados_1 = require("./pedido-estados");
+const pedidos_idempotencia_util_1 = require("./pedidos-idempotencia.util");
 const DIAS_ANTICIPACION_ENCARGO_MIN = 2;
 let PedidosCrearService = class PedidosCrearService {
     database;
@@ -69,11 +70,28 @@ let PedidosCrearService = class PedidosCrearService {
                 message: 'Un pedido de mesa requiere mesa_id',
             });
         }
-        if (dto.idempotency_key?.trim()) {
-            const existente = await this.database.consultarUno(`SELECT pedido_id FROM pedidos_idempotencia WHERE clave = $1`, [dto.idempotency_key.trim()]);
+        const claveIdempotencia = dto.idempotency_key?.trim() || null;
+        const huellaIdempotencia = claveIdempotencia
+            ? (0, pedidos_idempotencia_util_1.huellaIdempotenciaPedido)(dto)
+            : null;
+        if (claveIdempotencia) {
+            const existente = await this.database.consultarUno(`SELECT pedido_id, huella FROM pedidos_idempotencia
+         WHERE sucursal_id = $1 AND clave = $2`, [dto.sucursal_id, claveIdempotencia]);
             if (existente) {
+                if (existente.huella && existente.huella !== huellaIdempotencia) {
+                    throw new common_1.ConflictException({
+                        error: 'IDEMPOTENCY_KEY_REUSED',
+                        message: 'La clave idempotente ya se usó con otro contenido',
+                    });
+                }
                 const pedido = await this.database.consultarUno(`SELECT id, numero_pedido, estado, total, seguimiento_token::text AS seguimiento_token
-           FROM pedidos WHERE id = $1`, [existente.pedido_id]);
+           FROM pedidos WHERE id = $1 AND sucursal_id = $2`, [existente.pedido_id, dto.sucursal_id]);
+                if (!pedido) {
+                    throw new common_1.ConflictException({
+                        error: 'IDEMPOTENCY_KEY_REUSED',
+                        message: 'La clave idempotente no corresponde a un pedido de esta sucursal',
+                    });
+                }
                 return {
                     pedido_id: pedido.id,
                     numero_pedido: pedido.numero_pedido,
@@ -101,21 +119,31 @@ let PedidosCrearService = class PedidosCrearService {
                     message: 'Los pedidos de encargo no admiten combos',
                 });
             }
-            this.validarFechaEncargo(dto.fecha_entrega_deseada);
+            if (!opciones.soloEstimar || dto.fecha_entrega_deseada?.trim()) {
+                this.validarFechaEncargo(dto.fecha_entrega_deseada);
+            }
         }
         let catalogoCambios = [];
         const resultado = await this.database.enTransaccion(async (client) => {
             if (opciones.soloEstimar) {
             }
-            else if (dto.idempotency_key?.trim()) {
-                const clave = dto.idempotency_key.trim();
+            else if (claveIdempotencia && huellaIdempotencia) {
+                const clave = claveIdempotencia;
+                const claveScope = `${dto.sucursal_id}:${clave}`;
                 await client.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [
-                    clave,
+                    claveScope,
                 ]);
-                const existenteTx = await this.soporte.consultarUnoCliente(client, `SELECT pedido_id FROM pedidos_idempotencia WHERE clave = $1`, [clave]);
+                const existenteTx = await this.soporte.consultarUnoCliente(client, `SELECT pedido_id, huella FROM pedidos_idempotencia
+           WHERE sucursal_id = $1 AND clave = $2`, [dto.sucursal_id, clave]);
                 if (existenteTx) {
+                    if (existenteTx.huella && existenteTx.huella !== huellaIdempotencia) {
+                        throw new common_1.ConflictException({
+                            error: 'IDEMPOTENCY_KEY_REUSED',
+                            message: 'La clave idempotente ya se usó con otro contenido',
+                        });
+                    }
                     const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, numero_pedido, estado, total, seguimiento_token::text AS seguimiento_token
-             FROM pedidos WHERE id = $1`, [existenteTx.pedido_id]);
+             FROM pedidos WHERE id = $1 AND sucursal_id = $2`, [existenteTx.pedido_id, dto.sucursal_id]);
                     if (pedido) {
                         return {
                             pedido_id: pedido.id,
@@ -167,8 +195,7 @@ let PedidosCrearService = class PedidosCrearService {
                 if (!mesa) {
                     throw new common_1.BadRequestException('MESA_NO_ENCONTRADA');
                 }
-                if (!opciones.creadoPorStaff &&
-                    mesa.estado_operativo === 'reservada') {
+                if (!opciones.creadoPorStaff && mesa.estado_operativo === 'reservada') {
                     throw new common_1.BadRequestException({
                         error: 'MESA_RESERVADA',
                         message: 'Esta mesa está reservada. Pide al personal que confirme tu llegada antes de pedir.',
@@ -627,9 +654,10 @@ let PedidosCrearService = class PedidosCrearService {
                     emailCliente: dto.email_cliente.trim(),
                 });
             }
-            if (dto.idempotency_key?.trim()) {
-                await client.query(`INSERT INTO pedidos_idempotencia (clave, pedido_id) VALUES ($1, $2)
-           ON CONFLICT (clave) DO NOTHING`, [dto.idempotency_key.trim(), pedidoId]);
+            if (claveIdempotencia && huellaIdempotencia) {
+                await client.query(`INSERT INTO pedidos_idempotencia (sucursal_id, clave, huella, pedido_id)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (sucursal_id, clave) DO NOTHING`, [dto.sucursal_id, claveIdempotencia, huellaIdempotencia, pedidoId]);
             }
             return {
                 pedido_id: pedidoId,

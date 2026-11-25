@@ -1,5 +1,5 @@
 /// Contratos API de los 5 flujos críticos (+ VIE-01).
-/// Runnable en VM: `flutter test test/e2e/flujos_criticos_api_test.dart`
+/// Solo contra BD QA aislada; habilitar con `--dart-define=FOODY_E2E_API_HABILITADO=true`.
 /// Wrapper dispositivo: `integration_test/flujos_criticos_e2e_test.dart`
 library;
 
@@ -19,6 +19,12 @@ const e2eProducto = 'f0000000-0000-4000-8000-000000000002';
 const e2ePrecio = 8000;
 const e2eQr = 'demo-mesa-1';
 const e2ePass = '123456';
+// Los flujos crean y cancelan pedidos. Evita que `flutter test` los ejecute
+// automáticamente contra una API local que podría usar datos compartidos.
+const e2eApiHabilitado = bool.fromEnvironment(
+  'FOODY_E2E_API_HABILITADO',
+  defaultValue: false,
+);
 
 Future<Map<String, dynamic>> e2eJson(
   String method,
@@ -75,8 +81,7 @@ Future<void> e2eLimpiar(Map<String, String> auth) async {
   for (final p in datos) {
     final m = p as Map;
     final est = m['estado'] as String?;
-    if (est == null ||
-        ['cancelado', 'rechazado', 'pagado'].contains(est)) {
+    if (est == null || ['cancelado', 'rechazado', 'pagado'].contains(est)) {
       continue;
     }
     await e2eJson(
@@ -121,12 +126,14 @@ void registrarFlujosCriticosE2e() {
   group('Foody flujos críticos (API)', () {
     late Map<String, String> admin;
     late Map<String, String> cajero;
+    late Map<String, String> cocina;
 
     setUpAll(() async {
       final salud = await e2eJson('GET', '/salud');
       expect(salud['exito'], isTrue, reason: 'API debe estar en :3000');
       admin = await e2eLogin('admin@foody.demo');
       cajero = await e2eLogin('cajero.test@foody.demo');
+      cocina = await e2eLogin('cocina@foody.demo');
     });
 
     setUp(() async {
@@ -171,13 +178,33 @@ void registrarFlujosCriticosE2e() {
         ))['exito'],
         isTrue,
       );
+      final detalle = await e2eJson(
+        'GET',
+        '/pedidos/$id/detalle?sucursal_id=$e2eSid',
+        headers: cajero,
+      );
+      final pedido = detalle['datos'] as Map;
+      final items = (pedido['items_resumen'] ?? pedido['items'] ?? []) as List;
+      for (final item in items) {
+        final itemId = (item as Map)['item_id'] ?? item['id'];
+        expect(itemId, isNotNull);
+        for (final estado in ['preparando', 'listo']) {
+          final actualizado = await e2eJson(
+            'PATCH',
+            '/cocina/items/$itemId/estado',
+            headers: cocina,
+            body: {'estado_cocina': estado},
+          );
+          expect(actualizado['exito'], isTrue, reason: '$actualizado');
+        }
+      }
       final cobrar = await e2eJson(
         'POST',
         '/pedidos/$id/cobrar?sucursal_id=$e2eSid',
         headers: cajero,
         body: {'metodo_pago': 'efectivo'},
       );
-      expect(cobrar['exito'], isTrue);
+      expect(cobrar['exito'], isTrue, reason: 'Respuesta de cobro: $cobrar');
     });
 
     test('QR: menú público + pedido pendiente_aprobacion', () async {
@@ -185,8 +212,8 @@ void registrarFlujosCriticosE2e() {
       expect(menu['exito'], isTrue);
       final datos = menu['datos'] as Map;
       final mesaMap = (datos['mesa'] as Map?) ?? datos;
-      final mesaId = mesaMap['id'] as String? ??
-          '30000000-0000-4000-8000-000000000001';
+      final mesaId =
+          mesaMap['id'] as String? ?? '30000000-0000-4000-8000-000000000001';
 
       final crear = await e2eJson(
         'POST',
@@ -261,8 +288,9 @@ void registrarFlujosCriticosE2e() {
       expect(tickets['exito'], isTrue);
     });
 
-    test('caja + VIE-01: add en listo mantiene estado listo', () async {
-      final caja = await e2eJson('GET', '/caja/activa/$e2eSid', headers: cajero);
+    test('caja + VIE-01: add en listo regresa a en_cocina', () async {
+      final caja =
+          await e2eJson('GET', '/caja/activa/$e2eSid', headers: cajero);
       expect(caja['exito'], isTrue);
       expect(caja['datos'], isNotNull);
 
@@ -306,11 +334,21 @@ void registrarFlujosCriticosE2e() {
         headers: cajero,
       );
       final datos = det['datos'] as Map;
-      final estado = (datos['estado'] ?? (datos['pedido'] as Map?)?['estado'])
-          as String?;
-      expect(estado, 'listo');
+      final estado =
+          (datos['estado'] ?? (datos['pedido'] as Map?)?['estado']) as String?;
+      final estadosItems = (datos['items_resumen'] as List? ?? [])
+          .map((item) => (item as Map)['estado_cocina'])
+          .toList();
+      expect(
+        estado,
+        'en_cocina',
+        reason: 'Estado=$estado; estado_cocina_items=$estadosItems',
+      );
     });
-  });
+  },
+      skip: e2eApiHabilitado
+          ? null
+          : 'Requiere habilitación explícita y BD aislada');
 }
 
 void main() {

@@ -25,6 +25,7 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
   final VoidCallback? onEntregar;
   final bool mostrarTelefono;
   final bool mostrarMiniMapa;
+
   /// Indep: botón navegar a sucursal (pickup).
   final bool mostrarIrRestaurante;
   final double elevacion;
@@ -101,9 +102,8 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
       etiqueta: etiqueta,
     );
     if (!ok && context.mounted) {
-      final texto = etiqueta?.trim().isNotEmpty == true
-          ? etiqueta!.trim()
-          : '$lat,$lng';
+      final texto =
+          etiqueta?.trim().isNotEmpty == true ? etiqueta!.trim() : '$lat,$lng';
       await _copiar(context, texto, 'Dirección copiada');
     }
   }
@@ -118,8 +118,10 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
     final direccion = pedido['direccion_entrega'] as String?;
     final total = num.tryParse('${pedido['total']}') ?? 0;
     final domicilio = num.tryParse('${pedido['costo_domicilio']}') ?? 0;
+    final productoNeto = num.tryParse('${pedido['producto_total']}');
     final producto =
-        num.tryParse('${pedido['subtotal']}') ?? (total - domicilio);
+        productoNeto ?? (num.tryParse('${pedido['subtotal']}') ?? 0);
+    final saldoPendiente = num.tryParse('${pedido['saldo_pendiente']}');
     final metodo = pedido['metodo_pago'] as String?;
     final estado = _estado;
     final latOk = lat;
@@ -347,10 +349,17 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            _filaMonto('Producto', producto),
-            if (domicilio > 0) _filaMonto('Domicilio (base)', domicilio),
+            _filaMonto(
+              productoNeto == null ? 'Producto (subtotal)' : 'Producto',
+              producto,
+            ),
+            if (domicilio > 0) _filaMonto('Domicilio', domicilio),
             const Divider(height: 16),
-            _filaMonto('Total a cobrar', total, fuerte: true),
+            _filaMonto(
+              saldoPendiente == null ? 'Total del pedido' : 'Saldo por cobrar',
+              saldoPendiente ?? total,
+              fuerte: true,
+            ),
             const SizedBox(height: 14),
             if (estado == 'asignado' && onSalir != null)
               FilledButton.icon(
@@ -391,20 +400,29 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            etiqueta,
-            style: TextStyle(
-              color: fuerte ? null : Colors.black54,
-              fontWeight: fuerte ? FontWeight.w700 : FontWeight.w400,
+          Expanded(
+            child: Text(
+              etiqueta,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: fuerte ? null : Colors.black54,
+                fontWeight: fuerte ? FontWeight.w700 : FontWeight.w400,
+              ),
             ),
           ),
-          Text(
-            _moneda.format(valor),
-            style: TextStyle(
-              fontWeight: fuerte ? FontWeight.w800 : FontWeight.w500,
-              fontSize: fuerte ? 16 : 14,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              _moneda.format(valor),
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontWeight: fuerte ? FontWeight.w800 : FontWeight.w500,
+                fontSize: fuerte ? 16 : 14,
+              ),
             ),
           ),
         ],

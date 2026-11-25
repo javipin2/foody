@@ -142,7 +142,7 @@ export declare class AuthController {
         cerrado: boolean;
     }>;
     perfil(usuario: JwtPayload): Promise<Record<string, unknown>>;
-    realtimeCanales(usuario: JwtPayload, sucursalId?: string): Promise<{
+    realtimeCanales(usuario: JwtPayload, sucursalId?: string, cocinaId?: string): Promise<{
         realtime_canales: Record<string, string>;
     }>;
     registrarFcm(usuario: JwtPayload, dto: RegistrarFcmDto): Promise<{

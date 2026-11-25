@@ -40,9 +40,13 @@ export class PedidosSoporteService {
     });
   }
 
-  emitirUbicacionRepartidor(pedidoId: string, payload: Record<string, unknown>) {
+  emitirUbicacionRepartidor(
+    pedidoId: string,
+    payload: Record<string, unknown>,
+  ) {
     void this.obtenerSeguimientoToken(pedidoId).then((token) => {
-      if (token) void this.realtime.ubicacionRepartidor(pedidoId, token, payload);
+      if (token)
+        void this.realtime.ubicacionRepartidor(pedidoId, token, payload);
     });
   }
 
@@ -101,10 +105,7 @@ export class PedidosSoporteService {
     );
   }
 
-  resolverEstadoInicial(
-    dto: CrearPedidoDto,
-    creadoPorStaff?: boolean,
-  ): string {
+  resolverEstadoInicial(dto: CrearPedidoDto, creadoPorStaff?: boolean): string {
     if (creadoPorStaff) {
       if (dto.tipo === 'mesa' && !dto.mesa_id) {
         throw new BadRequestException('MESA_REQUERIDA');
@@ -124,12 +125,23 @@ export class PedidosSoporteService {
     client: PoolClient,
     sucursalId: string,
   ): Promise<string> {
-    const anio = new Date().getFullYear();
+    const anio = Number(
+      new Intl.DateTimeFormat('en', {
+        timeZone: 'America/Bogota',
+        year: 'numeric',
+      }).format(new Date()),
+    );
+    // Serializa la numeración por sucursal/año dentro de la transacción de alta.
+    // Sin este lock, dos canales concurrentes pueden calcular el mismo COUNT + 1.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [
+      `foody:pedido-numero:${sucursalId}:${anio}`,
+    ]);
     const fila = await this.consultarUnoCliente<{ n: number }>(
       client,
       `SELECT COUNT(*)::int AS n FROM pedidos
        WHERE sucursal_id = $1
-         AND EXTRACT(YEAR FROM created_at) = $2`,
+         AND created_at >= make_timestamptz($2::int, 1, 1, 0, 0, 0, 'America/Bogota')
+         AND created_at < make_timestamptz($2::int + 1, 1, 1, 0, 0, 0, 'America/Bogota')`,
       [sucursalId, anio],
     );
     const secuencia = (fila?.n ?? 0) + 1;
@@ -207,8 +219,7 @@ export class PedidosSoporteService {
     if (bloqueados.includes(pedido.estado)) {
       throw new BadRequestException({
         error: 'CANCELAR_CLIENTE_NO_PERMITIDO',
-        message:
-          'Ya no puedes cancelar este pedido. Contacta al restaurante.',
+        message: 'Ya no puedes cancelar este pedido. Contacta al restaurante.',
       });
     }
     if (pedido.estado === 'confirmado') {
@@ -223,22 +234,14 @@ export class PedidosSoporteService {
   }
 
   /** Cliente anónimo: solo pedidos de mesa activos. */
-  validarLlamadaMesera(pedido: {
-    mesa_id: string | null;
-    estado: string;
-  }) {
+  validarLlamadaMesera(pedido: { mesa_id: string | null; estado: string }) {
     if (!pedido.mesa_id) {
       throw new BadRequestException({
         error: 'LLAMADA_MESERA_NO_MESA',
         message: 'Solo puedes llamar a la mesera desde un pedido de mesa',
       });
     }
-    const bloqueados = [
-      'pagado',
-      'cancelado',
-      'rechazado',
-      'entregado',
-    ];
+    const bloqueados = ['pagado', 'cancelado', 'rechazado', 'entregado'];
     if (bloqueados.includes(pedido.estado)) {
       throw new BadRequestException({
         error: 'LLAMADA_MESERA_NO_PERMITIDA',
@@ -270,9 +273,7 @@ export class PedidosSoporteService {
         pedido_id: pedidoId,
         sucursal_id: sucursalId,
         mesa_id: mesaId ?? '',
-        ruta: mesaId
-          ? `/admin/mesero?mesa_id=${mesaId}`
-          : '/admin/mesero',
+        ruta: mesaId ? `/admin/mesero?mesa_id=${mesaId}` : '/admin/mesero',
       },
     });
     void this.realtime.mesasActualizadas(sucursalId);
@@ -319,6 +320,9 @@ export class PedidosSoporteService {
         nivel: 'nuevo',
       });
     }
+    if (estado === 'pagado' && opciones.mesaId) {
+      void this.realtime.mesasActualizadas(sucursalId);
+    }
     void this.notificarPushPedido(
       sucursalId,
       pedidoId,
@@ -354,9 +358,7 @@ export class PedidosSoporteService {
         roles: ['mesero', 'admin', 'gerente', 'cajero'],
         datos: {
           ...base.datos,
-          ruta: mesaId
-            ? `/admin/mesero?mesa_id=${mesaId}`
-            : '/admin/mesero',
+          ruta: mesaId ? `/admin/mesero?mesa_id=${mesaId}` : '/admin/mesero',
         },
       });
       return;
@@ -416,7 +418,11 @@ export class PedidosSoporteService {
           ruta: `/admin/mesero?${qMesero}`,
         },
       });
-      void this.notificarPushCliente(pedidoId, 'Tu pedido está listo', `Pedido ${num}`);
+      void this.notificarPushCliente(
+        pedidoId,
+        'Tu pedido está listo',
+        `Pedido ${num}`,
+      );
       return;
     }
 
@@ -455,10 +461,7 @@ export class PedidosSoporteService {
     const pedido = await this.database.consultarUno<{
       device_id: string | null;
       sucursal_id: string;
-    }>(
-      `SELECT device_id, sucursal_id FROM pedidos WHERE id = $1`,
-      [pedidoId],
-    );
+    }>(`SELECT device_id, sucursal_id FROM pedidos WHERE id = $1`, [pedidoId]);
     if (!pedido?.device_id) return;
     await this.notificaciones.enviar({
       sucursal_id: pedido.sucursal_id,

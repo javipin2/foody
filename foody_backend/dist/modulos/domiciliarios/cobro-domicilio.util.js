@@ -8,7 +8,7 @@ function repartirCobroDomicilio(total, costoDomicilio, montoPagado) {
     const productoTotal = Math.max(0, total - domicilio);
     const productoPendiente = Math.max(0, Math.min(saldo, productoTotal - montoPagado));
     const domicilioPendiente = Math.max(0, saldo - productoPendiente);
-    return { saldo, productoPendiente, domicilioPendiente };
+    return { saldo, productoTotal, productoPendiente, domicilioPendiente };
 }
 function montoVentaCajaEntregaDomicilio(total, costoDomicilio, montoPagado, domicilioIngresaACaja) {
     const { saldo, productoPendiente } = repartirCobroDomicilio(total, costoDomicilio, montoPagado);

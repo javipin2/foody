@@ -9,7 +9,6 @@ import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/saas_ui/saas_ui.dart';
 import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/core/tema/foody_formulario.dart';
-import 'package:reserva_canchas/core/widgets/foody_scroll_horizontal_fade.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/inventario/data/costeo_repository.dart';
@@ -19,6 +18,7 @@ import 'package:reserva_canchas/features/inventario/presentation/widgets/dialogo
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/features/inventario/presentation/widgets/inventario_hermanas_panel.dart';
 import 'package:reserva_canchas/features/inventario/presentation/inventario_traslados_panel.dart';
+import 'package:reserva_canchas/features/inventario/presentation/widgets/inventario_seccion_selector.dart';
 import 'package:reserva_canchas/features/inventario/presentation/widgets/stock_visual_widgets.dart';
 
 /// Insumos admin — ingredientes, compras, movimientos y subrecetas.
@@ -29,6 +29,8 @@ class InventarioAdminScreen extends StatefulWidget {
     this.onIrCostos,
     this.filtroInicial,
     this.destacarIngredienteId,
+    this.repository,
+    this.costeoRepository,
   });
 
   final String? sucursalId;
@@ -41,6 +43,8 @@ class InventarioAdminScreen extends StatefulWidget {
 
   /// NAV-ADM2-04: resaltar insumo concreto.
   final String? destacarIngredienteId;
+  final InventarioRepository? repository;
+  final CosteoRepository? costeoRepository;
 
   @override
   State<InventarioAdminScreen> createState() => _InventarioAdminScreenState();
@@ -48,9 +52,10 @@ class InventarioAdminScreen extends StatefulWidget {
 
 class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     with SingleTickerProviderStateMixin {
-  final _repo = InventarioRepository();
-  final _costeoRepo = CosteoRepository();
+  late final InventarioRepository _repo;
+  late final CosteoRepository _costeoRepo;
   late final TabController _tabs;
+  int _indiceTabSincronizado = 0;
 
   List<Map<String, dynamic>> _ingredientes = [];
   List<Map<String, dynamic>> _movimientos = [];
@@ -74,7 +79,10 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? InventarioRepository();
+    _costeoRepo = widget.costeoRepository ?? CosteoRepository();
     _tabs = TabController(length: 5, vsync: this);
+    _tabs.addListener(_sincronizarTabSeleccionada);
     if (widget.filtroInicial != null && widget.filtroInicial!.isNotEmpty) {
       _filtroInsumos = widget.filtroInicial!;
     }
@@ -83,9 +91,16 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
 
   @override
   void dispose() {
+    _tabs.removeListener(_sincronizarTabSeleccionada);
     _tabs.dispose();
     _busquedaCtrl.dispose();
     super.dispose();
+  }
+
+  void _sincronizarTabSeleccionada() {
+    if (_tabs.index == _indiceTabSincronizado) return;
+    _indiceTabSincronizado = _tabs.index;
+    if (mounted) setState(() {});
   }
 
   Future<void> _cargar() async {
@@ -334,7 +349,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: AnaliticaTokens.inkOf(context),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -541,7 +556,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: AnaliticaTokens.inkOf(context),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -651,7 +666,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: AnaliticaTokens.inkOf(context),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -771,7 +786,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                     _moneda.format(
                       num.tryParse('${p['costo_total']}') ?? 0,
                     ),
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                 );
               },
@@ -811,7 +826,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
         'Solo costo',
         '$soloCosto',
         Icons.payments_outlined,
-        AnaliticaTokens.inkMuted
+        AnaliticaTokens.inkMutedOf(context)
       ),
     ];
     return Padding(
@@ -894,7 +909,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                     compacto ? 12 : 24, 16, compacto ? 12 : 24, 14),
                 padding: EdgeInsets.all(compacto ? 14 : 20),
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.ink,
+                  color: AnaliticaTokens.inkOf(context),
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: const [
                     BoxShadow(
@@ -1009,7 +1024,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                         TextButton.icon(
                           onPressed: _mostrarInventarioHermanas,
                           style: TextButton.styleFrom(
-                            foregroundColor: AnaliticaTokens.inkMuted,
+                            foregroundColor:
+                                AnaliticaTokens.inkMutedOf(context),
                             visualDensity: VisualDensity.compact,
                           ),
                           icon: const Icon(
@@ -1024,7 +1040,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                         TextButton.icon(
                           onPressed: widget.onIrCostos,
                           style: TextButton.styleFrom(
-                            foregroundColor: AnaliticaTokens.inkMuted,
+                            foregroundColor:
+                                AnaliticaTokens.inkMutedOf(context),
                             visualDensity: VisualDensity.compact,
                           ),
                           icon: const Icon(Icons.pie_chart_outline, size: 16),
@@ -1057,57 +1074,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
               children: [
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: compacto ? 12 : 24),
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: AnaliticaTokens.surfaceMuted,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: FoodyScrollHorizontalFade(
-                      child: TabBar(
-                        controller: _tabs,
-                        isScrollable: compacto,
-                        tabAlignment:
-                            compacto ? TabAlignment.start : TabAlignment.fill,
-                        labelColor: Colors.white,
-                        unselectedLabelColor: AnaliticaTokens.inkSoft,
-                        indicator: BoxDecoration(
-                          color: AnaliticaTokens.ink,
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicatorPadding: const EdgeInsets.all(2),
-                        dividerColor: Colors.transparent,
-                        labelStyle: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                        unselectedLabelStyle: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 12.5,
-                        ),
-                        onTap: (_) => setState(() {}),
-                        tabs: const [
-                          Tab(
-                              icon: Icon(Icons.shopping_basket_outlined,
-                                  size: 17),
-                              text: 'Mercado'),
-                          Tab(
-                              icon: Icon(Icons.swap_vert_rounded, size: 17),
-                              text: 'Movimientos'),
-                          Tab(
-                              icon: Icon(Icons.soup_kitchen_outlined, size: 17),
-                              text: 'Subrecetas'),
-                          Tab(
-                              icon: Icon(Icons.fact_check_outlined, size: 17),
-                              text: 'Conteo'),
-                          Tab(
-                              icon:
-                                  Icon(Icons.compare_arrows_rounded, size: 17),
-                              text: 'Traslados'),
-                        ],
-                      ),
-                    ),
+                  child: InventarioSeccionSelector(
+                    controller: _tabs,
+                    compacto: compacto,
                   ),
                 ),
                 Expanded(
@@ -1142,7 +1111,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                       onPressed: _tabs.index == 0
                           ? _dialogoCrearIngrediente
                           : () => _dialogoSubreceta(),
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: AnaliticaTokens.inkOf(context),
                       foregroundColor: Colors.white,
                       elevation: 2,
                       tooltip:
@@ -1153,13 +1122,13 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                       onPressed: _tabs.index == 0
                           ? _dialogoCrearIngrediente
                           : () => _dialogoSubreceta(),
-                      backgroundColor: AnaliticaTokens.ink,
+                      backgroundColor: AnaliticaTokens.inkOf(context),
                       foregroundColor: Colors.white,
                       elevation: 2,
                       icon: const Icon(Icons.add, size: 20),
                       label: Text(
                         _tabs.index == 0 ? 'Nuevo insumo' : 'Nueva subreceta',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
             ),
@@ -1198,17 +1167,17 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.inventory_2_outlined,
               size: 40,
-              color: AnaliticaTokens.inkSoft,
+              color: AnaliticaTokens.inkSoftOf(context),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Sin insumos aún',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.ink,
+                color: AnaliticaTokens.inkOf(context),
               ),
             ),
             const SizedBox(height: 8),
@@ -1217,7 +1186,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Crear primer insumo'),
               style: FilledButton.styleFrom(
-                backgroundColor: AnaliticaTokens.ink,
+                backgroundColor: AnaliticaTokens.inkOf(context),
               ),
             ),
           ],
@@ -1235,30 +1204,32 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Buscar insumo…',
-              hintStyle: const TextStyle(color: AnaliticaTokens.inkSoft),
-              prefixIcon: const Icon(
+              hintStyle: TextStyle(color: AnaliticaTokens.inkSoftOf(context)),
+              prefixIcon: Icon(
                 Icons.search,
                 size: 18,
-                color: AnaliticaTokens.inkSoft,
+                color: AnaliticaTokens.inkSoftOf(context),
               ),
               isDense: true,
               filled: true,
-              fillColor: AnaliticaTokens.surface,
+              fillColor: AnaliticaTokens.surfaceOf(context),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 10,
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.border),
+                borderSide:
+                    BorderSide(color: AnaliticaTokens.borderOf(context)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.border),
+                borderSide:
+                    BorderSide(color: AnaliticaTokens.borderOf(context)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AnaliticaTokens.ink),
+                borderSide: BorderSide(color: AnaliticaTokens.inkOf(context)),
               ),
             ),
           ),
@@ -1279,10 +1250,69 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
         ),
         Expanded(
           child: lista.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Ningún insumo coincide',
-                    style: TextStyle(color: AnaliticaTokens.inkSoft),
+              ? LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 420),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.search_off_rounded,
+                                  size: 36,
+                                  color: AnaliticaTokens.inkSoftOf(context),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'No encontramos insumos',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        color: AnaliticaTokens.inkOf(context),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Prueba otro nombre o quita los filtros para ver el inventario completo.',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: AnaliticaTokens.inkMutedOf(
+                                          context,
+                                        ),
+                                      ),
+                                ),
+                                const SizedBox(height: 16),
+                                OutlinedButton.icon(
+                                  onPressed: () => setState(() {
+                                    _busquedaCtrl.clear();
+                                    _filtroInsumos = 'todos';
+                                  }),
+                                  icon: const Icon(
+                                    Icons.filter_alt_off_outlined,
+                                  ),
+                                  label: const Text(
+                                    'Limpiar búsqueda y filtros',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 )
               : RefreshIndicator(
@@ -1322,9 +1352,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          color: AnaliticaTokens.surface,
+          color: AnaliticaTokens.surfaceOf(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AnaliticaTokens.border),
+          border: Border.all(color: AnaliticaTokens.borderOf(context)),
         ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -1334,8 +1364,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             dataRowMaxHeight: 64,
             horizontalMargin: 18,
             columnSpacing: 32,
-            headingTextStyle: const TextStyle(
-              color: AnaliticaTokens.inkMuted,
+            headingTextStyle: TextStyle(
+              color: AnaliticaTokens.inkMutedOf(context),
               fontSize: 11,
               fontWeight: FontWeight.w700,
             ),
@@ -1392,8 +1422,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                             ing['nombre'] as String? ?? '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AnaliticaTokens.ink,
+                            style: TextStyle(
+                              color: AnaliticaTokens.inkOf(context),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -1459,7 +1489,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: Material(
-        color: sel ? AnaliticaTokens.ink : AnaliticaTokens.surface,
+        color: sel
+            ? AnaliticaTokens.inkOf(context)
+            : AnaliticaTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(6),
         child: InkWell(
           onTap: () => setState(() => _filtroInsumos = id),
@@ -1469,7 +1501,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: sel ? AnaliticaTokens.ink : AnaliticaTokens.border,
+                color: sel
+                    ? AnaliticaTokens.inkOf(context)
+                    : AnaliticaTokens.borderOf(context),
               ),
             ),
             child: Text(
@@ -1477,7 +1511,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: sel ? Colors.white : AnaliticaTokens.inkMuted,
+                color: sel ? Colors.white : AnaliticaTokens.inkMutedOf(context),
               ),
             ),
           ),
@@ -1509,8 +1543,8 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
 
     final menu = PopupMenuButton<String>(
       tooltip: 'Acciones del insumo',
-      icon: const Icon(Icons.more_horiz,
-          size: 21, color: AnaliticaTokens.inkSoft),
+      icon: Icon(Icons.more_horiz,
+          size: 21, color: AnaliticaTokens.inkSoftOf(context)),
       onSelected: (v) {
         if (v == 'editar') _dialogoEditarIngrediente(ing);
         if (v == 'compra') _dialogoCompra(ing);
@@ -1527,14 +1561,14 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
 
     return Container(
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: AnaliticaTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: destacar
               ? AnaliticaTokens.ventas.withValues(alpha: 0.55)
               : esRiesgo
                   ? colorRiesgo.withValues(alpha: 0.38)
-                  : AnaliticaTokens.border,
+                  : AnaliticaTokens.borderOf(context),
         ),
         boxShadow: const [
           BoxShadow(
@@ -1574,11 +1608,11 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                         ing['nombre'] as String? ?? '',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
                           letterSpacing: -0.2,
-                          color: AnaliticaTokens.ink,
+                          color: AnaliticaTokens.inkOf(context),
                         ),
                       ),
                       if (categoria != null && categoria.trim().isNotEmpty)
@@ -1586,8 +1620,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                           categoria.replaceAll('_', ' '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 11, color: AnaliticaTokens.inkMuted),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AnaliticaTokens.inkMutedOf(context)),
                         ),
                     ],
                   ),
@@ -1603,21 +1638,21 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('COSTO UNITARIO',
+                      Text('COSTO UNITARIO',
                           style: TextStyle(
                               fontSize: 9,
                               letterSpacing: 0.7,
                               fontWeight: FontWeight.w700,
-                              color: AnaliticaTokens.inkSoft)),
+                              color: AnaliticaTokens.inkSoftOf(context))),
                       const SizedBox(height: 3),
                       Text(
                         '${_moneda.format(costo)} / $unidad',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: AnaliticaTokens.ink),
+                            color: AnaliticaTokens.inkOf(context)),
                       ),
                     ],
                   ),
@@ -1630,16 +1665,17 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
               StockBarra(stock: stock, minimo: minimo, unidad: unidad),
             ],
             if (precioCompra != null) ...[
-              const Spacer(),
+              const SizedBox(height: 10),
               Row(
                 children: [
-                  const Icon(Icons.shopping_bag_outlined,
-                      size: 14, color: AnaliticaTokens.inkSoft),
+                  Icon(Icons.shopping_bag_outlined,
+                      size: 14, color: AnaliticaTokens.inkSoftOf(context)),
                   const SizedBox(width: 5),
                   Text(
                     'Compra: ${_moneda.format(num.tryParse('$precioCompra') ?? 0)}',
-                    style: const TextStyle(
-                        fontSize: 11, color: AnaliticaTokens.inkMuted),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: AnaliticaTokens.inkMutedOf(context)),
                   ),
                 ],
               ),
@@ -1673,21 +1709,21 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
     final compacto = FoodyBreakpoints.esCompact(ancho);
 
     if (_movimientos.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.swap_vert_circle_outlined,
               size: 40,
-              color: AnaliticaTokens.inkSoft,
+              color: AnaliticaTokens.inkSoftOf(context),
             ),
             SizedBox(height: 12),
             Text(
               'Sin movimientos aún',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.ink,
+                color: AnaliticaTokens.inkOf(context),
               ),
             ),
           ],
@@ -1712,7 +1748,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                 onPressed:
                     _cargandoMasMovimientos ? null : _cargarMasMovimientos,
                 style: TextButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.inkMuted,
+                  foregroundColor: AnaliticaTokens.inkMutedOf(context),
                 ),
                 child: _cargandoMasMovimientos
                     ? const SizedBox(
@@ -1735,7 +1771,7 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                 ? const Color(0xFFD97706)
                 : tipo.contains('venta') || tipo.contains('consumo')
                     ? AnaliticaTokens.ventas
-                    : AnaliticaTokens.inkMuted;
+                    : AnaliticaTokens.inkMutedOf(context);
 
         final creado = DateTime.tryParse('${m['created_at'] ?? ''}')?.toLocal();
         final referencia = [
@@ -1747,9 +1783,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
         return Container(
           margin: const EdgeInsets.only(bottom: 7),
           decoration: BoxDecoration(
-            color: AnaliticaTokens.surface,
+            color: AnaliticaTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AnaliticaTokens.border),
+            border: Border.all(color: AnaliticaTokens.borderOf(context)),
           ),
           child: Material(
             color: Colors.transparent,
@@ -1798,10 +1834,10 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                             nombre.isEmpty ? '${m['tipo']}' : nombre,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 13,
-                              color: AnaliticaTokens.ink,
+                              color: AnaliticaTokens.inkOf(context),
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1812,9 +1848,9 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                             ].join(' · '),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: AnaliticaTokens.inkSoft,
+                              color: AnaliticaTokens.inkSoftOf(context),
                             ),
                           ),
                         ],
@@ -1827,21 +1863,21 @@ class _InventarioAdminScreenState extends State<InventarioAdminScreen>
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: AnaliticaTokens.surfaceMuted,
+                        color: AnaliticaTokens.surfaceMutedOf(context),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         '${m['stock_anterior']} → ${m['stock_posterior']}',
-                        style: const TextStyle(
-                          color: AnaliticaTokens.ink,
+                        style: TextStyle(
+                          color: AnaliticaTokens.inkOf(context),
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right,
-                        size: 18, color: AnaliticaTokens.inkSoft),
+                    Icon(Icons.chevron_right,
+                        size: 18, color: AnaliticaTokens.inkSoftOf(context)),
                   ],
                 ),
               ),

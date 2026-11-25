@@ -87,7 +87,12 @@ let PedidosEstadoService = class PedidosEstadoService {
                 });
             }
             if (nuevoEstado === 'cancelado' && contexto) {
-                this.soporte.validarCancelacion(pedido, contexto.rol, contexto.permisos, motivo);
+                if (contexto.rol === 'cliente') {
+                    this.soporte.validarCancelacionCliente(pedido, motivo);
+                }
+                else {
+                    this.soporte.validarCancelacion(pedido, contexto.rol, contexto.permisos, motivo);
+                }
             }
             const anterior = pedido.estado;
             if (anterior === nuevoEstado) {
@@ -156,8 +161,7 @@ let PedidosEstadoService = class PedidosEstadoService {
                 estadoAnterior: anterior,
                 tipo: pedido.tipo,
             });
-            if (nuevoEstado === 'entregado' &&
-                pedido.tipo === 'domicilio') {
+            if (nuevoEstado === 'entregado' && pedido.tipo === 'domicilio') {
                 const totalPedido = Number(pedido.total);
                 const pagado = Number(pedido.monto_pagado ?? 0);
                 const metodo = pedido.metodo_pago?.trim() && pedido.metodo_pago !== 'pendiente'
@@ -243,11 +247,13 @@ let PedidosEstadoService = class PedidosEstadoService {
                     (dispatchResult.motivo === 'planta_asignada_auto' ||
                         dispatchResult.motivo === 'ya_asignado');
                 if (!asignado) {
+                    const detalle = dispatchResult.mensaje ??
+                        'No hubo asignación automática. Revisa el panel de domiciliarios.';
                     void this.alertasRiesgo.registrar({
                         sucursalId,
                         tipo: 'domicilio_listo_sin_asignar',
                         nivel: 'medio',
-                        descripcion: `Pedido listo — asignar domiciliario (${pedidoId})`,
+                        descripcion: `Pedido ${pedidoId}: ${detalle}`,
                         referenciaId: pedidoId,
                         referenciaTipo: 'pedido',
                         deduplicar: true,
@@ -256,7 +262,7 @@ let PedidosEstadoService = class PedidosEstadoService {
                         sucursal_id: sucursalId,
                         tipo: 'domicilio_requiere_asignacion',
                         titulo: 'Domicilio listo — asignar repartidor',
-                        cuerpo: 'No hubo asignación automática. Revisa el panel de domiciliarios.',
+                        cuerpo: detalle,
                         roles: ['admin', 'gerente', 'domiciliario_planta'],
                         datos: {
                             pedido_id: pedidoId,
@@ -483,7 +489,7 @@ let PedidosEstadoService = class PedidosEstadoService {
             throw new common_1.NotFoundException('Pedido no encontrado');
         }
         this.soporte.validarCancelacionCliente(pedido, motivo);
-        return this.cambiarEstado(pedidoId, pedido.sucursal_id, 'cliente', 'cancelado', motivo.trim());
+        return this.cambiarEstado(pedidoId, pedido.sucursal_id, 'cliente', 'cancelado', motivo.trim(), { rol: 'cliente', permisos: [] });
     }
     async llamarMesera(pedidoId, deviceId, mensaje) {
         const pedido = await this.database.consultarUno(`SELECT id, sucursal_id, mesa_id, estado, numero_pedido

@@ -73,7 +73,6 @@ export declare class CocinasService {
         item_id: string;
         observaciones: string;
     }>;
-    private evaluarDemorasEnCocina;
     private exigirCocina;
     private exigirImpresora;
 }

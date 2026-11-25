@@ -167,37 +167,6 @@ class Horario {
     }
   }
 
-  /// **Convertir día de la semana de string a int**
-  static int _convertirDiaSemana(String dia) {
-    switch (dia.toLowerCase()) {
-      case 'lunes':
-      case 'monday':
-        return 1;
-      case 'martes':
-      case 'tuesday':
-        return 2;
-      case 'miércoles':
-      case 'miercoles':
-      case 'wednesday':
-        return 3;
-      case 'jueves':
-      case 'thursday':
-        return 4;
-      case 'viernes':
-      case 'friday':
-        return 5;
-      case 'sábado':
-      case 'sabado':
-      case 'saturday':
-        return 6;
-      case 'domingo':
-      case 'sunday':
-        return 7;
-      default:
-        return 0;
-    }
-  }
-
   static Future<List<Horario>> generarHorarios({
     required DateTime fecha,
     required String canchaId,

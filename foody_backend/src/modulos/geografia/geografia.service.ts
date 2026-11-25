@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 type ResultadoBusqueda = {
   etiqueta: string;
@@ -15,6 +20,11 @@ export class GeografiaService {
     consulta: string,
     opciones: { lat?: number; lng?: number; limite?: number } = {},
   ): Promise<ResultadoBusqueda[]> {
+    if (esQaSinEfectosExternos()) {
+      throw new ServiceUnavailableException(
+        'Geocodificación externa desactivada por FOODY_QA_SIN_EFECTOS',
+      );
+    }
     const q = consulta.trim();
     if (q.length < 3) {
       throw new BadRequestException('La búsqueda debe tener al menos 3 caracteres');

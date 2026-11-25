@@ -7,6 +7,7 @@ import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/mesas_grid_widget.dart';
+import 'package:reserva_canchas/features/admin/presentation/widgets/operacion_ui.dart';
 import 'package:reserva_canchas/features/caja/data/caja_repository.dart';
 import 'package:reserva_canchas/features/caja/presentation/caja_admin_screen.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/pedido_cajero_screen.dart';
@@ -21,6 +22,7 @@ class PanelCajeroScreen extends StatefulWidget {
 
 class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
   final _cajaRepo = CajaRepository();
+
   /// Fuerza recarga de tabs al pulsar refresh (NAV-CJ-05).
   int _refreshTick = 0;
   SesionStaff? _sesion;
@@ -123,15 +125,17 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
     final nombre = _sesion?.usuario['nombre'] as String? ?? 'Cajero';
     final rol = etiquetaRolStaff(_sesion?.rol);
     final ancho = MediaQuery.sizeOf(context).width;
+    final scheme = Theme.of(context).colorScheme;
     // NAV-CJ-06 / RS-20: tabs arriba desde FoodyBreakpoints.expanded.
     final navSuperior = FoodyBreakpoints.esExpanded(ancho);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: scheme.surface,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0F172A),
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
+        scrolledUnderElevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -144,7 +148,7 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
-                color: Colors.grey.shade600,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -181,7 +185,7 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
         children: [
           if (navSuperior)
             Material(
-              color: Colors.white,
+              color: scheme.surface,
               elevation: 0,
               child: _navBar(),
             ),
@@ -193,25 +197,24 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
   }
 
   Widget _navBar() {
-    return NavigationBar(
+    return OperacionRoleNavBar(
       selectedIndex: _tab,
-      height: 64,
-      indicatorColor: ColoresFoody.primario.withValues(alpha: 0.15),
       onDestinationSelected: _seleccionarTab,
+      compactTop: FoodyBreakpoints.esExpanded(MediaQuery.sizeOf(context).width),
       destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.point_of_sale_outlined),
-          selectedIcon: Icon(Icons.point_of_sale),
+        OperacionRoleNavItem(
+          icon: Icons.point_of_sale_outlined,
+          selectedIcon: Icons.point_of_sale,
           label: 'POS',
         ),
-        NavigationDestination(
-          icon: Icon(Icons.table_restaurant_outlined),
-          selectedIcon: Icon(Icons.table_restaurant),
+        OperacionRoleNavItem(
+          icon: Icons.table_restaurant_outlined,
+          selectedIcon: Icons.table_restaurant,
           label: 'Mesas',
         ),
-        NavigationDestination(
-          icon: Icon(Icons.account_balance_wallet_outlined),
-          selectedIcon: Icon(Icons.account_balance_wallet),
+        OperacionRoleNavItem(
+          icon: Icons.account_balance_wallet_outlined,
+          selectedIcon: Icons.account_balance_wallet,
           label: 'Caja',
         ),
       ],
@@ -235,6 +238,10 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
         ocultarCabecera: true,
         permitirArqueoCiego: false,
         onCajaEstadoCambiado: _onCajaEstadoCambiado,
+        onRevisarOperaciones: () => _seleccionarTab(1),
+        etiquetaAccionTurnoLargo: 'Ver mesas',
+        textoAvisoTurnoLargo:
+            'Revisa las mesas y cuentas abiertas antes de cerrar.',
         onIrPedido: (pedidoId) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -305,7 +312,8 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
           ),
           child: Row(
             children: [
-              const Icon(Icons.lock_clock, color: ColoresFoody.primario, size: 32),
+              const Icon(Icons.lock_clock,
+                  color: ColoresFoody.primario, size: 32),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -320,7 +328,8 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Antes de tomar pedidos o cobrar mesas debes abrir turno con el monto inicial en efectivo.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                      style:
+                          TextStyle(fontSize: 13, color: Colors.grey.shade700),
                     ),
                   ],
                 ),

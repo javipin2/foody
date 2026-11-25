@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:dio/dio.dart';
 import 'package:reserva_canchas/core/constantes/configuracion.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -95,8 +96,11 @@ String mensajeErrorHttp(Object error, {String contexto = 'operación'}) {
             return msg401['message'].toString();
           }
           if (error.requestOptions.path.endsWith('/auth/login')) {
-            return 'Correo o contraseña incorrectos. Demo: admin@foody.demo / 123456 '
-                '(super y domi en la misma pantalla; repartidor en enlace inferior).';
+            if (kDebugMode) {
+              return 'Correo o contraseña incorrectos. Demo: admin@foody.demo / 123456 '
+                  '(super y domi en la misma pantalla; repartidor en enlace inferior).';
+            }
+            return 'Correo o contraseña incorrectos.';
           }
         }
         return 'Sesión expirada. Cierra sesión y vuelve a entrar con tu usuario.';
@@ -157,7 +161,8 @@ String mensajeErrorHttp(Object error, {String contexto = 'operación'}) {
 }
 
 /// Mensajes para el cliente final (sin jerga de desarrollo / infra).
-String mensajeErrorCliente(Object error, {String contexto = 'cargar la información'}) {
+String mensajeErrorCliente(Object error,
+    {String contexto = 'cargar la información'}) {
   final raw = mensajeErrorHttp(error, contexto: contexto);
   final lower = raw.toLowerCase();
   const bloqueados = [
@@ -203,17 +208,17 @@ String? _mensajeDesdeRespuestaApi(dynamic data) {
   }
 
   final codigo = data['error']?.toString();
-  if (codigo != null && _MENSAJES_POR_CODIGO.containsKey(codigo)) {
-    return _MENSAJES_POR_CODIGO[codigo];
+  if (codigo != null && _mensajesPorCodigo.containsKey(codigo)) {
+    return _mensajesPorCodigo[codigo];
   }
 
   return null;
 }
 
-const _MENSAJES_POR_CODIGO = <String, String>{
+const _mensajesPorCodigo = <String, String>{
   'CAJA_CIERRE_OPERACION_ABIERTA':
       'No puedes cerrar la caja con pedidos activos, mesas ocupadas o domicilios sin cobrar. '
-      'Cierra o cobra todo antes de cerrar el turno.',
+          'Cierra o cobra todo antes de cerrar el turno.',
   'CAJA_NO_ABIERTA':
       'No hay caja abierta. Abre un turno de caja antes de esta operación.',
   'CAJA_YA_ABIERTA':
@@ -223,7 +228,7 @@ const _MENSAJES_POR_CODIGO = <String, String>{
   'MESA_NO_ENCONTRADA': 'La mesa no existe o está inactiva.',
   'ITEMS_EXCEDEN_SALDO':
       'El total de los ítems seleccionados supera el saldo pendiente. '
-      'Cobra solo lo pendiente o usa abono parcial.',
+          'Cobra solo lo pendiente o usa abono parcial.',
   'ITEMS_INVALIDOS':
       'Algunos ítems ya fueron cobrados o no pertenecen a esta mesa.',
   'SUCURSAL_SIN_COORDENADAS':

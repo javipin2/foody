@@ -7,6 +7,7 @@ import {
   SupabaseClient,
 } from '@supabase/supabase-js';
 import WebSocket from 'ws';
+import { esQaSinEfectosExternos } from '../config/qa-safety';
 import {
   pepperRealtime,
   topicCatalogoPublico,
@@ -33,6 +34,10 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
   private readonly canales = new Map<string, RealtimeChannel>();
 
   constructor(private readonly config: ConfigService) {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Realtime desactivado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     const url = this.config.get<string>('SUPABASE_URL');
     const key = this.config.get<string>('SUPABASE_SERVICE_KEY');
     if (url && key) {
@@ -51,6 +56,7 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) return;
     if (!this.estaConfigurado()) {
       this.logger.error(
         'Realtime inactivo al arranque: configure SUPABASE_URL y SUPABASE_SERVICE_KEY en .env',

@@ -128,7 +128,8 @@ async function pedidoCocinaCompleta(client, pedidoId) {
     const r = await client.query(`SELECT
        COUNT(*)::text AS n,
        COUNT(*) FILTER (
-         WHERE estado_cocina NOT IN ('listo', 'no_disponible')
+         WHERE estado_cocina IS NULL
+            OR estado_cocina NOT IN ('listo', 'no_disponible')
        )::text AS incompletos
      FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
     const n = Number(r.rows[0]?.n ?? 0);

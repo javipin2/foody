@@ -35,6 +35,21 @@ if errorlevel 1 (
 )
 echo OK API :3000
 
+if /I "%~1"=="rebuild" (
+  echo Compilando web RELEASE + sirviendo...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS%servir-web-tunel-release.ps1"
+) else (
+  echo Sirviendo builds existentes; si faltan o estan desactualizados, compila...
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS%servir-web-tunel-release.ps1" -SkipBuild
+)
+
+if errorlevel 1 (
+  echo.
+  echo FAIL: no quedaron los dos sitios arriba.
+  goto :pausar_y_salir_error
+)
+
+REM No publicar el origen hasta que ambos sitios locales estén respondiendo.
 tasklist /FI "IMAGENAME eq cloudflared.exe" 2>NUL | find /I "cloudflared.exe" >NUL
 if errorlevel 1 (
   echo Arrancando cloudflared...
@@ -44,17 +59,12 @@ if errorlevel 1 (
   echo OK cloudflared ya corria
 )
 
-if /I "%~1"=="rebuild" (
-  echo Compilando web RELEASE + sirviendo...
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS%servir-web-tunel-release.ps1"
-) else (
-  echo Sirviendo builds existentes (-SkipBuild^)...
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS%servir-web-tunel-release.ps1" -SkipBuild
-)
-
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS%verificar-tunel-publico.ps1"
 if errorlevel 1 (
   echo.
-  echo FAIL: no quedaron los dos sitios arriba.
+  echo FAIL: las rutas publicas del Tunnel no estan alcanzables.
+  echo El proceso cloudflared puede estar activo pero sin registrar este Tunnel.
+  echo Revisa el conector antes de usar Foody desde fuera de casa.
   goto :pausar_y_salir_error
 )
 

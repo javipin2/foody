@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { FacturacionService } from '../facturacion/facturacion.service';
@@ -8,13 +12,17 @@ import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
 import { CosteoService } from '../costeo/costeo.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { PedidosCajaAuditoriaService } from './pedidos-caja-auditoria.service';
-import { PedidosSoporteService, OpcionesStaffPedido } from './pedidos-soporte.service';
+import {
+  PedidosSoporteService,
+  OpcionesStaffPedido,
+} from './pedidos-soporte.service';
 import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
 import {
   ContextoAlertaStock,
   PedidosInventarioService,
 } from './pedidos-inventario.service';
 import { estadoActivaCocina } from './pedido-estados';
+import { huellaIdempotenciaPedido } from './pedidos-idempotencia.util';
 
 const DIAS_ANTICIPACION_ENCARGO_MIN = 2;
 
@@ -34,10 +42,7 @@ export class PedidosCrearService {
     private readonly cuentaMesa: PedidosCuentaMesaService,
     private readonly inventario: PedidosInventarioService,
   ) {}
-  async crear(
-    dto: CrearPedidoDto,
-    opciones: OpcionesStaffPedido = {},
-  ) {
+  async crear(dto: CrearPedidoDto, opciones: OpcionesStaffPedido = {}) {
     const items = dto.items ?? [];
     const combos = dto.combos ?? [];
     if (!items.length && !combos.length) {
@@ -61,12 +66,27 @@ export class PedidosCrearService {
       });
     }
 
-    if (dto.idempotency_key?.trim()) {
-      const existente = await this.database.consultarUno<{ pedido_id: string }>(
-        `SELECT pedido_id FROM pedidos_idempotencia WHERE clave = $1`,
-        [dto.idempotency_key.trim()],
+    const claveIdempotencia = dto.idempotency_key?.trim() || null;
+    const huellaIdempotencia = claveIdempotencia
+      ? huellaIdempotenciaPedido(dto as unknown as Record<string, unknown>)
+      : null;
+
+    if (claveIdempotencia) {
+      const existente = await this.database.consultarUno<{
+        pedido_id: string;
+        huella: string | null;
+      }>(
+        `SELECT pedido_id, huella FROM pedidos_idempotencia
+         WHERE sucursal_id = $1 AND clave = $2`,
+        [dto.sucursal_id, claveIdempotencia],
       );
       if (existente) {
+        if (existente.huella && existente.huella !== huellaIdempotencia) {
+          throw new ConflictException({
+            error: 'IDEMPOTENCY_KEY_REUSED',
+            message: 'La clave idempotente ya se usó con otro contenido',
+          });
+        }
         const pedido = await this.database.consultarUno<{
           id: string;
           numero_pedido: string;
@@ -75,9 +95,16 @@ export class PedidosCrearService {
           seguimiento_token: string;
         }>(
           `SELECT id, numero_pedido, estado, total, seguimiento_token::text AS seguimiento_token
-           FROM pedidos WHERE id = $1`,
-          [existente.pedido_id],
+           FROM pedidos WHERE id = $1 AND sucursal_id = $2`,
+          [existente.pedido_id, dto.sucursal_id],
         );
+        if (!pedido) {
+          throw new ConflictException({
+            error: 'IDEMPOTENCY_KEY_REUSED',
+            message:
+              'La clave idempotente no corresponde a un pedido de esta sucursal',
+          });
+        }
         return {
           pedido_id: pedido!.id,
           numero_pedido: pedido!.numero_pedido,
@@ -109,26 +136,40 @@ export class PedidosCrearService {
           message: 'Los pedidos de encargo no admiten combos',
         });
       }
-      this.validarFechaEncargo(dto.fecha_entrega_deseada);
+      // La cotización puede ocurrir antes de que el cliente elija fecha.
+      // La fecha sigue siendo obligatoria al crear el pedido; si se incluye
+      // durante una estimación, se valida con las mismas reglas.
+      if (!opciones.soloEstimar || dto.fecha_entrega_deseada?.trim()) {
+        this.validarFechaEncargo(dto.fecha_entrega_deseada);
+      }
     }
 
     let catalogoCambios: { producto_id: string; disponible: boolean }[] = [];
     const resultado = await this.database.enTransaccion(async (client) => {
       if (opciones.soloEstimar) {
         // Estimar no bloquea mesa ni reusa idempotencia.
-      } else if (dto.idempotency_key?.trim()) {
-        const clave = dto.idempotency_key.trim();
+      } else if (claveIdempotencia && huellaIdempotencia) {
+        const clave = claveIdempotencia;
+        const claveScope = `${dto.sucursal_id}:${clave}`;
         await client.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [
-          clave,
+          claveScope,
         ]);
         const existenteTx = await this.soporte.consultarUnoCliente<{
           pedido_id: string;
+          huella: string | null;
         }>(
           client,
-          `SELECT pedido_id FROM pedidos_idempotencia WHERE clave = $1`,
-          [clave],
+          `SELECT pedido_id, huella FROM pedidos_idempotencia
+           WHERE sucursal_id = $1 AND clave = $2`,
+          [dto.sucursal_id, clave],
         );
         if (existenteTx) {
+          if (existenteTx.huella && existenteTx.huella !== huellaIdempotencia) {
+            throw new ConflictException({
+              error: 'IDEMPOTENCY_KEY_REUSED',
+              message: 'La clave idempotente ya se usó con otro contenido',
+            });
+          }
           const pedido = await this.soporte.consultarUnoCliente<{
             id: string;
             numero_pedido: string;
@@ -138,8 +179,8 @@ export class PedidosCrearService {
           }>(
             client,
             `SELECT id, numero_pedido, estado, total, seguimiento_token::text AS seguimiento_token
-             FROM pedidos WHERE id = $1`,
-            [existenteTx.pedido_id],
+             FROM pedidos WHERE id = $1 AND sucursal_id = $2`,
+            [existenteTx.pedido_id, dto.sucursal_id],
           );
           if (pedido) {
             return {
@@ -167,7 +208,9 @@ export class PedidosCrearService {
         throw new BadRequestException('Sucursal no disponible');
       }
 
-      const horario = await this.soporte.consultarUnoCliente<{ activo: boolean }>(
+      const horario = await this.soporte.consultarUnoCliente<{
+        activo: boolean;
+      }>(
         client,
         `SELECT CASE
            WHEN NOT EXISTS (
@@ -212,10 +255,7 @@ export class PedidosCrearService {
         if (!mesa) {
           throw new BadRequestException('MESA_NO_ENCONTRADA');
         }
-        if (
-          !opciones.creadoPorStaff &&
-          mesa.estado_operativo === 'reservada'
-        ) {
+        if (!opciones.creadoPorStaff && mesa.estado_operativo === 'reservada') {
           throw new BadRequestException({
             error: 'MESA_RESERVADA',
             message:
@@ -635,9 +675,15 @@ export class PedidosCrearService {
         };
       }
 
-      const estadoInicial = this.soporte.resolverEstadoInicial(dto, opciones.creadoPorStaff);
+      const estadoInicial = this.soporte.resolverEstadoInicial(
+        dto,
+        opciones.creadoPorStaff,
+      );
       const metodoPago = dto.metodo_pago ?? 'pendiente';
-      const numeroPedido = await this.soporte.generarNumeroPedido(client, dto.sucursal_id);
+      const numeroPedido = await this.soporte.generarNumeroPedido(
+        client,
+        dto.sucursal_id,
+      );
 
       await client.query(
         `INSERT INTO dispositivos_cliente (device_id, ultimo_acceso, plataforma)
@@ -946,15 +992,20 @@ export class PedidosCrearService {
         );
       }
 
-      await this.cajaAuditoria.registrarAuditoria(client, dto.sucursal_id, pedidoId, {
-        numero_pedido: numeroPedido,
-        tipo: dto.tipo,
-        total,
-        subtotal,
-        costo_domicilio: costoDomicilio,
-        items: items.length + combos.length,
-        device_id: dto.device_id,
-      });
+      await this.cajaAuditoria.registrarAuditoria(
+        client,
+        dto.sucursal_id,
+        pedidoId,
+        {
+          numero_pedido: numeroPedido,
+          tipo: dto.tipo,
+          total,
+          subtotal,
+          costo_domicilio: costoDomicilio,
+          items: items.length + combos.length,
+          device_id: dto.device_id,
+        },
+      );
 
       await client.query(
         `INSERT INTO estados_pedido_historial (pedido_id, estado_anterior, estado_nuevo)
@@ -1002,11 +1053,12 @@ export class PedidosCrearService {
         });
       }
 
-      if (dto.idempotency_key?.trim()) {
+      if (claveIdempotencia && huellaIdempotencia) {
         await client.query(
-          `INSERT INTO pedidos_idempotencia (clave, pedido_id) VALUES ($1, $2)
-           ON CONFLICT (clave) DO NOTHING`,
-          [dto.idempotency_key.trim(), pedidoId],
+          `INSERT INTO pedidos_idempotencia (sucursal_id, clave, huella, pedido_id)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (sucursal_id, clave) DO NOTHING`,
+          [dto.sucursal_id, claveIdempotencia, huellaIdempotencia, pedidoId],
         );
       }
 
@@ -1102,5 +1154,4 @@ export class PedidosCrearService {
     const prefijo = `[Encargo entrega: ${dto.fecha_entrega_deseada.trim()}]`;
     return base ? `${prefijo} ${base}` : prefijo;
   }
-
 }

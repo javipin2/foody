@@ -18,6 +18,7 @@ class SaaSKpiCard extends StatefulWidget {
     this.sparkline,
     this.tooltip,
     this.alturaFija = 136,
+
     /// Si true, Δ positivo se pinta rojo (p. ej. cancelaciones).
     this.invertirDelta = false,
   });
@@ -77,23 +78,9 @@ class _SaaSKpiCardState extends State<SaaSKpiCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Fila superior: etiqueta + chip Δ% (siempre misma altura)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        if (widget.icono != null) ...[
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: color.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(widget.icono, size: 15, color: color),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Expanded(
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final titulo = Expanded(
                           child: Text(
                             widget.etiqueta,
                             style: TextStyle(
@@ -105,13 +92,64 @@ class _SaaSKpiCardState extends State<SaaSKpiCard> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        _DeltaChip(
-                          deltaPct: delta,
-                          invertir: widget.invertirDelta,
-                        ),
-                      ],
+                        );
+                        final icono = widget.icono == null
+                            ? null
+                            : Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  widget.icono,
+                                  size: 15,
+                                  color: color,
+                                ),
+                              );
+
+                        if (constraints.maxWidth < 175 && delta != null) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  if (icono != null) ...[
+                                    icono,
+                                    const SizedBox(width: 8),
+                                  ],
+                                  titulo,
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: _DeltaChip(
+                                  deltaPct: delta,
+                                  invertir: widget.invertirDelta,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (icono != null) ...[
+                              icono,
+                              const SizedBox(width: 8),
+                            ],
+                            titulo,
+                            const SizedBox(width: 6),
+                            _DeltaChip(
+                              deltaPct: delta,
+                              invertir: widget.invertirDelta,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 10),
                     Text(
@@ -207,9 +245,8 @@ class _DeltaChip extends StatelessWidget {
         : (positivo
             ? Icons.arrow_upward_rounded
             : Icons.arrow_downward_rounded);
-    final txt = neutro
-        ? '0%'
-        : '${positivo ? '+' : ''}${delta.toStringAsFixed(1)}%';
+    final txt =
+        neutro ? '0%' : '${positivo ? '+' : ''}${delta.toStringAsFixed(1)}%';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -302,13 +339,16 @@ class SaaSKpiGrid extends StatelessWidget {
             : FoodyBreakpoints.esExpanded(w)
                 ? 3
                 : 2;
+        final crossAxisCount = cols.clamp(2, children.length.clamp(2, 6));
+        final tileWidth = (w - 10 * (crossAxisCount - 1)) / crossAxisCount;
+        final tileHeight = tileWidth < 180 ? altura + 16 : altura;
         return GridView.count(
-          crossAxisCount: cols.clamp(2, children.length.clamp(2, 6)),
+          crossAxisCount: crossAxisCount,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: (w / cols) / altura,
+          childAspectRatio: tileWidth / tileHeight,
           children: children,
         );
       },

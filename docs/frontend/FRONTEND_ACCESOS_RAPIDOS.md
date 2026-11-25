@@ -62,7 +62,7 @@
 
 | ID | Desde | Hacia | Descripción | Estado |
 |----|-------|-------|-------------|--------|
-| AR-17 | Pedido | Movimiento caja | «Ir a caja» desde sheet kanban (NAV-ADM-02); link movimiento↔pedido sigue pendiente | 🟡 |
+| AR-17 | Pedido | Movimiento caja | «Ir a caja» exige `ver_caja`, pero solo navega a la caja activa y no envía `pedido_id`; el endpoint actual lista por `caja_id`. Para cerrar el vínculo histórico hace falta lookup de solo lectura por pedido/sucursal y una vista filtrada | 🟡 |
 | AR-18 | Pedido | Factura borrador | Sheet → facturación + banner Emitir (NAV-ADM-02) | ✅ |
 | AR-19 | Factura lista | Pedido origen | Icono Ver pedido (NAV-ADM-17) | ✅ |
 | AR-25 | CxC cliente | Pedidos deuda | Lista pedidos fiado | ⏳ |

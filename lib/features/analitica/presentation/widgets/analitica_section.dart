@@ -26,7 +26,7 @@ class AnaliticaSectionHeader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (icono != null) ...[
-            Icon(icono, size: 16, color: AnaliticaTokens.inkSoft),
+            Icon(icono, size: 16, color: AnaliticaTokens.inkSoftOf(context)),
             const SizedBox(width: 8),
           ],
           Expanded(
@@ -35,19 +35,19 @@ class AnaliticaSectionHeader extends StatelessWidget {
               children: [
                 Text(
                   titulo,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AnaliticaTokens.ink,
+                    color: AnaliticaTokens.inkOf(context),
                     letterSpacing: -0.2,
                   ),
                 ),
                 if (subtitulo != null)
                   Text(
                     subtitulo!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AnaliticaTokens.inkSoft,
+                      color: AnaliticaTokens.inkSoftOf(context),
                     ),
                   ),
               ],

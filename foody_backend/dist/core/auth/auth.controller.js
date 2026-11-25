@@ -59,8 +59,8 @@ let AuthController = class AuthController {
     perfil(usuario) {
         return this.authService.perfil(usuario);
     }
-    realtimeCanales(usuario, sucursalId) {
-        return this.authService.realtimeCanales(usuario, sucursalId);
+    realtimeCanales(usuario, sucursalId, cocinaId) {
+        return this.authService.realtimeCanales(usuario, sucursalId, cocinaId);
     }
     registrarFcm(usuario, dto) {
         return this.authService.registrarFcm(usuario, dto.fcm_token, dto.plataforma);
@@ -151,8 +151,9 @@ __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard),
     __param(0, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(1, (0, common_1.Query)('sucursal_id')),
+    __param(2, (0, common_1.Query)('cocina_id')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String]),
+    __metadata("design:paramtypes", [jwt_payload_1.JwtPayload, String, String]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "realtimeCanales", null);
 __decorate([

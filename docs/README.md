@@ -12,7 +12,7 @@
 | 6 | [`MAPA_FOODY.md`](MAPA_FOODY.md) | Módulos Nest, pantallas, endpoints |
 | 7 | [`../MEMORIA.md`](../MEMORIA.md) | Reglas irreversibles, stack |
 
-Frontend UI: [`frontend/FRONTEND_ROADMAP.md`](frontend/FRONTEND_ROADMAP.md) · Flavors/QA: [`ESTRATEGIA_BACKEND_PRIMERO.md`](ESTRATEGIA_BACKEND_PRIMERO.md)
+Frontend UI: [`frontend/FRONTEND_ROADMAP.md`](frontend/FRONTEND_ROADMAP.md) · Matriz vista por vista: [`frontend/FOODY_PANEL_ADMIN_REDESIGN_MATRIX.md`](frontend/FOODY_PANEL_ADMIN_REDESIGN_MATRIX.md) · Flavors/QA: [`ESTRATEGIA_BACKEND_PRIMERO.md`](ESTRATEGIA_BACKEND_PRIMERO.md)
 
 ## Operación (dev / VPS)
 
@@ -40,6 +40,9 @@ Frontend UI: [`frontend/FRONTEND_ROADMAP.md`](frontend/FRONTEND_ROADMAP.md) · F
 - Spec objetivo: `INFRAESTRUCTURA/`
 
 ## Evidencia de auditorías (archivo)
+
+- **Rendimiento de punta a punta (2026-11-22):** [`AUDITORIA_RENDIMIENTO_PUNTA_A_PUNTA.md`](AUDITORIA_RENDIMIENTO_PUNTA_A_PUNTA.md) — flujo Flutter → Tunnel → Nest → pool/SQL → PostgreSQL, mediciones ligeras, hallazgos vigentes y plan priorizado.
+- Medición HTTP GET liviana local/túnel: [`../scripts/perf/medir-lecturas-tunel.ps1`](../scripts/perf/medir-lecturas-tunel.ps1) — solo `/salud` y `/menu/:sucursalId`, concurrencia máxima 5; no usar como prueba de capacidad.
 
 Los informes forenses Prompts 01–34 viven en:
 

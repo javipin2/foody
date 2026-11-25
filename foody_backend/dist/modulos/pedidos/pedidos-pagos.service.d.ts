@@ -43,7 +43,8 @@ export declare class PedidosPagosService {
     private resolverMesasGrupo;
     private obtenerPedidosActivos;
     private validarItemsSplit;
-    private subtotalItems;
+    private calcularMontosItems;
+    private validarSaldoItems;
     private distribuirMonto;
     private liberarMesasGrupo;
     private consultarUnoCliente;

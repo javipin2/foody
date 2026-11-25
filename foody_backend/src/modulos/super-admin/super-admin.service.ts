@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { DatabaseService } from '../../core/database/database.service';
 import { ConfiguracionGlobalService } from '../../core/config/configuracion-global.module';
 import { OnboardingRestauranteService } from '../../core/onboarding/onboarding-restaurante.service';
+import { SQL_PEDIDO_ES_HOY } from '../../compartido/sql/ventas-metricas.sql';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import {
   ActualizarCiudadDto,
@@ -300,12 +301,12 @@ export class SuperAdminService {
   async estadisticas() {
     const pedidosHoy = await this.database.consultarUno<{ total: string }>(
       `SELECT COUNT(*)::text AS total FROM pedidos
-       WHERE created_at >= CURRENT_DATE`,
+       WHERE ${SQL_PEDIDO_ES_HOY}`,
     );
     const ingresosFoody = await this.database.consultarUno<{ total: string }>(
       `SELECT COALESCE(SUM(comision_foody), 0)::text AS total
        FROM ganancias_domiciliario
-       WHERE created_at >= CURRENT_DATE`,
+       WHERE ${SQL_PEDIDO_ES_HOY}`,
     );
     const resumen = await this.resumenGlobal();
     const selfService = await this.metricasSelfService();

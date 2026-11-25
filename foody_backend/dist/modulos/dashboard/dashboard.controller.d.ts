@@ -11,6 +11,12 @@ export declare class DashboardController {
         pedidos_pendientes_qr: number;
         pedidos_completados_hoy: number;
         alertas_pendientes: number;
+        domicilios_tardios: {
+            numero: string;
+            detalle: string;
+            minutos: number;
+            severidad: number;
+        }[];
     }>;
     graficos(usuario: JwtPayload, sucursalId?: string): Promise<{
         ventas_7_dias: {

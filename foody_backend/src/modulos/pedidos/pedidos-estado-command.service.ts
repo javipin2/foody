@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PoolClient } from 'pg';
 import {
   ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA,
@@ -40,7 +44,12 @@ export class PedidosEstadoCommandService {
   async aplicarEstadoEnTransaccion(
     client: PoolClient,
     params: AplicarEstadoPedidoParams,
-  ): Promise<{ aplicado: boolean; anterior: string; nuevo: string; tipo: string }> {
+  ): Promise<{
+    aplicado: boolean;
+    anterior: string;
+    nuevo: string;
+    tipo: string;
+  }> {
     let anterior = params.estadoAnterior;
     let tipo = params.tipo;
 
@@ -64,17 +73,25 @@ export class PedidosEstadoCommandService {
     }
 
     if (
-      !this.transicionPermitidaParaOrigen(
-        params.origen,
-        anterior,
-        nuevo,
-        tipo,
-      )
+      !this.transicionPermitidaParaOrigen(params.origen, anterior, nuevo, tipo)
     ) {
       throw new BadRequestException({
         error: 'TRANSICION_ESTADO_NO_PERMITIDA',
         message: `No se puede pasar de ${anterior} a ${nuevo} (origen: ${params.origen})`,
       });
+    }
+
+    // Un pedido solo puede aparecer como listo cuando Cocina resolvió todas
+    // sus líneas. La misma regla debe cubrir Kanban y los cambios automáticos.
+    if (nuevo === 'listo') {
+      const completa = await pedidoCocinaCompleta(client, params.pedidoId);
+      if (!completa) {
+        throw new BadRequestException({
+          error: 'COCINA_INCOMPLETA_PARA_LISTO',
+          message:
+            'No se puede marcar el pedido como listo hasta resolver todos sus ítems en Cocina.',
+        });
+      }
     }
 
     // VIE-05/13 C: cobro→pagado exige cocina completa (salvo admin+motivo)
@@ -134,7 +151,11 @@ export class PedidosEstadoCommandService {
       return !['cancelado', 'rechazado', 'pagado'].includes(anterior);
     }
     if (origen === 'dispatch' || origen === 'domiciliario') {
-      if (anterior === 'listo' && nuevo === 'asignado' && tipo === 'domicilio') {
+      if (
+        anterior === 'listo' &&
+        nuevo === 'asignado' &&
+        tipo === 'domicilio'
+      ) {
         return true;
       }
       if (anterior === 'asignado' && nuevo === 'en_camino') return true;

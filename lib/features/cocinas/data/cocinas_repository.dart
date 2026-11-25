@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:reserva_canchas/core/modelos/respuesta_api.dart';
 import 'package:reserva_canchas/core/red/cliente_dio.dart';
+import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
+import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 
 /// Acceso al API de cocinas, impresoras y panel de cocina (KDS).
 class CocinasRepository {
@@ -115,6 +117,36 @@ class CocinasRepository {
   }
 
   // ------------------------------- KDS --------------------------------
+
+  /// Pide al backend un topic HMAC para la estación elegida y lo guarda
+  /// antes de abrir Realtime. El servidor comprueba permiso y sucursal.
+  Future<void> prepararCanalRealtimeCocina({
+    required String cocinaId,
+    String? sucursalId,
+  }) async {
+    final r = await _dio.get<Map<String, dynamic>>(
+      '/auth/realtime-canales',
+      queryParameters: {
+        if (sucursalId != null && sucursalId.isNotEmpty)
+          'sucursal_id': sucursalId,
+        'cocina_id': cocinaId,
+      },
+    );
+    final datos = _mapa(r.data);
+    final raw = datos['realtime_canales'];
+    if (raw is! Map) throw Exception('Canales Realtime inválidos');
+    final canales = <String, String>{};
+    raw.forEach((clave, valor) {
+      if (valor != null && valor.toString().isNotEmpty) {
+        canales[clave.toString()] = valor.toString();
+      }
+    });
+    if (canales['cocina'] == null) {
+      throw Exception('El backend no autorizó el canal de cocina');
+    }
+    await SesionStaffService.actualizarRealtimeCanales(canales);
+    FoodyRealtime.aplicarCanalesStaff(canales);
+  }
 
   Future<List<Map<String, dynamic>>> tickets(String cocinaId) async {
     final r = await _dio.get<Map<String, dynamic>>('/cocina/tickets/$cocinaId');

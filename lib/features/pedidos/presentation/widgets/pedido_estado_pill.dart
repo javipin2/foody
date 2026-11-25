@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/operacion_ui.dart';
-import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 
 /// Pill pastel de estado de pedido (semántica neutra + AnaliticaTokens).
 class PedidoEstadoPill extends StatelessWidget {
@@ -12,6 +12,7 @@ class PedidoEstadoPill extends StatelessWidget {
   });
 
   final String estado;
+
   /// Etiquetas más amigables en mis-pedidos / seguimiento consumidor.
   final bool paraCliente;
   final bool grande;
@@ -49,30 +50,44 @@ class PedidoEstadoPill extends StatelessWidget {
     };
   }
 
-  static (Color, Color) _colores(String e) {
+  static (Color, Color) _colores(BuildContext context, String e) {
     switch (e) {
       case 'cancelado':
       case 'rechazado':
-        return (
-          AnaliticaTokens.alertas.withValues(alpha: 0.12),
-          AnaliticaTokens.alertas,
+        return _coloresSemanticos(
+          context,
+          SaaSTokens.alertas,
+          const Color(0xFFDC2626),
         );
       case 'entregado':
       case 'pagado':
-        return (
-          AnaliticaTokens.inventario.withValues(alpha: 0.12),
+        return _coloresSemanticos(
+          context,
+          SaaSTokens.positivo,
           const Color(0xFF16794C),
         );
       default:
-        final c = OperacionUi.chipEstado(e);
+        final c = OperacionUi.chipEstado(context, e);
         return (c.fondo, c.texto);
     }
+  }
+
+  static (Color, Color) _coloresSemanticos(
+    BuildContext context,
+    Color color,
+    Color textoClaro,
+  ) {
+    final oscuro = Theme.of(context).brightness == Brightness.dark;
+    return (
+      oscuro ? color.withValues(alpha: 0.2) : color.withValues(alpha: 0.12),
+      oscuro ? Color.lerp(color, Colors.white, 0.46)! : textoClaro,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final e = estado.toLowerCase();
-    final (bg, fg) = _colores(e);
+    final (bg, fg) = _colores(context, e);
 
     return Container(
       padding: EdgeInsets.symmetric(

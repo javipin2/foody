@@ -383,6 +383,8 @@ export class AnaliticaService {
         totalPedidos > 0
           ? Math.round((cancelados / totalPedidos) * 1000) / 10
           : 0,
+      pedidos_cancelados: cancelados,
+      pedidos_total_cancelacion: totalPedidos,
       efectivo_vs_digital: {
         efectivo:
           totalPagos > 0
@@ -1171,8 +1173,7 @@ export class AnaliticaService {
               COUNT(*)::text AS cantidad
        FROM gastos
        WHERE sucursal_id = ${sucG}
-         AND created_at >= ${dG}::timestamptz
-         AND created_at < (${hG}::date + interval '1 day')
+         AND ${sqlFechaRango('created_at', dG, hG)}
        GROUP BY categoria
        ORDER BY total DESC`,
       paramsGastos.list,
@@ -1197,8 +1198,7 @@ export class AnaliticaService {
        FROM cajas
        WHERE sucursal_id = ${sucG}
          AND estado = 'cerrada'
-         AND cierre_at >= ${dG}::timestamptz
-         AND cierre_at < (${hG}::date + interval '1 day')
+         AND ${sqlFechaRango('cierre_at', dG, hG)}
        ORDER BY cierre_at DESC
        LIMIT ${ANALITICA_LIMITE_RANKING}`,
       paramsGastos.list,
@@ -1214,14 +1214,19 @@ export class AnaliticaService {
         ventas_pedidos: ventasPedidos,
         ventas_movimientos_caja: ventasCaja,
         diferencia: Math.round(diferenciaCuadre * 100) / 100,
+        etiqueta_ventas_caja: 'Movimientos netos de caja',
+        nota_periodo_caja:
+          'Para movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
         umbral_relevante_cop: UMBRALES_ALERTA.cuadreCajaCOP,
         descuadre_relevante:
           Math.abs(diferenciaCuadre) >= UMBRALES_ALERTA.cuadreCajaCOP,
       },
       retiros_total: Number(movimientos?.retiros ?? 0),
-      gastos_total:
-        Number(movimientos?.gastos_mov ?? 0) +
-        gastosPorCategoria.reduce((s, g) => s + Number(g.total), 0),
+      // El egreso de caja ya se refleja también en el libro `gastos`.
+      // El total contable viene del libro; el movimiento de caja se expone
+      // separado para conciliación y no se suma por segunda vez.
+      gastos_total: gastosPorCategoria.reduce((s, g) => s + Number(g.total), 0),
+      gastos_movimientos_caja: Number(movimientos?.gastos_mov ?? 0),
       gastos_por_categoria: gastosPorCategoria.map((g) => ({
         categoria: g.categoria,
         total: Number(g.total),

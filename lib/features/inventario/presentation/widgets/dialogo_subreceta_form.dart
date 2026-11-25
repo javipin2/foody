@@ -404,6 +404,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                       onChanged: (_) => setState(() {}),
                     ),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: _unidadRes,
                       decoration: FoodyFormEstilo.campo(label: 'Unidad'),
                       items: const [
@@ -706,6 +707,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
               const SizedBox(width: 8),
               Expanded(
                 child: DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: tipo,
                   decoration: FoodyFormEstilo.campo(label: 'Tipo'),
                   items: [
@@ -737,13 +739,17 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
           const SizedBox(height: 10),
           if (tipo == 'subreceta')
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: fila['subreceta_id'] as String?,
               decoration: FoodyFormEstilo.campo(label: 'Preparación previa'),
               items: _subrecetasDisponibles
                   .map(
                     (sr) => DropdownMenuItem(
                       value: sr['id'] as String,
-                      child: Text(sr['nombre'] as String? ?? ''),
+                      child: Text(
+                        sr['nombre'] as String? ?? '',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
@@ -820,6 +826,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
                 },
               ),
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 key: ValueKey(
                   'u-$i-${fila['ingrediente_id']}-${fila['subreceta_id']}',
                 ),

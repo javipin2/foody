@@ -43,10 +43,12 @@ class _AnaliticaSurfaceState extends State<AnaliticaSurface> {
       curve: Curves.easeOut,
       padding: widget.padding ?? const EdgeInsets.all(AnaliticaTokens.s12),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: AnaliticaTokens.surfaceOf(context),
         borderRadius: radius,
-        border: Border.all(color: AnaliticaTokens.border),
-        boxShadow: lift ? AnaliticaTokens.shadowLift : AnaliticaTokens.shadowSoft,
+        border: Border.all(color: AnaliticaTokens.borderOf(context)),
+        boxShadow: lift
+            ? AnaliticaTokens.shadowLiftOf(context)
+            : AnaliticaTokens.shadowSoftOf(context),
       ),
       child: widget.child,
     );
@@ -61,7 +63,7 @@ class _AnaliticaSurfaceState extends State<AnaliticaSurface> {
         child: InkWell(
           onTap: widget.onTap,
           borderRadius: radius,
-          hoverColor: AnaliticaTokens.surfaceMuted,
+          hoverColor: AnaliticaTokens.surfaceMutedOf(context),
           child: body,
         ),
       ),

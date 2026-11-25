@@ -14,6 +14,7 @@ exports.NotificacionesCronService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
 const notificaciones_service_1 = require("./notificaciones.service");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let NotificacionesCronService = NotificacionesCronService_1 = class NotificacionesCronService {
     notificaciones;
     database;
@@ -26,6 +27,10 @@ let NotificacionesCronService = NotificacionesCronService_1 = class Notificacion
         this.database = database;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Cron de notificaciones pausado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_NOTIFICACIONES_CRON, () => this.ejecutar()), 60_000);
     }
     async ejecutar() {

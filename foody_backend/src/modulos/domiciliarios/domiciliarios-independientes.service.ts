@@ -14,7 +14,11 @@ import { PedidosSoporteService } from '../pedidos/pedidos-soporte.service';
 import { ConfirmarEntregaDto } from './dto/confirmar-entrega.dto';
 import { DispatchService } from './dispatch.service';
 import { repartirCobroDomicilio } from './cobro-domicilio.util';
-import { IniciarSesionDto, ResponderOfertaDto, UbicacionEntregaDto } from './dto/independiente.dto';
+import {
+  IniciarSesionDto,
+  ResponderOfertaDto,
+  UbicacionEntregaDto,
+} from './dto/independiente.dto';
 
 @Injectable()
 export class DomiciliariosIndependientesService {
@@ -162,6 +166,12 @@ export class DomiciliariosIndependientesService {
        WHERE r.domiciliario_id = $1
          AND o.estado = 'activa'
          AND o.expira_at > now()
+         AND p.estado = 'listo'
+         AND NOT EXISTS (
+           SELECT 1 FROM asignaciones_domicilio ad
+           WHERE ad.pedido_id = p.id
+             AND ad.estado IN ('asignado', 'en_camino')
+         )
          AND r.respuesta = 'no_vio'
        ORDER BY o.created_at DESC`,
       [domiciliarioId],
@@ -201,11 +211,17 @@ export class DomiciliariosIndependientesService {
       );
 
       if (!oferta) throw new NotFoundException('Oferta no encontrada');
-      if (oferta.estado !== 'activa' || new Date(oferta.expira_at) <= new Date()) {
+      if (
+        oferta.estado !== 'activa' ||
+        new Date(oferta.expira_at) <= new Date()
+      ) {
         throw new BadRequestException('La oferta expiró o ya no está activa');
       }
 
-      const respuesta = await this.consultarUnoCliente<{ id: string; respuesta: string }>(
+      const respuesta = await this.consultarUnoCliente<{
+        id: string;
+        respuesta: string;
+      }>(
         client,
         `SELECT id, respuesta FROM respuestas_oferta
          WHERE oferta_id = $1 AND domiciliario_id = $2 FOR UPDATE`,
@@ -252,6 +268,15 @@ export class DomiciliariosIndependientesService {
         throw new BadRequestException('El pedido ya no está disponible');
       }
 
+      const despacho = await this.dispatch.validarPedidoParaDespacho(
+        oferta.pedido_id,
+        oferta.sucursal_id,
+        client,
+      );
+      if (!despacho.valido) {
+        throw new BadRequestException(despacho.mensaje);
+      }
+
       const yaAsignado = await this.consultarUnoCliente<{ id: string }>(
         client,
         `SELECT id FROM asignaciones_domicilio
@@ -279,6 +304,19 @@ export class DomiciliariosIndependientesService {
         `UPDATE respuestas_oferta SET respuesta = 'rechazada', respondido_at = now()
          WHERE oferta_id = $1 AND domiciliario_id != $2 AND respuesta = 'no_vio'`,
         [ofertaId, domiciliarioId],
+      );
+      await client.query(
+        `WITH canceladas AS (
+           UPDATE ofertas_pedido
+           SET estado = 'cancelada'
+           WHERE pedido_id = $1 AND id <> $2 AND estado = 'activa'
+           RETURNING id
+         )
+         UPDATE respuestas_oferta
+         SET respuesta = 'rechazada', respondido_at = now()
+         WHERE oferta_id IN (SELECT id FROM canceladas)
+           AND respuesta = 'no_vio'`,
+        [oferta.pedido_id, ofertaId],
       );
 
       const asignacion = await client.query<{ id: string }>(
@@ -335,13 +373,6 @@ export class DomiciliariosIndependientesService {
         );
       }
 
-      await client.query(
-        `UPDATE domiciliarios_independientes
-         SET total_entregas = total_entregas + 1
-         WHERE id = $1`,
-        [domiciliarioId],
-      );
-
       return {
         oferta_id: ofertaId,
         respuesta: 'aceptada',
@@ -353,7 +384,27 @@ export class DomiciliariosIndependientesService {
   }
 
   async pedidosActivos(domiciliarioId: string) {
-    return this.database.consultar(
+    const pedidos = await this.database.consultar<{
+      id: string;
+      numero_pedido: string;
+      estado: string;
+      cliente_nombre: string | null;
+      cliente_telefono: string | null;
+      direccion_entrega: string | null;
+      subtotal: string;
+      total: string;
+      monto_pagado: string;
+      metodo_pago: string | null;
+      costo_domicilio: string;
+      lat: string | null;
+      lng: string | null;
+      estado_asignacion: string;
+      asignado_at: string;
+      sucursal_nombre: string;
+      sucursal_direccion: string | null;
+      sucursal_lat: string | null;
+      sucursal_lng: string | null;
+    }>(
       `SELECT p.id,
               p.numero_pedido,
               p.estado,
@@ -362,6 +413,7 @@ export class DomiciliariosIndependientesService {
               p.direccion_entrega,
               p.subtotal,
               p.total,
+              COALESCE(p.monto_pagado, 0) AS monto_pagado,
               p.metodo_pago,
               p.costo_domicilio,
               p.lat,
@@ -380,6 +432,22 @@ export class DomiciliariosIndependientesService {
        ORDER BY ad.asignado_at ASC`,
       [domiciliarioId],
     );
+
+    return pedidos.map((pedido) => {
+      const cobro = repartirCobroDomicilio(
+        Number(pedido.total),
+        Number(pedido.costo_domicilio ?? 0),
+        Number(pedido.monto_pagado ?? 0),
+      );
+      return {
+        ...pedido,
+        saldo_pendiente: cobro.saldo,
+        requiere_cobro: cobro.saldo > 0.01,
+        producto_total: cobro.productoTotal,
+        producto_pendiente: cobro.productoPendiente,
+        domicilio_pendiente: cobro.domicilioPendiente,
+      };
+    });
   }
 
   async marcarEnCamino(pedidoId: string, domiciliarioId: string) {
@@ -557,6 +625,12 @@ export class DomiciliariosIndependientesService {
          WHERE id = $1`,
         [asignacion.id],
       );
+      await client.query(
+        `UPDATE domiciliarios_independientes
+         SET total_entregas = total_entregas + 1
+         WHERE id = $1`,
+        [domiciliarioId],
+      );
       await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
         pedidoId,
         sucursalId: pedidoRow.sucursal_id,
@@ -625,7 +699,8 @@ export class DomiciliariosIndependientesService {
       numero_pedido: string | null;
     }>(
       `SELECT g.id, g.valor_domicilio, g.comision_foody, g.ganancia_domiciliario,
-              g.pagado, g.created_at, ad.pedido_id, p.numero_pedido
+              g.pagado, g.created_at, ad.pedido_id, ad.estado AS estado_asignacion,
+              p.numero_pedido
        FROM ganancias_domiciliario g
        LEFT JOIN asignaciones_domicilio ad ON ad.id = g.asignacion_id
        LEFT JOIN pedidos p ON p.id = ad.pedido_id
@@ -678,7 +753,9 @@ export class DomiciliariosIndependientesService {
       [domiciliarioId],
     );
     if (!sesion) {
-      throw new BadRequestException('Inicia tu turno antes de actualizar ubicación');
+      throw new BadRequestException(
+        'Inicia tu turno antes de actualizar ubicación',
+      );
     }
     return sesion;
   }

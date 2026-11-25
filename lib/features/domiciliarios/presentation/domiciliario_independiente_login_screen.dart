@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:go_router/go_router.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
@@ -16,8 +17,10 @@ class DomiciliarioIndependienteLoginScreen extends StatefulWidget {
 
 class _DomiciliarioIndependienteLoginScreenState
     extends State<DomiciliarioIndependienteLoginScreen> {
-  final _email = TextEditingController(text: 'repartidor@foody.demo');
-  final _pass = TextEditingController(text: '123456');
+  final _email = TextEditingController(
+    text: kDebugMode ? 'repartidor@foody.demo' : '',
+  );
+  final _pass = TextEditingController(text: kDebugMode ? '123456' : '');
   bool _cargando = false;
   bool _ocultar = true;
 

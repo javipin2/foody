@@ -113,6 +113,20 @@ export class AlertasRiesgoService {
     });
   }
 
+  /** Registra varias alertas en una sola transacción (tareas de fondo). */
+  async registrarVariasEnTransaccion(
+    alertas: RegistrarAlertaParams[],
+  ): Promise<number> {
+    if (!alertas.length) return 0;
+    return this.database.enTransaccion(async (client) => {
+      let generadas = 0;
+      for (const alerta of alertas) {
+        if (await this.registrarEnTransaccion(client, alerta)) generadas++;
+      }
+      return generadas;
+    });
+  }
+
   private despuesDeInsertar(params: RegistrarAlertaParams): void {
     void this.realtime.alertaNueva(params.sucursalId, {
       tipo: params.tipo,
@@ -121,7 +135,9 @@ export class AlertasRiesgoService {
     void this.enviarPushSiCritica(params);
   }
 
-  private async enviarPushSiCritica(params: RegistrarAlertaParams): Promise<void> {
+  private async enviarPushSiCritica(
+    params: RegistrarAlertaParams,
+  ): Promise<void> {
     if (params.nivel !== 'alto' && params.nivel !== 'critico') return;
 
     const titulo =
@@ -237,7 +253,9 @@ export class AlertasRiesgoService {
   }
 
   /** Evalúa reglas que requieren ventana temporal (margen, caída ventas). */
-  async evaluarAlertasProgramadas(sucursalId: string): Promise<{ generadas: number }> {
+  async evaluarAlertasProgramadas(
+    sucursalId: string,
+  ): Promise<{ generadas: number }> {
     let generadas = 0;
 
     await this.database.enTransaccion(async (client) => {

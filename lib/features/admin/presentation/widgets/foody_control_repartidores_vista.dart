@@ -237,7 +237,8 @@ class _FoodyControlRepartidoresVistaState
                               title: Text(d['nombre'] as String? ?? ''),
                               subtitle: Text(
                                 '${d['email']} · ${d['ciudad_nombre'] ?? '—'}\n'
-                                'Entregas: ${d['total_entregas'] ?? 0}',
+                                'Ofertas aceptadas (histórico): '
+                                '${d['total_entregas'] ?? 0}',
                               ),
                               isThreeLine: true,
                               trailing: Chip(
@@ -288,7 +289,7 @@ class _FoodyControlRepartidoresVistaState
                                       .domiciliarioEstado('${d['id']}', est);
                                   _recargar();
                                 } catch (e) {
-                                  if (!mounted) return;
+                                  if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                         content: Text(mensajeErrorHttp(e))),

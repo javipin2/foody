@@ -17,10 +17,14 @@ class PromocionesAdminScreen extends StatefulWidget {
     super.key,
     required this.sucursalId,
     this.onIrMenu,
+    this.repository,
+    this.menuRepository,
   });
 
   final String? sucursalId;
   final VoidCallback? onIrMenu;
+  final PromocionesRepository? repository;
+  final MenuRepository? menuRepository;
 
   @override
   State<PromocionesAdminScreen> createState() => _PromocionesAdminScreenState();
@@ -29,7 +33,8 @@ class PromocionesAdminScreen extends StatefulWidget {
 class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = PromocionesRepository();
+  late final PromocionesRepository _repo;
+  late final MenuRepository _menuRepo;
   final _almacenamiento = AlmacenamientoRepository();
   final _picker = ImagePicker();
   List<Map<String, dynamic>> _promos = [];
@@ -39,6 +44,8 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? PromocionesRepository();
+    _menuRepo = widget.menuRepository ?? MenuRepository();
     _cargar();
   }
 
@@ -91,6 +98,7 @@ class _PromocionesAdminScreenState extends State<PromocionesAdminScreen> {
       builder: (ctx) => _DialogoNuevaPromocion(
         picker: _picker,
         sucursalId: sid,
+        menuRepository: _menuRepo,
       ),
     );
     if (resultado == null) return;
@@ -620,10 +628,12 @@ class _DialogoNuevaPromocion extends StatefulWidget {
   const _DialogoNuevaPromocion({
     required this.picker,
     required this.sucursalId,
+    required this.menuRepository,
   });
 
   final ImagePicker picker;
   final String sucursalId;
+  final MenuRepository menuRepository;
 
   @override
   State<_DialogoNuevaPromocion> createState() => _DialogoNuevaPromocionState();
@@ -634,7 +644,6 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
 
   final _tituloCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  final _menuRepo = MenuRepository();
   Uint8List? _bytes;
   String _nombreArchivo = 'promo.jpg';
   String _tipoMedia = 'imagen';
@@ -650,7 +659,9 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
 
   Future<void> _cargarProductos() async {
     try {
-      final menu = await _menuRepo.obtenerPorSucursal(widget.sucursalId);
+      final menu = await widget.menuRepository.obtenerPorSucursal(
+        widget.sucursalId,
+      );
       if (!mounted) return;
       setState(() {
         _productos = [
@@ -760,8 +771,11 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
           color: _scheme.onSurface,
         ),
       ),
-      content: SizedBox(
-        width: MediaQuery.sizeOf(context).width.clamp(280.0, 560.0),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.9,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+        ),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -848,6 +862,7 @@ class _DialogoNuevaPromocionState extends State<_DialogoNuevaPromocion> {
                 )
               else
                 DropdownButtonFormField<String?>(
+                  isExpanded: true,
                   // ignore: deprecated_member_use
                   value: _productoId,
                   decoration: _campo('Producto vinculado (opcional)'),

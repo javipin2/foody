@@ -108,6 +108,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
   String? _pedidoFacturaId;
   String? _pedidoFacturaNumero;
   String? _pedidoIdPendiente;
+  String? _pedidoCajaIdPendiente;
   String? _pedidoIdAgregar;
   String? _itemIdReemplazar;
   String? _insumosIngredienteId;
@@ -279,6 +280,8 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
       _mesaIdPendiente = widget.mesaIdInicial;
       _productoCostosId = widget.productoIdInicial;
       _pedidoIdPendiente = widget.pedidoIdInicial;
+      _pedidoCajaIdPendiente =
+          widget.seccionInicial == 'caja' ? widget.pedidoIdInicial : null;
       _insumosIngredienteId = widget.ingredienteIdInicial;
       if (widget.ingredienteIdInicial != null) {
         _insumosFiltroInicial ??= 'bajo_stock';
@@ -526,7 +529,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
           pedidoIdInicial: _pedidoIdPendiente,
           onPedidoAbierto: () => setState(() => _pedidoIdPendiente = null),
           onVerMesa: _irMesasConMesa,
-          onIrCaja: () => _seleccionarSeccion('caja'),
+          onIrCaja: _irCajaConPedido,
           onIrFacturacion: _irFacturacionConPedido,
           onIrCocinaKds: () => _seleccionarSeccion('cocina_kds'),
           onNuevoPedido: () {
@@ -573,7 +576,17 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
       case 'caja':
         return CajaAdminScreen(
           sucursalId: sucursalId,
+          pedidoIdInicial: _pedidoCajaIdPendiente,
+          onPedidoInicialUsado: () {
+            if (mounted && _pedidoCajaIdPendiente != null) {
+              setState(() => _pedidoCajaIdPendiente = null);
+            }
+          },
           ocultarCabecera: true,
+          onRevisarOperaciones: () => _seleccionarSeccion('pedidos'),
+          etiquetaAccionTurnoLargo: 'Ver pedidos',
+          textoAvisoTurnoLargo:
+              'Revisa los pedidos pendientes antes de cerrar.',
           onIrPedido: (pedidoId) {
             _irPedidosConPedido(pedidoId);
           },
@@ -725,6 +738,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
         _pedidoFacturaNumero = null;
       }
       if (ruta != 'pedidos') _pedidoIdPendiente = null;
+      if (ruta != 'caja') _pedidoCajaIdPendiente = null;
       if (ruta != 'nuevo_pedido') {
         _pedidoIdAgregar = null;
         _itemIdReemplazar = null;
@@ -759,6 +773,19 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
           'seccion': 'pedidos',
           'pedido_id': pedidoId,
         },
+      ).toString(),
+    );
+  }
+
+  void _irCajaConPedido(String pedidoId) {
+    setState(() {
+      _pedidoCajaIdPendiente = pedidoId;
+      _seccion = 'caja';
+    });
+    context.go(
+      Uri(
+        path: '/admin/panel',
+        queryParameters: {'seccion': 'caja', 'pedido_id': pedidoId},
       ).toString(),
     );
   }

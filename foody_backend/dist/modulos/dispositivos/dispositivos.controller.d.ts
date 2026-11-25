@@ -3,11 +3,11 @@ import { AnonimizarDispositivoDto, RegistrarDispositivoDto, VincularAuthDisposit
 export declare class DispositivosController {
     private readonly dispositivosService;
     constructor(dispositivosService: DispositivosService);
-    registrar(body: RegistrarDispositivoDto): Promise<{
+    registrar(body: RegistrarDispositivoDto, capability?: string): Promise<{
         device_id: string;
         registrado: boolean;
     }>;
-    vincularAuth(body: VincularAuthDispositivoDto): Promise<{
+    vincularAuth(body: VincularAuthDispositivoDto, capability?: string): Promise<{
         device_id: string;
         auth_uid: string;
         email: string | null;

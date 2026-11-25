@@ -9,6 +9,7 @@ import {
   SQL_PEDIDOS_VALIDOS,
   SQL_PEDIDOS_VALIDOS_P,
   SQL_TIPOS_MOV_CAJA_VENTA,
+  SQL_TZ_NEGOCIO,
 } from '../../compartido/sql/ventas-metricas.sql';
 
 export interface RangoFechas {
@@ -110,10 +111,13 @@ export class ReportesService {
         movimientos_venta: Number(caja?.movimientos ?? 0),
         // CONS-REP-OPEN-01: universos distintos (tickets vs cobrado), no bug de suma.
         etiqueta_ventas_pedidos: 'Tickets (total pedidos)',
-        etiqueta_ventas_caja: 'Cobrado en caja (neto)',
+        etiqueta_ventas_caja: 'Movimientos netos de caja',
+        nota_periodo_caja:
+          'Para movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
         nota_universos:
           'Tickets suma pedidos del período (incluye abiertos sin cobrar). ' +
-          'Caja es neto venta−devolución. Diferencia esperable con mesas/domicilios pendientes.',
+          'Caja suma ventas menos devoluciones. En movimientos ligados a pedido usa la fecha de creación del pedido; sin pedido, la fecha del movimiento. ' +
+          'Por eso no representa necesariamente el efectivo recibido en el rango. Diferencia esperable con mesas/domicilios pendientes.',
         por_metodo_caja: porMetodoCaja.map((f) => ({
           metodo_pago: f.metodo_pago,
           total: Number(f.total),
@@ -225,8 +229,15 @@ export class ReportesService {
   }
 
   resolverRango(desde?: string, hasta?: string): RangoFechas {
-    const hoy = new Date();
-    const hastaDate = hasta ? new Date(hasta) : hoy;
+    const hoy = new Intl.DateTimeFormat('en-CA', {
+      timeZone: SQL_TZ_NEGOCIO,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const hastaDate = hasta
+      ? new Date(hasta)
+      : new Date(`${hoy}T00:00:00.000Z`);
     const desdeDate = desde
       ? new Date(desde)
       : new Date(hastaDate.getTime() - 6 * 24 * 60 * 60 * 1000);

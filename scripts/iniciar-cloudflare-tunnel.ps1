@@ -38,10 +38,6 @@ if ([string]::IsNullOrWhiteSpace($token)) {
   exit 1
 }
 
-if ($token.Length -lt 200) {
-  Write-Host "AVISO: token corto ($($token.Length) chars). cloudflared dira si es valido." -ForegroundColor Yellow
-}
-
 function Test-ServicioHttp {
   param(
     [string]$Url,
@@ -83,12 +79,27 @@ Write-Host ''
 Write-Host 'Iniciando tunel Cloudflare (Ctrl+C para detener)...' -ForegroundColor Cyan
 Write-Host ''
 
-# ponytail: --token=valor evita que PowerShell interprete guiones del JWT como flags
-& cloudflared @('tunnel', '--no-autoupdate', 'run', "--token=$token")
-if ($LASTEXITCODE -ne 0) {
+$tokenFile = Join-Path $env:TEMP "foody-cloudflared-token-$([guid]::NewGuid().ToString('N')).tmp"
+$exitCode = 0
+try {
+  New-Item -ItemType File -Path $tokenFile -Force | Out-Null
+  $sidUsuario = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $permisoUsuario = "*${sidUsuario}:(F)"
+  & icacls.exe $tokenFile /inheritance:r /grant:r $permisoUsuario | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'No pude restringir el acceso al archivo temporal del token.' }
+  [System.IO.File]::WriteAllText($tokenFile, $token, [System.Text.UTF8Encoding]::new($false))
+
+  # --token pone el secreto en la línea de comandos visible de cloudflared.
+  # --token-file mantiene el mismo valor fuera de argv y limita el ACL al usuario actual.
+  & cloudflared @('tunnel', '--no-autoupdate', 'run', "--token-file=$tokenFile")
+  $exitCode = $LASTEXITCODE
+} finally {
+  Remove-Item -LiteralPath $tokenFile -Force -ErrorAction SilentlyContinue
+}
+if ($exitCode -ne 0) {
   Write-Host ''
   Write-Host 'ERROR: cloudflared rechazo el token (invalido, revocado o de otro tunel).' -ForegroundColor Red
   Write-Host 'Genera uno nuevo: Zero Trust - Networks - Tunnels - foody - Instalar conector' -ForegroundColor Yellow
   Write-Host 'Actualiza TUNNEL_TOKEN en scripts/cloudflare-tunnel.env y vuelve a ejecutar.' -ForegroundColor Yellow
-  exit $LASTEXITCODE
+  exit $exitCode
 }

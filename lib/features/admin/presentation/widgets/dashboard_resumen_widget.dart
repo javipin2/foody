@@ -27,6 +27,11 @@ class DashboardResumenWidget extends StatefulWidget {
     this.onIrInsumos,
     this.onIrDomiciliarios,
     this.onIrCocinaKds,
+    this.dashboardRepository,
+    this.mesasRepository,
+    this.pedidosRepository,
+    this.alertasRepository,
+    this.inventarioRepository,
   });
 
   final String? sucursalId;
@@ -40,6 +45,11 @@ class DashboardResumenWidget extends StatefulWidget {
   final VoidCallback? onIrInsumos;
   final VoidCallback? onIrDomiciliarios;
   final VoidCallback? onIrCocinaKds;
+  final DashboardRepository? dashboardRepository;
+  final MesasRepository? mesasRepository;
+  final PedidosRepository? pedidosRepository;
+  final AlertasRepository? alertasRepository;
+  final InventarioRepository? inventarioRepository;
 
   @override
   State<DashboardResumenWidget> createState() => _DashboardResumenWidgetState();
@@ -47,12 +57,15 @@ class DashboardResumenWidget extends StatefulWidget {
 
 class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
+  Duration get _duracionTransicion => MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 180);
 
-  final _dash = DashboardRepository();
-  final _mesasRepo = MesasRepository();
-  final _pedidosRepo = PedidosRepository();
-  final _alertasRepo = AlertasRepository();
-  final _invRepo = InventarioRepository();
+  late final DashboardRepository _dash;
+  late final MesasRepository _mesasRepo;
+  late final PedidosRepository _pedidosRepo;
+  late final AlertasRepository _alertasRepo;
+  late final InventarioRepository _invRepo;
 
   final _moneda = NumberFormat.currency(
     locale: 'es_CO',
@@ -67,11 +80,20 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
   static const _domiEnRutaMin = 25;
   static const _domiSinAsignarMin = 8;
   static const _maxFilas = 8;
+  static const _nombreFuentes = {
+    'resumen': 'indicadores',
+    'mesas': 'mesas',
+    'pedidos': 'domicilios',
+    'alertas': 'alertas',
+    'inventario': 'stock',
+  };
   // DASH-FRESH / DASH-RT: snapshot + poll (Inicio no usa Realtime).
   static const _pollSeg = 75;
 
   bool _cargando = true;
+  bool _actualizando = false;
   String? _error;
+  Set<String> _fuentesFallidas = {};
   Map<String, dynamic>? _resumen;
   List<_MesaDemora> _mesas = [];
   List<_DomiTardio> _domicilios = [];
@@ -79,12 +101,18 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
   List<Map<String, dynamic>> _alertas = [];
   DateTime? _actualizadoEn;
   Timer? _poll;
+  int _revisionCarga = 0;
 
   final Set<String> _abiertos = {'mesas'};
 
   @override
   void initState() {
     super.initState();
+    _dash = widget.dashboardRepository ?? DashboardRepository();
+    _mesasRepo = widget.mesasRepository ?? MesasRepository();
+    _pedidosRepo = widget.pedidosRepository ?? PedidosRepository();
+    _alertasRepo = widget.alertasRepository ?? AlertasRepository();
+    _invRepo = widget.inventarioRepository ?? InventarioRepository();
     _cargar();
     _poll = Timer.periodic(
       const Duration(seconds: _pollSeg),
@@ -105,6 +133,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
   }
 
   Future<void> _cargar({bool silencioso = false}) async {
+    final revision = ++_revisionCarga;
     final sid = widget.sucursalId;
     if (sid == null) {
       setState(() {
@@ -115,8 +144,11 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     }
     if (!silencioso) {
       setState(() {
-        _cargando = true;
+        // Al refrescar una vista ya cargada, conserva los datos en pantalla.
+        _cargando = _actualizadoEn == null;
+        _actualizando = true;
         _error = null;
+        _fuentesFallidas = {};
       });
     }
 
@@ -126,35 +158,49 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     var pedidos = <PedidoAdminModel>[];
     var alertas = <Map<String, dynamic>>[];
     var insumos = <Map<String, dynamic>>[];
-    final fallos = <String>[];
+    final fallos = <String, String>{};
 
-    try {
-      resumen = await _dash.resumen(sucursalId: sid);
-    } catch (e) {
-      fallos.add(mensajeErrorHttp(e, contexto: 'resumen'));
-    }
-    try {
-      mesasRaw = await _mesasRepo.listar(sid);
-    } catch (e) {
-      fallos.add(mensajeErrorHttp(e, contexto: 'mesas'));
-    }
-    try {
-      pedidos = await _pedidosRepo.listarActivos(sucursalId: sid);
-    } catch (e) {
-      fallos.add(mensajeErrorHttp(e, contexto: 'pedidos'));
-    }
-    try {
-      alertas = await _alertasRepo.listar(sid, soloPendientes: true);
-    } catch (e) {
-      fallos.add(mensajeErrorHttp(e, contexto: 'alertas'));
-    }
-    try {
-      insumos = await _invRepo.ingredientes(sid);
-    } catch (e) {
-      fallos.add(mensajeErrorHttp(e, contexto: 'inventario'));
-    }
+    // Las fuentes operativas independientes cargan en paralelo. La lista de
+    // pedidos sólo se consulta como compatibilidad con una API sin el nuevo
+    // resumen server-side de domicilios tardíos.
+    await Future.wait([
+      (() async {
+        try {
+          resumen = await _dash.resumen(sucursalId: sid);
+        } catch (e) {
+          fallos['resumen'] = mensajeErrorHttp(e, contexto: 'resumen');
+        }
+        if (resumen?['domicilios_tardios'] is List) return;
+        try {
+          pedidos = await _pedidosRepo.listarActivos(sucursalId: sid);
+        } catch (e) {
+          fallos['pedidos'] = mensajeErrorHttp(e, contexto: 'pedidos');
+        }
+      })(),
+      (() async {
+        try {
+          mesasRaw = await _mesasRepo.listar(sid);
+        } catch (e) {
+          fallos['mesas'] = mensajeErrorHttp(e, contexto: 'mesas');
+        }
+      })(),
+      (() async {
+        try {
+          alertas = await _alertasRepo.listar(sid, soloPendientes: true);
+        } catch (e) {
+          fallos['alertas'] = mensajeErrorHttp(e, contexto: 'alertas');
+        }
+      })(),
+      (() async {
+        try {
+          insumos = await _invRepo.ingredientes(sid);
+        } catch (e) {
+          fallos['inventario'] = mensajeErrorHttp(e, contexto: 'inventario');
+        }
+      })(),
+    ]);
 
-    if (!mounted) return;
+    if (!mounted || revision != _revisionCarga) return;
 
     // Solo bloquea UI si falló TODO (ni KPIs ni listas).
     if (resumen == null &&
@@ -163,19 +209,29 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         alertas.isEmpty &&
         insumos.isEmpty &&
         fallos.isNotEmpty) {
-      if (!silencioso) {
-        setState(() {
-          _cargando = false;
-          _error = fallos.first;
-        });
-      }
+      setState(() {
+        _cargando = false;
+        _actualizando = false;
+        _fuentesFallidas = fallos.keys.toSet();
+        // Conserva la captura previa cuando falla una actualización.
+        _error = _actualizadoEn == null ? fallos.values.first : null;
+      });
       return;
     }
 
-    final mesas = _filtrarMesasDemora(mesasRaw);
-    final domis = _filtrarDomiciliosTardios(pedidos);
-    final stock = _filtrarStockBajo(insumos);
-    final alertasTop = _ordenarAlertas(alertas).take(_maxFilas).toList();
+    final resumenFinal = fallos.containsKey('resumen') ? _resumen : resumen;
+    final mesas =
+        fallos.containsKey('mesas') ? _mesas : _filtrarMesasDemora(mesasRaw);
+    final domis = resumen?['domicilios_tardios'] is List
+        ? _leerDomiciliosTardios(resumen!['domicilios_tardios'])
+        : fallos.containsKey('pedidos')
+            ? _domicilios
+            : _filtrarDomiciliosTardios(pedidos);
+    final stock =
+        fallos.containsKey('inventario') ? _stock : _filtrarStockBajo(insumos);
+    final alertasTop = fallos.containsKey('alertas')
+        ? _alertas
+        : _ordenarAlertas(alertas).take(_maxFilas).toList();
 
     final abiertos = <String>{};
     if (mesas.isNotEmpty) abiertos.add('mesas');
@@ -185,17 +241,19 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     if (abiertos.isEmpty) abiertos.add('mesas');
 
     setState(() {
-      _resumen = resumen;
+      _resumen = resumenFinal;
       _mesas = mesas;
       _domicilios = domis;
       _stock = stock;
       _alertas = alertasTop;
+      _fuentesFallidas = fallos.keys.toSet();
       _actualizadoEn = DateTime.now();
       if (!silencioso) {
         _abiertos
           ..clear()
           ..addAll(abiertos);
         _cargando = false;
+        _actualizando = false;
         _error = null;
       }
     });
@@ -285,6 +343,23 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     return out.take(_maxFilas).toList();
   }
 
+  List<_DomiTardio> _leerDomiciliosTardios(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .take(_maxFilas)
+        .map(
+          (item) => _DomiTardio(
+            numero: '${item['numero'] ?? 'Pedido'}',
+            detalle: '${item['detalle'] ?? 'Domicilio demorado'}',
+            minutos: parsearNumero(item['minutos']).toInt(),
+            severidad: parsearNumero(item['severidad']).toInt(),
+          ),
+        )
+        .toList();
+  }
+
   String _estadoDomi(String e) => switch (e) {
         'asignado' => 'Asignado',
         'en_camino' => 'En camino',
@@ -357,6 +432,10 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         else if (_error != null)
           _errorBox()
         else ...[
+          if (_fuentesFallidas.isNotEmpty) ...[
+            _avisoActualizacionParcial(),
+            const SizedBox(height: 12),
+          ],
           _kpis(),
           const SizedBox(height: 16),
           _acordeon(
@@ -364,12 +443,16 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             titulo: 'Mesas con demora',
             subtitulo: 'QR, cocina o cobro por encima del umbral',
             icono: Icons.table_restaurant_outlined,
-            count: _mesas.length,
+            count: _conteoDisponible('mesas', _mesas.length),
             colorCount: AnaliticaTokens.alertas,
             onVerTodo: widget.onIrMesas,
             verTodoLabel: 'Ver salón',
             hijo: _mesas.isEmpty
-                ? _vacioAcordeon('Ninguna mesa demorada ahora')
+                ? _estadoVacioFuente(
+                    'mesas',
+                    'Ninguna mesa demorada ahora',
+                    'No se pudieron consultar las mesas.',
+                  )
                 : Column(
                     children: [
                       for (final m in _mesas) _filaMesa(m),
@@ -382,12 +465,16 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             titulo: 'Domicilios planta',
             subtitulo: 'Sin asignar o en ruta más de lo estimado',
             icono: Icons.delivery_dining_outlined,
-            count: _domicilios.length,
+            count: _conteoDisponible('pedidos', _domicilios.length),
             colorCount: AnaliticaTokens.domicilio,
             onVerTodo: widget.onIrDomiciliarios ?? widget.onIrPedidos,
             verTodoLabel: 'Ver domicilio',
             hijo: _domicilios.isEmpty
-                ? _vacioAcordeon('Sin domicilios tardíos de planta')
+                ? _estadoVacioFuente(
+                    'pedidos',
+                    'Sin domicilios tardíos de planta',
+                    'No se pudieron consultar los pedidos de domicilio.',
+                  )
                 : Column(
                     children: [
                       for (final d in _domicilios) _filaDomi(d),
@@ -400,12 +487,16 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             titulo: 'Stock bajo',
             subtitulo: 'Insumos en o bajo el mínimo',
             icono: Icons.inventory_2_outlined,
-            count: _stock.length,
+            count: _conteoDisponible('inventario', _stock.length),
             colorCount: const Color(0xFFD97706),
             onVerTodo: widget.onIrInsumos,
             verTodoLabel: 'Ver insumos',
             hijo: _stock.isEmpty
-                ? _vacioAcordeon('Inventario sin alertas de mínimo')
+                ? _estadoVacioFuente(
+                    'inventario',
+                    'Inventario sin alertas de mínimo',
+                    'No se pudo consultar el inventario.',
+                  )
                 : Column(
                     children: [
                       for (final s in _stock) _filaStock(s),
@@ -418,12 +509,16 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             titulo: 'Alertas',
             subtitulo: 'Las más graves primero (crítico → bajo)',
             icono: Icons.notifications_active_outlined,
-            count: _alertas.length,
+            count: _conteoDisponible('alertas', _alertas.length),
             colorCount: AnaliticaTokens.alertas,
             onVerTodo: widget.onIrAlertas,
             verTodoLabel: 'Ver todas',
             hijo: _alertas.isEmpty
-                ? _vacioAcordeon('Sin alertas pendientes')
+                ? _estadoVacioFuente(
+                    'alertas',
+                    'Sin alertas pendientes',
+                    'No se pudieron consultar las alertas.',
+                  )
                 : Column(
                     children: [
                       for (final a in _alertas) _filaAlerta(a),
@@ -469,9 +564,17 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
           ),
         ),
         IconButton(
-          tooltip: 'Actualizar',
-          onPressed: _cargando ? null : _cargar,
-          icon: Icon(Icons.refresh, color: _scheme.onSurfaceVariant),
+          tooltip: _actualizando ? 'Actualizando resumen' : 'Actualizar',
+          onPressed: _actualizando ? null : _cargar,
+          icon: _actualizando
+              ? SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: _scheme.primary,
+                  ),
+                )
+              : Icon(Icons.refresh, color: _scheme.onSurfaceVariant),
         ),
       ],
     );
@@ -479,36 +582,44 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
 
   Widget _kpis() {
     final d = _resumen ?? {};
+    final resumenDisponible = _resumen != null;
     final qrPend = parsearNumero(d['pedidos_pendientes_qr']).toInt();
     final items = [
       _Kpi(
         'Ventas hoy',
-        _moneda.format(d['ventas_hoy'] ?? 0),
+        resumenDisponible ? _moneda.format(d['ventas_hoy'] ?? 0) : '—',
         AnaliticaTokens.ventas,
+        Icons.payments_outlined,
         widget.onIrReportes ?? widget.onIrCaja,
       ),
       _Kpi(
         'Activos',
-        '${d['pedidos_activos'] ?? 0}',
+        resumenDisponible ? '${d['pedidos_activos'] ?? 0}' : '—',
         AnaliticaTokens.pedidos,
+        Icons.receipt_long_outlined,
         widget.onIrPedidos,
       ),
       _Kpi(
         'Cerrados hoy',
-        '${d['pedidos_completados_hoy'] ?? 0}',
+        resumenDisponible ? '${d['pedidos_completados_hoy'] ?? 0}' : '—',
         AnaliticaTokens.inventario,
+        Icons.task_alt_rounded,
         widget.onIrPedidos,
       ),
       _Kpi(
         'QR pendientes',
-        '$qrPend',
+        resumenDisponible ? '$qrPend' : '—',
         AnaliticaTokens.clientes,
+        Icons.qr_code_2_rounded,
         widget.onIrMesas,
       ),
       _Kpi(
         'Alertas',
-        '${d['alertas_pendientes'] ?? _alertas.length}',
+        resumenDisponible
+            ? '${d['alertas_pendientes'] ?? _alertas.length}'
+            : '—',
         AnaliticaTokens.alertas,
+        Icons.notifications_active_outlined,
         widget.onIrAlertas,
       ),
     ];
@@ -523,10 +634,22 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final k in items)
-              SizedBox(
-                width: (c.maxWidth - 8 * (cols - 1)) / cols,
-                child: _kpiCard(k),
+            for (final entry in items.asMap().entries)
+              Builder(
+                builder: (context) {
+                  final indice = entry.key;
+                  final k = entry.value;
+                  final anchoTarjeta = (c.maxWidth - 8 * (cols - 1)) / cols;
+                  final alertaDestacada = indice == items.length - 1 && cols < 5;
+                  return SizedBox(
+                    key: ValueKey<String>('dashboard-kpi-${k.titulo}'),
+                    width: alertaDestacada
+                        ? anchoTarjeta * 2 + 8
+                        : anchoTarjeta,
+                    height: alertaDestacada ? 76 : 104,
+                    child: _kpiCard(k, horizontal: alertaDestacada),
+                  );
+                },
               ),
           ],
         );
@@ -534,7 +657,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     );
   }
 
-  Widget _kpiCard(_Kpi k) {
+  Widget _kpiCard(_Kpi k, {bool horizontal = false}) {
     return Material(
       color: _scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
@@ -548,16 +671,13 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             boxShadow: AnaliticaTokens.shadowSoft,
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.circle, size: 7, color: k.color),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: Text(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+            child: horizontal
+                ? Row(
+                    children: [
+                      _iconoKpi(k),
+                      const SizedBox(width: 8),
+                      Text(
                         k.titulo,
                         style: TextStyle(
                           fontSize: 12,
@@ -565,35 +685,91 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                           color: _scheme.onSurfaceVariant,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  k.valor,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
-                    color: _scheme.onSurface,
+                      const Spacer(),
+                      Text(
+                        k.valor,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.55,
+                          color: _scheme.onSurface,
+                        ),
+                      ),
+                      if (k.onTap != null) ...[
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.arrow_outward_rounded,
+                          size: 14,
+                          color: _scheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _iconoKpi(k),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              k.titulo,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (k.onTap != null) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.arrow_outward_rounded,
+                              size: 14,
+                              color: _scheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ],
+                      ),
+                      const Spacer(),
+                      Text(
+                        k.valor,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.55,
+                          color: _scheme.onSurface,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
     );
   }
 
+  Widget _iconoKpi(_Kpi k) => Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: k.color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Icon(k.icono, size: 17, color: k.color),
+      );
+
   Widget _acordeon({
     required String id,
     required String titulo,
     required String subtitulo,
     required IconData icono,
-    required int count,
+    required int? count,
     required Color colorCount,
     required Widget hijo,
     VoidCallback? onVerTodo,
@@ -607,7 +783,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
           border: Border.all(
-            color: count > 0
+            color: (count ?? 0) > 0
                 ? colorCount.withValues(alpha: 0.28)
                 : _scheme.outlineVariant,
           ),
@@ -660,19 +836,20 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: count > 0
+                        color: (count ?? 0) > 0
                             ? colorCount.withValues(alpha: 0.12)
                             : _scheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        '$count',
+                        count?.toString() ?? '—',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                           fontFamily: 'monospace',
-                          color:
-                              count > 0 ? colorCount : _scheme.onSurfaceVariant,
+                          color: (count ?? 0) > 0
+                              ? colorCount
+                              : _scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -684,25 +861,35 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                 ),
               ),
             ),
-            if (abierto) ...[
-              Divider(height: 1, color: _scheme.outlineVariant),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-                child: hijo,
-              ),
-              if (onVerTodo != null)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: onVerTodo,
-                    style: TextButton.styleFrom(
-                      foregroundColor: _scheme.onSurfaceVariant,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    child: Text(verTodoLabel ?? 'Ver más'),
-                  ),
-                ),
-            ],
+            AnimatedSize(
+              duration: _duracionTransicion,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: abierto
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Divider(height: 1, color: _scheme.outlineVariant),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                          child: hijo,
+                        ),
+                        if (onVerTodo != null)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: onVerTodo,
+                              style: TextButton.styleFrom(
+                                foregroundColor: _scheme.onSurfaceVariant,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(verTodoLabel ?? 'Ver más'),
+                            ),
+                          ),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
@@ -728,6 +915,89 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                 color: _scheme.onSurfaceVariant,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int? _conteoDisponible(String fuente, int total) =>
+      _fuentesFallidas.contains(fuente) && total == 0 ? null : total;
+
+  Widget _estadoVacioFuente(
+    String fuente,
+    String textoVacio,
+    String textoError,
+  ) {
+    return _fuentesFallidas.contains(fuente)
+        ? _noDisponibleAcordeon(textoError)
+        : _vacioAcordeon(textoVacio);
+  }
+
+  Widget _noDisponibleAcordeon(String texto) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      child: Row(
+        children: [
+          Icon(
+            Icons.cloud_off_outlined,
+            size: 18,
+            color: _scheme.error,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              texto,
+              style: TextStyle(
+                fontSize: 13,
+                color: _scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _avisoActualizacionParcial() {
+    final nombres = _fuentesFallidas
+        .map((fuente) => _nombreFuentes[fuente] ?? fuente)
+        .toList()
+      ..sort();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: _scheme.errorContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        border: Border.all(color: _scheme.error.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, color: _scheme.error, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'No se actualizaron: ${nombres.join(', ')}. '
+              'Los valores visibles pueden estar desactualizados.',
+              style: TextStyle(
+                fontSize: 12,
+                color: _scheme.onSurface,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Reintentar carga del resumen',
+            visualDensity: VisualDensity.compact,
+            onPressed: _actualizando ? null : _cargar,
+            icon: _actualizando
+                ? SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _scheme.error,
+                    ),
+                  )
+                : Icon(Icons.refresh, color: _scheme.error, size: 18),
           ),
         ],
       ),
@@ -843,7 +1113,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        '${min}m',
+        _formatearDemora(min),
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w800,
@@ -852,6 +1122,19 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         ),
       ),
     );
+  }
+
+  String _formatearDemora(int minutos) {
+    if (minutos < 0) return '0 min';
+    if (minutos < 60) return '$minutos min';
+    final horas = minutos ~/ 60;
+    if (horas < 24) {
+      final restantes = minutos % 60;
+      return restantes == 0 ? '${horas}h' : '${horas}h ${restantes}m';
+    }
+    final dias = horas ~/ 24;
+    final horasRestantes = horas % 24;
+    return horasRestantes == 0 ? '${dias}d' : '${dias}d ${horasRestantes}h';
   }
 
   Widget _badgeNivel(String nivel) {
@@ -924,10 +1207,11 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
 }
 
 class _Kpi {
-  const _Kpi(this.titulo, this.valor, this.color, this.onTap);
+  const _Kpi(this.titulo, this.valor, this.color, this.icono, this.onTap);
   final String titulo;
   final String valor;
   final Color color;
+  final IconData icono;
   final VoidCallback? onTap;
 }
 

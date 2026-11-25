@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import WebSocket from 'ws';
 import { DatabaseService } from '../database/database.service';
+import { esQaSinEfectosExternos } from '../config/qa-safety';
 
 const MAX_INTENTOS_JOB = 10;
 const INTERVALO_COLA_MS = 5000;
@@ -31,11 +32,14 @@ export class ImpresionService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Cola de impresión pausada por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     setInterval(
       () =>
-        void this.database.intentarAdvisoryLock(
-          this.LOCK_IMPRESION_COLA,
-          () => this.procesarCola(),
+        void this.database.intentarAdvisoryLock(this.LOCK_IMPRESION_COLA, () =>
+          this.procesarCola(),
         ),
       INTERVALO_COLA_MS,
     );
@@ -153,6 +157,13 @@ export class ImpresionService implements OnModuleInit {
   }> {
     const url =
       this.config.get<string>('FOODY_PRINTER_WS') ?? 'ws://127.0.0.1:8765';
+    if (esQaSinEfectosExternos()) {
+      return {
+        conectado: false,
+        url,
+        mensaje: 'Agente de impresión desactivado en QA aislada',
+      };
+    }
     try {
       const r = await this.enviarWs({ accion: 'ping' }, 3000);
       if (r.exito) {
@@ -196,7 +207,9 @@ export class ImpresionService implements OnModuleInit {
     );
     if (!cocinas.length) return;
 
-    const copiaRow = await this.database.consultarUno<{ comanda_copia: number }>(
+    const copiaRow = await this.database.consultarUno<{
+      comanda_copia: number;
+    }>(
       `UPDATE pedidos
        SET comanda_copia = comanda_copia + 1
        WHERE id = $1 AND sucursal_id = $2
@@ -280,6 +293,10 @@ export class ImpresionService implements OnModuleInit {
   }
 
   private async procesarCola(): Promise<void> {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Procesamiento de impresión bloqueado en QA aislada');
+      return;
+    }
     if (this.procesando) return;
     this.procesando = true;
     try {
@@ -449,9 +466,7 @@ export class ImpresionService implements OnModuleInit {
             pong?: boolean;
           };
           if (data.pong) {
-            finalizar(() =>
-              resolve({ exito: true, mensaje: 'pong' }),
-            );
+            finalizar(() => resolve({ exito: true, mensaje: 'pong' }));
             return;
           }
           finalizar(() => {

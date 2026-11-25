@@ -8,6 +8,7 @@ import { PedidosSoporteService } from '../pedidos/pedidos-soporte.service';
 import { AsignarDomiciliarioDto } from './dto/asignar-domiciliario.dto';
 import { ConfirmarEntregaDto } from './dto/confirmar-entrega.dto';
 import { UbicacionEntregaDto } from './dto/independiente.dto';
+import { DispatchService } from './dispatch.service';
 export declare class DomiciliariosService {
     private readonly database;
     private readonly alertasRiesgo;
@@ -15,7 +16,8 @@ export declare class DomiciliariosService {
     private readonly cajaAuditoria;
     private readonly pedidosEstadoCommand;
     private readonly pedidosSoporte;
-    constructor(database: DatabaseService, alertasRiesgo: AlertasRiesgoService, realtime: RealtimeBroadcastService, cajaAuditoria: PedidosCajaAuditoriaService, pedidosEstadoCommand: PedidosEstadoCommandService, pedidosSoporte: PedidosSoporteService);
+    private readonly dispatch;
+    constructor(database: DatabaseService, alertasRiesgo: AlertasRiesgoService, realtime: RealtimeBroadcastService, cajaAuditoria: PedidosCajaAuditoriaService, pedidosEstadoCommand: PedidosEstadoCommandService, pedidosSoporte: PedidosSoporteService, dispatch: DispatchService);
     listarPlantaDisponibles(sucursalId: string): Promise<QueryResultRow[]>;
     asignarPlanta(dto: AsignarDomiciliarioDto, usuarioAdminId: string): Promise<{
         pedido_id: string;
@@ -43,7 +45,32 @@ export declare class DomiciliariosService {
         tiempo_promedio_min: number | null;
         saldo_por_liquidar: number;
     }>;
-    pedidosAsignados(usuarioId: string): Promise<QueryResultRow[]>;
+    pedidosAsignados(usuarioId: string): Promise<{
+        saldo_pendiente: number;
+        requiere_cobro: boolean;
+        producto_total: number;
+        producto_pendiente: number;
+        domicilio_pendiente: number;
+        id: string;
+        numero_pedido: string;
+        tipo: string;
+        estado: string;
+        cliente_nombre: string | null;
+        cliente_telefono: string | null;
+        direccion_entrega: string | null;
+        lat: string | null;
+        lng: string | null;
+        subtotal: string;
+        costo_domicilio: string;
+        total: string;
+        monto_pagado: string;
+        metodo_pago: string | null;
+        created_at: string;
+        estado_asignacion: string;
+        asignado_at: string;
+        permite_fiado_domiciliario: boolean;
+        domicilio_ingresa_a_caja: boolean;
+    }[]>;
     resumenLiquidacion(sucursalId: string): Promise<{
         permite_fiado_domiciliario: boolean;
         domiciliarios: {

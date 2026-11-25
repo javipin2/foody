@@ -84,10 +84,17 @@ let PedidosSoporteService = class PedidosSoporteService {
         return 'pendiente';
     }
     async generarNumeroPedido(client, sucursalId) {
-        const anio = new Date().getFullYear();
+        const anio = Number(new Intl.DateTimeFormat('en', {
+            timeZone: 'America/Bogota',
+            year: 'numeric',
+        }).format(new Date()));
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1::text))`, [
+            `foody:pedido-numero:${sucursalId}:${anio}`,
+        ]);
         const fila = await this.consultarUnoCliente(client, `SELECT COUNT(*)::int AS n FROM pedidos
        WHERE sucursal_id = $1
-         AND EXTRACT(YEAR FROM created_at) = $2`, [sucursalId, anio]);
+         AND created_at >= make_timestamptz($2::int, 1, 1, 0, 0, 0, 'America/Bogota')
+         AND created_at < make_timestamptz($2::int + 1, 1, 1, 0, 0, 0, 'America/Bogota')`, [sucursalId, anio]);
         const secuencia = (fila?.n ?? 0) + 1;
         return `FDY-${anio}-${String(secuencia).padStart(4, '0')}`;
     }
@@ -156,12 +163,7 @@ let PedidosSoporteService = class PedidosSoporteService {
                 message: 'Solo puedes llamar a la mesera desde un pedido de mesa',
             });
         }
-        const bloqueados = [
-            'pagado',
-            'cancelado',
-            'rechazado',
-            'entregado',
-        ];
+        const bloqueados = ['pagado', 'cancelado', 'rechazado', 'entregado'];
         if (bloqueados.includes(pedido.estado)) {
             throw new common_1.BadRequestException({
                 error: 'LLAMADA_MESERA_NO_PERMITIDA',
@@ -184,9 +186,7 @@ let PedidosSoporteService = class PedidosSoporteService {
                 pedido_id: pedidoId,
                 sucursal_id: sucursalId,
                 mesa_id: mesaId ?? '',
-                ruta: mesaId
-                    ? `/admin/mesero?mesa_id=${mesaId}`
-                    : '/admin/mesero',
+                ruta: mesaId ? `/admin/mesero?mesa_id=${mesaId}` : '/admin/mesero',
             },
         });
         void this.realtime.mesasActualizadas(sucursalId);
@@ -224,6 +224,9 @@ let PedidosSoporteService = class PedidosSoporteService {
                 nivel: 'nuevo',
             });
         }
+        if (estado === 'pagado' && opciones.mesaId) {
+            void this.realtime.mesasActualizadas(sucursalId);
+        }
         void this.notificarPushPedido(sucursalId, pedidoId, estado, numeroPedido, opciones.mesaId);
     }
     notificarPushPedido(sucursalId, pedidoId, estado, numeroPedido, mesaId) {
@@ -245,9 +248,7 @@ let PedidosSoporteService = class PedidosSoporteService {
                 roles: ['mesero', 'admin', 'gerente', 'cajero'],
                 datos: {
                     ...base.datos,
-                    ruta: mesaId
-                        ? `/admin/mesero?mesa_id=${mesaId}`
-                        : '/admin/mesero',
+                    ruta: mesaId ? `/admin/mesero?mesa_id=${mesaId}` : '/admin/mesero',
                 },
             });
             return;

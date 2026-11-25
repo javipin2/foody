@@ -24,8 +24,7 @@ const MENSAJES_NEGOCIO: Record<string, string> = {
     'Algunos ítems ya fueron cobrados o no pertenecen a esta mesa.',
   FUERA_DE_COBERTURA:
     'La dirección de entrega está fuera de la zona de domicilio.',
-  MESA_DESTINO_OCUPADA:
-    'La mesa destino tiene otro pedido activo.',
+  MESA_DESTINO_OCUPADA: 'La mesa destino tiene otro pedido activo.',
   MESERA_INVALIDA: 'La mesera indicada no es válida para esta sucursal.',
   MESA_REQUERIDA: 'Un pedido de mesa requiere mesa_id.',
   CAJA_CIERRE_OPERACION_ABIERTA:
@@ -47,9 +46,10 @@ const MENSAJES_NEGOCIO: Record<string, string> = {
     'No se puede bajar la cantidad de un ítem en preparación o listo. Elimínalo con motivo (merma).',
   FALLO_PREPARACION_MOTIVO:
     'Indica el motivo del fallo de preparación (obligatorio).',
-  IMPRESION_SIN_COCINA:
-    'Este pedido no tiene ítems de cocina para imprimir.',
+  IMPRESION_SIN_COCINA: 'Este pedido no tiene ítems de cocina para imprimir.',
   PEDIDO_NO_ENCONTRADO: 'Pedido no encontrado en esta sucursal.',
+  COBRO_REQUERIDO:
+    'Indica un método de pago válido al confirmar la entrega del domicilio.',
 };
 
 const CODIGOS_ERROR_PRESERVAR = new Set([
@@ -82,6 +82,7 @@ const CODIGOS_ERROR_PRESERVAR = new Set([
   'QR_TOKEN_DUPLICADO',
   'REGISTRO_CERRADO',
   'REGISTRO_CUPO',
+  'COBRO_REQUERIDO',
 ]);
 
 @Catch()
@@ -109,7 +110,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
           if (anidado.mensaje != null) {
             mensaje = String(anidado.mensaje);
           }
-          if (anidado.message != null && mensaje === 'Ocurrió un error inesperado') {
+          if (
+            anidado.message != null &&
+            mensaje === 'Ocurrió un error inesperado'
+          ) {
             mensaje = String(anidado.message);
           }
           if (anidado.error != null) {
@@ -188,7 +192,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       mensaje = MENSAJES_NEGOCIO[mensaje];
     } else if (MENSAJES_NEGOCIO[error]) {
       const tieneDetalleStock =
-          error === 'STOCK_INSUFICIENTE' && detalles != null;
+        error === 'STOCK_INSUFICIENTE' && detalles != null;
       const mensajeYaEspecifico =
         mensaje !== 'Ocurrió un error inesperado' &&
         mensaje !== error &&

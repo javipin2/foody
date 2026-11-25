@@ -16,6 +16,8 @@ export declare class AnaliticaController {
             margen_bruto_pct: number;
             cobertura_costo_pct: number;
             pct_cancelacion: number;
+            pedidos_cancelados: number;
+            pedidos_total_cancelacion: number;
             efectivo_vs_digital: {
                 efectivo: number;
                 digital: number;

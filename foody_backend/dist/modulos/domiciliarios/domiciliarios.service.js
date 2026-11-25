@@ -18,6 +18,7 @@ const pedidos_caja_auditoria_service_1 = require("../pedidos/pedidos-caja-audito
 const pedidos_estado_command_service_1 = require("../pedidos/pedidos-estado-command.service");
 const pedidos_soporte_service_1 = require("../pedidos/pedidos-soporte.service");
 const cobro_domicilio_util_1 = require("./cobro-domicilio.util");
+const dispatch_service_1 = require("./dispatch.service");
 let DomiciliariosService = class DomiciliariosService {
     database;
     alertasRiesgo;
@@ -25,13 +26,15 @@ let DomiciliariosService = class DomiciliariosService {
     cajaAuditoria;
     pedidosEstadoCommand;
     pedidosSoporte;
-    constructor(database, alertasRiesgo, realtime, cajaAuditoria, pedidosEstadoCommand, pedidosSoporte) {
+    dispatch;
+    constructor(database, alertasRiesgo, realtime, cajaAuditoria, pedidosEstadoCommand, pedidosSoporte, dispatch) {
         this.database = database;
         this.alertasRiesgo = alertasRiesgo;
         this.realtime = realtime;
         this.cajaAuditoria = cajaAuditoria;
         this.pedidosEstadoCommand = pedidosEstadoCommand;
         this.pedidosSoporte = pedidosSoporte;
+        this.dispatch = dispatch;
     }
     async listarPlantaDisponibles(sucursalId) {
         return this.database.consultar(`SELECT dp.id,
@@ -55,20 +58,20 @@ let DomiciliariosService = class DomiciliariosService {
     }
     async asignarPlanta(dto, usuarioAdminId) {
         const result = await this.database.enTransaccion(async (client) => {
-            const pedido = await this.consultarUno(client, `SELECT id, tipo, estado FROM pedidos
-         WHERE id = $1 AND sucursal_id = $2
-         FOR UPDATE`, [dto.pedido_id, dto.sucursal_id]);
-            if (!pedido) {
-                throw new common_1.NotFoundException('Pedido no encontrado');
+            const validacion = await this.dispatch.validarPedidoParaDespacho(dto.pedido_id, dto.sucursal_id, client);
+            if (!validacion.valido) {
+                if (validacion.motivo === 'PEDIDO_NO_ENCONTRADO') {
+                    throw new common_1.NotFoundException(validacion.mensaje);
+                }
+                throw new common_1.BadRequestException({
+                    error: validacion.motivo,
+                    message: validacion.mensaje,
+                });
             }
-            if (pedido.tipo !== 'domicilio') {
-                throw new common_1.BadRequestException('Solo pedidos de domicilio admiten asignación');
-            }
-            if (pedido.estado !== 'listo') {
-                throw new common_1.BadRequestException('El pedido debe estar en estado listo para asignar domiciliario');
-            }
+            const pedido = validacion.pedido;
             const domiciliario = await this.consultarUno(client, `SELECT dp.id, dp.sucursal_id, dp.usuario_id FROM domiciliarios_planta dp
-         WHERE dp.id = $1 AND dp.activo = true`, [dto.domiciliario_planta_id]);
+         WHERE dp.id = $1 AND dp.activo = true
+         FOR UPDATE`, [dto.domiciliario_planta_id]);
             if (!domiciliario || domiciliario.sucursal_id !== dto.sucursal_id) {
                 throw new common_1.BadRequestException('Domiciliario no válido para esta sucursal');
             }
@@ -152,7 +155,8 @@ let DomiciliariosService = class DomiciliariosService {
                 throw new common_1.BadRequestException('Solo se puede cambiar domiciliario en asignado o en camino');
             }
             const domiciliario = await this.consultarUno(client, `SELECT dp.id, dp.sucursal_id, dp.usuario_id FROM domiciliarios_planta dp
-         WHERE dp.id = $1 AND dp.activo = true`, [dto.domiciliario_planta_id]);
+         WHERE dp.id = $1 AND dp.activo = true
+         FOR UPDATE`, [dto.domiciliario_planta_id]);
             if (!domiciliario || domiciliario.sucursal_id !== dto.sucursal_id) {
                 throw new common_1.BadRequestException('Domiciliario no válido para esta sucursal');
             }
@@ -327,7 +331,7 @@ let DomiciliariosService = class DomiciliariosService {
         if (!domiciliario) {
             throw new common_1.NotFoundException('No eres domiciliario de planta registrado');
         }
-        return this.database.consultar(`SELECT p.id,
+        const pedidos = await this.database.consultar(`SELECT p.id,
               p.numero_pedido,
               p.tipo,
               p.estado,
@@ -339,6 +343,7 @@ let DomiciliariosService = class DomiciliariosService {
               p.subtotal,
               p.costo_domicilio,
               p.total,
+              COALESCE(p.monto_pagado, 0) AS monto_pagado,
               p.metodo_pago,
               p.created_at,
               ad.estado AS estado_asignacion,
@@ -352,6 +357,17 @@ let DomiciliariosService = class DomiciliariosService {
          AND ad.estado IN ('asignado', 'en_camino')
          AND p.estado IN ('asignado', 'en_camino')
        ORDER BY ad.asignado_at ASC`, [domiciliario.id]);
+        return pedidos.map((pedido) => {
+            const cobro = (0, cobro_domicilio_util_1.repartirCobroDomicilio)(Number(pedido.total), Number(pedido.costo_domicilio ?? 0), Number(pedido.monto_pagado ?? 0));
+            return {
+                ...pedido,
+                saldo_pendiente: cobro.saldo,
+                requiere_cobro: cobro.saldo > 0.01,
+                producto_total: cobro.productoTotal,
+                producto_pendiente: cobro.productoPendiente,
+                domicilio_pendiente: cobro.domicilioPendiente,
+            };
+        });
     }
     async resumenLiquidacion(sucursalId) {
         const sucursal = await this.database.consultarUno(`SELECT COALESCE(permite_fiado_domiciliario, false) AS permite_fiado_domiciliario
@@ -731,6 +747,7 @@ exports.DomiciliariosService = DomiciliariosService = __decorate([
         realtime_broadcast_service_1.RealtimeBroadcastService,
         pedidos_caja_auditoria_service_1.PedidosCajaAuditoriaService,
         pedidos_estado_command_service_1.PedidosEstadoCommandService,
-        pedidos_soporte_service_1.PedidosSoporteService])
+        pedidos_soporte_service_1.PedidosSoporteService,
+        dispatch_service_1.DispatchService])
 ], DomiciliariosService);
 //# sourceMappingURL=domiciliarios.service.js.map

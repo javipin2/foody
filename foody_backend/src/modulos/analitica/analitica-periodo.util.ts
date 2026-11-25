@@ -1,7 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
+import {
+  fechaHoyNegocio,
+  ZONA_HORARIA_NEGOCIO,
+} from '../../compartido/fecha-negocio.util';
 import { PresetAnalitica } from './dto/filtro-analitica.dto';
 
-const TZ = 'America/Bogota';
+const TZ = ZONA_HORARIA_NEGOCIO;
 const MAX_DIAS_RANGO = 366;
 
 export type PeriodoResuelto = {
@@ -17,7 +21,7 @@ export type PeriodoConComparativa = {
 };
 
 export function hoyBogota(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
+  return fechaHoyNegocio();
 }
 
 function addDaysYmd(ymd: string, dias: number): string {

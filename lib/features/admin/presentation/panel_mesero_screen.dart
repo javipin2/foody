@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/banner_qr_pendientes.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/mesas_grid_widget.dart';
+import 'package:reserva_canchas/features/admin/presentation/widgets/operacion_ui.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/pedidos_kanban_widget.dart';
 
 /// Flujo mesero — Mesas + Pedidos (NAV-MS shell paridad cajero).
@@ -92,15 +92,17 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
     final meseraId = _sesion?.usuario['id'] as String?;
     final sid = _sucursalId;
     final ancho = MediaQuery.sizeOf(context).width;
+    final scheme = Theme.of(context).colorScheme;
     // NAV-MS-02: tabs arriba en tablet/PC (paridad NAV-CJ-06).
     final navSuperior = FoodyBreakpoints.esExpanded(ancho);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: scheme.surface,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0F172A),
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
+        scrolledUnderElevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -113,7 +115,7 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.normal,
-                color: Colors.grey.shade600,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -139,7 +141,7 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
         children: [
           if (navSuperior)
             Material(
-              color: Colors.white,
+              color: scheme.surface,
               child: _navBar(),
             ),
           Expanded(
@@ -216,20 +218,19 @@ class _PanelMeseroScreenState extends State<PanelMeseroScreen> {
   }
 
   Widget _navBar() {
-    return NavigationBar(
+    return OperacionRoleNavBar(
       selectedIndex: _tab,
-      height: 64,
-      indicatorColor: ColoresFoody.primario.withValues(alpha: 0.15),
       onDestinationSelected: _seleccionarTab,
+      compactTop: FoodyBreakpoints.esExpanded(MediaQuery.sizeOf(context).width),
       destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.table_restaurant_outlined),
-          selectedIcon: Icon(Icons.table_restaurant),
+        OperacionRoleNavItem(
+          icon: Icons.table_restaurant_outlined,
+          selectedIcon: Icons.table_restaurant,
           label: 'Mesas',
         ),
-        NavigationDestination(
-          icon: Icon(Icons.receipt_long_outlined),
-          selectedIcon: Icon(Icons.receipt_long),
+        OperacionRoleNavItem(
+          icon: Icons.receipt_long_outlined,
+          selectedIcon: Icons.receipt_long,
           label: 'Pedidos',
         ),
       ],

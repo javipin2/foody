@@ -7,6 +7,7 @@ import 'package:reserva_canchas/features/admin/data/pedidos_repository.dart';
 import 'package:reserva_canchas/features/admin/domain/pedido_admin_model.dart';
 import 'package:reserva_canchas/features/pedidos/domain/pedido_item_resumen.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/widgets/editar_pedido_item_sheet.dart';
+import 'package:reserva_canchas/features/pedidos/presentation/widgets/aviso_items_no_disponibles.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/widgets/pedido_estado_pill.dart';
 
 /// Modal/sheet de detalle administrable (Fase 1: acciones existentes).
@@ -19,7 +20,7 @@ Future<void> mostrarPedidoDetalleSheet({
   required NumberFormat formatoMoneda,
   VoidCallback? onCambiado,
   ValueChanged<String>? onVerMesa,
-  VoidCallback? onIrCaja,
+  ValueChanged<String>? onIrCaja,
   void Function(String pedidoId, String numeroPedido)? onIrFacturacion,
   VoidCallback? onIrCocinaKds,
   void Function(PedidoAdminModel pedido, {String? itemIdReemplazar})?
@@ -31,6 +32,7 @@ Future<void> mostrarPedidoDetalleSheet({
   Future<void> Function(PedidoAdminModel)? onCancelar,
   Future<void> Function(PedidoAdminModel)? onDescuento,
   Widget? asignarDomiciliarioSlot,
+  PedidosRepository? repository,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -55,6 +57,7 @@ Future<void> mostrarPedidoDetalleSheet({
       onCancelar: onCancelar,
       onDescuento: onDescuento,
       asignarDomiciliarioSlot: asignarDomiciliarioSlot,
+      repository: repository,
     ),
   );
 }
@@ -80,6 +83,7 @@ class PedidoDetalleSheet extends StatefulWidget {
     this.onCancelar,
     this.onDescuento,
     this.asignarDomiciliarioSlot,
+    this.repository,
   });
 
   final PedidoAdminModel pedidoInicial;
@@ -89,7 +93,7 @@ class PedidoDetalleSheet extends StatefulWidget {
   final NumberFormat formatoMoneda;
   final VoidCallback? onCambiado;
   final ValueChanged<String>? onVerMesa;
-  final VoidCallback? onIrCaja;
+  final ValueChanged<String>? onIrCaja;
   final void Function(String pedidoId, String numeroPedido)? onIrFacturacion;
   final VoidCallback? onIrCocinaKds;
   final void Function(PedidoAdminModel pedido, {String? itemIdReemplazar})?
@@ -101,13 +105,14 @@ class PedidoDetalleSheet extends StatefulWidget {
   final Future<void> Function(PedidoAdminModel)? onCancelar;
   final Future<void> Function(PedidoAdminModel)? onDescuento;
   final Widget? asignarDomiciliarioSlot;
+  final PedidosRepository? repository;
 
   @override
   State<PedidoDetalleSheet> createState() => _PedidoDetalleSheetState();
 }
 
 class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
-  final _repo = PedidosRepository();
+  late final _repo = widget.repository ?? PedidosRepository();
   late PedidoAdminModel _pedido;
   bool _cargando = true;
   String? _error;
@@ -173,8 +178,8 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
       widget.onCambiado?.call();
       await _cargar();
       if (mounted) {
-        final enCocina = ['en_cocina', 'listo', 'confirmado']
-            .contains(_pedido.estado);
+        final enCocina =
+            ['en_cocina', 'listo', 'confirmado'].contains(_pedido.estado);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -264,8 +269,8 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
         !cerrado;
     final enCocina = ['confirmado', 'en_cocina', 'listo', 'pagando']
         .contains(_pedido.estado);
-    final puedeEditarItems = !widget.modoMesero ||
-        widget.permisos.contains('crear_pedido');
+    final puedeEditarItems =
+        !widget.modoMesero || widget.permisos.contains('crear_pedido');
 
     return SafeArea(
       child: SizedBox(
@@ -331,6 +336,11 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                           widget.formatoMoneda.format(_pedido.total),
                           bold: true,
                         ),
+                        AvisoItemsNoDisponibles(
+                          cantidad: _pedido.itemsResumen
+                              .where((it) => it.estadoCocina == 'no_disponible')
+                              .fold<int>(0, (suma, it) => suma + it.cantidad),
+                        ),
                         if (_pedido.saldoPendiente > 0.01)
                           _metaFila(
                             'Saldo',
@@ -373,7 +383,8 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                side: const BorderSide(color: Color(0xFFE8EAF0)),
+                                side:
+                                    const BorderSide(color: Color(0xFFE8EAF0)),
                               ),
                               child: ListTile(
                                 title: Text('${it.cantidad}× ${it.nombre}'),
@@ -463,7 +474,9 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                               await widget.onCobrarParaLlevar!(_pedido);
                             },
                           ),
-                        if (_pedido.estado == 'pendiente_aprobacion') ...[
+                        if (_pedido.estado == 'pendiente_aprobacion' &&
+                            widget.permisos
+                                .contains('aprobar_pedido_mesa')) ...[
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(
@@ -491,7 +504,11 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                           ),
                         ],
                         if (_pedido.accionRapida != null &&
-                            _pedido.accionRapida != 'aprobar')
+                            ((_pedido.accionRapida == 'aprobar' &&
+                                    widget.permisos
+                                        .contains('aprobar_pedido_mesa')) ||
+                                (_pedido.accionRapida != 'aprobar' &&
+                                    widget.permisos.contains('crear_pedido'))))
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.play_arrow_outlined),
@@ -506,7 +523,9 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                             _pedido.tipo == 'domicilio' &&
                             widget.asignarDomiciliarioSlot != null)
                           widget.asignarDomiciliarioSlot!,
-                        if (widget.onIrCaja != null && !widget.modoMesero)
+                        if (widget.onIrCaja != null &&
+                            !widget.modoMesero &&
+                            widget.permisos.contains('ver_caja'))
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(
@@ -515,7 +534,7 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                             title: const Text('Ir a caja'),
                             onTap: () {
                               Navigator.pop(context);
-                              widget.onIrCaja!();
+                              widget.onIrCaja!(_pedido.id);
                             },
                           ),
                         if (widget.onIrFacturacion != null &&
@@ -545,7 +564,10 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                               widget.onIrCocinaKds!();
                             },
                           ),
-                        if (!widget.modoMesero && !cerrado)
+                        if (!widget.modoMesero &&
+                            !cerrado &&
+                            widget.permisos.contains('crear_pedido') &&
+                            widget.onCancelar != null)
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Icon(

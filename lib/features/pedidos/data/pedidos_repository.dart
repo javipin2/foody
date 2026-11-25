@@ -28,6 +28,80 @@ class PedidosRepository {
     return _parsearLista(respuesta.data);
   }
 
+  /// Busca pedidos activos en el servidor, con scope por sucursal y límite.
+  Future<List<PedidoAdminModel>> buscarActivos({
+    required String sucursalId,
+    required String consulta,
+    int limit = 6,
+  }) async {
+    final respuesta = await _dio.get<Map<String, dynamic>>(
+      '/pedidos',
+      queryParameters: {
+        'solo_activos': 'true',
+        'page': 1,
+        'limit': limit,
+        'sucursal_id': sucursalId,
+        'q': consulta.trim(),
+      },
+    );
+    final data = respuesta.data;
+    if (data == null) throw Exception('Respuesta vacía');
+    final envoltura = RespuestaApi<Map<String, dynamic>>.fromJson(
+      data,
+      (raw) => Map<String, dynamic>.from(raw as Map),
+    );
+    if (!envoltura.exito || envoltura.datos == null) {
+      throw Exception(envoltura.mensaje);
+    }
+    final rawItems = envoltura.datos!['items'];
+    if (rawItems is! List) return <PedidoAdminModel>[];
+    return rawItems
+        .map((item) => PedidoAdminModel.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Pedidos activos paginados para tableros de alto volumen.
+  Future<({List<PedidoAdminModel> items, int total, bool hayMas})>
+      listarActivosPaginado({
+    String? sucursalId,
+    String? meseraId,
+    int page = 1,
+    int limit = 100,
+  }) async {
+    final respuesta = await _dio.get<Map<String, dynamic>>(
+      '/pedidos',
+      queryParameters: {
+        'solo_activos': 'true',
+        'page': page,
+        'limit': limit,
+        if (sucursalId != null) 'sucursal_id': sucursalId,
+        if (meseraId != null) 'mesera_id': meseraId,
+      },
+    );
+    final data = respuesta.data;
+    if (data == null) throw Exception('Respuesta vacía');
+    final envoltura = RespuestaApi<Map<String, dynamic>>.fromJson(
+      data,
+      (raw) => Map<String, dynamic>.from(raw as Map),
+    );
+    if (!envoltura.exito || envoltura.datos == null) {
+      throw Exception(envoltura.mensaje);
+    }
+    final d = envoltura.datos!;
+    final rawItems = d['items'];
+    final lista = rawItems is List
+        ? rawItems
+            .map((e) => PedidoAdminModel.fromJson(e as Map<String, dynamic>))
+            .toList()
+        : <PedidoAdminModel>[];
+    final total = (d['total'] as num?)?.toInt() ?? lista.length;
+    final pagina = (d['page'] as num?)?.toInt() ?? page;
+    final lim = (d['limit'] as num?)?.toInt() ?? limit;
+    final totalPages = (d['totalPages'] as num?)?.toInt() ??
+        (total == 0 ? 0 : (total / lim).ceil());
+    return (items: lista, total: total, hayMas: pagina < totalPages);
+  }
+
   /// Cerrados de hoy. Con [page] el API devuelve `{ items, total, page, limit }`.
   Future<({List<PedidoAdminModel> items, int total, bool hayMas})>
       listarCerradosHoy({
@@ -162,7 +236,8 @@ class PedidosRepository {
     if (data == null) throw Exception('Respuesta vacía');
     final envoltura = RespuestaApi<Map<String, dynamic>>.fromJson(
       data,
-      (raw) => raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{},
+      (raw) =>
+          raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{},
     );
     if (!envoltura.exito) throw Exception(envoltura.mensaje);
     return envoltura.datos;
@@ -210,9 +285,11 @@ class PedidosRepository {
     String? metodoPago,
     String? mesaId,
     String? pedidoIdAgregar,
+    String? itemIdReemplazar,
     List<Map<String, dynamic>>? pagos,
     double? propina,
     String? observaciones,
+    String? idempotencyKey,
   }) async {
     final deviceId = await DispositivoService.obtenerDeviceId();
     final lineasProducto = lineas.where((l) => !l.esCombo).toList();
@@ -225,9 +302,17 @@ class PedidosRepository {
     };
 
     if (pedidoIdAgregar != null && pedidoIdAgregar.isNotEmpty) {
+      final reemplaza = itemIdReemplazar != null && itemIdReemplazar.isNotEmpty;
       final respuesta = await _dio.post<Map<String, dynamic>>(
-        '/pedidos/$pedidoIdAgregar/items',
-        data: body,
+        reemplaza
+            ? '/pedidos/$pedidoIdAgregar/items/$itemIdReemplazar/reemplazar'
+            : '/pedidos/$pedidoIdAgregar/items',
+        data: {
+          ...body,
+          if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+            'idempotency_key': idempotencyKey,
+          if (reemplaza) 'motivo': 'Cambio de producto',
+        },
         queryParameters: {
           if (sucursalId.isNotEmpty) 'sucursal_id': sucursalId,
         },
@@ -252,7 +337,40 @@ class PedidosRepository {
         if (propina != null) 'propina': propina,
         if (observaciones != null && observaciones.trim().isNotEmpty)
           'observaciones': observaciones.trim(),
+        if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+          'idempotency_key': idempotencyKey,
         ...body,
+      },
+    );
+    return _parsearMapa(respuesta.data);
+  }
+
+  /// Cotización del servidor para el POS. Solo estima; nunca crea el pedido.
+  Future<Map<String, dynamic>> estimarTotales({
+    required String sucursalId,
+    required String tipo,
+    required List<LineaCarrito> lineas,
+    String? mesaId,
+    String? direccionEntrega,
+  }) async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
+    final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
+    final productos = lineas.where((linea) => !linea.esCombo).toList();
+    final combos = lineas.where((linea) => linea.esCombo).toList();
+    final respuesta = await _dio.post<Map<String, dynamic>>(
+      '/pedidos/estimar',
+      options: Options(headers: capabilityHeaders),
+      data: {
+        'sucursal_id': sucursalId,
+        'device_id': deviceId,
+        'tipo': tipo,
+        'metodo_pago': 'pendiente',
+        if (mesaId != null) 'mesa_id': mesaId,
+        if (direccionEntrega != null) 'direccion_entrega': direccionEntrega,
+        if (productos.isNotEmpty)
+          'items': productos.map((linea) => _itemJson(linea, tipo)).toList(),
+        if (combos.isNotEmpty) 'combos': combos.map(_comboJson).toList(),
       },
     );
     return _parsearMapa(respuesta.data);
@@ -419,7 +537,8 @@ class PedidosRepository {
     return envoltura.datos!;
   }
 
-  Future<List<PedidoAdminModel>> _parsearLista(Map<String, dynamic>? data) async {
+  Future<List<PedidoAdminModel>> _parsearLista(
+      Map<String, dynamic>? data) async {
     if (data == null) throw Exception('Respuesta vacía');
     final envoltura = RespuestaApi<List<PedidoAdminModel>>.fromJson(
       data,

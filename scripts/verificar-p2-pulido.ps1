@@ -1,9 +1,9 @@
 # Verifica P2-18/19/20: copiar menú, cancelar traslado, config super-admin
 # Uso: .\scripts\verificar-p2-pulido.ps1
-# Requiere: API en :3000, Postgres/Supabase local, seed demo
+# Requiere: API QA en :3001, PostgreSQL QA foody_diseno_qa y seed demo
 
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:3000/api/v1'
+$base = 'http://127.0.0.1:3001/api/v1'
 
 function Login-Staff {
   param([string]$Email, [string]$Pass = '123456')
@@ -36,10 +36,18 @@ function Invoke-Api {
     return @{ Code = [int]$resp.StatusCode; Raw = $resp.Content }
   } catch {
     if ($_.Exception.Response) {
-      $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-      $raw = $reader.ReadToEnd()
+      $response = $_.Exception.Response
+      if ($response -is [System.Net.Http.HttpResponseMessage]) {
+        $status = [int]$response.StatusCode
+        $raw = $_.ErrorDetails.Message
+      } else {
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+        $raw = $reader.ReadToEnd()
+        $status = [int]$response.StatusCode
+      }
+      if (-not $raw) { $raw = $_.Exception.Message }
       return @{
-        Code = [int]$_.Exception.Response.StatusCode
+        Code = $status
         Raw  = $raw
       }
     }
@@ -97,7 +105,11 @@ if (-not $origen) {
 
 # --- Traslado crear + cancelar + stock ---
 $ingredientesOrigen = Invoke-RestMethod -Uri "$base/inventario/$sidAdmin" -Headers $hAdmin
-$ingredientesDest = Invoke-RestMethod -Uri "$base/inventario/$($origen.id)" -Headers $hAdmin
+$ingredientesDest = if ($origen) {
+  Invoke-RestMethod -Uri "$base/inventario/$($origen.id)" -Headers $hAdmin
+} else {
+  @{ datos = @() }
+}
 $nombresDest = @{}
 foreach ($i in @($ingredientesDest.datos)) {
   $nombresDest[("$($i.nombre)").ToLower()] = $true
@@ -185,12 +197,17 @@ if (-not $ins -or -not $origen) {
 $super = Login-Staff 'super@foody.demo'
 $hSuper = @{ Authorization = "Bearer $($super.token)" }
 $configs = Invoke-RestMethod -Uri "$base/super/configuracion" -Headers $hSuper
-if (-not $configs.exito -or -not $configs.datos) { throw 'GET super/configuracion falló' }
-$clave = $configs.datos[0].clave
-$valor = $configs.datos[0].valor
-$patch = Invoke-RestMethod -Uri "$base/super/configuracion/$clave" -Method PATCH -Headers $hSuper -Body (@{ valor = $valor } | ConvertTo-Json) -ContentType 'application/json'
-if (-not $patch.exito) { throw "PATCH super/configuracion: $($patch.mensaje)" }
-Write-Host "OK PATCH super/configuracion/$clave" -ForegroundColor Green
+if (-not $configs.exito) { throw 'GET super/configuracion falló' }
+$configRows = @($configs.datos)
+if ($configRows.Count -eq 0) {
+  Write-Host "AVISO: configuración global sin filas - omitiendo PATCH" -ForegroundColor Yellow
+} else {
+  $clave = $configRows[0].clave
+  $valor = $configRows[0].valor
+  $patch = Invoke-RestMethod -Uri "$base/super/configuracion/$clave" -Method PATCH -Headers $hSuper -Body (@{ valor = $valor } | ConvertTo-Json) -ContentType 'application/json'
+  if (-not $patch.exito) { throw "PATCH super/configuracion: $($patch.mensaje)" }
+  Write-Host "OK PATCH super/configuracion/$clave" -ForegroundColor Green
+}
 
 Write-Host ""
 Write-Host "Verificacion P2 pulido OK" -ForegroundColor Green

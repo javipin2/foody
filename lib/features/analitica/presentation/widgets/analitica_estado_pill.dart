@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 
 /// Pill pastel de estado (pedido / alerta).
 class AnaliticaEstadoPill extends StatelessWidget {
@@ -15,7 +16,9 @@ class AnaliticaEstadoPill extends StatelessWidget {
   factory AnaliticaEstadoPill.pedido(String estado) {
     final e = estado.toLowerCase();
     final tono = switch (e) {
-      'pendiente' || 'pendiente_aprobacion' || 'recibido' =>
+      'pendiente' ||
+      'pendiente_aprobacion' ||
+      'recibido' =>
         AnaliticaPillTono.pendiente,
       'en_cocina' || 'confirmado' || 'pagando' => AnaliticaPillTono.prep,
       'listo' || 'asignado' || 'en_camino' => AnaliticaPillTono.listo,
@@ -73,8 +76,8 @@ class AnaliticaEstadoPill extends StatelessWidget {
           ColoresFoody.primario,
         ),
       AnaliticaPillTono.neutro => (
-          const Color(0xFFF1F3F5),
-          Colors.grey.shade700,
+          SaaSTokens.surfaceMuted(context),
+          SaaSTokens.inkMuted(context),
         ),
     };
 

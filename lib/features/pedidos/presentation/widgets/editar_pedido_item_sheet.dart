@@ -18,8 +18,8 @@ Future<bool> mostrarEditarPedidoItemSheet({
   required PedidoItemResumen item,
 }) async {
   final ancho = MediaQuery.sizeOf(context).width;
-  final result = FoodyBreakpoints.esExpanded(ancho)
-      ? await FoodyDialogo.mostrar<bool>(
+  final Future<bool?> apertura = FoodyBreakpoints.esExpanded(ancho)
+      ? FoodyDialogo.mostrar<bool>(
           context: context,
           builder: (ctx) => Dialog(
             insetPadding:
@@ -36,7 +36,7 @@ Future<bool> mostrarEditarPedidoItemSheet({
             ),
           ),
         )
-      : await showModalBottomSheet<bool>(
+      : showModalBottomSheet<bool>(
           context: context,
           isScrollControlled: true,
           showDragHandle: true,
@@ -53,6 +53,8 @@ Future<bool> mostrarEditarPedidoItemSheet({
             ),
           ),
         );
+  final result = await apertura;
+  if (!context.mounted) return false;
   return result == true;
 }
 
@@ -112,9 +114,8 @@ class _EditarItemContenidoState extends State<_EditarItemContenido> {
     }
     try {
       final menu = await _menuRepo.obtenerPorSucursal(widget.sucursalId);
-      final prod = menu.todosLosProductos
-          .where((p) => p.id == productoId)
-          .firstOrNull;
+      final prod =
+          menu.todosLosProductos.where((p) => p.id == productoId).firstOrNull;
       if (mounted) {
         setState(() {
           _toppingsDisponibles = prod?.toppings ?? [];
@@ -151,9 +152,8 @@ class _EditarItemContenidoState extends State<_EditarItemContenido> {
         itemId: widget.item.itemId,
         sucursalId: widget.sucursalId,
         cantidad: _cantidad,
-        observaciones: _notaCtrl.text.trim().isEmpty
-            ? null
-            : _notaCtrl.text.trim(),
+        observaciones:
+            _notaCtrl.text.trim().isEmpty ? null : _notaCtrl.text.trim(),
         toppingIds: _toppingIds.toList(),
       );
       if (mounted) widget.onGuardado();

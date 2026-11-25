@@ -31,7 +31,7 @@ class ConfiguracionAdminScreen extends StatelessWidget {
       permiso: 'gestionar_sucursales',
     ),
     (
-      grupo: 'Negocio',
+      grupo: 'Atención y entrega',
       ruta: 'horarios',
       titulo: 'Horarios de atención',
       detalle: 'Disponibilidad de cada sucursal',
@@ -39,7 +39,7 @@ class ConfiguracionAdminScreen extends StatelessWidget {
       permiso: 'gestionar_sucursales',
     ),
     (
-      grupo: 'Servicio',
+      grupo: 'Atención y entrega',
       ruta: 'zonas',
       titulo: 'Domicilios y cobertura',
       detalle: 'Zonas y condiciones de entrega',
@@ -47,7 +47,7 @@ class ConfiguracionAdminScreen extends StatelessWidget {
       permiso: 'gestionar_sucursales',
     ),
     (
-      grupo: 'Servicio',
+      grupo: 'Operación',
       ruta: 'cocinas',
       titulo: 'Cocinas e impresión',
       detalle: 'Estaciones y destino de comandas',
@@ -68,7 +68,7 @@ class ConfiguracionAdminScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final opcionesVisibles =
         _opciones.where((opcion) => permisos.contains(opcion.permiso)).toList();
-    final grupos = ['Negocio', 'Servicio', 'Equipo'];
+    const grupos = ['Negocio', 'Atención y entrega', 'Operación', 'Equipo'];
 
     return ColoredBox(
       color: SaaSTokens.canvas(context),
@@ -98,20 +98,8 @@ class ConfiguracionAdminScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Configuración',
-                        style:
-                            Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: SaaSTokens.ink(context),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                      ),
-                      const SizedBox(height: SaaSTokens.s4),
-                      Text(
-                        'Ajustes del establecimiento, el servicio y el equipo.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: SaaSTokens.inkMuted(context),
-                            ),
+                      _EncabezadoConfiguracion(
+                        cantidad: opcionesVisibles.length,
                       ),
                       const SizedBox(height: SaaSTokens.s24),
                       if (opcionesVisibles.isEmpty)
@@ -126,7 +114,13 @@ class ConfiguracionAdminScreen extends StatelessWidget {
                         for (final grupo in grupos)
                           if (opcionesVisibles
                               .any((o) => o.grupo == grupo)) ...[
-                            _EncabezadoGrupo(titulo: grupo),
+                            _EncabezadoGrupo(
+                              titulo: grupo,
+                              detalle: _detalleGrupo(grupo),
+                              cantidad: opcionesVisibles
+                                  .where((o) => o.grupo == grupo)
+                                  .length,
+                            ),
                             const SizedBox(height: SaaSTokens.s8),
                             Wrap(
                               spacing: espacio,
@@ -148,7 +142,7 @@ class ConfiguracionAdminScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: SaaSTokens.s24),
                           ],
-                      _AvisoMediosPago(),
+                      const _AvisoMediosPago(),
                     ],
                   ),
                 ),
@@ -159,22 +153,137 @@ class ConfiguracionAdminScreen extends StatelessWidget {
       ),
     );
   }
+
+  String _detalleGrupo(String grupo) => switch (grupo) {
+        'Negocio' => 'Identidad y sedes',
+        'Atención y entrega' => 'Horarios y cobertura del domicilio',
+        'Operación' => 'Cocinas y destino de comandas',
+        'Equipo' => 'Personal y permisos de acceso',
+        _ => '',
+      };
+}
+
+class _EncabezadoConfiguracion extends StatelessWidget {
+  const _EncabezadoConfiguracion({required this.cantidad});
+
+  final int cantidad;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: SaaSTokens.ventas.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(SaaSTokens.r12),
+          ),
+          child: Icon(Icons.tune_rounded, color: scheme.primary, size: 23),
+        ),
+        const SizedBox(width: SaaSTokens.s12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Configuración',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: SaaSTokens.ink(context),
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.35,
+                    ),
+              ),
+              const SizedBox(height: SaaSTokens.s4),
+              Text(
+                'Organiza el establecimiento, la atención y el equipo.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: SaaSTokens.inkMuted(context),
+                    ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: SaaSTokens.s8),
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: SaaSTokens.s12,
+            vertical: SaaSTokens.s8,
+          ),
+          decoration: BoxDecoration(
+            color: SaaSTokens.surfaceMuted(context),
+            borderRadius: BorderRadius.circular(SaaSTokens.radioPill),
+            border: Border.all(color: SaaSTokens.borderSoft(context)),
+          ),
+          child: Text(
+            '$cantidad ${cantidad == 1 ? 'ajuste' : 'ajustes'}',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: SaaSTokens.inkMuted(context),
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _EncabezadoGrupo extends StatelessWidget {
-  const _EncabezadoGrupo({required this.titulo});
+  const _EncabezadoGrupo({
+    required this.titulo,
+    required this.detalle,
+    required this.cantidad,
+  });
 
   final String titulo;
+  final String detalle;
+  final int cantidad;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(bottom: SaaSTokens.s4),
-        child: Text(
-          titulo,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: SaaSTokens.ink(context),
-                fontWeight: FontWeight.w600,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titulo,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: SaaSTokens.ink(context),
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    detalle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: SaaSTokens.inkMuted(context),
+                        ),
+                  ),
+                ],
               ),
+            ),
+            Container(
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: SaaSTokens.s8),
+              decoration: BoxDecoration(
+                color: SaaSTokens.surfaceMuted(context),
+                borderRadius: BorderRadius.circular(SaaSTokens.radioPill),
+              ),
+              child: Text(
+                '$cantidad',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: SaaSTokens.inkMuted(context),
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+          ],
         ),
       );
 }
@@ -269,28 +378,53 @@ class _OpcionConfiguracion extends StatelessWidget {
 }
 
 class _AvisoMediosPago extends StatelessWidget {
+  const _AvisoMediosPago();
+
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(SaaSTokens.s12),
         decoration: BoxDecoration(
-          color: SaaSTokens.surfaceMuted(context),
-          borderRadius: BorderRadius.circular(SaaSTokens.r10),
+          color: SaaSTokens.surface(context),
+          borderRadius: BorderRadius.circular(SaaSTokens.r12),
+          border: Border.all(color: SaaSTokens.borderSoft(context)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.info_outline,
-              size: 18,
-              color: SaaSTokens.inkMuted(context),
+            Container(
+              width: 32,
+              height: 32,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: SaaSTokens.surfaceMuted(context),
+                borderRadius: BorderRadius.circular(SaaSTokens.r8),
+              ),
+              child: Icon(
+                Icons.credit_card_off_outlined,
+                size: 18,
+                color: SaaSTokens.inkMuted(context),
+              ),
             ),
-            const SizedBox(width: SaaSTokens.s8),
+            const SizedBox(width: SaaSTokens.s12),
             Expanded(
-              child: Text(
-                'La configuración central de medios de pago del establecimiento aún no está disponible. La suscripción de Foody se administra en Cuenta Foody.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: SaaSTokens.inkMuted(context),
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Medios de pago del restaurante',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: SaaSTokens.ink(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: SaaSTokens.s4),
+                  Text(
+                    'Aún no se configuran aquí. La suscripción de Foody se administra por separado en Cuenta Foody.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: SaaSTokens.inkMuted(context),
+                        ),
+                  ),
+                ],
               ),
             ),
           ],

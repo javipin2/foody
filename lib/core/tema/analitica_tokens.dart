@@ -69,8 +69,15 @@ class AnaliticaTokens {
   /// Preferir en UI nueva (dark/light).
   static Color canvasOf(BuildContext c) => SaaSTokens.canvas(c);
   static Color surfaceOf(BuildContext c) => SaaSTokens.surface(c);
+  static Color surfaceMutedOf(BuildContext c) => SaaSTokens.surfaceMuted(c);
   static Color inkOf(BuildContext c) => SaaSTokens.ink(c);
   static Color inkMutedOf(BuildContext c) => SaaSTokens.inkMuted(c);
+  static Color inkSoftOf(BuildContext c) => SaaSTokens.inkSoft(c);
   static Color borderOf(BuildContext c) => SaaSTokens.border(c);
+  static Color borderSoftOf(BuildContext c) => SaaSTokens.borderSoft(c);
   static Color chartOf(BuildContext c) => SaaSTokens.chart(c);
+  static List<BoxShadow> shadowSoftOf(BuildContext c) =>
+      SaaSTokens.shadowSoft(c);
+  static List<BoxShadow> shadowLiftOf(BuildContext c) =>
+      SaaSTokens.shadowLift(c);
 }

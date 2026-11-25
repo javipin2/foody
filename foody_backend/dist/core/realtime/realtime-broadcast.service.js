@@ -19,6 +19,7 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const supabase_js_1 = require("@supabase/supabase-js");
 const ws_1 = __importDefault(require("ws"));
+const qa_safety_1 = require("../config/qa-safety");
 const realtime_topics_1 = require("./realtime-topics");
 let RealtimeBroadcastService = RealtimeBroadcastService_1 = class RealtimeBroadcastService {
     config;
@@ -27,6 +28,10 @@ let RealtimeBroadcastService = RealtimeBroadcastService_1 = class RealtimeBroadc
     canales = new Map();
     constructor(config) {
         this.config = config;
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Realtime desactivado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         const url = this.config.get('SUPABASE_URL');
         const key = this.config.get('SUPABASE_SERVICE_KEY');
         if (url && key) {
@@ -42,6 +47,8 @@ let RealtimeBroadcastService = RealtimeBroadcastService_1 = class RealtimeBroadc
         }
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)())
+            return;
         if (!this.estaConfigurado()) {
             this.logger.error('Realtime inactivo al arranque: configure SUPABASE_URL y SUPABASE_SERVICE_KEY en .env');
             return;

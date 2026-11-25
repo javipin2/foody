@@ -28,10 +28,10 @@ class AnaliticaPedidosTabla extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: AnaliticaTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(AnaliticaTokens.r20),
-        border: Border.all(color: AnaliticaTokens.borderSoft),
-        boxShadow: AnaliticaTokens.shadowSoft,
+        border: Border.all(color: AnaliticaTokens.borderSoftOf(context)),
+        boxShadow: AnaliticaTokens.shadowSoftOf(context),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -44,12 +44,12 @@ class AnaliticaPedidosTabla extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Actividad reciente',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
-                          color: AnaliticaTokens.ink,
+                          color: AnaliticaTokens.inkOf(context),
                           letterSpacing: -0.2,
                         ),
                       ),
@@ -57,7 +57,7 @@ class AnaliticaPedidosTabla extends StatelessWidget {
                         'Pedidos del periodo · vista operativa',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade600,
+                          color: AnaliticaTokens.inkMutedOf(context),
                         ),
                       ),
                     ],
@@ -69,7 +69,7 @@ class AnaliticaPedidosTabla extends StatelessWidget {
                     onPressed: onVerMas,
                     icon: Icon(
                       Icons.open_in_new_rounded,
-                      color: Colors.grey.shade600,
+                      color: AnaliticaTokens.inkMutedOf(context),
                     ),
                   ),
               ],
@@ -83,22 +83,23 @@ class AnaliticaPedidosTabla extends StatelessWidget {
                   Icon(
                     Icons.inbox_outlined,
                     size: 40,
-                    color: Colors.grey.shade300,
+                    color: AnaliticaTokens.inkSoftOf(context),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Sin pedidos en el periodo',
-                    style: TextStyle(color: Colors.grey.shade600),
+                    style:
+                        TextStyle(color: AnaliticaTokens.inkMutedOf(context)),
                   ),
                 ],
               ),
             )
           else if (compacto)
-            ...pedidos.take(12).map(_cardMovil)
+            ...pedidos.take(12).map((pedido) => _cardMovil(context, pedido))
           else ...[
-            _encabezado(),
-            Divider(height: 1, color: AnaliticaTokens.borderSoft),
-            ...pedidos.take(12).map(_filaDesktop),
+            _encabezado(context),
+            Divider(height: 1, color: AnaliticaTokens.borderSoftOf(context)),
+            ...pedidos.take(12).map((pedido) => _filaDesktop(context, pedido)),
             const SizedBox(height: 8),
           ],
         ],
@@ -106,15 +107,15 @@ class AnaliticaPedidosTabla extends StatelessWidget {
     );
   }
 
-  Widget _encabezado() {
-    const style = TextStyle(
+  Widget _encabezado(BuildContext context) {
+    final style = TextStyle(
       fontSize: 11,
       fontWeight: FontWeight.w700,
-      color: AnaliticaTokens.inkSoft,
+      color: AnaliticaTokens.inkMutedOf(context),
       letterSpacing: 0.4,
     );
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           SizedBox(width: 72, child: Text('#PEDIDO', style: style)),
@@ -135,14 +136,13 @@ class AnaliticaPedidosTabla extends StatelessWidget {
     );
   }
 
-  Widget _filaDesktop(dynamic raw) {
+  Widget _filaDesktop(BuildContext context, dynamic raw) {
     final p = raw as Map<String, dynamic>;
     final numero = '#${p['numero_pedido'] ?? '—'}';
     final mesa = p['mesa_nombre'] as String?;
     final tipo = p['tipo'] as String? ?? '';
-    final canal = mesa != null && mesa.isNotEmpty
-        ? 'Mesa $mesa'
-        : _labelTipo(tipo);
+    final canal =
+        mesa != null && mesa.isNotEmpty ? 'Mesa $mesa' : _labelTipo(tipo);
     final cliente = (p['cliente_nombre'] as String?)?.trim();
     final total = p['total'];
     final totalN =
@@ -154,7 +154,7 @@ class AnaliticaPedidosTabla extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: AnaliticaTokens.surfaceMuted,
+        color: AnaliticaTokens.surfaceMutedOf(context),
       ),
       child: Row(
         children: [
@@ -162,9 +162,9 @@ class AnaliticaPedidosTabla extends StatelessWidget {
             width: 72,
             child: Text(
               numero,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w800,
-                color: AnaliticaTokens.ink,
+                color: AnaliticaTokens.inkOf(context),
               ),
             ),
           ),
@@ -172,8 +172,8 @@ class AnaliticaPedidosTabla extends StatelessWidget {
             flex: 2,
             child: Text(
               canal,
-              style: const TextStyle(
-                color: AnaliticaTokens.inkMuted,
+              style: TextStyle(
+                color: AnaliticaTokens.inkMutedOf(context),
                 fontSize: 13,
               ),
               overflow: TextOverflow.ellipsis,
@@ -183,8 +183,8 @@ class AnaliticaPedidosTabla extends StatelessWidget {
             flex: 2,
             child: Text(
               (cliente == null || cliente.isEmpty) ? '—' : cliente,
-              style: const TextStyle(
-                color: AnaliticaTokens.inkMuted,
+              style: TextStyle(
+                color: AnaliticaTokens.inkMutedOf(context),
                 fontSize: 13,
               ),
               overflow: TextOverflow.ellipsis,
@@ -195,9 +195,9 @@ class AnaliticaPedidosTabla extends StatelessWidget {
             child: Text(
               _moneda.format(totalN),
               textAlign: TextAlign.right,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w800,
-                color: AnaliticaTokens.ink,
+                color: AnaliticaTokens.inkOf(context),
               ),
             ),
           ),
@@ -214,9 +214,9 @@ class AnaliticaPedidosTabla extends StatelessWidget {
             child: Text(
               hora,
               textAlign: TextAlign.right,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AnaliticaTokens.inkSoft,
+                color: AnaliticaTokens.inkSoftOf(context),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -226,7 +226,7 @@ class AnaliticaPedidosTabla extends StatelessWidget {
     );
   }
 
-  Widget _cardMovil(dynamic raw) {
+  Widget _cardMovil(BuildContext context, dynamic raw) {
     final p = raw as Map<String, dynamic>;
     final numero = '#${p['numero_pedido'] ?? '—'}';
     final mesa = p['mesa_nombre'] as String?;
@@ -242,9 +242,9 @@ class AnaliticaPedidosTabla extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AnaliticaTokens.surfaceMuted,
+          color: AnaliticaTokens.surfaceMutedOf(context),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AnaliticaTokens.borderSoft),
+          border: Border.all(color: AnaliticaTokens.borderSoftOf(context)),
         ),
         child: Row(
           children: [
@@ -259,9 +259,9 @@ class AnaliticaPedidosTabla extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '$canal · ${_hora(p['created_at'] as String?)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AnaliticaTokens.inkSoft,
+                      color: AnaliticaTokens.inkSoftOf(context),
                     ),
                   ),
                 ],

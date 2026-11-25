@@ -21,7 +21,10 @@ export type RateLimitOptions = {
 };
 
 export const RateLimitPublico = (maximo = 60, ventanaMs = 60_000) =>
-  SetMetadata(RATE_LIMIT_META, { maximo, ventanaMs } satisfies RateLimitOptions);
+  SetMetadata(RATE_LIMIT_META, {
+    maximo,
+    ventanaMs,
+  } satisfies RateLimitOptions);
 
 type Entrada = { cuenta: number; reinicio: number };
 
@@ -56,6 +59,7 @@ export class RateLimitGuard implements CanActivate {
     // Prod: rate-limit multi-réplica usando Postgres (no Map en memoria).
     // dev/CI: Map en memoria, salvo forzar para QA SEC-RLIMIT.
     if (esProduccion() || forzar) {
+      let cuentaDB: number | null = null;
       try {
         const r = await this.database.consultarUno<{ cuenta: number }>(
           `INSERT INTO rate_limit_entries (clave, ventana_ms, reinicio_at, cuenta)
@@ -80,21 +84,23 @@ export class RateLimitGuard implements CanActivate {
            RETURNING cuenta`,
           [clave, opts.ventanaMs],
         );
+        cuentaDB = Number(r?.cuenta ?? 1);
+      } catch {
+        // fallback (si falla BD) para no romper el servicio
+      }
 
-        const cuenta = Number(r?.cuenta ?? 1);
-        if (cuenta > opts.maximo) {
+      // Fuera del catch: el 429 es una decisión del guard, no un fallo de BD.
+      if (cuentaDB !== null) {
+        if (cuentaDB > opts.maximo) {
           throw new HttpException(
             {
               error: 'RATE_LIMIT',
-              message:
-                'Demasiadas peticiones. Intenta de nuevo en un momento.',
+              message: 'Demasiadas peticiones. Intenta de nuevo en un momento.',
             },
             HttpStatus.TOO_MANY_REQUESTS,
           );
         }
         return true;
-      } catch {
-        // fallback (si falla BD) para no romper el servicio
       }
     }
 

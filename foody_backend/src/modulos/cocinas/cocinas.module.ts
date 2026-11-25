@@ -6,16 +6,22 @@ import { PedidosModule } from '../pedidos/pedidos.module';
 import { CocinaTicketsController } from './cocina-tickets.controller';
 import { CocinasController } from './cocinas.controller';
 import { CocinasService } from './cocinas.service';
+import { CocinasDemorasCronService } from './cocinas-demoras-cron.service';
 import { ImpresorasController } from './impresoras.controller';
 
 @Module({
-  imports: [AuthModule, AlertasModule, DomiciliariosModule, forwardRef(() => PedidosModule)],
+  imports: [
+    AuthModule,
+    AlertasModule,
+    DomiciliariosModule,
+    forwardRef(() => PedidosModule),
+  ],
   controllers: [
     CocinasController,
     ImpresorasController,
     CocinaTicketsController,
   ],
-  providers: [CocinasService],
+  providers: [CocinasService, CocinasDemorasCronService],
   exports: [CocinasService],
 })
 export class CocinasModule {}

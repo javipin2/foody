@@ -45,6 +45,18 @@ function Set-QaPedidoEstado($estado) {
 
 $e0 = Set-QaPedidoEstado 'en_cocina'
 Assert ($e0.ok -and $e0.json.exito) 'Pedido -> en_cocina'
+$cocina = Get-FoodyToken 'cocina@foody.demo'
+$detalle = Invoke-FoodyApi -Path "/pedidos/$pedidoId/detalle?sucursal_id=$sid" -Headers $hAdmin
+$items = @($detalle.json.datos.items_resumen)
+if ($items.Count -eq 0) { $items = @($detalle.json.datos.items) }
+if ($items.Count -eq 0) { $items = @($detalle.json.datos.pedido.items) }
+if ($items.Count -eq 0) { throw 'No se encontraron líneas para validar el paso de Cocina' }
+foreach ($item in $items) {
+    $itemId = if ($item.item_id) { $item.item_id } else { $item.id }
+    if (-not $itemId -or $item.estado_cocina -in @('listo', 'no_disponible')) { continue }
+    $resuelto = Invoke-FoodyApi -Method PATCH -Path "/cocina/items/$itemId/estado" -Headers $cocina.headers -Body @{ estado_cocina = 'listo' }
+    Assert ($resuelto.ok -and $resuelto.json.exito) "Cocina resuelve ítem $itemId"
+}
 $e1 = Set-QaPedidoEstado 'listo'
 Assert ($e1.ok -and $e1.json.exito) 'Pedido -> listo'
 

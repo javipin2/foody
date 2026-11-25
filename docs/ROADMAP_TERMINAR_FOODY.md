@@ -270,8 +270,8 @@ Necesario antes de publicar en stores o escalar clientes.
 > Registro completo: [`AUDITORIA_RBAC.md`](archivo/auditorias-prompts/AUDITORIA_RBAC.md). **P0 prod-risk:** IDOR cerrar caja + cobro mesero.
 
 - [ ] **RBAC-FIX-01** `POST /caja/cerrar` exigir `caja.sucursal_id` scoped
-- [ ] **RBAC-FIX-02** Cobrar requiere `ver_caja` / `cobrar_pedido` (no solo `ver_pedidos`)
-- [ ] **RBAC-FIX-03** `PATCH …/estado` sin OR amplio `ver_pedidos`
+- [x] **RBAC-FIX-02** Cobrar exige `cobrar_pedido` en ambas rutas (`pedidos.controller.ts`); spec guard mesero 403 / cajero permitido (2026-11-23)
+- [~] **RBAC-FIX-03** Estado exige `crear_pedido` y el servicio restringe estados del mesero; falta matriz granular por acción para roles personalizados y smoke por API
 - [x] **RBAC-FIX-04** Asignar domiciliario solo `gestionar_domiciliarios`
 - [ ] **RBAC-FIX-05** Anonimizar device con prueba de posesión
 - [ ] **RBAC-FIX-06** `prueba-web` / pagos staff con RolGuard

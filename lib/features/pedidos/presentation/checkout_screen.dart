@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import 'package:reserva_canchas/features/analitica/presentation/widgets/analitic
 import 'package:reserva_canchas/features/cliente/presentation/foody_scaffold_cliente.dart';
 import 'package:reserva_canchas/features/pedidos/data/historial_pedidos_service.dart';
 import 'package:reserva_canchas/features/pedidos/data/pedidos_cliente_repository.dart';
+import 'package:reserva_canchas/features/pedidos/presentation/validar_telefono_checkout.dart';
 import 'package:reserva_canchas/features/pedidos/providers/carrito_provider.dart';
 import 'package:reserva_canchas/features/zonas/data/zonas_repository.dart';
 import 'package:reserva_canchas/widgets/mapa_seleccion_ubicacion.dart';
@@ -38,6 +40,8 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _nombre = TextEditingController();
   final _telefono = TextEditingController();
+  final _formContactoKey = GlobalKey<FormState>();
+  final _telefonoFocusNode = FocusNode();
   final _direccion = TextEditingController();
   final _nit = TextEditingController();
   final _nombreFiscal = TextEditingController();
@@ -53,6 +57,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _idempotencyKey = const Uuid().v4();
   num _costoDomicilio = 5000;
   String? _zonaNombre;
+  bool _costoDomicilioEstimado = true;
   bool _cotizandoDomicilio = false;
   String? _errorDomicilio;
   double? _lat;
@@ -107,6 +112,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       setState(() {
         _costoDomicilio = res['costo'] as num? ?? 5000;
         _zonaNombre = res['zona_nombre'] as String?;
+        _costoDomicilioEstimado = res['distancia_km'] == null;
         _cotizandoDomicilio = false;
       });
       return true;
@@ -126,6 +132,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _scrollCtrl.dispose();
     _nombre.dispose();
     _telefono.dispose();
+    _telefonoFocusNode.dispose();
     _direccion.dispose();
     _nit.dispose();
     _nombreFiscal.dispose();
@@ -371,6 +378,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     final tipoPedido = _resolverTipo(carrito);
 
+    final contactoValido = _formContactoKey.currentState!.validate();
+    if (!contactoValido) {
+      _telefonoFocusNode.requestFocus();
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+      return;
+    }
+    _formContactoKey.currentState!.save();
+
     if (tipoPedido == 'domicilio' && _direccion.text.trim().isEmpty) {
       setState(() {
         _errorDireccion = 'Indica la dirección de entrega';
@@ -446,6 +467,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ? DateFormat('yyyy-MM-dd').format(_fechaEncargo!)
             : null,
       );
+      TextInput.finishAutofillContext(shouldSave: true);
       await HistorialPedidosService.registrar(
         pedidoId: resultado['pedido_id'] as String,
         numeroPedido: resultado['numero_pedido'] as String,
@@ -820,18 +842,43 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ],
                 _tituloSeccion('Tus datos'),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: _nombre,
-                  textCapitalization: TextCapitalization.words,
-                  style: TextStyle(color: scheme.onSurface),
-                  decoration: _campo(label: 'Nombre'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _telefono,
-                  keyboardType: TextInputType.phone,
-                  style: TextStyle(color: scheme.onSurface),
-                  decoration: _campo(label: 'Teléfono'),
+                AutofillGroup(
+                  child: Form(
+                    key: _formContactoKey,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _nombre,
+                          textCapitalization: TextCapitalization.words,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.name],
+                          style: TextStyle(color: scheme.onSurface),
+                          decoration: _campo(label: 'Nombre'),
+                          onSaved: (value) => _nombre.text = value?.trim() ?? '',
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _telefono,
+                          focusNode: _telefonoFocusNode,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.done,
+                          autofillHints: const [AutofillHints.telephoneNumber],
+                          style: TextStyle(color: scheme.onSurface),
+                          decoration: _campo(label: 'Teléfono', helperText: ' ')
+                              .copyWith(errorMaxLines: 2),
+                          validator: (value) => validarTelefonoCheckout(
+                            value,
+                            domicilio: _resolverTipo(ref.read(carritoProvider)) ==
+                                'domicilio',
+                          ),
+                          onSaved: (value) => _telefono.text = value?.trim() ?? '',
+                          onFieldSubmitted: (_) =>
+                              FocusScope.of(context).unfocus(),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 if (_tipo == 'domicilio') ...[
                   const SizedBox(height: 12),
@@ -916,7 +963,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     )
                   else
                     Text(
-                      'Costo domicilio: ${_formato.format(_costoDomicilio)}'
+                      '${_costoDomicilioEstimado ? 'Costo domicilio estimado' : 'Costo domicilio'}: '
+                      '${_formato.format(_costoDomicilio)}'
+                      '${_costoDomicilioEstimado ? ' (puede cambiar al confirmar la ubicación)' : ''}'
                       '${_zonaNombre != null ? ' ($_zonaNombre)' : ''}',
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,

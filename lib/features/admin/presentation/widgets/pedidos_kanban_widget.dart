@@ -45,6 +45,8 @@ class PedidosKanbanWidget extends ConsumerStatefulWidget {
     this.onNuevoPedido,
     this.onAgregarItems,
     this.ocultarCabecera = false,
+    this.repository,
+    this.domiciliariosRepository,
   });
 
   final String? sucursalId;
@@ -53,7 +55,7 @@ class PedidosKanbanWidget extends ConsumerStatefulWidget {
   final String? pedidoIdInicial;
   final VoidCallback? onPedidoAbierto;
   final ValueChanged<String>? onVerMesa;
-  final VoidCallback? onIrCaja;
+  final ValueChanged<String>? onIrCaja;
   final void Function(String pedidoId, String numeroPedido)? onIrFacturacion;
   final VoidCallback? onIrCocinaKds;
   final VoidCallback? onNuevoPedido;
@@ -62,6 +64,8 @@ class PedidosKanbanWidget extends ConsumerStatefulWidget {
   final void Function(PedidoAdminModel pedido, {String? itemIdReemplazar})?
       onAgregarItems;
   final bool ocultarCabecera;
+  final PedidosRepository? repository;
+  final DomiciliariosRepository? domiciliariosRepository;
 
   @override
   ConsumerState<PedidosKanbanWidget> createState() =>
@@ -72,10 +76,20 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     with WidgetsBindingObserver {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = PedidosRepository();
-  final _domRepo = DomiciliariosRepository();
+  late final _repo = widget.repository ?? PedidosRepository();
+  late final _domRepo =
+      widget.domiciliariosRepository ?? DomiciliariosRepository();
   late Future<List<PedidoAdminModel>> _future;
   List<PedidoAdminModel> _cerradosHoy = [];
+  List<PedidoAdminModel> _activosSiguientes = [];
+  int _pageActivos = 1;
+  int _totalActivos = 0;
+  int _revisionActivos = 0;
+  bool _hayMasActivos = false;
+  bool _cargandoMasActivos = false;
+  String? _errorActivos;
+  String? _errorCerrados;
+  bool _falloCargandoMasCerrados = false;
   bool _cargandoCerrados = false;
   bool _cargandoMasCerrados = false;
   int _pageCerrados = 1;
@@ -128,10 +142,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       _filtroTipo = 'mesa';
       _tabClave = 'pendiente_aprobacion';
     }
-    _future = _repo.listarActivos(
-      sucursalId: widget.sucursalId,
-      meseraId: widget.modoMesero ? widget.meseraUsuarioId : null,
-    );
+    _future = _cargarActivosInicial(++_revisionActivos);
     unawaited(_cargarPermisosYDomiciliarios());
     _suscribirRealtime();
     unawaited(_cargarCerradosHoy());
@@ -172,10 +183,13 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     if (oldWidget.sucursalId != widget.sucursalId) {
       FoodyRealtime.liberarCanal(_canalRealtime);
       _canalRealtime = null;
-      _future = _repo.listarActivos(
-        sucursalId: widget.sucursalId,
-        meseraId: widget.modoMesero ? widget.meseraUsuarioId : null,
-      );
+      _activosSiguientes = [];
+      _pageActivos = 1;
+      _totalActivos = 0;
+      _hayMasActivos = false;
+      _cargandoMasActivos = false;
+      _errorActivos = null;
+      _future = _cargarActivosInicial(++_revisionActivos);
       _cargarDomiciliarios();
       _suscribirRealtime();
     }
@@ -267,24 +281,94 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
 
   void _recargar() {
     setState(() {
-      _future = _repo.listarActivos(
-        sucursalId: widget.sucursalId,
-        meseraId: widget.modoMesero ? widget.meseraUsuarioId : null,
-      );
+      _activosSiguientes = [];
+      _pageActivos = 1;
+      _totalActivos = 0;
+      _hayMasActivos = false;
+      _cargandoMasActivos = false;
+      _errorActivos = null;
+      _future = _cargarActivosInicial(++_revisionActivos);
     });
     _cargarDomiciliarios();
     unawaited(_cargarCerradosHoy());
   }
 
+  Future<List<PedidoAdminModel>> _cargarActivosInicial(int revision) async {
+    final res = await _repo.listarActivosPaginado(
+      sucursalId: widget.sucursalId,
+      meseraId: widget.modoMesero ? widget.meseraUsuarioId : null,
+      page: 1,
+      limit: 100,
+    );
+    if (mounted && revision == _revisionActivos) {
+      setState(() {
+        _pageActivos = 1;
+        _activosSiguientes = [];
+        _totalActivos = res.total;
+        _hayMasActivos = res.hayMas;
+        _errorActivos = null;
+      });
+    }
+    return res.items;
+  }
+
+  Future<void> _cargarMasActivos() async {
+    if (_cargandoMasActivos || !_hayMasActivos) return;
+    final revision = _revisionActivos;
+    final page = _pageActivos + 1;
+    setState(() {
+      _cargandoMasActivos = true;
+      _errorActivos = null;
+    });
+    try {
+      final res = await _repo.listarActivosPaginado(
+        sucursalId: widget.sucursalId,
+        meseraId: widget.modoMesero ? widget.meseraUsuarioId : null,
+        page: page,
+        limit: 100,
+      );
+      if (!mounted || revision != _revisionActivos) return;
+      setState(() {
+        final existentes = {
+          for (final pedido in _activosSiguientes) pedido.id,
+        };
+        _activosSiguientes = [
+          ..._activosSiguientes,
+          ...res.items.where((pedido) => existentes.add(pedido.id)),
+        ];
+        _pageActivos = page;
+        _totalActivos = res.total;
+        _hayMasActivos = res.hayMas;
+        _cargandoMasActivos = false;
+        _errorActivos = null;
+      });
+    } catch (e) {
+      if (!mounted || revision != _revisionActivos) return;
+      setState(() {
+        _cargandoMasActivos = false;
+        _errorActivos = mensajeErrorHttp(
+          e,
+          contexto: 'cargar más pedidos activos',
+        );
+      });
+    }
+  }
+
   Future<void> _cargarCerradosHoy({bool mas = false}) async {
     if (mas) {
       if (_cargandoMasCerrados || !_hayMasCerrados) return;
-      setState(() => _cargandoMasCerrados = true);
+      setState(() {
+        _cargandoMasCerrados = true;
+        _errorCerrados = null;
+        _falloCargandoMasCerrados = false;
+      });
     } else {
       if (_cargandoCerrados) return;
       setState(() {
         _cargandoCerrados = true;
         _pageCerrados = 1;
+        _errorCerrados = null;
+        _falloCargandoMasCerrados = false;
       });
     }
     try {
@@ -306,15 +390,22 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
             _pageCerrados = 1;
             _cargandoCerrados = false;
           }
+          _errorCerrados = null;
+          _falloCargandoMasCerrados = false;
           _hayMasCerrados = res.hayMas;
           _totalCerrados = res.total;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _cargandoCerrados = false;
           _cargandoMasCerrados = false;
+          _errorCerrados = mensajeErrorHttp(
+            e,
+            contexto: 'cargar pedidos cerrados',
+          );
+          _falloCargandoMasCerrados = mas;
         });
       }
     }
@@ -456,6 +547,34 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     String nuevoEstado, {
     String? motivo,
   }) async {
+    final entregaManualPendiente = nuevoEstado == 'entregado' &&
+        pedido.tipo == 'domicilio' &&
+        pedido.metodoPago?.toLowerCase() == 'pendiente';
+    if (entregaManualPendiente) {
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Confirmar cobro en efectivo'),
+          content: Text(
+            'El pedido ${pedido.numeroPedido} sigue con pago pendiente. '
+            'Al marcarlo como entregado desde Administración, el sistema '
+            'registrará el saldo como efectivo recibido en Caja. '
+            'Confirma solo si ya recibiste ese dinero.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Volver'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Sí, recibí el efectivo'),
+            ),
+          ],
+        ),
+      );
+      if (confirmar != true) return;
+    }
     try {
       final datos = await _repo.cambiarEstado(
         pedidoId: pedido.id,
@@ -465,7 +584,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       );
       _recargar();
       if (mounted) {
-        var mensaje = '${pedido.numeroPedido} â†’ $nuevoEstado';
+        var mensaje =
+            '${pedido.numeroPedido} actualizado: ${OperacionUi.etiquetaEstado(nuevoEstado)}';
         if (nuevoEstado == 'cancelado' || nuevoEstado == 'rechazado') {
           final caja = datos?['caja'];
           if (caja is Map) {
@@ -506,6 +626,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
   }
 
   Future<void> _accionRapida(PedidoAdminModel pedido) async {
+    if (!_puedeAccionRapida(pedido)) return;
     final accion = pedido.accionRapida;
     if (accion == null) {
       _mostrarAcciones(pedido);
@@ -516,6 +637,33 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       return;
     }
     await _moverPedido(pedido, accion);
+  }
+
+  bool _puedeAccionRapida(PedidoAdminModel pedido) {
+    final accion = pedido.accionRapida;
+    if (accion == null) return false;
+    if (accion == 'aprobar') {
+      return _permisos.contains('aprobar_pedido_mesa');
+    }
+    return _permisos.contains('crear_pedido');
+  }
+
+  bool _puedeCancelarPedido(PedidoAdminModel pedido) {
+    if (!_permisos.contains('crear_pedido')) return false;
+    if (const {'admin', 'gerente', 'gerente_cadena'}.contains(_rolSesion)) {
+      return true;
+    }
+    const etapasSoloElevado = {
+      'en_cocina',
+      'listo',
+      'asignado',
+      'en_camino',
+      'entregado',
+      'pagado',
+    };
+    if (etapasSoloElevado.contains(pedido.estado)) return false;
+    return DateTime.now().difference(pedido.creadoEn) <=
+        const Duration(minutes: 2);
   }
 
   Future<void> _aprobarMesa(PedidoAdminModel pedido) async {
@@ -584,6 +732,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       modoMesero: widget.modoMesero,
       permisos: _permisos,
       formatoMoneda: _formatoMoneda,
+      repository: _repo,
       onCambiado: _recargar,
       onVerMesa: widget.onVerMesa,
       onIrCaja: widget.onIrCaja,
@@ -592,23 +741,19 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       onAgregarItems: widget.onAgregarItems,
       onCobrarParaLlevar:
           _permisos.contains('cobrar_pedido') ? _cobrarParaLlevar : null,
-      onAprobar: _aprobarMesa,
-      onRechazar: (p) async => _dialogoRechazar(p),
-      onCambiarEstado: (p, estado) => _moverPedido(p, estado),
-      onCancelar: (p) async => _dialogoCancelar(p),
-      onDescuento: (p) async => _dialogoDescuento(p),
-      asignarDomiciliarioSlot: _puedeGestionarDomi(pedido)
-          ? Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: AsignarDomiciliarioSlot(
-                pedido: pedido,
-                domiciliarios: _domiciliarios,
-                reasignar: _esReasignacionDomi(pedido),
-                onAsignar: _asignarDomiciliario,
-                onDispatchIndependiente: _dispatchIndependiente,
-              ),
-            )
+      onAprobar:
+          _permisos.contains('aprobar_pedido_mesa') ? _aprobarMesa : null,
+      onRechazar: _permisos.contains('aprobar_pedido_mesa')
+          ? (p) async => _dialogoRechazar(p)
           : null,
+      onCambiarEstado: _permisos.contains('crear_pedido')
+          ? (p, estado) => _moverPedido(p, estado)
+          : null,
+      onCancelar: _puedeCancelarPedido(pedido)
+          ? (p) async => _dialogoCancelar(p)
+          : null,
+      onDescuento: (p) async => _dialogoDescuento(p),
+      asignarDomiciliarioSlot: _seccionAsignacionDomicilio(pedido),
     );
   }
 
@@ -619,6 +764,67 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
         pedido.estado == 'asignado' ||
         pedido.estado == 'en_camino';
   }
+
+  Widget? _seccionAsignacionDomicilio(PedidoAdminModel pedido) {
+    if (!_puedeGestionarDomi(pedido)) return null;
+    if (pedido.estado != 'listo') {
+      return _slotAsignarDomiciliario(pedido);
+    }
+
+    final estados = pedido.itemsResumen.map((item) => item.estadoCocina);
+    String? bloqueo;
+    if (pedido.itemsResumen.isEmpty) {
+      bloqueo = 'Agrega productos al pedido antes de asignar un domiciliario.';
+    } else if (estados.contains('no_disponible')) {
+      bloqueo =
+          'Este pedido tiene productos no disponibles. Ajusta las líneas y confirma el total antes de asignarlo.';
+    } else if (estados.any((estado) => estado != 'listo')) {
+      bloqueo =
+          'Aún hay productos pendientes en Cocina. Marca cada línea como lista antes de asignar el domiciliario.';
+    }
+    if (bloqueo == null) return _slotAsignarDomiciliario(pedido);
+
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        key: const ValueKey('pedido-domicilio-bloqueado-cocina'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: scheme.onTertiaryContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                bloqueo,
+                style: TextStyle(
+                  color: scheme.onTertiaryContainer,
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _slotAsignarDomiciliario(PedidoAdminModel pedido) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: AsignarDomiciliarioSlot(
+          pedido: pedido,
+          domiciliarios: _domiciliarios,
+          reasignar: _esReasignacionDomi(pedido),
+          onAsignar: _asignarDomiciliario,
+          onDispatchIndependiente: _dispatchIndependiente,
+        ),
+      );
 
   bool _esReasignacionDomi(PedidoAdminModel pedido) =>
       pedido.estado == 'asignado' || pedido.estado == 'en_camino';
@@ -848,8 +1054,9 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
             ),
             const SizedBox(height: 12),
             Text(
-              'Si el pedido no estaba cobrado, no registres devolución en Caja. '
-              'Al cancelar, el sistema solo devuelve efectivo cuando ya hubo cobro.',
+              'Al cancelar, Foody revierte en Caja los cobros registrados del pedido '
+              'y conserva el medio de pago original. Esta reversa es un registro contable; '
+              'si el pago fue electrónico, confirma el reembolso con el proveedor de pago.',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey.shade700,
@@ -1097,16 +1304,22 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                 }
 
                 final pedidos = snapshot.data ?? [];
+                final activos = <PedidoAdminModel>[
+                  ...pedidos,
+                  ..._activosSiguientes.where(
+                    (siguiente) => pedidos.every((p) => p.id != siguiente.id),
+                  ),
+                ];
                 final tabCerrados =
                     _tabClave == PedidoColumnasPorCanal.cerradosClave;
                 final mostrarKanban = usarKanban && !tabCerrados;
                 final filtrados = _filtrarPedidos(
-                  pedidos,
+                  activos,
                   ignorarTab: mostrarKanban,
                 );
                 final tabs = _tabsEstado;
-                final activos = pedidos.where((p) => !p.esTerminal).length;
-                final totalTurno = pedidos.fold<num>(0, (s, p) => s + p.total);
+                final valorPedidosActivos =
+                    activos.fold<num>(0, (s, p) => s + p.total);
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1121,11 +1334,16 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                           if (!widget.modoMesero) ...[
                             _KpiPedidosChip(
                               etiqueta: 'Activos',
-                              valor: '$activos',
+                              valor: '$_totalActivos',
                             ),
                             _KpiPedidosChip(
-                              etiqueta: 'Total',
-                              valor: _formatoMoneda.format(totalTurno),
+                              etiqueta: _hayMasActivos
+                                  ? 'Valor cargado'
+                                  : 'Valor en pedidos',
+                              valor: _formatoMoneda.format(valorPedidosActivos),
+                              ayuda: _hayMasActivos
+                                  ? 'Suma del valor de los pedidos cargados. Hay más pedidos activos por cargar; no equivale a dinero cobrado.'
+                                  : 'Suma del valor total de pedidos activos; no equivale a dinero cobrado.',
                             ),
                           ],
                           OperacionBusqueda(
@@ -1176,6 +1394,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
                       child: OperacionPillTabs(
+                        key: const ValueKey<String>('pedidos-channel-filter'),
                         opciones: widget.modoMesero
                             ? const [
                                 ('todos', 'Todos'),
@@ -1189,6 +1408,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                                 ('para_llevar', 'Para llevar'),
                               ],
                         seleccionada: _filtroTipo,
+                        scrollable: ancho < 720,
                         onCambio: (v) => setState(() {
                           _filtroTipo = v;
                           _asegurarTabValida();
@@ -1206,7 +1426,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                                 if (i > 0) const SizedBox(width: 8),
                                 OperacionStatChip(
                                   etiqueta: tabs[i].titulo,
-                                  valor: '${_conteoTab(tabs[i], pedidos)}',
+                                  valor:
+                                      '${_conteoTab(tabs[i], activos)}${_hayMasActivos ? '+' : ''}',
                                   seleccionado: _tabClave == tabs[i].clave,
                                   onTap: () => setState(() {
                                     _tabClave = tabs[i].clave;
@@ -1223,8 +1444,14 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                         color: _scheme.onSurface,
                         onRefresh: () async => _recargar(),
                         child: mostrarKanban
-                            ? _vistaColumnasKanban(filtrados)
-                            : _vistaGridPedidos(filtrados),
+                            ? _vistaColumnasKanban(
+                                filtrados,
+                                activosCargados: activos.length,
+                              )
+                            : _vistaGridPedidos(
+                                filtrados,
+                                activosCargados: activos.length,
+                              ),
                       ),
                     ),
                   ],
@@ -1249,15 +1476,116 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     );
   }
 
-  Widget _vistaGridPedidos(List<PedidoAdminModel> pedidos) {
+  Widget _vistaGridPedidos(
+    List<PedidoAdminModel> pedidos, {
+    required int activosCargados,
+  }) {
     if (pedidos.isEmpty) {
+      final esTabCerrados = _tabClave == PedidoColumnasPorCanal.cerradosClave;
+      if (esTabCerrados && _cargandoCerrados) {
+        return FoodyEstadoUi.cargando(mensaje: 'Cargando pedidos cerrados…');
+      }
+      if (esTabCerrados && _errorCerrados != null) {
+        return FoodyEstadoUi.desdeMensaje(
+          mensaje: _errorCerrados!,
+          onReintentar: () => _cargarCerradosHoy(),
+        );
+      }
+      final hayFiltrosActivos =
+          _busquedaCtrl.text.trim().isNotEmpty || _filtroTipo != 'todos';
+      final estadoActual = _tabsEstado
+          .where((tab) => tab.clave == _tabClave)
+          .firstOrNull
+          ?.titulo;
       return ListView(
         children: [
-          SizedBox(height: 80),
+          const SizedBox(height: 64),
           Center(
-            child: Text(
-              'Sin pedidos con ese filtro',
-              style: TextStyle(color: _scheme.onSurfaceVariant),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      hayFiltrosActivos
+                          ? Icons.search_off_rounded
+                          : Icons.inbox_outlined,
+                      size: 36,
+                      color: _scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      hayFiltrosActivos
+                          ? 'No encontramos pedidos'
+                          : estadoActual == null
+                              ? 'No hay pedidos en este estado'
+                              : 'No hay pedidos en $estadoActual',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: _scheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    if (!esTabCerrados && _errorActivos != null) ...[
+                      const SizedBox(height: 12),
+                      OperacionAviso(
+                        mensaje:
+                            'No se pudieron cargar más pedidos activos: $_errorActivos',
+                        accion: 'Reintentar',
+                        onAccion: _cargarMasActivos,
+                        color: _scheme.errorContainer,
+                        colorTexto: _scheme.onErrorContainer,
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      hayFiltrosActivos
+                          ? 'Prueba con otra búsqueda o quita los filtros para ver la lista completa.'
+                          : 'Puedes revisar otros estados desde las opciones de arriba.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: _scheme.onSurfaceVariant,
+                          ),
+                    ),
+                    if (hayFiltrosActivos) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: () => setState(() {
+                          _busquedaCtrl.clear();
+                          _filtroTipo = 'todos';
+                          _tabClave = _tabsEstado.first.clave;
+                        }),
+                        icon: const Icon(Icons.filter_alt_off_outlined),
+                        label: const Text('Limpiar filtros'),
+                      ),
+                    ],
+                    if (_tabClave != PedidoColumnasPorCanal.cerradosClave &&
+                        _hayMasActivos) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed:
+                            _cargandoMasActivos ? null : _cargarMasActivos,
+                        icon: _cargandoMasActivos
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.expand_more),
+                        label: Text(
+                          _cargandoMasActivos
+                              ? 'Cargando…'
+                              : 'Buscar en más pedidos activos',
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -1273,17 +1601,47 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                 : 1;
         const gap = 12.0;
         const padH = 16.0;
+        final esTabCerrados = _tabClave == PedidoColumnasPorCanal.cerradosClave;
+        final filasPedidos = (pedidos.length + cols - 1) ~/ cols;
+        final errorActivo = !esTabCerrados ? _errorActivos : null;
+        final mostrarError =
+            esTabCerrados ? _errorCerrados != null : errorActivo != null;
+        final mostrarPaginacion = esTabCerrados
+            ? (_hayMasCerrados || _totalCerrados > 0 || _cargandoMasCerrados)
+            : (_hayMasActivos || _totalActivos > 0 || _cargandoMasActivos);
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(padH, 0, padH, 16),
-          itemCount: ((pedidos.length + cols - 1) ~/ cols) +
-              (_tabClave == PedidoColumnasPorCanal.cerradosClave ? 1 : 0),
+          itemCount: filasPedidos +
+              (mostrarError ? 1 : 0) +
+              (mostrarPaginacion ? 1 : 0),
           itemBuilder: (context, row) {
-            final filasPedidos = (pedidos.length + cols - 1) ~/ cols;
-            if (row >= filasPedidos) {
+            if (mostrarError && row == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: OperacionAviso(
+                  mensaje: esTabCerrados
+                      ? (_falloCargandoMasCerrados
+                          ? 'No se pudieron cargar más pedidos: $_errorCerrados'
+                          : 'No se pudieron actualizar los pedidos: $_errorCerrados')
+                      : 'No se pudieron cargar más pedidos activos: $errorActivo',
+                  accion: 'Reintentar',
+                  onAccion: esTabCerrados
+                      ? () => _cargarCerradosHoy(
+                            mas: _falloCargandoMasCerrados,
+                          )
+                      : _cargarMasActivos,
+                  color: _scheme.errorContainer,
+                  colorTexto: _scheme.onErrorContainer,
+                ),
+              );
+            }
+
+            final filaPedidos = row - (mostrarError ? 1 : 0);
+            if (filaPedidos >= filasPedidos) {
               return Column(
                 children: [
                   const SizedBox(height: 16),
-                  if (_totalCerrados > 0)
+                  if (esTabCerrados && _totalCerrados > 0)
                     Text(
                       'Mostrando ${_cerradosHoy.length} de $_totalCerrados',
                       textAlign: TextAlign.center,
@@ -1292,7 +1650,9 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                         color: Colors.grey.shade600,
                       ),
                     ),
-                  if (_hayMasCerrados) ...[
+                  if (esTabCerrados &&
+                      _hayMasCerrados &&
+                      !_falloCargandoMasCerrados) ...[
                     const SizedBox(height: 8),
                     Center(
                       child: TextButton(
@@ -1311,10 +1671,38 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                       ),
                     ),
                   ],
+                  if (!esTabCerrados && _totalActivos > 0) ...[
+                    Text(
+                      'Mostrando $activosCargados de $_totalActivos pedidos activos',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (_hayMasActivos) ...[
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed:
+                              _cargandoMasActivos ? null : _cargarMasActivos,
+                          child: _cargandoMasActivos
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Cargar más'),
+                        ),
+                      ),
+                    ],
+                  ],
                 ],
               );
             }
-            final start = row * cols;
+            final start = filaPedidos * cols;
             final end = (start + cols).clamp(0, pedidos.length);
             final slice = pedidos.sublist(start, end);
             return Padding(
@@ -1335,6 +1723,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                               colorReloj: _colorReloj,
                               onTap: () => _mostrarAcciones(slice[i]),
                               onAccionRapida: () => _accionRapida(slice[i]),
+                              mostrarAccionRapida: _puedeAccionRapida(slice[i]),
                               pieExtra: _pieDomi(slice[i]),
                             )
                           : const SizedBox.shrink(),
@@ -1349,7 +1738,10 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     );
   }
 
-  Widget _vistaColumnasKanban(List<PedidoAdminModel> pedidos) {
+  Widget _vistaColumnasKanban(
+    List<PedidoAdminModel> pedidos, {
+    required int activosCargados,
+  }) {
     final cols = _columnasVisibles;
     final porColumna = <String, List<PedidoAdminModel>>{};
     for (final col in cols) {
@@ -1364,22 +1756,73 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
         final n = cols.length;
         final anchoCol =
             (constraints.maxWidth / n.clamp(1, 4)).clamp(240.0, 320.0);
-        return ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+        return Column(
           children: [
-            for (final col in cols)
-              PedidoKanbanColumn(
-                titulo: col.titulo,
-                ancho: anchoCol,
-                pedidos: porColumna[col.clave] ?? [],
-                formatoMoneda: _formatoMoneda,
-                minutosEnEstado: _minutosEnEstado,
-                textoReloj: _textoReloj,
-                colorReloj: _colorReloj,
-                onTapPedido: _mostrarAcciones,
-                onAccionRapida: _accionRapida,
-                pieBuilder: _pieDomi,
+            Expanded(
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  for (final col in cols)
+                    PedidoKanbanColumn(
+                      titulo: col.titulo,
+                      ancho: anchoCol,
+                      pedidos: porColumna[col.clave] ?? [],
+                      formatoMoneda: _formatoMoneda,
+                      minutosEnEstado: _minutosEnEstado,
+                      textoReloj: _textoReloj,
+                      colorReloj: _colorReloj,
+                      onTapPedido: _mostrarAcciones,
+                      onAccionRapida: _accionRapida,
+                      puedeAccionRapida: _puedeAccionRapida,
+                      pieBuilder: _pieDomi,
+                    ),
+                ],
+              ),
+            ),
+            if (_errorActivos != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: OperacionAviso(
+                  mensaje:
+                      'No se pudieron cargar más pedidos activos: $_errorActivos',
+                  accion: 'Reintentar',
+                  onAccion: _cargarMasActivos,
+                  color: _scheme.errorContainer,
+                  colorTexto: _scheme.onErrorContainer,
+                ),
+              ),
+            if (_totalActivos > 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
+                    Text(
+                      'Mostrando $activosCargados de $_totalActivos pedidos activos',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (_hayMasActivos)
+                      TextButton(
+                        onPressed:
+                            _cargandoMasActivos ? null : _cargarMasActivos,
+                        child: _cargandoMasActivos
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Cargar más'),
+                      ),
+                  ],
+                ),
               ),
           ],
         );
@@ -1389,15 +1832,20 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
 }
 
 class _KpiPedidosChip extends StatelessWidget {
-  const _KpiPedidosChip({required this.etiqueta, required this.valor});
+  const _KpiPedidosChip({
+    required this.etiqueta,
+    required this.valor,
+    this.ayuda,
+  });
 
   final String etiqueta;
   final String valor;
+  final String? ayuda;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    final contenido = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
@@ -1428,5 +1876,7 @@ class _KpiPedidosChip extends StatelessWidget {
         ],
       ),
     );
+    if (ayuda == null) return contenido;
+    return Tooltip(message: ayuda!, child: contenido);
   }
 }

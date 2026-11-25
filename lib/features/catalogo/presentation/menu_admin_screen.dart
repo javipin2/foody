@@ -26,6 +26,9 @@ class MenuAdminScreen extends StatefulWidget {
     this.sucursalId,
     this.sucursalesOrigen = const [],
     this.onVerCostos,
+    this.repository,
+    this.cocinasRepository,
+    this.costeoRepository,
   });
 
   final String? sucursalId;
@@ -33,6 +36,9 @@ class MenuAdminScreen extends StatefulWidget {
   /// Otras sedes del restaurante (copiar menú maestro).
   final List<Map<String, dynamic>> sucursalesOrigen;
   final void Function(String productoId)? onVerCostos;
+  final CatalogoAdminRepository? repository;
+  final CocinasRepository? cocinasRepository;
+  final CosteoRepository? costeoRepository;
 
   @override
   State<MenuAdminScreen> createState() => _MenuAdminScreenState();
@@ -42,11 +48,11 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     with SingleTickerProviderStateMixin {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = CatalogoAdminRepository();
+  late final CatalogoAdminRepository _repo;
   final _almacenamiento = AlmacenamientoRepository();
   final _picker = ImagePicker();
-  final _cocinasRepo = CocinasRepository();
-  final _costeoRepo = CosteoRepository();
+  late final CocinasRepository _cocinasRepo;
+  late final CosteoRepository _costeoRepo;
   late final TabController _tabs;
 
   List<Map<String, dynamic>> _categorias = [];
@@ -61,6 +67,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   double _umbralMargen = 35;
   bool _cargando = true;
   String? _errorCarga;
+  int _cargaVersion = 0;
+  final Set<String> _productosCambiandoDisponibilidad = <String>{};
   final _busquedaCtrl = TextEditingController();
   String _filtroProductos = 'todos';
 
@@ -73,6 +81,9 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? CatalogoAdminRepository();
+    _cocinasRepo = widget.cocinasRepository ?? CocinasRepository();
+    _costeoRepo = widget.costeoRepository ?? CosteoRepository();
     _tabs = TabController(length: 4, vsync: this);
     _cargar();
   }
@@ -84,13 +95,14 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
     super.dispose();
   }
 
-  Future<void> _cargar() async {
+  Future<void> _cargar({bool mostrarCarga = true}) async {
     final sid = widget.sucursalId;
     if (sid == null) {
       if (mounted) setState(() => _cargando = false);
       return;
     }
-    setState(() => _cargando = true);
+    final version = ++_cargaVersion;
+    setState(() => _cargando = mostrarCarga);
     final avisos = <String>[];
 
     Future<List<Map<String, dynamic>>> intentar(
@@ -105,18 +117,115 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       }
     }
 
-    final categorias = await intentar(_repo.categorias(sid), 'categorías');
-    final productos = await intentar(_repo.productos(sid), 'productos');
-    final toppings = await intentar(_repo.toppings(sid), 'toppings');
-    final bebidas = await intentar(_repo.bebidas(sid), 'bebidas');
-    final combos = await intentar(_repo.combos(sid), 'combos');
-    final cocinas = await intentar(_cocinasRepo.listarCocinas(sid), 'cocinas');
+    // Las colecciones del catálogo son lecturas independientes: no serializar
+    // sus RTT. El resumen de costeo también inicia ahora y no bloquea el menú.
+    final futurasCatalogo = <Future<List<Map<String, dynamic>>>>[
+      intentar(_repo.categorias(sid), 'categorías'),
+      intentar(_repo.productos(sid), 'productos'),
+      intentar(_repo.toppings(sid), 'toppings'),
+      intentar(_repo.bebidas(sid), 'bebidas'),
+      intentar(_repo.combos(sid), 'combos'),
+      intentar(_cocinasRepo.listarCocinas(sid), 'cocinas'),
+    ];
+    final futuroCosteo = _cargarCosteoOpcional(sid);
+    final resultados = await Future.wait(futurasCatalogo);
+    if (!mounted || version != _cargaVersion) return;
 
-    // NAV-MC-07: resumen costeo en paralelo (fallo no bloquea el menú).
+    final categorias = resultados[0];
+    final productos = resultados[1];
+    final toppings = resultados[2];
+    final bebidas = resultados[3];
+    final combos = resultados[4];
+    final cocinas = resultados[5];
+
+    setState(() {
+      _categorias = categorias;
+      _productos = productos;
+      _toppings = toppings;
+      _bebidas = bebidas;
+      _combos = combos;
+      _cocinas = cocinas.where((c) => c['activa'] == true).toList();
+      _costeoPorProducto = {};
+      _umbralMargen = 35;
+      _errorCarga = avisos.isEmpty ? null : avisos.join(' · ');
+      _cargando = false;
+    });
+
+    unawaited(_cargarCosteo(sid, version, futuroCosteo));
+  }
+
+  Future<void> _cambiarDisponibilidadProducto(
+    String productoId,
+    bool disponible,
+  ) async {
+    if (_productosCambiandoDisponibilidad.contains(productoId)) return;
+    setState(() => _productosCambiandoDisponibilidad.add(productoId));
+    try {
+      await _repo.toggleDisponible(productoId, disponible);
+      if (mounted) await _cargar(mostrarCarga: false);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(mensajeErrorHttp(e, contexto: 'disponibilidad')),
+            backgroundColor: AnaliticaTokens.alertas,
+            action: SnackBarAction(
+              label: 'Reintentar',
+              onPressed: () => unawaited(
+                _cambiarDisponibilidadProducto(productoId, disponible),
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _productosCambiandoDisponibilidad.remove(productoId));
+      }
+    }
+  }
+
+  Widget _switchDisponibilidadProducto({
+    required String productoId,
+    required String nombre,
+    required bool disponible,
+  }) {
+    if (_productosCambiandoDisponibilidad.contains(productoId)) {
+      return const SizedBox.square(
+        dimension: 48,
+        child: Center(
+          child: SizedBox.square(
+            dimension: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    return Semantics(
+      label: 'Disponibilidad de $nombre',
+      child: Switch.adaptive(
+        key: ValueKey<String>('producto-disponibilidad-$productoId'),
+        value: disponible,
+        activeTrackColor: _scheme.onSurface.withValues(alpha: .32),
+        onChanged: (value) => unawaited(
+          _cambiarDisponibilidadProducto(productoId, value),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _cargarCosteo(
+    String sucursalId,
+    int version,
+    Future<Map<String, dynamic>?> future,
+  ) async {
+    // NAV-MC-07: costeo es complementario, de modo que su latencia/fallo no
+    // retrasa la disponibilidad del catálogo.
     Map<String, Map<String, dynamic>> costeoMap = {};
     var umbral = 35.0;
     try {
-      final resumen = await _costeoRepo.resumen(sid);
+      final resumen = await future;
+      if (resumen == null) return;
       umbral = (resumen['umbral_margen'] as num?)?.toDouble() ?? 35;
       void indexar(dynamic lista) {
         if (lista is! List) return;
@@ -135,19 +244,23 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       // Plan Free u error: badges quedan ocultos.
     }
 
-    if (mounted) {
-      setState(() {
-        _categorias = categorias;
-        _productos = productos;
-        _toppings = toppings;
-        _bebidas = bebidas;
-        _combos = combos;
-        _cocinas = cocinas.where((c) => c['activa'] == true).toList();
-        _costeoPorProducto = costeoMap;
-        _umbralMargen = umbral;
-        _errorCarga = avisos.isEmpty ? null : avisos.join(' · ');
-        _cargando = false;
-      });
+    if (!mounted ||
+        version != _cargaVersion ||
+        widget.sucursalId != sucursalId) {
+      return;
+    }
+    setState(() {
+      _costeoPorProducto = costeoMap;
+      _umbralMargen = umbral;
+    });
+  }
+
+  Future<Map<String, dynamic>?> _cargarCosteoOpcional(String sucursalId) async {
+    try {
+      return await _costeoRepo.resumen(sucursalId);
+    } catch (_) {
+      // El catálogo sigue disponible sin los badges de costeo.
+      return null;
     }
   }
 
@@ -170,13 +283,17 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             subtitulo:
                 'Categorías, productos, toppings y bebidas. Los nombres existentes no se duplican. Los combos no se incluyen.',
             hijo: DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: origenId,
               decoration: FoodyFormEstilo.campo(label: 'Sede origen'),
               items: opciones
                   .map(
                     (s) => DropdownMenuItem(
                       value: s['id'] as String,
-                      child: Text(s['nombre'] as String? ?? 'Sede'),
+                      child: Text(
+                        s['nombre'] as String? ?? 'Sede',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
@@ -313,13 +430,17 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: catId,
                       decoration: FoodyFormEstilo.campo(label: 'Categoría'),
                       items: _categorias
                           .map(
                             (c) => DropdownMenuItem(
                               value: c['id'] as String,
-                              child: Text(c['nombre'] as String),
+                              child: Text(
+                                c['nombre'] as String,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           )
                           .toList(),
@@ -341,6 +462,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                         ),
                       )
                     : DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: cocinaId,
                         decoration: FoodyFormEstilo.campo(
                           label: 'Cocina (ticket)',
@@ -349,7 +471,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             .map(
                               (c) => DropdownMenuItem(
                                 value: c['id'] as String,
-                                child: Text(c['nombre'] as String? ?? '—'),
+                                child: Text(
+                                  c['nombre'] as String? ?? '—',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             )
                             .toList(),
@@ -605,6 +730,7 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
             titulo: 'Preparación',
             icono: Icons.soup_kitchen_outlined,
             hijo: DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _cocinas.any((c) => c['id'] == cocinaId)
                   ? cocinaId
                   : _cocinas.first['id'] as String,
@@ -613,7 +739,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                   .map(
                     (c) => DropdownMenuItem(
                       value: c['id'] as String,
-                      child: Text(c['nombre'] as String? ?? '—'),
+                      child: Text(
+                        c['nombre'] as String? ?? '—',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   )
                   .toList(),
@@ -1692,9 +1821,51 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
         Expanded(
           child: lista.isEmpty
               ? Center(
-                  child: Text(
-                    'Ningún producto coincide',
-                    style: TextStyle(color: _scheme.onSurfaceVariant),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 36,
+                            color: _scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No encontramos productos',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  color: _scheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Prueba otra búsqueda o quita los filtros para ver el catálogo.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(color: _scheme.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: () => setState(() {
+                              _busquedaCtrl.clear();
+                              _filtroProductos = 'todos';
+                            }),
+                            icon: const Icon(Icons.filter_alt_off_outlined),
+                            label: const Text('Limpiar búsqueda y filtros'),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 )
               : RefreshIndicator(
@@ -1837,6 +2008,18 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                                 ],
                               ),
                             ),
+                            IconButton(
+                              tooltip:
+                                  'Editar precios de ${p['nombre'] as String? ?? 'producto'}',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 36,
+                                height: 36,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: () => unawaited(_editarPrecios(p)),
+                              icon: const Icon(Icons.edit_outlined, size: 17),
+                            ),
                           ],
                         ),
                       ),
@@ -1870,14 +2053,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                             ),
                     ),
                     DataCell(
-                      Switch.adaptive(
-                        value: disponible,
-                        activeTrackColor:
-                            _scheme.onSurface.withValues(alpha: .32),
-                        onChanged: (v) async {
-                          await _repo.toggleDisponible(id, v);
-                          await _cargar();
-                        },
+                      _switchDisponibilidadProducto(
+                        productoId: id,
+                        nombre: p['nombre'] as String? ?? '',
+                        disponible: disponible,
                       ),
                     ),
                     DataCell(_menuAccionesProducto(p)),
@@ -1908,6 +2087,8 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       icon: const Icon(Icons.more_horiz, size: 20),
       onSelected: (accion) {
         switch (accion) {
+          case 'precios':
+            unawaited(_editarPrecios(p));
           case 'foto':
             unawaited(_subirFotoProducto(p));
           case 'cocina':
@@ -1919,6 +2100,15 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
         }
       },
       itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'precios',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.sell_outlined),
+            title: Text('Editar precios'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
         const PopupMenuItem(
           value: 'foto',
           child: ListTile(
@@ -2095,13 +2285,12 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                               texto: 'No disponible',
                               sinReceta: false,
                               bajoMargen: true,
-                              onTap: () async {
-                                await _repo.toggleDisponible(
+                              onTap: () => unawaited(
+                                _cambiarDisponibilidadProducto(
                                   p['id'] as String,
                                   true,
-                                );
-                                await _cargar();
-                              },
+                                ),
+                              ),
                             ),
                           if (sinCocina)
                             _badgeCosteo(
@@ -2126,14 +2315,10 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
                 ),
                 Column(
                   children: [
-                    Switch.adaptive(
-                      value: disponible,
-                      activeTrackColor:
-                          _scheme.onSurface.withValues(alpha: 0.35),
-                      onChanged: (v) async {
-                        await _repo.toggleDisponible(p['id'] as String, v);
-                        await _cargar();
-                      },
+                    _switchDisponibilidadProducto(
+                      productoId: p['id'] as String,
+                      nombre: p['nombre'] as String? ?? '',
+                      disponible: disponible,
                     ),
                     // NAV-ADM-05: acciones secundarias en menú (evita overflow móvil).
                     _menuAccionesProducto(p),

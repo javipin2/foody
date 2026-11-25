@@ -104,9 +104,8 @@ class _MapaFoodyState extends State<MapaFoody> {
         initialCenter: _centro,
         initialZoom: widget.zoom,
         interactionOptions: InteractionOptions(
-          flags: widget.interactuable
-              ? InteractiveFlag.all
-              : InteractiveFlag.none,
+          flags:
+              widget.interactuable ? InteractiveFlag.all : InteractiveFlag.none,
         ),
         onTap: widget.onTap == null
             ? null
@@ -172,22 +171,19 @@ class _MapaFoodyState extends State<MapaFoody> {
         Positioned(
           right: 8,
           bottom: widget.mostrarAtribucion ? 28 : 8,
-          child: Column(
-            children: [
-              _botonZoom(Icons.add, () {
-                _controller.move(
-                  _controller.camera.center,
-                  _controller.camera.zoom + 1,
-                );
-              }),
-              const SizedBox(height: 4),
-              _botonZoom(Icons.remove, () {
-                _controller.move(
-                  _controller.camera.center,
-                  _controller.camera.zoom - 1,
-                );
-              }),
-            ],
+          child: ControlesZoomMapa(
+            onAcercar: () {
+              _controller.move(
+                _controller.camera.center,
+                _controller.camera.zoom + 1,
+              );
+            },
+            onAlejar: () {
+              _controller.move(
+                _controller.camera.center,
+                _controller.camera.zoom - 1,
+              );
+            },
           ),
         ),
       ],
@@ -201,20 +197,53 @@ class _MapaFoodyState extends State<MapaFoody> {
       a.radioKm,
     );
   }
+}
 
-  Widget _botonZoom(IconData icono, VoidCallback onTap) {
+/// Controles de mapa con etiquetas y un área táctil accesible.
+class ControlesZoomMapa extends StatelessWidget {
+  const ControlesZoomMapa({
+    super.key,
+    required this.onAcercar,
+    required this.onAlejar,
+  });
+
+  final VoidCallback onAcercar;
+  final VoidCallback onAlejar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _boton(context, Icons.add, 'Acercar mapa', onAcercar),
+        const SizedBox(height: 4),
+        _boton(context, Icons.remove, 'Alejar mapa', onAlejar),
+      ],
+    );
+  }
+
+  Widget _boton(
+    BuildContext context,
+    IconData icono,
+    String etiqueta,
+    VoidCallback onPressed,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.white,
+      color: scheme.surface.withValues(alpha: 0.96),
       elevation: 2,
       borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: SizedBox(
-          width: 36,
-          height: 36,
-          child: Icon(icono, size: 20, color: ColoresFoody.primario),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: etiqueta,
+        onPressed: onPressed,
+        style: IconButton.styleFrom(
+          foregroundColor: scheme.primary,
+          minimumSize: const Size(48, 48),
+          fixedSize: const Size(48, 48),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.padded,
         ),
+        icon: Icon(icono, size: 20),
       ),
     );
   }

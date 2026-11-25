@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PedidosItemsService = void 0;
 const common_1 = require("@nestjs/common");
+const node_crypto_1 = require("node:crypto");
 const database_service_1 = require("../../core/database/database.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
 const facturacion_service_1 = require("../facturacion/facturacion.service");
@@ -58,9 +59,7 @@ let PedidosItemsService = class PedidosItemsService {
         if (!fila) {
             return Math.min(Math.max(0, descuentoActual), subtotalNuevo);
         }
-        const pct = fila.descuento_porcentaje != null
-            ? Number(fila.descuento_porcentaje)
-            : 0;
+        const pct = fila.descuento_porcentaje != null ? Number(fila.descuento_porcentaje) : 0;
         const fijo = fila.descuento_monto != null ? Number(fila.descuento_monto) : 0;
         if (pct > 0) {
             return Math.min(Math.round((subtotalNuevo * pct) / 100), subtotalNuevo);
@@ -70,18 +69,62 @@ let PedidosItemsService = class PedidosItemsService {
         }
         return Math.min(Math.max(0, descuentoActual), subtotalNuevo);
     }
-    async agregarItems(pedidoId, sucursalId, dto, opciones = {}) {
+    async volverACocinaSiEsNecesario(client, pedido, sucursalId, usuarioId, motivo) {
+        if (!['listo', 'pagando'].includes(pedido.estado))
+            return pedido.estado;
+        await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
+            pedidoId: pedido.id,
+            sucursalId,
+            nuevoEstado: 'en_cocina',
+            origen: 'sistema',
+            usuarioId,
+            motivo,
+            estadoAnterior: pedido.estado,
+            tipo: pedido.tipo,
+        });
+        return 'en_cocina';
+    }
+    validarReduccionTotalConSaldo(totalAnterior, totalNuevo, montoPagado) {
+        const reduceTotal = totalNuevo + 0.01 < totalAnterior;
+        const dejaSobrepago = totalNuevo + 0.01 < montoPagado;
+        if (!reduceTotal || !dejaSobrepago)
+            return;
+        throw new common_1.ConflictException({
+            error: 'PEDIDO_EDIT_REQUIERE_REEMBOLSO',
+            message: 'El nuevo total sería menor que el monto recibido. Registra la devolución antes de reducir este pedido.',
+        });
+    }
+    async agregarItems(pedidoId, sucursalId, dto, opciones = {}, clientTransaccion, notificar = true) {
         const items = dto.items ?? [];
         const combos = dto.combos ?? [];
         if (!items.length && !combos.length) {
             throw new common_1.BadRequestException('Debes incluir al menos un ?tem o combo');
         }
-        const resultado = await this.database.enTransaccion(async (client) => {
+        const idempotencyKey = dto.idempotency_key?.trim();
+        const huellaSolicitud = idempotencyKey
+            ? (0, node_crypto_1.createHash)('sha256')
+                .update(JSON.stringify({ items, combos }))
+                .digest('hex')
+            : null;
+        const ejecutar = async (client) => {
             const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, numero_pedido, tipo, estado, mesa_id, subtotal, costo_domicilio,
                 descuento, total, metodo_pago, stock_descontado, promocion_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
             if (!pedido)
                 throw new common_1.NotFoundException('Pedido no encontrado');
+            if (idempotencyKey) {
+                const previo = await this.soporte.consultarUnoCliente(client, `SELECT resultado, huella FROM pedidos_items_idempotencia
+           WHERE pedido_id = $1 AND clave = $2`, [pedidoId, idempotencyKey]);
+                if (previo) {
+                    if (previo.huella !== huellaSolicitud) {
+                        throw new common_1.ConflictException({
+                            error: 'IDEMPOTENCY_KEY_REUSED',
+                            message: 'La clave de reintento ya se usó con otros ítems para este pedido',
+                        });
+                    }
+                    return { ...previo.resultado, idempotente: true };
+                }
+            }
             if (ESTADOS_PEDIDO_CERRADO.includes(pedido.estado)) {
                 throw new common_1.ConflictException({
                     error: 'PEDIDO_CERRADO',
@@ -288,14 +331,7 @@ let PedidosItemsService = class PedidosItemsService {
                 await client.query(`INSERT INTO margenes_venta (
              pedido_id, pedido_item_id, sucursal_id,
              precio_venta, costo_al_momento, margen_porcentaje
-           ) VALUES ($1,$2,$3,$4,$5,$6)`, [
-                    pedidoId,
-                    itemId,
-                    sucursalId,
-                    precioVenta,
-                    costoTotal,
-                    margenPct,
-                ]);
+           ) VALUES ($1,$2,$3,$4,$5,$6)`, [pedidoId, itemId, sucursalId, precioVenta, costoTotal, margenPct]);
                 for (const t of linea.toppings) {
                     await client.query(`INSERT INTO pedido_item_toppings (pedido_item_id, topping_id, nombre_topping, precio_topping)
              VALUES ($1,$2,$3,$4)`, [itemId, t.id, t.nombre, t.precio]);
@@ -340,14 +376,7 @@ let PedidosItemsService = class PedidosItemsService {
                     await client.query(`INSERT INTO margenes_venta (
                pedido_id, pedido_item_id, sucursal_id,
                precio_venta, costo_al_momento, margen_porcentaje
-             ) VALUES ($1,$2,$3,$4,$5,$6)`, [
-                        pedidoId,
-                        itemId,
-                        sucursalId,
-                        precioVenta,
-                        costoUnit,
-                        margenPct,
-                    ]);
+             ) VALUES ($1,$2,$3,$4,$5,$6)`, [pedidoId, itemId, sucursalId, precioVenta, costoUnit, margenPct]);
                 }
             }
             const subtotalAnterior = Number(pedido.subtotal);
@@ -368,21 +397,8 @@ let PedidosItemsService = class PedidosItemsService {
                 pedidoId,
             ]);
             await this.facturacion.sincronizarBorradorDesdePedidoEnTransaccion(client, sucursalId, pedidoId);
-            let estadoFinal = pedido.estado;
-            if (['listo', 'pagando'].includes(pedido.estado)) {
-                await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
-                    pedidoId,
-                    sucursalId,
-                    nuevoEstado: 'en_cocina',
-                    origen: 'sistema',
-                    usuarioId: opciones.usuarioId ?? null,
-                    motivo: 'Ítems agregados — vuelve a cocina',
-                    estadoAnterior: pedido.estado,
-                    tipo: pedido.tipo,
-                });
-                estadoFinal = 'en_cocina';
-            }
-            return {
+            const estadoFinal = await this.volverACocinaSiEsNecesario(client, pedido, sucursalId, opciones.usuarioId ?? null, 'Ítems agregados — vuelve a cocina');
+            const respuesta = {
                 pedido_id: pedidoId,
                 numero_pedido: pedido.numero_pedido,
                 subtotal: subtotalNuevo,
@@ -392,19 +408,36 @@ let PedidosItemsService = class PedidosItemsService {
                 mesa_id: pedido.mesa_id,
                 catalogo_cambios: catalogoCambios,
             };
-        });
-        this.soporte.notificarPedidoRealtime(sucursalId, resultado.pedido_id, resultado.estado, resultado.numero_pedido);
-        this.soporte.notificarCatalogoDisponibilidad(sucursalId, resultado.catalogo_cambios ?? []);
-        if (resultado.mesa_id) {
-            void this.realtime.mesasActualizadas(sucursalId);
+            if (idempotencyKey) {
+                await client.query(`INSERT INTO pedidos_items_idempotencia (
+             pedido_id, clave, huella, resultado
+           ) VALUES ($1, $2, $3, $4::jsonb)`, [
+                    pedidoId,
+                    idempotencyKey,
+                    huellaSolicitud,
+                    JSON.stringify(respuesta),
+                ]);
+            }
+            return respuesta;
+        };
+        const resultado = clientTransaccion
+            ? await ejecutar(clientTransaccion)
+            : await this.database.enTransaccion(ejecutar);
+        if (notificar && !resultado.idempotente) {
+            this.soporte.notificarPedidoRealtime(sucursalId, resultado.pedido_id, resultado.estado, resultado.numero_pedido);
+            this.soporte.notificarCatalogoDisponibilidad(sucursalId, resultado.catalogo_cambios ?? []);
+            if (resultado.mesa_id) {
+                void this.realtime.mesasActualizadas(sucursalId);
+            }
+            void this.soporte.notificarCocinasPorPedido(resultado.pedido_id, sucursalId);
         }
-        void this.soporte.notificarCocinasPorPedido(resultado.pedido_id, sucursalId);
         return resultado;
     }
-    async eliminarItemPedido(pedidoId, itemId, sucursalId, usuarioId, motivo) {
-        const result = await this.database.enTransaccion(async (client) => {
+    async eliminarItemPedido(pedidoId, itemId, sucursalId, usuarioId, motivo, clientTransaccion, notificar = true, diferirControlSaldoPagado = false) {
+        const ejecutar = async (client) => {
             const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, estado, tipo, mesa_id, stock_descontado,
-                subtotal, costo_domicilio, descuento, numero_pedido, promocion_id
+                subtotal, total, COALESCE(monto_pagado, 0)::text AS monto_pagado,
+                costo_domicilio, descuento, numero_pedido, promocion_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
             if (!pedido)
                 throw new common_1.NotFoundException('Pedido no encontrado');
@@ -443,7 +476,7 @@ let PedidosItemsService = class PedidosItemsService {
                 if (enCocina) {
                     await this.inventario.registrarMermaLineaProducto(client, sucursalId, pedidoId, item.producto_id, item.cantidad, motivo ?? `?tem eliminado en cocina (${item.estado_cocina})`);
                 }
-                else {
+                else if (item.estado_cocina !== 'no_disponible') {
                     await this.inventario.restaurarStockLineaProducto(client, sucursalId, pedidoId, item.producto_id, item.cantidad, { incluirEmpaques: pedido.tipo === 'domicilio' });
                 }
             }
@@ -469,6 +502,9 @@ let PedidosItemsService = class PedidosItemsService {
             const subtotalNuevo = Math.max(0, Number(pedido.subtotal) - lineaTotal);
             const descuento = await this.recalcularDescuentoTrasCambioSubtotal(client, sucursalId, pedido.promocion_id, subtotalNuevo, Number(pedido.descuento));
             const totalNuevo = Math.max(0, subtotalNuevo + Number(pedido.costo_domicilio) - descuento);
+            if (!diferirControlSaldoPagado) {
+                this.validarReduccionTotalConSaldo(Number(pedido.total), totalNuevo, Number(pedido.monto_pagado));
+            }
             const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(client, sucursalId, totalNuevo);
             await client.query(`UPDATE pedidos SET
            subtotal = $1, descuento = $2, total = $3,
@@ -506,20 +542,101 @@ let PedidosItemsService = class PedidosItemsService {
                 cocina_id: item.cocina_id,
                 mesa_id: pedido.mesa_id,
             };
-        });
-        this.soporte.notificarPedidoRealtime(sucursalId, result.pedido_id, result.estado, result.numero_pedido);
-        if (result.cocina_id) {
-            void this.realtime.cocinaActualizada(result.cocina_id, {
-                pedido_id: result.pedido_id,
-                sucursal_id: sucursalId,
-                accion: 'item_eliminado',
-            });
+        };
+        const result = clientTransaccion
+            ? await ejecutar(clientTransaccion)
+            : await this.database.enTransaccion(ejecutar);
+        if (notificar) {
+            this.soporte.notificarPedidoRealtime(sucursalId, result.pedido_id, result.estado, result.numero_pedido);
+            if (result.cocina_id) {
+                void this.realtime.cocinaActualizada(result.cocina_id, {
+                    pedido_id: result.pedido_id,
+                    sucursal_id: sucursalId,
+                    accion: 'item_eliminado',
+                });
+            }
+            if (result.mesa_id) {
+                void this.realtime.mesasActualizadas(sucursalId);
+            }
+            void this.soporte.notificarCocinasPorPedido(result.pedido_id, sucursalId);
         }
-        if (result.mesa_id) {
-            void this.realtime.mesasActualizadas(sucursalId);
-        }
-        void this.soporte.notificarCocinasPorPedido(result.pedido_id, sucursalId);
         return result;
+    }
+    async reemplazarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto, opciones = {}) {
+        if (!(dto.items?.length || dto.combos?.length)) {
+            throw new common_1.BadRequestException('Debes incluir al menos un ítem o combo');
+        }
+        const idempotencyKey = dto.idempotency_key.trim();
+        const huella = (0, node_crypto_1.createHash)('sha256')
+            .update(JSON.stringify({
+            itemId,
+            items: dto.items ?? [],
+            combos: dto.combos ?? [],
+            motivo: dto.motivo?.trim() ?? null,
+        }))
+            .digest('hex');
+        const resultado = await this.database.enTransaccion(async (client) => {
+            const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
+            if (!pedido)
+                throw new common_1.NotFoundException('Pedido no encontrado');
+            const previo = await this.soporte.consultarUnoCliente(client, `SELECT resultado, huella FROM pedidos_items_idempotencia
+         WHERE pedido_id = $1 AND clave = $2`, [pedidoId, idempotencyKey]);
+            if (previo) {
+                if (previo.huella !== huella) {
+                    throw new common_1.ConflictException({
+                        error: 'IDEMPOTENCY_KEY_REUSED',
+                        message: 'La clave de reintento ya se usó con otro reemplazo para este pedido',
+                    });
+                }
+                return { ...previo.resultado, idempotente: true };
+            }
+            const lineaOriginal = await this.soporte.consultarUnoCliente(client, `SELECT pi.estado_cobro,
+                EXISTS (
+                  SELECT 1 FROM pago_pedido_items ppi
+                  WHERE ppi.pedido_item_id = pi.id
+                ) AS tiene_pago_asociado
+         FROM pedido_items pi
+         WHERE pi.id = $1 AND pi.pedido_id = $2`, [itemId, pedidoId]);
+            if (!lineaOriginal)
+                throw new common_1.NotFoundException('Ítem de pedido no encontrado');
+            if (lineaOriginal.estado_cobro === 'cobrado' ||
+                lineaOriginal.tiene_pago_asociado) {
+                throw new common_1.ConflictException({
+                    error: 'ITEM_REQUIERE_AJUSTE_COBRO',
+                    message: 'Este producto ya tiene un cobro asignado. Ajusta el cobro o registra el reembolso antes de reemplazarlo.',
+                });
+            }
+            const agregado = await this.agregarItems(pedidoId, sucursalId, { items: dto.items, combos: dto.combos }, opciones, client, false);
+            const eliminado = await this.eliminarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto.motivo, client, false, true);
+            const respuesta = {
+                ...agregado,
+                subtotal: eliminado.subtotal,
+                total: eliminado.total,
+                estado: eliminado.estado,
+                idempotente: false,
+            };
+            const saldoPedido = await this.soporte.consultarUnoCliente(client, `SELECT COALESCE(monto_pagado, 0)::text AS monto_pagado
+         FROM pedidos WHERE id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]);
+            if (Number(saldoPedido?.monto_pagado ?? 0) > respuesta.total + 0.01) {
+                throw new common_1.ConflictException({
+                    error: 'REEMPLAZO_REQUIERE_REEMBOLSO',
+                    message: 'El nuevo total queda por debajo de lo abonado. Registra el reembolso antes de reemplazar este producto.',
+                });
+            }
+            await client.query(`INSERT INTO pedidos_items_idempotencia (
+           pedido_id, clave, huella, resultado
+         ) VALUES ($1, $2, $3, $4::jsonb)`, [pedidoId, idempotencyKey, huella, JSON.stringify(respuesta)]);
+            return respuesta;
+        });
+        if (!resultado.idempotente) {
+            this.soporte.notificarPedidoRealtime(sucursalId, resultado.pedido_id, resultado.estado, resultado.numero_pedido);
+            this.soporte.notificarCatalogoDisponibilidad(sucursalId, resultado.catalogo_cambios ?? []);
+            if (resultado.mesa_id) {
+                void this.realtime.mesasActualizadas(sucursalId);
+            }
+            void this.soporte.notificarCocinasPorPedido(resultado.pedido_id, sucursalId);
+        }
+        return resultado;
     }
     async actualizarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto) {
         if (dto.cantidad === undefined &&
@@ -529,6 +646,7 @@ let PedidosItemsService = class PedidosItemsService {
         }
         const resultado = await this.database.enTransaccion(async (client) => {
             const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, estado, tipo, mesa_id, stock_descontado,
+                total, COALESCE(monto_pagado, 0)::text AS monto_pagado,
                 costo_domicilio, descuento, numero_pedido, promocion_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
             if (!pedido)
@@ -568,7 +686,8 @@ let PedidosItemsService = class PedidosItemsService {
                 }
             }
             const deltaQty = cantidadNueva - item.cantidad;
-            const cambiaCocina = deltaQty !== 0 || dto.toppings !== undefined;
+            const cambiaObservaciones = obsNueva !== item.observaciones;
+            const cambiaCocina = deltaQty !== 0 || dto.toppings !== undefined || cambiaObservaciones;
             if (deltaQty < 0 &&
                 ['preparando', 'listo'].includes(item.estado_cocina)) {
                 throw new common_1.BadRequestException({
@@ -602,9 +721,7 @@ let PedidosItemsService = class PedidosItemsService {
                     await this.inventario.restaurarStockLineaProducto(client, sucursalId, pedidoId, item.producto_id, Math.abs(deltaQty), { incluirEmpaques: pedido.tipo === 'domicilio' });
                 }
             }
-            const estadoCocinaNuevo = cambiaCocina
-                ? 'pendiente'
-                : item.estado_cocina;
+            const estadoCocinaNuevo = cambiaCocina ? 'pendiente' : item.estado_cocina;
             await client.query(`UPDATE pedido_items SET
            cantidad = $1,
            observaciones = $2,
@@ -618,7 +735,9 @@ let PedidosItemsService = class PedidosItemsService {
              VALUES ($1,$2,$3,$4)`, [itemId, t.id, t.nombre, t.precio]);
                 }
             }
-            const productoCosto = await this.soporte.consultarUnoCliente(client, `SELECT costo_calculado FROM productos WHERE id = $1`, [item.producto_id]);
+            const productoCosto = await this.soporte.consultarUnoCliente(client, `SELECT costo_calculado FROM productos WHERE id = $1`, [
+                item.producto_id,
+            ]);
             const topsCosto = await client.query(`SELECT COALESCE(SUM(t.costo_calculado), 0)::text AS s
          FROM pedido_item_toppings pit
          INNER JOIN toppings t ON t.id = pit.topping_id
@@ -641,9 +760,7 @@ let PedidosItemsService = class PedidosItemsService {
          FROM pedido_items pi WHERE pi.id = $2`, [cantidadNueva, itemId]);
             const precioVenta = Number(precioLineaRow.rows[0]?.precio ?? 0);
             const costoTotal = costoUnit * cantidadNueva;
-            const margenPct = precioVenta > 0
-                ? ((precioVenta - costoTotal) / precioVenta) * 100
-                : 0;
+            const margenPct = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta) * 100 : 0;
             await client.query(`UPDATE margenes_venta
          SET precio_venta = $1,
              costo_al_momento = $2,
@@ -667,6 +784,7 @@ let PedidosItemsService = class PedidosItemsService {
             const subtotalNuevo = Number(subtotalRow.rows[0]?.subtotal ?? 0);
             const descuento = await this.recalcularDescuentoTrasCambioSubtotal(client, sucursalId, pedido.promocion_id, subtotalNuevo, Number(pedido.descuento));
             const totalNuevo = Math.max(0, subtotalNuevo + Number(pedido.costo_domicilio) - descuento);
+            this.validarReduccionTotalConSaldo(Number(pedido.total), totalNuevo, Number(pedido.monto_pagado));
             const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(client, sucursalId, totalNuevo);
             await client.query(`UPDATE pedidos SET
            subtotal = $1, descuento = $2, total = $3,
@@ -680,6 +798,9 @@ let PedidosItemsService = class PedidosItemsService {
                 pedidoId,
             ]);
             await this.facturacion.sincronizarBorradorDesdePedidoEnTransaccion(client, sucursalId, pedidoId);
+            const estadoFinal = cambiaCocina
+                ? await this.volverACocinaSiEsNecesario(client, pedido, sucursalId, usuarioId, 'Ítem modificado — vuelve a cocina')
+                : pedido.estado;
             await this.auditoria.registrarEnTransaccion(client, {
                 sucursalId,
                 accion: 'ACTUALIZAR_ITEM_PEDIDO',
@@ -701,7 +822,7 @@ let PedidosItemsService = class PedidosItemsService {
             return {
                 pedido_id: pedidoId,
                 item_id: itemId,
-                estado: pedido.estado,
+                estado: estadoFinal,
                 numero_pedido: pedido.numero_pedido,
                 subtotal: subtotalNuevo,
                 total: totalNuevo,
@@ -737,7 +858,10 @@ let PedidosItemsService = class PedidosItemsService {
         if (!res) {
             throw new common_1.NotFoundException('Ítem no encontrado o pedido cerrado');
         }
-        return { item_id: itemId, comensal_etiqueta: comensalEtiqueta?.trim() || null };
+        return {
+            item_id: itemId,
+            comensal_etiqueta: comensalEtiqueta?.trim() || null,
+        };
     }
 };
 exports.PedidosItemsService = PedidosItemsService;

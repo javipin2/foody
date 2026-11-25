@@ -36,6 +36,12 @@ export type ResumenSucursalDashboard = {
   pedidos_pendientes_qr: number;
   pedidos_completados_hoy: number;
   alertas_pendientes: number;
+  domicilios_tardios: Array<{
+    numero: string;
+    detalle: string;
+    minutos: number;
+    severidad: number;
+  }>;
 };
 
 @Injectable()
@@ -192,7 +198,8 @@ export class DashboardService {
       (acc, s) => ({
         ventas_hoy: acc.ventas_hoy + s.ventas_hoy,
         pedidos_activos: acc.pedidos_activos + s.pedidos_activos,
-        pedidos_pendientes_qr: acc.pedidos_pendientes_qr + s.pedidos_pendientes_qr,
+        pedidos_pendientes_qr:
+          acc.pedidos_pendientes_qr + s.pedidos_pendientes_qr,
         pedidos_completados_hoy:
           acc.pedidos_completados_hoy + s.pedidos_completados_hoy,
         alertas_pendientes: acc.alertas_pendientes + s.alertas_pendientes,
@@ -221,6 +228,7 @@ export class DashboardService {
       pedidos_pendientes_qr: 0,
       pedidos_completados_hoy: 0,
       alertas_pendientes: 0,
+      domicilios_tardios: [],
     };
   }
 
@@ -231,6 +239,12 @@ export class DashboardService {
       pedidos_pendientes_qr: string;
       pedidos_completados_hoy: string;
       alertas_pendientes: string;
+      domicilios_tardios: Array<{
+        numero: string;
+        detalle: string;
+        minutos: number;
+        severidad: number;
+      }>;
     }>(
       `SELECT
          COALESCE((
@@ -262,7 +276,65 @@ export class DashboardService {
            SELECT COUNT(*)
            FROM alertas_riesgo
            WHERE sucursal_id = $1 AND revisada = false
-         ), 0)::text AS alertas_pendientes`,
+         ), 0)::text AS alertas_pendientes,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'numero', demoras.numero_pedido,
+             'detalle', CASE
+               WHEN demoras.estado = 'listo' AND demoras.domiciliario_nombre IS NOT NULL
+                 THEN 'Listo · ' || demoras.domiciliario_nombre
+               WHEN demoras.estado = 'listo' THEN 'Listo · sin asignar'
+               WHEN demoras.estado = 'asignado' AND demoras.domiciliario_nombre IS NOT NULL
+                 THEN 'Asignado · ' || demoras.domiciliario_nombre
+               WHEN demoras.estado = 'en_camino' AND demoras.domiciliario_nombre IS NOT NULL
+                 THEN 'En camino · ' || demoras.domiciliario_nombre
+               WHEN demoras.estado = 'asignado' THEN 'Asignado'
+               ELSE 'En camino'
+             END,
+             'minutos', demoras.minutos,
+             'severidad', demoras.severidad
+           ) ORDER BY demoras.severidad, demoras.minutos DESC)
+           FROM (
+             SELECT base.numero_pedido,
+                    base.estado,
+                    base.domiciliario_nombre,
+                    GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (now() - base.estado_desde)) / 60)::int) AS minutos,
+                    CASE
+                      WHEN base.estado = 'listo' THEN 0
+                      WHEN EXTRACT(EPOCH FROM (now() - base.estado_desde)) / 60 >= 40 THEN 0
+                      ELSE 1
+                    END AS severidad
+             FROM (
+               SELECT p.numero_pedido, p.estado,
+                      COALESCE(h.fecha, p.created_at) AS estado_desde,
+                      dom.domiciliario_nombre
+               FROM pedidos p
+               LEFT JOIN LATERAL (
+                 SELECT fecha FROM estados_pedido_historial
+                 WHERE pedido_id = p.id AND estado_nuevo = p.estado
+                 ORDER BY fecha DESC LIMIT 1
+               ) h ON true
+               LEFT JOIN LATERAL (
+                 SELECT u.nombre AS domiciliario_nombre
+                 FROM asignaciones_domicilio ad
+                 JOIN domiciliarios_planta dp ON dp.id = ad.domiciliario_planta_id
+                 JOIN usuarios u ON u.id = dp.usuario_id
+                 WHERE ad.pedido_id = p.id
+                   AND ad.estado IN ('asignado', 'en_camino', 'entregado')
+                 ORDER BY ad.asignado_at DESC LIMIT 1
+               ) dom ON true
+               WHERE p.sucursal_id = $1
+                 AND p.tipo = 'domicilio'
+                 AND p.estado IN ('listo', 'asignado', 'en_camino')
+             ) base
+             WHERE (base.estado = 'listo'
+                    AND base.estado_desde < now() - interval '8 minutes')
+                OR (base.estado IN ('asignado', 'en_camino')
+                    AND base.estado_desde < now() - interval '25 minutes')
+             ORDER BY base.estado_desde ASC
+             LIMIT 8
+           ) demoras
+         ), '[]'::json) AS domicilios_tardios`,
       [sucursalId, ESTADOS_PEDIDO_ACTIVO],
     );
 
@@ -274,6 +346,7 @@ export class DashboardService {
       pedidos_pendientes_qr: Number(fila.pedidos_pendientes_qr ?? 0),
       pedidos_completados_hoy: Number(fila.pedidos_completados_hoy ?? 0),
       alertas_pendientes: Number(fila.alertas_pendientes ?? 0),
+      domicilios_tardios: fila.domicilios_tardios ?? [],
     };
   }
 }

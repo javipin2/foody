@@ -18,6 +18,8 @@ const alertas_riesgo_service_1 = require("../alertas/alertas-riesgo.service");
 const auditoria_service_1 = require("../auditoria/auditoria.service");
 const caja_movimientos_service_1 = require("../../core/caja/caja-movimientos.service");
 const pedidos_soporte_service_1 = require("./pedidos-soporte.service");
+const pedidos_estado_command_service_1 = require("./pedidos-estado-command.service");
+const pedidos_cuenta_mesa_service_1 = require("./pedidos-cuenta-mesa.service");
 let PedidosDescuentoService = class PedidosDescuentoService {
     database;
     facturacion;
@@ -25,13 +27,17 @@ let PedidosDescuentoService = class PedidosDescuentoService {
     soporte;
     auditoria;
     cajaMovimientos;
-    constructor(database, facturacion, alertasRiesgo, soporte, auditoria, cajaMovimientos) {
+    estadoCommand;
+    cuentaMesa;
+    constructor(database, facturacion, alertasRiesgo, soporte, auditoria, cajaMovimientos, estadoCommand, cuentaMesa) {
         this.database = database;
         this.facturacion = facturacion;
         this.alertasRiesgo = alertasRiesgo;
         this.soporte = soporte;
         this.auditoria = auditoria;
         this.cajaMovimientos = cajaMovimientos;
+        this.estadoCommand = estadoCommand;
+        this.cuentaMesa = cuentaMesa;
     }
     async aplicarDescuento(pedidoId, sucursalId, usuarioId, dto, contexto) {
         if (!contexto.permisos.includes('aplicar_descuento')) {
@@ -47,7 +53,7 @@ let PedidosDescuentoService = class PedidosDescuentoService {
             throw new common_1.BadRequestException('El motivo del descuento es obligatorio');
         }
         const result = await this.database.enTransaccion(async (client) => {
-            const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, estado, subtotal, costo_domicilio, descuento, total,
+            const pedido = await this.soporte.consultarUnoCliente(client, `SELECT id, estado, tipo, mesa_id, subtotal, costo_domicilio, descuento, total,
                 COALESCE(monto_pagado, 0) AS monto_pagado, numero_pedido
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [pedidoId, sucursalId]);
             if (!pedido)
@@ -102,6 +108,27 @@ let PedidosDescuentoService = class PedidosDescuentoService {
                 pedidoId,
             ]);
             await this.facturacion.sincronizarBorradorDesdePedidoEnTransaccion(client, sucursalId, pedidoId);
+            let estadoFinal = pedido.estado;
+            const pagoCompletoTrasDescuento = nuevoPagado >= total - 0.01;
+            const requiereCierreCaja = pedido.tipo !== 'domicilio' &&
+                ['listo', 'pagando'].includes(pedido.estado) &&
+                pagoCompletoTrasDescuento;
+            if (requiereCierreCaja) {
+                const cambio = await this.estadoCommand.aplicarEstadoEnTransaccion(client, {
+                    pedidoId,
+                    sucursalId,
+                    nuevoEstado: 'pagado',
+                    origen: 'cobro',
+                    usuarioId,
+                    motivo: `Cierre por saldo cubierto tras descuento: ${dto.motivo.trim()}`,
+                    estadoAnterior: pedido.estado,
+                    tipo: pedido.tipo,
+                });
+                estadoFinal = cambio.nuevo;
+                if (cambio.nuevo === 'pagado' && pedido.mesa_id) {
+                    await this.cuentaMesa.liberarMesaSiSinPedidosActivos(client, pedido.mesa_id, sucursalId);
+                }
+            }
             if (pctBase > alertas_riesgo_service_1.UMBRALES_ALERTA.descuentoPorcentajeAlto) {
                 await this.alertasRiesgo.registrarEnTransaccion(client, {
                     sucursalId,
@@ -133,14 +160,17 @@ let PedidosDescuentoService = class PedidosDescuentoService {
             });
             return {
                 id: pedidoId,
-                estado: pedido.estado,
+                estado: estadoFinal,
+                mesa_id: pedido.mesa_id,
                 descuento,
                 porcentaje: Math.round(pctBase * 100) / 100,
                 total,
                 iva_valor: iva.iva_valor,
             };
         });
-        this.soporte.notificarPedidoRealtime(sucursalId, pedidoId, result.estado);
+        this.soporte.notificarPedidoRealtime(sucursalId, pedidoId, result.estado, undefined, {
+            mesaId: result.mesa_id,
+        });
         return result;
     }
 };
@@ -152,6 +182,8 @@ exports.PedidosDescuentoService = PedidosDescuentoService = __decorate([
         alertas_riesgo_service_1.AlertasRiesgoService,
         pedidos_soporte_service_1.PedidosSoporteService,
         auditoria_service_1.AuditoriaService,
-        caja_movimientos_service_1.CajaMovimientosService])
+        caja_movimientos_service_1.CajaMovimientosService,
+        pedidos_estado_command_service_1.PedidosEstadoCommandService,
+        pedidos_cuenta_mesa_service_1.PedidosCuentaMesaService])
 ], PedidosDescuentoService);
 //# sourceMappingURL=pedidos-descuento.service.js.map

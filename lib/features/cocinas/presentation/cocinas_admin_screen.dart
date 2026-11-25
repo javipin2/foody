@@ -8,6 +8,17 @@ import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/cocinas/data/cocinas_repository.dart';
 
+Widget _contenidoDialogoResponsive(BuildContext context, Widget child) {
+  final size = MediaQuery.sizeOf(context);
+  return ConstrainedBox(
+    constraints: BoxConstraints(
+      maxWidth: size.width * 0.9,
+      maxHeight: size.height * 0.58,
+    ),
+    child: SingleChildScrollView(child: child),
+  );
+}
+
 /// Gestión de cocinas e impresoras de la sucursal (admin/gerente).
 ///
 /// UX: header denso, KPIs de riesgo (sin impresora), dual Cocinas‖Impresoras
@@ -17,12 +28,14 @@ class CocinasAdminScreen extends StatefulWidget {
     super.key,
     required this.sucursalId,
     this.onIrKds,
+    this.repository,
   });
 
   final String? sucursalId;
 
   /// NAV-ADM2-13: atajo a cocina en vivo.
   final VoidCallback? onIrKds;
+  final CocinasRepository? repository;
 
   @override
   State<CocinasAdminScreen> createState() => _CocinasAdminScreenState();
@@ -31,7 +44,7 @@ class CocinasAdminScreen extends StatefulWidget {
 class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = CocinasRepository();
+  late final CocinasRepository _repo;
   List<Map<String, dynamic>> _cocinas = [];
   List<Map<String, dynamic>> _impresoras = [];
   bool _cargando = true;
@@ -40,6 +53,7 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? CocinasRepository();
     _cargar();
   }
 
@@ -65,8 +79,12 @@ class _CocinasAdminScreenState extends State<CocinasAdminScreen> {
       _error = null;
     });
     try {
-      final cocinas = await _repo.listarCocinas(sucursalId);
-      final impresoras = await _repo.listarImpresoras(sucursalId);
+      final resultados = await Future.wait([
+        _repo.listarCocinas(sucursalId),
+        _repo.listarImpresoras(sucursalId),
+      ]);
+      final cocinas = resultados[0];
+      final impresoras = resultados[1];
       if (!mounted) return;
       setState(() {
         _cocinas = cocinas;
@@ -909,20 +927,23 @@ class _DialogoNombreCocinaState extends State<_DialogoNombreCocina> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.titulo),
-      content: SizedBox(
-        width: 360,
-        child: TextField(
-          controller: _ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Nombre',
-            hintText: 'Cocina asados, Barra de bebidas…',
+      content: _contenidoDialogoResponsive(
+        context,
+        SizedBox(
+          width: 360,
+          child: TextField(
+            controller: _ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Nombre',
+              hintText: 'Cocina asados, Barra de bebidas…',
+            ),
+            onSubmitted: (_) {
+              final n = _ctrl.text.trim();
+              if (n.isNotEmpty) Navigator.pop(context, n);
+            },
           ),
-          onSubmitted: (_) {
-            final n = _ctrl.text.trim();
-            if (n.isNotEmpty) Navigator.pop(context, n);
-          },
         ),
       ),
       actions: [
@@ -1016,9 +1037,10 @@ class _DialogoImpresoraState extends State<_DialogoImpresora> {
     final esEdicion = widget.inicial != null;
     return AlertDialog(
       title: Text(esEdicion ? 'Editar impresora' : 'Nueva impresora'),
-      content: SizedBox(
-        width: 380,
-        child: SingleChildScrollView(
+      content: _contenidoDialogoResponsive(
+        context,
+        SizedBox(
+          width: 380,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1030,12 +1052,16 @@ class _DialogoImpresoraState extends State<_DialogoImpresora> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _cocinaId,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Cocina'),
                 items: [
                   for (final c in widget.cocinas)
                     DropdownMenuItem(
                       value: c['id'] as String,
-                      child: Text(c['nombre'] as String? ?? '—'),
+                      child: Text(
+                        c['nombre'] as String? ?? '—',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                 ],
                 onChanged: (v) {
@@ -1045,6 +1071,7 @@ class _DialogoImpresoraState extends State<_DialogoImpresora> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _tipo,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Tipo'),
                 items: const [
                   DropdownMenuItem(

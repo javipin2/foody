@@ -1,4 +1,8 @@
-﻿# INFORME MAESTRO FOODY — hallazgos, severidad y plan de corrección
+# INFORME MAESTRO FOODY — hallazgos, severidad y plan de corrección
+
+| PED-WAITER-PAYMENT-01 | Pedidos / Caja | 🟡 Corregido en Flutter y cubierto por widget test: pedidos creados por mesero enviaban `efectivo` aunque no existe UI para cobrar; ahora se envía `pendiente`. POS cajero conserva el default efectivo. Prueba focalizada 18/18, analyzer limpio, Cliente/Equipo Release publicados y seis rutas local/Tunnel HTTP 200. Aceptación visual autenticada pendiente. |
+| UI-USR-DEACTIVATE-01 | Usuarios / Acceso | 🟡 Corregido en Flutter: desactivar una cuenta ahora explica que perderá acceso y pide confirmación; cancelar no muta, confirmar usa el PATCH existente. Reactivación y matriz de permisos sin cambios. Widgets móvil/escritorio y roles 6/6; analyzer limpio; Equipo Release publicado y JS del Tunnel verificado por SHA-256. |
+| CAT-AVAILABILITY-UX-01 | Menú / Pedidos | 🟡 Corregido en Flutter: cambio de disponibilidad ahora indica progreso y, ante error de red, conserva el valor visible y ofrece reintento. Endpoint y lógica Nest intactos. Menú widget 13/13, analyzer limpio, Equipo Release publicado y JS público coincide por SHA-256. |
 
 > **Prompt 35 · Bloque H cierre**  
 > **Fecha:** 2026-08-06  
@@ -42,7 +46,8 @@ Foody es un **POS multi-restaurante usable en demo/piloto** (~74/100 arquitectur
 | ~~**RBAC-TENANT-01** / **SEC-BAC-01**~~ | Caja / Auth | ✅ **Cerrado F0** — `cerrar` scopea `caja.sucursal_id` | P06/P25 |
 | ~~**PED-PREPAGO-01**~~ | Pedidos + Caja | ✅ **Cerrado F0** — cobrado completo no bloquea cierre; cocina→`pagado` | P11/P29 |
 | ~~**VIE-01**~~ | Pedidos / Salón | ✅ **Cerrado F0** — add en `listo`/`pagando` → `en_cocina` | P30 |
-| ~~**COC-NODISP-01**~~ | Cocina | ✅ **Cerrado F0** — `no_disponible` cuenta resuelto → pedido `listo` | P12/P29 |
+| ~~**COC-NODISP-01**~~ | Cocina | ✅ **Cerrado F0** — 
+o_disponible` cuenta resuelto → pedido `listo` | P12/P29 |
 | **P0-01 / R5** | Impresión | Sin QA impresora térmica real — go-live salón incompleto | Roadmap |
 | **P0-05/06/07** | Infra / Pagos | Sin VPS HTTPS + Wompi prod → SaaS no cobra planes | Roadmap |
 
@@ -52,12 +57,35 @@ Foody es un **POS multi-restaurante usable en demo/piloto** (~74/100 arquitectur
 |----|--------|-----------|
 | **RT-RECON-01** / **INFRA-EXT-SYNC-01** / **VIE-12** | Realtime / Flutter | ✅ F1 refetch al reconectar/resume |
 | **INFRA-EXT-TO-01** | Red / Caja | ✅ F1 post-timeout GET + idempotency cobro |
+| **PED-POS-CAP-01** | Pedidos / POS | ✅ el POS registra y envía la capability requerida por `/pedidos/estimar`; prueba UI→API en Tunnel cotiza 35.000 COP sin crear pedido |
+| **CLIENT-DOM-CONTACT-01** | Checkout / Domicilio | ✅ domicilio requiere teléfono válido (7–15 dígitos) en Flutter y DTO; nombre opcional. Flutter 3/3, DTO 8/8, QR E2E 4/4 en QA aislada. API `:3000` requiere activar el build |
+| **E2E-CLEAN-TERMINAL-01** | QA / Pedidos | ✅ el limpiador ahora excluye `entregado` además de otros estados terminales; QA tenía 63 domicilios entregados y los 63 se preservaron en la regresión |
 | **API-IDEM-02** | Pedidos | ✅ F1 `idempotency_key` + `cobros_idempotencia` |
 | **API-IDEM-03** | Caja | ✅ F1 `uq_caja_abierta_sucursal` |
-| **RBAC-MESERO-01/02** | RBAC | ✅ F2 `cobrar_pedido` (mesero 403) |
-| **RBAC-MESERO-03** | RBAC | ✅ F2 mesero solo `pagando`/`cancelado` |
+| **RBAC-MESERO-01/02** | RBAC | ✅ ambas rutas de cobro requieren `cobrar_pedido`; specs del guard 2026-11-23 bloquean mesero y permiten cajero |
+| **RBAC-MESERO-03** | RBAC | 🟡 `crear_pedido` protege alta, edición de líneas y PATCH de estado; mesero limita por servicio a `pagando`/`cancelado`, admin/gerente/cajero pueden transiciones válidas FSM. UI ahora explica el alcance. Separación de permisos por operación pendiente de decisión |
 | **CONS-STOCK-CASCADE-01** | Inventario / Menú | ✅ F2 cascade hermanos |
-| **RBAC-GUARD-01/02** | RBAC | ✅ F3 posesión anonimizar + `prueba-web` con permiso |
+| **FIN-REC-OPEN-01** | Finanzas / Pedidos / Domicilios | 🟣 E2E QA confirma que una venta de mesa efectivamente cobrada cuadra entre pedido, caja, Reportes y Analítica (delta igual al total, diferencia incremental $0). Sigue pendiente decidir reconocimiento de pedidos abiertos/impagos, abonos, devoluciones y costo de domicilio; la prueba de una venta cobrada no resuelve esa política contable. |
+| **FIN-MESA-SPLIT-01** | Pedidos / Caja / Reportes | 🟡 Corregido en fuente y probado en QA: al cobrar varios tickets de una mesa, cada método se distribuye entre los pedidos cubiertos y cada movimiento queda asociado al ticket correcto. :3000 sigue ejecutando el proceso anterior; activar después del reinicio coordinado permitido. |
+| **FIN-SPLIT-OVERCHARGE-01** | Pedidos / Caja | 🟡 Corregido y probado en QA: split por ítem omitía extras y no respetaba el saldo del ticket después de un abono; podía registrar de más en Caja. El backend ahora usa precio compartido de línea, prorratea descuento y rechaza antes de escribir (`ITEMS_EXCEDEN_SALDO`). :3000 sigue ejecutando el proceso anterior; requiere reinicio coordinado. |
+| **FIN-TIP-01** | Pedidos / Caja / Finanzas | 🟡 Decisión pendiente: `propina` se persiste en pagos y acumulado del pedido, pero no se incluye en movimientos de Caja. Definir si Caja refleja efectivo recibido incluyendo propina y cómo separar fondos propios del restaurante de valores por entregar al personal. |
+| **FIN-FIXED-PARTIAL-BALANCE-01** | Finanzas / Costos fijos | ✅ Resuelto y activo: el resumen descuenta abonos vinculados por sucursal, origen y mes, y expone saldo restante. Unitaria 2/2, SQL QA con rollback, build y API local/pública 200. |
+| **FIN-PAYROLL-PERIOD-01** | Finanzas / Nómina | 🟣 Pendiente: cualquier gasto de nómina del mes suprime la obligación completa; la consulta no calcula saldo ni usa `periodo_desde/hasta`, y frecuencia diaria/semanal/quincenal no define ciclos adeudados. Definir sueldo por ciclo, vencimientos, abonos y pagos atrasados antes de modelar el saldo. |
+| **FIN-TZ-01** | Reportes / Analítica / Finanzas | ✅ Corregido y activo en :3000: límites de rango (ventas, gastos y cierres) usan calendario America/Bogota; QA UTC, build y salud local/pública OK. `cloudflared` PID 11112 sigue activo. |
+| **FIN-GASTO-DATE-01** | Analítica / Finanzas | 🟣 Pendiente: Analítica Caja filtra por gastos.created_at (registro), P&L por gastos.fecha (fecha operativa). Una captura retroactiva puede caer en periodos distintos. Definir el calendario de comparación antes de alinear consultas; separado de FIN-DATE-01 (fecha de pedido vs movimiento de caja). |
+| **FIN-MIXED-REFUND-METHOD-01** | Caja / Reportes / Analítica | 🟡 Corregido en fuente/dist; unitaria 3/3 y E2E 1/1 en clon QA confirman devolución por el mismo medio (efectivo/tarjeta) y neto conciliado. :3000 todavía requiere activar y verificar el build probado. |
+| **QA-EXTERNAL-EFFECTS-01** | QA / Notificaciones / Impresión | ✅ El modo `FOODY_QA_SIN_EFECTOS=1` ya bloquea el procesamiento inmediato de FCM (sin leer ni reintentar la cola) y el ping/drenaje de impresión. Unitarias de protección 3/3; build y E2E completa 8/8 suites, 36/36 en clon con logs de bloqueo. |
+| **COC-CANCEL-NODISP-MERMA-01** | Cocina / Inventario / Pedidos | 🟡 Fuente corregida y E2E 1/1 en clon QA aislado: la cancelación omite merma N/D ya registrada por Cocina. `QA-PRINT-BYPASS-01` también corregido: en `FOODY_QA_SIN_EFECTOS=1` ping y drenaje de impresora no hacen I/O externo; unitarias 2/2, build OK. :3000 requiere activación. Pendiente precisar si `en_cocina` sin líneas iniciadas implica merma total. |
+| **COC-DISPATCH-INCOMPLETE-01** | Cocina / Domicilios / Pedidos | 🟡 Fuente corregida y E2E 1/1 en clon PostgreSQL QA: ítem pendiente impide transición a `listo`; asignación manual responde 400 y búsqueda independiente `iniciado=false/PEDIDO_NO_LISTO`. Guard unitario 5/5. :3000 no se reinició, así que falta activar build y verificar runtime. |
+| **PED-EDIT-01** | Pedidos / Cocina / Caja | 🟡 Fuente corregida; E2E 4/4 en clon QA: observación tras `listo` reabre Cocina; edición de cantidad, eliminación y reemplazo que dejan total bajo abono responden 409 y conservan total (16.000), abono (15.000) y líneas por rollback. :3000 aún requiere activación runtime. |
+| **COC-NODISP-DOM-01** | Cocina / Domicilios / Caja | 🟡 Barrera compartida bloquea dispatch automático, asignación manual de planta, crear oferta y aceptar oferta independiente mientras exista línea 
+o_disponible`. QA E2E aislada: flujo cocina→`listo` y dos vías de despacho bloqueadas; regresión secuencial 8/8 suites, 16/16 pruebas. Nest :3000 sigue sin reinicio, por lo que la API del Tunnel conserva binario anterior. Política de ajuste de línea, consentimiento del cliente y abonos sigue pendiente |
+| **DOM-CANCEL-PAYOUT-01** | Domicilios / Finanzas | 🟡 Comisión y saldo del independiente se crean al aceptar oferta; una cancelación posterior no los revierte y el resumen los conserva por pagar. Confirmar si se compensa el intento/ruta cancelada antes de ajustar cálculo. |
+| **DOMI-LIQUIDACION-METODO-EXTERNO-01** | Domicilios / Caja / Finanzas | 🟣 En fiado de planta, la CxC liquida la parte de caja, pero el método real del cobro fuera de caja no se captura; al liquidar `pedidos.metodo_pago` queda `efectivo` incluso con abonos/mezcla. Definir semántica del ledger y capturar el medio realmente recibido antes de ajustar conciliación. |
+| **DOM-INDEP-SETTLE-01** | Domicilios / Finanzas | 🔴 `ganancias_domiciliario.pagado` queda siempre false en el código: no hay mutación ni flujo auditado de payout. La comisión se registra al aceptar (antes de entrega) y aparece como ingreso estimado aunque pueda cancelarse. Definir pagador, fuente de fondos, evento de devengo, cancelación y comprobante antes de crear liquidaciones. |
+| **CLIENT-DEVICE-CAP-01** | Cliente / Pedidos públicos | 🟡 Mitigación aplicada: secret capability separado del device_id, hash SHA-256 backend y posesión requerida para historial/acciones/vínculo Google; migración 092 y Web/APK reconstruidos. Pendiente riesgo de primer enrolamiento legacy, exposición ante XSS Web y recuperación/rotación. Evidencia en `AUDITORIA_CLIENTES_QR.md`. |
+| **RL-GLOBAL-01** / **AQ-SCALE-05** | API / Seguridad | 🟡 Fix en fuente 2026-11-23: el guard atrapaba su propio HTTP 429 y caía al mapa local; 3 specs + build OK. API :3000 conserva proceso anterior. Tras reinicio controlado verificar el límite compartido; decidir si ante caída DB se permite fallback (fail-open) o se rechaza petición (fail-closed). |
+| **RBAC-GUARD-01/02/03** | RBAC | ✅ Posesión al anonimizar, push web limitado al usuario y cola global reservada a Super Admin; falta billing staff y scopes de jobs |
 | **CFG-GLOBAL-DEAD** / **HUER-CFG-02** | Config | ✅ F3 runtime lee `configuracion_global_foody` |
 | **AUTH-STORE-01** | Auth | ✅ F4 JWT en `flutter_secure_storage` (+ migración prefs) |
 | **AUTH-FLOW-01/02** | Auth | Sin refresh / logout server-side |
@@ -70,7 +98,7 @@ Foody es un **POS multi-restaurante usable en demo/piloto** (~74/100 arquitectur
 | **AQ-DUP-01** | Inventario | ✅ `StockMovimientoService` (+ producción costeo) |
 | **AQ-CYCLE-01** | Nest | ✅ F7 — hooks dispatch; deps one-way |
 | **DK-SEC-03** / **DK-LOG-01** | Docker | JWT débil pasa validador; logs sin rotación |
-| **INF-TUN-01** / **INF-DISK-01** / **BD-BKP-01** | Infra | Tunnel/VPS/disco/backups no endurecidos |
+| **INF-TUN-01** / **INF-DISK-01** / **BD-BKP-01** | Infra | 🟡 Smoke check de Cliente/Equipo/API añadido; se reprodujo 530/1033 con proceso `cloudflared` aún presente y se restauró. Token-file temporal restringido evita exponer el secreto en argv. Rotación de token pendiente por exposición en salida de diagnóstico; VPS, disco y backups siguen sin endurecer. |
 | **PERF-LOAD** / **CAP-LOAD-01** | Perf | 200 conc → p50 7–10 s (techo lab) |
 | **DASH-TZ-01** | Dashboard | ✅ F6 `(created_at AT TIME ZONE 'America/Bogota')` |
 | **BN-EXC-01** | Pagos | Fallos Wompi fuente/renovación tragados |
@@ -108,7 +136,8 @@ Naming `reserva_canchas`, scripts RT-SCRIPT, FSM ítem cocina, evidencia foto do
 | **Config/Super** | — | CFG-GLOBAL-DEAD | `AUDITORIA_CONFIGURACION` |
 | **Impresión** | P0-01/R5 | BN-EXC-18 encolado | `IMPRESION_RESTAURANTE` |
 | **Infra/Deploy** | P0-05…07 | DK-*, INF-*, BD-BKP | DOCKER_ENV, INFRA, PREPROD |
-| **Reportes/Dash** | — | DASH-TZ, CONS-REP-OPEN | REPORTES, DASHBOARD |
+| **Reportes/Dash** | FIN-TZ-01 ✅ | FIN-GASTO-DATE-01 🟣 · FIN-DATE-01 🟣 · DASH-TZ · CONS-REP-OPEN | REPORTES, DASHBOARD |
+| **Cliente / QR** | CLIENT-DEVICE-CAP-01 🟣 | QR-FLOW, CLIENT-DOM-CONTACT | CLIENTES_QR, AUTH_JWT |
 | **Escala/Viral** | — | *(§6 — no código hoy)* | CAPACITY, VIRAL_SPIKE |
 
 ---
@@ -127,7 +156,7 @@ Naming `reserva_canchas`, scripts RT-SCRIPT, FSM ítem cocina, evidencia foto do
 | **Sev** | Crítico |
 | **Estado** | ✅ **Cerrado F0 (2026-08-06)** — `CajaService.cerrar` → `resolverEscritura(usuario, caja.sucursal_id)` |
 | **Archivo** | `foody_backend/src/modulos/caja/caja.service.ts` · `caja.controller.ts` |
-| **Test** | `verificar-idor-scope.ps1` — cerrar caja sede Norte con gerente Centro → 403 |
+| **Test** | `verificar-idor-scope.ps1` — caja hermana de otra sede → 403; extendido en clon QA 2026-11-24: admin de restaurante A intenta cerrar caja de restaurante B → 403, caja B permanece abierta |
 
 ---
 
@@ -158,7 +187,8 @@ Naming `reserva_canchas`, scripts RT-SCRIPT, FSM ítem cocina, evidencia foto do
 | | |
 |--|--|
 | **Sev** | Crítico ops |
-| **Estado** | ✅ **Cerrado F0 (2026-08-06)** — `no_disponible` cuenta resuelto; pendientes=0 → `listo` (+ prepago → `pagado`) |
+| **Estado** | ✅ **Cerrado F0 (2026-08-06)** — 
+o_disponible` cuenta resuelto; pendientes=0 → `listo` (+ prepago → `pagado`) |
 | **Archivo** | `cocinas.service.ts` `cambiarEstadoItem` |
 | **Decisión** | N/D cierra ticket a nivel ítem; pedido avanza si el resto está listo/N/D |
 | **Test** | Jest `cocina.e2e` COC-NODISP → `listo` |
@@ -273,7 +303,8 @@ Naming `reserva_canchas`, scripts RT-SCRIPT, FSM ítem cocina, evidencia foto do
 |--|--|
 | **Sev** | Alto |
 | **Estado** | ✅ anonimizar exige posesión (`fcm_token` / auth); no muta `plataforma` inválida; `prueba-web` → `@Permisos('ver_dashboard')` + tokens propios |
-| **Archivo** | `dispositivos.{controller,service}.ts` · `notificaciones.controller.ts` |
+| **Archivo** | `dispositivos.{controller,service}.ts` · 
+otificaciones.controller.ts` |
 
 ---
 
@@ -418,3 +449,46 @@ Un restaurante piloto **puede operar un viernes** si:
 | 2026-08-06 | Prompt 35 — primera consolidación 01–34; plan F0–F8; §6 CAP/VIRAL separado |
 
 **Mantenedor:** actualizar este archivo al cerrar cada fase F0–F5 (marcar IDs ✅ y bajar horas restantes). El detalle forense sigue viviendo en `AUDITORIA_*.md`; este informe es la **cola de trabajo**.
+
+### PED-KEY-SCOPE-01 — clave idempotente de pedido fuera de ámbito de tenant — ✅ corregido (alto)
+
+La clave global podía devolver metadatos y token de seguimiento de un pedido de otra sucursal. Se corrigió el scope a `(sucursal_id, clave)`, se añadió huella de payload con conflicto ante contenido diferente y se migró la tabla a PK compuesta con RLS forzada. QA aislada comprobó replay, conflicto y rechazo de reuso cross-sucursal. En la BD diaria se migraron 164 claves históricas con sucursal asociada; huella nula se admite temporalmente para idempotencia legacy. E2E completo 8/26, unitarias 31/72, build OK. Nest diario activo PID 11708. Evidencia ampliada: `docs/archivo/auditorias-prompts/AUDITORIA_PEDIDOS_CICLO_VIDA.md`.
+
+### COC-NODISP-COMMERCE-01 — artículo no servido conserva precio — 🟣 abierto (alto)
+
+La transición de Cocina a 
+o_disponible` marca merma y catálogo, y permite cerrar a `listo`, pero no modifica importe, saldo pagado, movimientos de caja ni factura. Para domicilios se impide el despacho; en mesa/recogida no hay reconciliación específica. El borrado manual de línea recalcula subtotal/total, pero no opera reembolso ni corrige abonos ya recibidos. No se cambia dinero ni stock por conjetura: definir sustitución autorizada, anulación de línea y reembolso/compensación para estados prepago/abono. E2E cocina QA 3/3; falta cobertura de saldo financiero. Detalle en `AUDITORIA_PEDIDOS_CICLO_VIDA.md` y matriz `AUDITORIA_CONSISTENCIA_MODULOS.md`.
+
+### PED-DELETE-NODISP-STOCK-01 — restauración indebida tras merma — ✅ cerrado (media)
+
+`eliminarItemPedido()` trataba 
+o_disponible` como pendiente de preparación y reponía ingredientes, aunque el cambio N/D ya había registrado merma. La línea N/D ahora no restaura stock. E2E QA compara inventario y total tras alta, N/D y eliminación; batería 9/9, Jest E2E 27/27, unitarias 72/72, build y Flutter relacionado 50/50. El ajuste comercial de total/reembolso permanece separado en COC-NODISP-COMMERCE-01. Evidencia: `AUDITORIA_PEDIDOS_CICLO_VIDA.md`.
+| **PED-ENCARGO-QUOTE-DATE-01** | Pedidos / Checkout | ✅ Fuente corregida: cotizar encargo antes de seleccionar fecha; creación real mantiene validación estricta. Jest 5/5; falta E2E runtime. |
+
+| **PED-CLIENT-CANCEL-RACE-01** | Pedidos / cancelación cliente | ✅ Fuente endurecida contra transición concurrente a cocina; prueba unitaria 1/1. Pendiente build/runtime. |
+
+**Actualización PED-CLIENT-CANCEL-RACE-01:** regresión verificada en suite Nest completa 34/34 suites, 79/79 pruebas, y build OK; cliente conserva su validación de fecha límite particular.
+
+**DOM-EARNINGS-TRUTH-01 (2026-11-24):** corregida la presentación para no confundir comisión/ganancia estimadas con entrega, cobro o pago. Agrega estado de asignación a las filas de lectura. Flutter 22/22 y analyzer limpios; no toca cálculos. DOM-CANCEL-PAYOUT-01 continúa abierto: falta decidir devengo, pagador y compensación.
+
+| **POS-COTIZACION-CASH-GUARD-01** | POS / Caja | ✅ Cobro inmediato para llevar requiere cotización Nest vigente; reintento visible ante error. Flutter 16/16; build QA correcto; pendiente publicar y probar con sesión real. |
+| **PED-POS-REPLACE-ATOMIC-01** | POS / Pedidos / Inventario | 🟡 Fix en fuente/dist: reemplazo agrega/quita en una transacción, es idempotente y bloquea líneas cobradas o reembolsos implícitos; POS envía una solicitud. Nest 37/92; Flutter 237 aprobadas/5 E2E omitidas, POS+repo 20/20. API :3000 aún sin reinicio coordinado. |
+| **PED-CANCEL-REFUND-SEMANTICS-01** | Pedidos / Caja / Pagos | 🟣 Personal elevado puede cancelar pedidos ya pagados: Caja se revierte por método/caja y `monto_pagado` se pone en cero, pero no se ejecuta ni prueba reintegro externo. Definir dueño, evidencia, estado y conciliación del reembolso para evitar doble devolución manual. El copy Kanban quedó aclarado por PED-CANCEL-COPY-01. |
+| **PED-CANCEL-RBAC-01** | Pedidos / Usuarios / Permisos | 🟣 Kanban/detalle enseñaban acciones que backend rechaza; CTAs de transición ahora requieren `crear_pedido` y aprobar/rechazar QR `aprobar_pedido_mesa`. Cancelar replica en UI los límites de rol/estado/2 min para no elevados. Solo lectura + cajero con pedido antiguo verificados; responsive 4/4, Kanban 12/12, analyzer OK. `cancelar_pedido` asignado a admin/gerente sigue sin uso; definir matriz antes de cambiar privilegios. |
+
+### PED-DISCOUNT-READY-CLOSE-01 — saldo cubierto por descuento deja estado abierto — ✅ corregido en fuente (2026-11-24)
+
+Al reducir el total de un pedido de salón listo/pagando por debajo de lo abonado, el servicio ajustaba `monto_pagado` y caja pero conservaba el estado anterior. Ahora usa la transición central a `pagado` cuando la cocina está completa y el nuevo saldo queda cubierto; no adelanta `en_cocina` ni evita que despacho reciba domicilio listo. Nest 36/36 suites y 86/86 pruebas, build OK; pendiente activar runtime.
+
+### FIN-DISCOUNT-REFUND-METHOD-01 — devolución por descuento sin método — 🟣 decisión pendiente
+
+`PedidosDescuentoService` registra el exceso como `devolucion` con `metodo_pago = NULL`; Reportes/Analítica lo presentan como `sin_metodo`. Definir si debe conservar el medio original, solicitar el medio real usado por caja o distribuir pagos mixtos. Sin cambios contables hasta acordar la regla.
+**Verificación extendida:** junto al estado final se libera la mesa si queda sin pedidos activos y se emite evento realtime; prueba unitaria cubre ambos efectos. Suite Nest 36/36 y 86/86, build/formato OK. Runtime aún no activado.
+
+### PUSH-PERM-STATUS-01 — token FCM web rechazado por comparación de tipos — ✅ corregido en fuente
+
+El resultado de `requestPermission()` es `NotificationSettings`; se comparaba el objeto con `AuthorizationStatus` y una autorización podía fallar la validación. Se compara ahora `permission.authorizationStatus`. Validación Dart focalizada sin errores/warnings; Flutter 236 aprobadas y 5 E2E omitidas por DB aislada. No se activaron permisos ni se cambió OAuth. El servicio de notificaciones queda corregido en fuente; los artefactos no se publicaron en este paso.
+
+### DOMI-TOTAL-ENTREGAS-ACCEPT-01 — contador suma aceptación como entrega — ✅ corregido en fuente
+
+El incremento de `total_entregas` se movió desde `responderOferta()` hasta `confirmarEntrega()`, dentro de la transacción de cierre; aceptar/cancelar ya no produce una entrega falsa. Sin alterar histórico. Suite domiciliarios 4/4; Nest completa 36/36 suites y 87/87 pruebas; build/formato OK. La fuente/dist espera activación de runtime.

@@ -17,6 +17,7 @@ const auditoria_service_1 = require("../auditoria/auditoria.service");
 const database_service_1 = require("../../core/database/database.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
 const notificaciones_service_1 = require("../notificaciones/notificaciones.service");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let PedidosQrCronService = PedidosQrCronService_1 = class PedidosQrCronService {
     database;
     notificaciones;
@@ -32,6 +33,10 @@ let PedidosQrCronService = PedidosQrCronService_1 = class PedidosQrCronService {
         this.auditoria = auditoria;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Cron QR pausado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_PEDIDOS_QR_CRON, () => this.ejecutar()), 60_000);
         setTimeout(() => void this.database.intentarAdvisoryLock(this.LOCK_PEDIDOS_QR_CRON, () => this.ejecutar()), 15_000);
     }

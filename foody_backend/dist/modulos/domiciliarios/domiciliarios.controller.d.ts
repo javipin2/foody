@@ -57,6 +57,10 @@ export declare class DomiciliariosPlantaController {
     dispatchIndependiente(pedidoId: string, usuario: JwtPayload, sucursalId?: string): Promise<{
         iniciado: boolean;
         motivo: string;
+        mensaje: string;
+    } | {
+        iniciado: boolean;
+        motivo: string;
         oferta_id: string;
         intento?: undefined;
         mensaje?: undefined;
@@ -95,7 +99,32 @@ export declare class DomiciliariosPlantaController {
 export declare class DomiciliarioPlantaController {
     private readonly domiciliariosService;
     constructor(domiciliariosService: DomiciliariosService);
-    pedidosAsignados(usuario: JwtPayload): Promise<import("pg").QueryResultRow[]>;
+    pedidosAsignados(usuario: JwtPayload): Promise<{
+        saldo_pendiente: number;
+        requiere_cobro: boolean;
+        producto_total: number;
+        producto_pendiente: number;
+        domicilio_pendiente: number;
+        id: string;
+        numero_pedido: string;
+        tipo: string;
+        estado: string;
+        cliente_nombre: string | null;
+        cliente_telefono: string | null;
+        direccion_entrega: string | null;
+        lat: string | null;
+        lng: string | null;
+        subtotal: string;
+        costo_domicilio: string;
+        total: string;
+        monto_pagado: string;
+        metodo_pago: string | null;
+        created_at: string;
+        estado_asignacion: string;
+        asignado_at: string;
+        permite_fiado_domiciliario: boolean;
+        domicilio_ingresa_a_caja: boolean;
+    }[]>;
     enCamino(pedidoId: string, usuario: JwtPayload): Promise<{
         pedido_id: string;
         estado: string;
@@ -177,7 +206,32 @@ export declare class DomiciliariosIndependientesController {
         asignacion_id: string;
         estado: string;
     }>;
-    pedidosActivos(usuario: JwtPayload): Promise<import("pg").QueryResultRow[]>;
+    pedidosActivos(usuario: JwtPayload): Promise<{
+        saldo_pendiente: number;
+        requiere_cobro: boolean;
+        producto_total: number;
+        producto_pendiente: number;
+        domicilio_pendiente: number;
+        id: string;
+        numero_pedido: string;
+        estado: string;
+        cliente_nombre: string | null;
+        cliente_telefono: string | null;
+        direccion_entrega: string | null;
+        subtotal: string;
+        total: string;
+        monto_pagado: string;
+        metodo_pago: string | null;
+        costo_domicilio: string;
+        lat: string | null;
+        lng: string | null;
+        estado_asignacion: string;
+        asignado_at: string;
+        sucursal_nombre: string;
+        sucursal_direccion: string | null;
+        sucursal_lat: string | null;
+        sucursal_lng: string | null;
+    }[]>;
     enCamino(pedidoId: string, usuario: JwtPayload): Promise<{
         pedido_id: string;
         estado: string;

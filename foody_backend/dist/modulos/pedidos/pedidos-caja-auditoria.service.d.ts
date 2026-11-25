@@ -13,7 +13,7 @@ export declare class PedidosCajaAuditoriaService {
         exigirCaja?: boolean;
         descripcion?: string;
         usuarioId?: string;
-    }): Promise<void>;
+    }): Promise<boolean>;
     revertirVentasPedido(client: PoolClient, pedidoId: string, sucursalId: string, usuarioId?: string, motivo?: string): Promise<ReversaVentasPedidoResultado>;
     registrarAuditoria(client: PoolClient, sucursalId: string, pedidoId: string, datos: Record<string, unknown>): Promise<void>;
     registrarAuditoriaCobroMesa(client: PoolClient, sucursalId: string, mesaId: string, usuarioId: string, datos: Record<string, unknown>): Promise<void>;

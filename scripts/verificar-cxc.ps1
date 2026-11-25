@@ -1,7 +1,7 @@
 # Foody — QA cuentas por cobrar (P2-10): resumen, listado y cobro
 # Uso: powershell -File scripts/verificar-cxc.ps1
 $ErrorActionPreference = "Continue"
-$Base = "http://localhost:3000/api/v1"
+$Base = "http://127.0.0.1:3001/api/v1"
 $Sucursal = "c0000000-0000-4000-8000-000000000001"
 $Pass = "123456"
 

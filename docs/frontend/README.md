@@ -10,6 +10,7 @@
 | Orden | Documento | Para qué |
 |------:|-----------|----------|
 | 1 | [**FRONTEND_ROADMAP.md**](FRONTEND_ROADMAP.md) | **Maestro** — fases F0–F10, estado, changelog |
+| 1a | [**FOODY_PANEL_ADMIN_REDESIGN_MATRIX.md**](FOODY_PANEL_ADMIN_REDESIGN_MATRIX.md) | Inventario verificable de rutas, subvistas, interacciones y aceptación del rediseño admin |
 | 1b | [**FRONTEND_PLAN_EJECUCION.md**](FRONTEND_PLAN_EJECUCION.md) | Sprints 1–5 (orden implementación) |
 | 1c | [**FRONTEND_AUDITORIA_NAV_ADMIN.md**](FRONTEND_AUDITORIA_NAV_ADMIN.md) | **Nav/UX admin** ciclo 1 — NAV-ADM (cerrado) |
 | 1c2 | [**FRONTEND_AUDITORIA_NAV_ADMIN2.md**](FRONTEND_AUDITORIA_NAV_ADMIN2.md) | **Nav/UX admin** ciclo 2 — NAV-ADM2 (deep-links, móvil, cross-links) |

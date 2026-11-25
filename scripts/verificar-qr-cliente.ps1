@@ -194,7 +194,7 @@ Assert-Ok -Cond ([double]$edad -ge 30) -Msg "Pedido envejecido >30min (edad_min~
 $estExp = Sql-Scalar "SELECT estado FROM pedidos WHERE id='$pedExp';"
 Assert-Ok -Cond ($estExp -eq 'pendiente_aprobacion') -Msg 'Sin auto-rechazo continuo (sigue pendiente)'
 
-# Gap: mesa sin mesa_id en pedido cliente tipo mesa
+# QR-MESA-ID-01: pedido de mesa sin mesa_id debe rechazarse
 $devSin = 'qa-qr-sinmesa-' + [string](Get-Random)
 $sinMesa = Invoke-FoodyApi -Method POST -Path '/pedidos' -Body @{
     sucursal_id     = $sid
@@ -207,14 +207,14 @@ $sinMesa = Invoke-FoodyApi -Method POST -Path '/pedidos' -Body @{
 if ($sinMesa.ok -and $sinMesa.json.exito) {
     $pedSin = $sinMesa.json.datos.pedido_id
     if (-not $pedSin) { $pedSin = $sinMesa.json.datos.id }
-    $estSin = Sql-Scalar "SELECT estado FROM pedidos WHERE id='$pedSin';"
-    Assert-Ok -Cond ($estSin -eq 'pendiente_aprobacion') -Msg "GAP: tipo mesa sin mesa_id aceptado ($estSin)"
+    Assert-Ok -Cond $false -Msg 'QR-MESA-ID-01: tipo mesa sin mesa_id fue aceptado (regresión)'
     $null = Invoke-FoodyApi -Method PATCH -Path "/pedidos/$pedSin/estado?sucursal_id=$sid" -Headers $h -Body @{
         estado = 'cancelado'
-        motivo = 'QA sin mesa cleanup'
+        motivo = 'QA cleanup de regresión mesa sin ID'
     }
 } else {
-    Assert-Ok -Cond $true -Msg "tipo mesa sin mesa_id rechazado ($($sinMesa.json.error))"
+    $codigoSin = [string]$sinMesa.json.error
+    Assert-Ok -Cond ($sinMesa.status -ge 400 -and ($codigoSin -eq 'MESA_REQUERIDA' -or $codigoSin -eq 'SOLICITUD_INVALIDA')) -Msg "tipo mesa sin mesa_id rechazado ($codigoSin)"
 }
 
 # Cleanup pendientes QR

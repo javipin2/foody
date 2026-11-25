@@ -4,11 +4,14 @@ import { CalificarDomicilioClienteDto } from './dto/calificar-domicilio-cliente.
 import { LlamarMeseraClienteDto } from './dto/llamar-mesera-cliente.dto';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { PedidosService } from './pedidos.service';
+import { DispositivosService } from '../dispositivos/dispositivos.service';
 export declare class PedidosPublicController {
     private readonly pedidosService;
     private readonly supabaseAuth;
-    constructor(pedidosService: PedidosService, supabaseAuth: SupabaseAuthService);
-    crear(dto: CrearPedidoDto): Promise<{
+    private readonly dispositivos;
+    constructor(pedidosService: PedidosService, supabaseAuth: SupabaseAuthService, dispositivos: DispositivosService);
+    private verificarDevice;
+    crear(dto: CrearPedidoDto, capability?: string): Promise<{
         pedido_id: string;
         numero_pedido: string;
         subtotal: number;
@@ -85,7 +88,7 @@ export declare class PedidosPublicController {
         seguimiento_token: string;
         idempotente: boolean;
     }>;
-    estimar(dto: CrearPedidoDto): Promise<{
+    estimar(dto: CrearPedidoDto, capability?: string): Promise<{
         pedido_id: string;
         numero_pedido: string;
         subtotal: number;
@@ -162,8 +165,8 @@ export declare class PedidosPublicController {
         seguimiento_token: string;
         idempotente: boolean;
     }>;
-    listarMios(deviceId?: string, authorization?: string): Promise<import("pg").QueryResultRow[]>;
-    cancelar(id: string, dto: CancelarPedidoClienteDto): Promise<{
+    listarMios(deviceId?: string, authorization?: string, capability?: string): Promise<import("pg").QueryResultRow[]>;
+    cancelar(id: string, dto: CancelarPedidoClienteDto, capability?: string): Promise<{
         id: string;
         estado: string;
         estado_anterior: string;
@@ -179,17 +182,17 @@ export declare class PedidosPublicController {
             ventas_revertidas: number;
         };
     }>;
-    llamarMesera(id: string, dto: LlamarMeseraClienteDto): Promise<{
+    llamarMesera(id: string, dto: LlamarMeseraClienteDto, capability?: string): Promise<{
         pedido_id: string;
         mesa_id: string | null;
         mensaje: string;
     }>;
-    calificar(id: string, dto: CalificarDomicilioClienteDto): Promise<{
+    calificar(id: string, dto: CalificarDomicilioClienteDto, capability?: string): Promise<{
         pedido_id: string;
         calificacion: number;
         mensaje: string;
     }>;
-    estado(id: string, deviceId?: string, seguimientoToken?: string): Promise<{
+    estado(id: string, deviceId?: string, seguimientoToken?: string, capability?: string): Promise<{
         pedido_id: string;
         numero_pedido: string;
         estado_actual: string;

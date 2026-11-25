@@ -269,7 +269,9 @@ let AuthService = class AuthService {
                 email: usuario.email,
                 sucursal_id: usuario.sucursal_id,
                 restaurante_id: usuario.restaurante_id,
-                cocina_id: (0, roles_food_1.esRolCocina)(usuario.rol) ? (usuario.cocina_id ?? null) : null,
+                cocina_id: (0, roles_food_1.esRolCocina)(usuario.rol)
+                    ? (usuario.cocina_id ?? null)
+                    : null,
             },
         };
     }
@@ -494,7 +496,7 @@ let AuthService = class AuthService {
         }
         return { cerrado: true };
     }
-    async realtimeCanales(jwt, sucursalIdQuery) {
+    async realtimeCanales(jwt, sucursalIdQuery, cocinaIdQuery) {
         if (jwt.rol === 'domiciliario_independiente') {
             return {
                 realtime_canales: {
@@ -526,9 +528,27 @@ let AuthService = class AuthService {
             }
             sucursalOverride = sucursalIdQuery;
         }
-        return {
-            realtime_canales: this.canalesRealtimeParaUsuario(usuario, sucursalOverride),
-        };
+        const canales = this.canalesRealtimeParaUsuario(usuario, sucursalOverride);
+        if (cocinaIdQuery) {
+            const permisos = await this.permisosEfectivos(usuario.id, usuario.rol);
+            if (!permisos.includes('ver_cocina')) {
+                throw new common_1.ForbiddenException('No tienes permiso para ver cocina');
+            }
+            if ((0, roles_food_1.esRolCocina)(usuario.rol) && usuario.cocina_id !== cocinaIdQuery) {
+                throw new common_1.ForbiddenException('No puedes acceder a otra cocina');
+            }
+            const sucursalId = sucursalOverride ?? usuario.sucursal_id;
+            if (!sucursalId) {
+                throw new common_1.ForbiddenException('Selecciona una sucursal autorizada para abrir cocina');
+            }
+            const cocina = await this.database.consultarUno(`SELECT id FROM cocinas
+         WHERE id = $1 AND sucursal_id = $2 AND activa = true`, [cocinaIdQuery, sucursalId]);
+            if (!cocina) {
+                throw new common_1.ForbiddenException('La cocina no pertenece a la sucursal autorizada');
+            }
+            canales.cocina = this.realtime.topicCocina(cocinaIdQuery);
+        }
+        return { realtime_canales: canales };
     }
     async resumenSuscripcion(restauranteId) {
         if (!restauranteId)
@@ -596,7 +616,9 @@ let AuthService = class AuthService {
         return filas.map((f) => f.permiso);
     }
     async reemplazarPermisosUsuario(usuarioId, rol, permisos, client) {
-        const unicos = [...new Set(permisos.map((p) => p.trim()).filter(Boolean))].sort();
+        const unicos = [
+            ...new Set(permisos.map((p) => p.trim()).filter(Boolean)),
+        ].sort();
         if (unicos.length === 0) {
             throw new common_1.BadRequestException('Debes marcar al menos un permiso');
         }

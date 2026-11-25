@@ -14,6 +14,7 @@ import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/features/auth/data/auth_repository.dart';
 import 'package:reserva_canchas/features/domiciliarios/data/domiciliarios_independientes_repository.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/widgets/filtro_fechas_chips.dart';
+import 'package:reserva_canchas/features/domiciliarios/presentation/widgets/ganancias_estimadas_resumen.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/widgets/tarjeta_oferta_in_driver.dart';
 import 'package:reserva_canchas/features/domiciliarios/presentation/widgets/tarjeta_pedido_domiciliario.dart';
 import 'package:reserva_canchas/features/domiciliarios/services/tracking_ubicacion_service.dart';
@@ -169,7 +170,9 @@ class _DashboardDomiciliarioIndependienteScreenState
       if (mounted) {
         setState(() => _cargandoGanancias = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'ingresos'))),
+          SnackBar(
+            content: Text(mensajeErrorHttp(e, contexto: 'ganancias estimadas')),
+          ),
         );
       }
     }
@@ -299,7 +302,8 @@ class _DashboardDomiciliarioIndependienteScreenState
     }
   }
 
-  Future<String?> _elegirMetodoPago() async {
+  Future<String?> _elegirMetodoPago(Map<String, dynamic> pedido) async {
+    final saldoPendiente = num.tryParse('${pedido['saldo_pendiente']}');
     const opciones = [
       ('efectivo', 'Efectivo'),
       ('tarjeta', 'Tarjeta'),
@@ -312,11 +316,23 @@ class _DashboardDomiciliarioIndependienteScreenState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Método de pago al entregar',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Método de pago al entregar',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  if (saldoPendiente != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Saldo pendiente ${_moneda.format(saldoPendiente)}',
+                      ),
+                    ),
+                ],
               ),
             ),
             for (final op in opciones)
@@ -333,8 +349,12 @@ class _DashboardDomiciliarioIndependienteScreenState
   Future<void> _entregar(Map<String, dynamic> pedido) async {
     try {
       var metodo = pedido['metodo_pago'] as String?;
-      if (metodo == null || metodo == 'pendiente') {
-        metodo = await _elegirMetodoPago();
+      final requiereApi = pedido['requiere_cobro'];
+      final requiereCobro = requiereApi is bool
+          ? requiereApi
+          : metodo == null || metodo == 'pendiente';
+      if (requiereCobro) {
+        metodo = await _elegirMetodoPago(pedido);
         if (metodo == null) return;
       }
       await _repo.confirmarEntrega(
@@ -603,8 +623,7 @@ class _DashboardDomiciliarioIndependienteScreenState
                 elevation: 8,
                 child: ListTile(
                   title: const Text('Conéctate para recibir pedidos'),
-                  subtitle:
-                      const Text('Activa tu ubicación y disponibilidad'),
+                  subtitle: const Text('Activa tu ubicación y disponibilidad'),
                   trailing: FilledButton(
                     onPressed: _iniciarTurno,
                     child: const Text('Conectarme'),
@@ -792,15 +811,13 @@ class _DashboardDomiciliarioIndependienteScreenState
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (_, i) {
           final p = _pedidos[i];
-          final estado =
-              '${p['estado_asignacion'] ?? p['estado']}';
+          final estado = '${p['estado_asignacion'] ?? p['estado']}';
           return TarjetaPedidoDomiciliario(
             pedido: p,
             mostrarMiniMapa: true,
             mostrarIrRestaurante: true,
-            onSalir: estado == 'asignado'
-                ? () => _enCamino('${p['id']}')
-                : null,
+            onSalir:
+                estado == 'asignado' ? () => _enCamino('${p['id']}') : null,
             onEntregar: estado == 'en_camino' ? () => _entregar(p) : null,
           );
         },
@@ -823,7 +840,7 @@ class _DashboardDomiciliarioIndependienteScreenState
               children: [
                 const Expanded(
                   child: Text(
-                    'Ingresos',
+                    'Estimación de ganancias',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -845,38 +862,19 @@ class _DashboardDomiciliarioIndependienteScreenState
             },
           ),
         ),
-        if (_cargandoGanancias)
-          const LinearProgressIndicator(minHeight: 2),
+        if (_cargandoGanancias) const LinearProgressIndicator(minHeight: 2),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _cargarGanancias,
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Card(
-                  color: ColoresFoody.secundario.withValues(alpha: 0.12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Ganancia neta',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        Text(
-                          _moneda.format(total),
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text('$entregas entrega(s) en el rango'),
-                      ],
-                    ),
-                  ),
+                GananciasEstimadasResumen(
+                  total: total,
+                  registros: entregas is num
+                      ? entregas.toInt()
+                      : int.tryParse('$entregas') ?? _gananciasItems.length,
                 ),
-                const SizedBox(height: 12),
                 if (_gananciasItems.isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 40),
@@ -899,9 +897,16 @@ class _DashboardDomiciliarioIndependienteScreenState
                         subtitle: Text(() {
                           final raw = g['created_at'];
                           final dt = DateTime.tryParse('$raw');
-                          return dt != null
-                              ? _fecha.format(dt.toLocal())
-                              : '$raw';
+                          final fecha =
+                              dt != null ? _fecha.format(dt.toLocal()) : '$raw';
+                          final estado = switch (g['estado_asignacion']) {
+                            'asignado' => 'Oferta aceptada',
+                            'en_camino' => 'En camino',
+                            'entregado' => 'Entrega registrada',
+                            'cancelado' => 'Asignación cancelada',
+                            _ => 'Estado no disponible',
+                          };
+                          return '$fecha · $estado';
                         }()),
                         trailing: Text(
                           _moneda.format(

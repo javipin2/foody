@@ -77,17 +77,17 @@ Si el negocio **no** quiere descuento sobre combo: **gap** — no hay flag `excl
 | **PRECIO-COBRO-01** | ✅ | — | Cobro = total snapshot (no relee catálogo) | Script A/B |
 | **PROMO-STACK-01** | 🟡 | Media | Combo + promo se apilan (sin anti-stack) | Script C |
 | **PROMO-ONE-01** | ✅ | — | Máx. 1 promo; auto elige la mejor | Script C |
-| **PROMO-DEL-01** | 🟡 | Baja | DELETE hard puede fallar si FK pedidos (sin SET NULL) | Código/migración |
-| **PROMO-MANUAL-01** | 🟡 | Baja | Descuento manual sobrescribe monto sin limpiar `promocion_id` | `pedidos-descuento.service` |
+| **PROMO-DEL-01** | ✅ | — | Borrar promoción deja `pedidos.promocion_id` en NULL por FK `ON DELETE SET NULL` | Migración 089 |
+| **PROMO-MANUAL-01** | ✅ | — | Al aplicar descuento manual se limpia `promocion_id` para no afirmar que conserva el descuento de la promo | `pedidos-descuento.service.ts:126` |
 
 ---
 
 ## Backlog remediación sugerido
 
 1. **PROMO-FIX-01** — Flag `aplica_a_combos` / exclusividad combo↔promo.
-2. **PROMO-FIX-02** — Al DELETE: `ON DELETE SET NULL` o soft-delete.
-3. **PROMO-FIX-03** — Descuento manual limpia `promocion_id` o deja audit trail claro.
-4. **PROMO-FIX-04** — Recalcular % al agregar ítems (hoy monto fijo) = **CONS-PROMO-ADD-01** ([`AUDITORIA_CONSISTENCIA_MODULOS.md`](AUDITORIA_CONSISTENCIA_MODULOS.md)).
+2. **PROMO-FIX-02** — ✅ Resuelto: FK promocional `ON DELETE SET NULL` (migración 089).
+3. **PROMO-FIX-03** — ✅ Resuelto: el descuento manual limpia `promocion_id`; conservar la auditoría de la operación.
+4. **PROMO-FIX-04** — ✅ Resuelto en fuente: agregar, editar y eliminar líneas reutilizan el recálculo de promoción; el verificador integrado cubre agregar. Mantener pruebas dedicadas de edición/eliminación. Ver **CONS-PROMO-ADD-01** ([`AUDITORIA_CONSISTENCIA_MODULOS.md`](AUDITORIA_CONSISTENCIA_MODULOS.md)).
 
 ---
 
@@ -99,3 +99,9 @@ Si el negocio **no** quiere descuento sobre combo: **gap** — no hay flag `excl
 ```
 
 **Gaps:** click-through stories UI; descuento manual E2E no corrido en este script.
+
+**Matiz comercial por confirmar:** después de aplicar una promo a un pedido abierto, si la promo se desactiva, las rutas de agregar/editar/eliminar líneas siguen leyendo su porcentaje/monto por `promocion_id` y sucursal, sin exigir `activa=true`. El pedido existente puede conservar el beneficio al modificarse; pedidos nuevos sí deben validar la promo activa. Fuente comprobada, pero el script no prueba desactivar→agregar y la regla comercial no está especificada. Decidir si esa continuidad es parte del snapshot o si las líneas nuevas deben perder el beneficio; no se cambió el comportamiento.
+
+## Reconciliación de estado (2026-11-24)
+
+La ficha histórica se actualizó con el estado actual de código/migraciones: PROMO-DEL-01 y PROMO-MANUAL-01 están resueltos; PROMO-FIX-04/CONS-PROMO-ADD-01 también está corregido en fuente y el script integrado valida el caso de agregar ítems. En edición/eliminación de ítems existe un helper compartido, pero faltan casos QA dedicados. Permanece PROMO-STACK-01 como decisión del negocio: hoy combo y promoción pueden apilarse. No se cambió código ni se alteraron datos para esta reconciliación.

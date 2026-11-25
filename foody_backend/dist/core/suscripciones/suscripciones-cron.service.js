@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const database_service_1 = require("../database/database.service");
 const notificaciones_service_1 = require("../../modulos/notificaciones/notificaciones.service");
 const pagos_recurrentes_service_1 = require("../../modulos/pagos/pagos-recurrentes.service");
+const qa_safety_1 = require("../config/qa-safety");
 let SuscripcionesCronService = SuscripcionesCronService_1 = class SuscripcionesCronService {
     database;
     notificaciones;
@@ -27,6 +28,10 @@ let SuscripcionesCronService = SuscripcionesCronService_1 = class SuscripcionesC
         this.pagosRecurrentes = pagosRecurrentes;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Cron de suscripciones pausado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         void this.database.intentarAdvisoryLock(this.LOCK_SUSCRIPCIONES_CRON, () => this.ejecutar());
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_SUSCRIPCIONES_CRON, () => this.ejecutar()), 60 * 60 * 1000);
     }

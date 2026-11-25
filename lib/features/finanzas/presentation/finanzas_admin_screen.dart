@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
+import 'package:reserva_canchas/core/tema/foody_formulario.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
@@ -22,24 +25,38 @@ const _categorias = [
 
 const _frecuencias = ['diario', 'semanal', 'quincenal', 'mensual'];
 
+void _liberarControlesDespuesDelDialogo(
+  Iterable<TextEditingController> controles,
+) {
+  for (final control in controles) {
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 200), control.dispose),
+    );
+  }
+}
+
 /// Hub financiero premium. Solo UI; cálculos en API.
 class FinanzasAdminScreen extends StatefulWidget {
   const FinanzasAdminScreen({
     super.key,
     this.sucursalId,
     this.onVerRentabilidad,
+    this.repository,
+    this.analiticaRepository,
   });
 
   final String? sucursalId;
   final VoidCallback? onVerRentabilidad;
+  final FinanzasRepository? repository;
+  final AnaliticaRepository? analiticaRepository;
 
   @override
   State<FinanzasAdminScreen> createState() => _FinanzasAdminScreenState();
 }
 
 class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
-  final _repo = FinanzasRepository();
-  final _analitica = AnaliticaRepository();
+  late final FinanzasRepository _repo;
+  late final AnaliticaRepository _analitica;
 
   List<Map<String, dynamic>> _fijos = [];
   List<Map<String, dynamic>> _empleados = [];
@@ -58,6 +75,8 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? FinanzasRepository();
+    _analitica = widget.analiticaRepository ?? AnaliticaRepository();
     _cargarTodo();
   }
 
@@ -148,6 +167,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
               : RefreshIndicator(
                   onRefresh: _cargarTodo,
                   child: ListView(
+                    key: const ValueKey('finanzas-scroll'),
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
                     children: [
                       _header(context),
@@ -279,8 +299,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final ventas = _num(actual['ventas_netas'] ?? rent['ventas_netas']);
     final gastos = _num(actual['total_gastos'] ?? rent['total_gastos']);
     final cogs = _num(actual['costo_ventas'] ?? rent['costo_ventas']);
-    final utilBruta =
-        _num(actual['utilidad_bruta'] ?? rent['utilidad_bruta']);
+    final utilBruta = _num(actual['utilidad_bruta'] ?? rent['utilidad_bruta']);
     final utilNeta = _num(actual['utilidad_neta'] ?? rent['utilidad_neta']);
     final margenNeto =
         _num(actual['margen_neto_pct'] ?? rent['margen_neto_pct']);
@@ -300,12 +319,18 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
           subtitulo: 'Mes en curso',
           icono: Icons.account_balance_outlined,
         ),
+        const SizedBox(height: 12),
+        const SaaSInsightCard(
+          texto:
+              'Puede incluir pedidos pendientes o impagos; no equivale a cobros en caja.',
+          icono: Icons.info_outline_rounded,
+        ),
+        const SizedBox(height: 16),
         SaaSKpiGrid(
           children: [
             SaaSKpiCard(
               etiqueta: 'Ventas netas',
               valor: _moneda.format(ventas),
-              deltaPct: delta,
               icono: Icons.payments_outlined,
               acento: SaaSTokens.ventas,
             ),
@@ -349,9 +374,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
               valor: _moneda.format(utilNeta),
               deltaPct: delta,
               icono: Icons.account_balance_wallet_outlined,
-              acento: utilNeta >= 0
-                  ? SaaSTokens.positivo
-                  : SaaSTokens.negativo,
+              acento: utilNeta >= 0 ? SaaSTokens.positivo : SaaSTokens.negativo,
             ),
             SaaSKpiCard(
               etiqueta: 'Nómina mensual',
@@ -521,6 +544,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
                           },
                         )
                         .toList(),
+                    oscuro: Theme.of(context).brightness == Brightness.dark,
                   ),
                 ),
               ),
@@ -538,6 +562,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
                       .toList(),
                   'metodo_pago',
                   'total',
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
                 ),
               ),
             ],
@@ -598,8 +623,14 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
               SaaSTableColumn(id: 'concepto', label: 'Concepto', flex: 3),
               SaaSTableColumn(id: 'categoria', label: 'Categoría', flex: 2),
               SaaSTableColumn(
-                id: 'monto',
-                label: 'Mensual',
+                id: 'mensual',
+                label: 'Compromiso mensual',
+                flex: 2,
+                numeric: true,
+              ),
+              SaaSTableColumn(
+                id: 'pendiente',
+                label: 'Pendiente del mes',
                 flex: 2,
                 numeric: true,
               ),
@@ -609,7 +640,8 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
                 {
                   'concepto': f['concepto'] ?? '',
                   'categoria': f['categoria'] ?? 'otros',
-                  'monto': _moneda.format(_num(f['monto_mensual'])),
+                  'mensual': _moneda.format(_num(f['monto_mensual'])),
+                  'pendiente': _textoPendienteFijo(f),
                   '_raw': f,
                 },
             ],
@@ -640,6 +672,25 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     );
   }
 
+  double? _montoPendienteFijo(Map<String, dynamic> fijo) {
+    final resumenPendientes = _resumen?['pendientes'];
+    if (resumenPendientes is! Map) return null;
+    final fijosPendientes = resumenPendientes['fijos'];
+    if (fijosPendientes is! List) return null;
+    for (final pendiente in fijosPendientes) {
+      if (pendiente is Map && pendiente['id'] == fijo['id']) {
+        return _num(pendiente['monto']);
+      }
+    }
+    return 0;
+  }
+
+  String _textoPendienteFijo(Map<String, dynamic> fijo) {
+    final pendiente = _montoPendienteFijo(fijo);
+    if (pendiente == null) return 'No disponible';
+    return pendiente > 0 ? _moneda.format(pendiente) : 'Al día';
+  }
+
   Future<void> _dialogoEditarFijo(Map<String, dynamic> fijo) async {
     final sid = widget.sucursalId;
     if (sid == null) return;
@@ -667,67 +718,65 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Editar gasto fijo'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: conceptoCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Concepto',
-                    hintText: 'Arriendo, luz, gas…',
-                  ),
+        builder: (ctx, setLocal) => FoodyDialogoShell(
+          titulo: 'Editar gasto fijo',
+          maxWidth: 520,
+          contenido: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: conceptoCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Concepto',
+                  hintText: 'Arriendo, luz, gas…',
                 ),
-                TextField(
-                  controller: montoCtrl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Monto mensual',
-                  ),
+              ),
+              TextField(
+                controller: montoCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Monto mensual',
                 ),
-                DropdownButtonFormField<String>(
-                  // ignore: deprecated_member_use
-                  value: categoria,
-                  decoration: const InputDecoration(labelText: 'Categoría'),
-                  items: _categorias
-                      .map((c) => DropdownMenuItem(
-                            value: c,
-                            child: Text(c),
-                          ))
-                      .toList(),
-                  onChanged: (v) =>
-                      setLocal(() => categoria = v ?? 'otros'),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: categoria,
+                decoration: const InputDecoration(labelText: 'Categoría'),
+                items: _categorias
+                    .map((c) => DropdownMenuItem(
+                          value: c,
+                          child: Text(c),
+                        ))
+                    .toList(),
+                onChanged: (v) => setLocal(() => categoria = v ?? 'otros'),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: diaPagoCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'Día de pago (opcional)',
+                  hintText: '1..31',
                 ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: diaPagoCtrl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Día de pago (opcional)',
-                    hintText: '1..31',
-                  ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: notasCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Notas (opcional)',
+                  hintText: 'Referencia, proveedor, condiciones…',
                 ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: notasCtrl,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Notas (opcional)',
-                    hintText: 'Referencia, proveedor, condiciones…',
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -742,10 +791,9 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     );
 
     if (ok != true) {
-      conceptoCtrl.dispose();
-      montoCtrl.dispose();
-      notasCtrl.dispose();
-      diaPagoCtrl.dispose();
+      _liberarControlesDespuesDelDialogo(
+        [conceptoCtrl, montoCtrl, notasCtrl, diaPagoCtrl],
+      );
       return;
     }
 
@@ -755,10 +803,9 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final diaPagoTxt = diaPagoCtrl.text.trim();
     final diaPago = diaPagoTxt.isEmpty ? null : int.tryParse(diaPagoTxt);
 
-    conceptoCtrl.dispose();
-    montoCtrl.dispose();
-    notasCtrl.dispose();
-    diaPagoCtrl.dispose();
+    _liberarControlesDespuesDelDialogo(
+      [conceptoCtrl, montoCtrl, notasCtrl, diaPagoCtrl],
+    );
 
     if (concepto.isEmpty || monto == null || monto < 0) {
       if (!mounted) return;
@@ -955,14 +1002,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
             icono: Icons.check_circle_outline,
           )
         else
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final a in alerts)
-                SizedBox(width: 340, child: a),
-            ],
-          ),
+          _tarjetasResponsivas(alerts),
       ],
     );
   }
@@ -1008,15 +1048,25 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
             titulo: 'Sin insights todavía',
           )
         else
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final t in textos.take(6))
-                SizedBox(width: 340, child: SaaSInsightCard(texto: t)),
-            ],
-          ),
+          _tarjetasResponsivas([
+            for (final t in textos.take(6)) SaaSInsightCard(texto: t),
+          ]),
       ],
+    );
+  }
+
+  Widget _tarjetasResponsivas(List<Widget> children) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final ancho = constraints.maxWidth < 340 ? constraints.maxWidth : 340.0;
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final child in children) SizedBox(width: ancho, child: child),
+          ],
+        );
+      },
     );
   }
 
@@ -1031,9 +1081,11 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Nuevo gasto fijo'),
-          content: Column(
+        builder: (ctx, setLocal) => FoodyDialogoShell(
+          titulo: 'Nuevo gasto fijo',
+          maxWidth: 480,
+          contenido: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
@@ -1052,8 +1104,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
                 decoration: const InputDecoration(labelText: 'Monto mensual'),
               ),
               DropdownButtonFormField<String>(
-                // ignore: deprecated_member_use
-                value: categoria,
+                initialValue: categoria,
                 decoration: const InputDecoration(labelText: 'Categoría'),
                 items: _categorias
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
@@ -1062,7 +1113,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
               ),
             ],
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -1075,9 +1126,14 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
         ),
       ),
     );
-    if (ok != true) return;
+    if (ok != true) {
+      _liberarControlesDespuesDelDialogo([conceptoCtrl, montoCtrl]);
+      return;
+    }
     final monto = double.tryParse(montoCtrl.text.trim());
-    if (conceptoCtrl.text.trim().isEmpty || monto == null || monto < 0) {
+    final concepto = conceptoCtrl.text.trim();
+    _liberarControlesDespuesDelDialogo([conceptoCtrl, montoCtrl]);
+    if (concepto.isEmpty || monto == null || monto < 0) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Concepto y monto válidos requeridos')),
@@ -1087,7 +1143,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     try {
       await _repo.crearCostoFijo(
         sucursalId: sid,
-        concepto: conceptoCtrl.text.trim(),
+        concepto: concepto,
         montoMensual: monto,
         categoria: categoria,
       );
@@ -1108,9 +1164,11 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Nuevo empleado'),
-          content: Column(
+        builder: (ctx, setLocal) => FoodyDialogoShell(
+          titulo: 'Nuevo empleado',
+          maxWidth: 480,
+          contenido: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
@@ -1133,8 +1191,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
                 decoration: const InputDecoration(labelText: 'Sueldo base'),
               ),
               DropdownButtonFormField<String>(
-                // ignore: deprecated_member_use
-                value: frecuencia,
+                initialValue: frecuencia,
                 decoration: const InputDecoration(labelText: 'Frecuencia'),
                 items: _frecuencias
                     .map((f) => DropdownMenuItem(value: f, child: Text(f)))
@@ -1143,7 +1200,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
               ),
             ],
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -1156,9 +1213,15 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
         ),
       ),
     );
-    if (ok != true) return;
+    if (ok != true) {
+      _liberarControlesDespuesDelDialogo([nombreCtrl, cargoCtrl, sueldoCtrl]);
+      return;
+    }
     final sueldo = double.tryParse(sueldoCtrl.text.trim());
-    if (nombreCtrl.text.trim().isEmpty || sueldo == null || sueldo < 0) {
+    final nombre = nombreCtrl.text.trim();
+    final cargo = cargoCtrl.text.trim();
+    _liberarControlesDespuesDelDialogo([nombreCtrl, cargoCtrl, sueldoCtrl]);
+    if (nombre.isEmpty || sueldo == null || sueldo < 0) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nombre y sueldo válidos requeridos')),
@@ -1168,8 +1231,8 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     try {
       await _repo.crearEmpleado(
         sucursalId: sid,
-        nombre: nombreCtrl.text.trim(),
-        cargo: cargoCtrl.text.trim().isEmpty ? null : cargoCtrl.text.trim(),
+        nombre: nombre,
+        cargo: cargo.isEmpty ? null : cargo,
         sueldoBase: sueldo,
         frecuenciaPago: frecuencia,
       );
@@ -1189,19 +1252,15 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Gasto manual'),
-          content: Column(
+        builder: (ctx, setLocal) => FoodyDialogoShell(
+          titulo: 'Gasto manual',
+          subtitulo:
+              'No descuenta de la caja del turno (p. ej. transferencia).',
+          maxWidth: 480,
+          contenido: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'No descuenta de la caja del turno (p. ej. transferencia).',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: SaaSTokens.inkMuted(context),
-                ),
-              ),
-              const SizedBox(height: 8),
               TextField(
                 controller: conceptoCtrl,
                 decoration: const InputDecoration(labelText: 'Concepto'),
@@ -1215,8 +1274,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
                 decoration: const InputDecoration(labelText: 'Monto'),
               ),
               DropdownButtonFormField<String>(
-                // ignore: deprecated_member_use
-                value: categoria,
+                initialValue: categoria,
                 decoration: const InputDecoration(labelText: 'Categoría'),
                 items: _categorias
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
@@ -1225,7 +1283,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
               ),
             ],
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -1238,9 +1296,14 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
         ),
       ),
     );
-    if (ok != true) return;
+    if (ok != true) {
+      _liberarControlesDespuesDelDialogo([conceptoCtrl, montoCtrl]);
+      return;
+    }
     final monto = double.tryParse(montoCtrl.text.trim());
-    if (conceptoCtrl.text.trim().isEmpty || monto == null || monto <= 0) {
+    final concepto = conceptoCtrl.text.trim();
+    _liberarControlesDespuesDelDialogo([conceptoCtrl, montoCtrl]);
+    if (concepto.isEmpty || monto == null || monto <= 0) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Concepto y monto válidos requeridos')),
@@ -1250,7 +1313,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     try {
       await _repo.crearGastoManual(
         sucursalId: sid,
-        concepto: conceptoCtrl.text.trim(),
+        concepto: concepto,
         monto: monto,
         categoria: categoria,
       );
@@ -1267,7 +1330,7 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final pago = await _dialogoPago(
       titulo: 'Registrar pago',
       nombre: '${f['concepto']}',
-      montoSugerido: _num(f['monto_mensual']),
+      montoSugerido: _montoPendienteFijo(f) ?? _num(f['monto_mensual']),
     );
     if (pago == null) return;
     try {
@@ -1330,55 +1393,54 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
     final hastaCtrl = TextEditingController();
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(titulo),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                nombre,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: titulo,
+        maxWidth: 500,
+        contenido: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              nombre,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No afecta el arqueo de caja.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: SaaSTokens.inkMuted(ctx),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'No afecta el arqueo de caja.',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: SaaSTokens.inkMuted(ctx),
-                ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: montoCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Monto a registrar',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: montoCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: 'Monto a registrar',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: desdeCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Periodo desde (YYYY-MM-DD, opcional)',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: desdeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Periodo desde (YYYY-MM-DD, opcional)',
-                  border: OutlineInputBorder(),
-                ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: hastaCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Periodo hasta (YYYY-MM-DD, opcional)',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: hastaCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Periodo hasta (YYYY-MM-DD, opcional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-        actions: [
+        acciones: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
@@ -1391,17 +1453,13 @@ class _FinanzasAdminScreenState extends State<FinanzasAdminScreen> {
       ),
     );
     if (ok != true) {
-      montoCtrl.dispose();
-      desdeCtrl.dispose();
-      hastaCtrl.dispose();
+      _liberarControlesDespuesDelDialogo([montoCtrl, desdeCtrl, hastaCtrl]);
       return null;
     }
     final monto = double.tryParse(montoCtrl.text.trim()) ?? 0;
     final desde = desdeCtrl.text.trim();
     final hasta = hastaCtrl.text.trim();
-    montoCtrl.dispose();
-    desdeCtrl.dispose();
-    hastaCtrl.dispose();
+    _liberarControlesDespuesDelDialogo([montoCtrl, desdeCtrl, hastaCtrl]);
     if (monto <= 0) return null;
     return (
       monto: monto,

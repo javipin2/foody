@@ -364,8 +364,11 @@ let PedidosInventarioService = class PedidosInventarioService {
         return Number(items.rows[0]?.n ?? 0) > 0;
     }
     async registrarMermaPedidoCompleto(client, sucursalId, pedidoId, motivo) {
-        const items = await client.query(`SELECT producto_id, cantidad FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
+        const items = await client.query(`SELECT producto_id, cantidad, estado_cocina
+       FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
         for (const item of items.rows) {
+            if (item.estado_cocina === 'no_disponible')
+                continue;
             await this.registrarMermaLineaProducto(client, sucursalId, pedidoId, item.producto_id, Number(item.cantidad), motivo);
         }
     }

@@ -38,7 +38,11 @@ export class PedidosCajaAuditoriaService {
     mesaId: string | null | undefined,
     metodoPago: string,
   ): boolean {
-    if (!METODOS_CON_CAJA.includes(metodoPago as (typeof METODOS_CON_CAJA)[number])) {
+    if (
+      !METODOS_CON_CAJA.includes(
+        metodoPago as (typeof METODOS_CON_CAJA)[number],
+      )
+    ) {
       return false;
     }
     if (estadoInicial === 'pendiente_aprobacion') return false;
@@ -61,15 +65,21 @@ export class PedidosCajaAuditoriaService {
     pedidoId: string,
     total: number,
     metodoPago: string,
-    opciones?: { exigirCaja?: boolean; descripcion?: string; usuarioId?: string },
-  ): Promise<void> {
+    opciones?: {
+      exigirCaja?: boolean;
+      descripcion?: string;
+      usuarioId?: string;
+    },
+  ): Promise<boolean> {
     if (
-      !METODOS_CON_CAJA.includes(metodoPago as (typeof METODOS_CON_CAJA)[number])
+      !METODOS_CON_CAJA.includes(
+        metodoPago as (typeof METODOS_CON_CAJA)[number],
+      )
     ) {
-      return;
+      return false;
     }
 
-    await this.cajaMovimientos.registrarVentaPedido(
+    return this.cajaMovimientos.registrarVentaPedido(
       client,
       {
         sucursalId,

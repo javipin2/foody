@@ -160,13 +160,20 @@ __decorate([
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "cliente_nombre", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((pedido) => pedido.tipo === 'domicilio'),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)({
+        message: 'El teléfono de contacto es obligatorio para domicilios',
+    }),
+    (0, class_validator_1.Matches)(/^(?=(?:\D*\d){7,15}\D*$)\+?[\d\s().-]+$/, {
+        message: 'Ingresa un teléfono válido de 7 a 15 dígitos',
+    }),
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "cliente_telefono", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((pedido) => pedido.tipo === 'domicilio'),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Matches)(/\S/, { message: 'La dirección de entrega es obligatoria' }),
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "direccion_entrega", void 0);
 __decorate([

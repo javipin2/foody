@@ -122,12 +122,10 @@ let MesasService = class MesasService {
         ];
         if (dto.mesera_asignada_id !== undefined) {
             if (dto.mesera_asignada_id === null) {
-                sqlMesera =
-                    ', mesera_asignada_id = NULL, mesera_asignada_at = NULL';
+                sqlMesera = ', mesera_asignada_id = NULL, mesera_asignada_at = NULL';
             }
             else {
-                sqlMesera =
-                    ', mesera_asignada_id = $5, mesera_asignada_at = now()';
+                sqlMesera = ', mesera_asignada_id = $5, mesera_asignada_at = now()';
                 params.push(dto.mesera_asignada_id);
             }
         }
@@ -240,13 +238,43 @@ let MesasService = class MesasService {
         for (const id of mesasSecundarias) {
             await this.obtenerMesa(id, sucursalId);
         }
+        let mesasUnidas = mesasSecundarias;
         await this.database.enTransaccion(async (client) => {
-            for (const secId of mesasSecundarias) {
-                await client.query(`UPDATE mesas SET mesa_grupo_id = $3, estado_operativo = 'ocupada'
-           WHERE id = $1 AND sucursal_id = $2`, [secId, sucursalId, mesaPrincipalId]);
+            await client.query(`SELECT pg_advisory_xact_lock(hashtext($1), hashtext('mesas_unir'))`, [sucursalId]);
+            const mesasSeleccionadas = [mesaPrincipalId, ...mesasSecundarias];
+            const grupo = await client.query(`WITH RECURSIVE conectadas(id) AS (
+           SELECT m.id
+           FROM mesas m
+           WHERE m.sucursal_id = $1 AND m.activa = true
+             AND m.id = ANY($2::uuid[])
+           UNION
+           SELECT vecina.id
+           FROM conectadas actual
+           JOIN mesas mesa_actual
+             ON mesa_actual.id = actual.id
+            AND mesa_actual.sucursal_id = $1
+            AND mesa_actual.activa = true
+           JOIN mesas vecina
+             ON vecina.sucursal_id = $1
+            AND vecina.activa = true
+            AND (vecina.mesa_grupo_id = actual.id
+              OR mesa_actual.mesa_grupo_id = vecina.id)
+         )
+         SELECT id FROM conectadas ORDER BY id`, [sucursalId, mesasSeleccionadas]);
+            const idsGrupo = grupo.rows.map((m) => m.id);
+            if (!mesasSeleccionadas.every((id) => idsGrupo.includes(id))) {
+                throw new common_1.NotFoundException('Una mesa seleccionada ya no está activa');
+            }
+            await client.query(`SELECT id FROM mesas
+         WHERE sucursal_id = $1 AND activa = true AND id = ANY($2::uuid[])
+         ORDER BY id FOR UPDATE`, [sucursalId, idsGrupo]);
+            const idsSecundarias = idsGrupo.filter((id) => id !== mesaPrincipalId);
+            if (idsSecundarias.length > 0) {
+                await client.query(`UPDATE mesas SET mesa_grupo_id = $2, estado_operativo = 'ocupada'
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $3`, [idsSecundarias, mesaPrincipalId, sucursalId]);
                 await client.query(`UPDATE pedidos SET mesa_id = $3
-           WHERE mesa_id = $1 AND sucursal_id = $2
-             AND estado NOT IN ('entregado', 'cancelado', 'rechazado', 'pagado')`, [secId, sucursalId, mesaPrincipalId]);
+           WHERE mesa_id = ANY($1::uuid[]) AND sucursal_id = $2
+             AND estado NOT IN ('entregado', 'cancelado', 'rechazado', 'pagado')`, [idsSecundarias, sucursalId, mesaPrincipalId]);
             }
             await client.query(`UPDATE mesas SET mesa_grupo_id = $2, estado_operativo = 'ocupada'
          WHERE id = $1 AND sucursal_id = $3`, [mesaPrincipalId, mesaPrincipalId, sucursalId]);
@@ -256,13 +284,14 @@ let MesasService = class MesasService {
                 tablaAfectada: 'mesas',
                 registroId: mesaPrincipalId,
                 usuarioId,
-                datosDespues: { mesas_secundarias: mesasSecundarias },
+                datosDespues: { mesas_secundarias: idsSecundarias },
             });
+            mesasUnidas = idsSecundarias;
         });
         void this.realtime.mesasActualizadas(sucursalId);
         return {
             mesa_principal_id: mesaPrincipalId,
-            mesas_unidas: mesasSecundarias,
+            mesas_unidas: mesasUnidas,
         };
     }
     async registrarSalidaSinPagar(mesaId, sucursalId, usuarioId, dto, rolUsuario) {
@@ -431,7 +460,10 @@ let MesasService = class MesasService {
                     message: 'La mesa destino tiene otro pedido activo',
                 });
             }
-            await client.query(`UPDATE pedidos SET mesa_id = $2 WHERE id = $1`, [dto.pedido_id, dto.mesa_destino_id]);
+            await client.query(`UPDATE pedidos SET mesa_id = $2 WHERE id = $1`, [
+                dto.pedido_id,
+                dto.mesa_destino_id,
+            ]);
             await client.query(`UPDATE mesas d
          SET estado_operativo = 'ocupada',
              mesera_asignada_id = COALESCE(d.mesera_asignada_id, o.mesera_asignada_id),

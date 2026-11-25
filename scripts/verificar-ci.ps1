@@ -1,4 +1,4 @@
-# Orquestador CI / QA Foody — requiere API en :3000 + Postgres con seed demo
+# Orquestador CI / QA Foody — requiere API QA en :3001 + BD foody_diseno_qa seeded
 # Uso:
 #   .\scripts\verificar-ci.ps1              # modo rapido (smoke + P2)
 #   .\scripts\verificar-ci.ps1 -Completo    # limpiar demo + suite E2E completa
@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $raiz = $PSScriptRoot
-$base = 'http://localhost:3000/api/v1'
+$base = 'http://127.0.0.1:3001/api/v1'
 
 Write-Host "=== Foody CI local ===" -ForegroundColor Cyan
 Write-Host "Modo: $(if ($SoloPaso0) { 'paso0' } elseif ($Completo) { 'completo' } else { 'rapido' })" -ForegroundColor Cyan
@@ -22,7 +22,7 @@ try {
     Write-Host "OK API $base" -ForegroundColor Green
 } catch {
     Write-Host "FALLO: backend no disponible en $base" -ForegroundColor Red
-    Write-Host "Enciende Docker/Supabase y scripts\iniciar-backend-wsl.bat" -ForegroundColor Yellow
+    Write-Host 'Levanta la instancia Nest de QA en :3001 conectada a foody_diseno_qa.' -ForegroundColor Yellow
     exit 1
 }
 

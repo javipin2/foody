@@ -6,6 +6,9 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+const _notaPeriodoMovimientosCaja =
+    'En movimientos ligados a un pedido se usa la fecha de creación del pedido; si no tienen pedido, la fecha del movimiento.';
+
 /// Export PDF/CSV de reportes admin (P2-16). Solo formatea datos del API.
 class ReporteExportFoody {
   static final _moneda = NumberFormat.currency(
@@ -36,7 +39,7 @@ class ReporteExportFoody {
           pw.Header(
             level: 0,
             child: pw.Text(
-              'Foody — Reportes',
+              'Foody - Reportes',
               style: pw.TextStyle(
                 fontSize: 20,
                 fontWeight: pw.FontWeight.bold,
@@ -45,7 +48,7 @@ class ReporteExportFoody {
           ),
           if (tituloSucursal != null && tituloSucursal.isNotEmpty)
             pw.Text(tituloSucursal, style: const pw.TextStyle(fontSize: 12)),
-          pw.Text('Período: $desde → $hasta'),
+          pw.Text('Período: $desde a $hasta'),
           pw.SizedBox(height: 16),
           ..._seccionFinancieroPdf(financiero),
           pw.SizedBox(height: 12),
@@ -78,7 +81,7 @@ class ReporteExportFoody {
         style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
       ),
       pw.SizedBox(height: 6),
-      pw.Table.fromTextArray(
+      pw.TableHelper.fromTextArray(
         headers: ['Métrica', 'Valor'],
         data: [
           ['Tickets (total pedidos)', _fmt(r['ventas_total'])],
@@ -87,40 +90,56 @@ class ReporteExportFoody {
           ['Domicilios', _fmt(r['costo_domicilio'])],
           ['Descuentos', _fmt(r['descuentos'])],
           ['Tickets (pedidos)', _fmt(cuadre['ventas_pedidos'])],
-          ['Cobrado caja (neto)', _fmt(cuadre['ventas_movimientos_caja'])],
+          [
+            'Movimientos netos de caja',
+            _fmt(cuadre['ventas_movimientos_caja'])
+          ],
           ['Diferencia cuadre', _fmt(cuadre['diferencia'])],
         ],
         headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
         cellAlignment: pw.Alignment.centerLeft,
       ),
+      pw.Padding(
+        padding: const pw.EdgeInsets.only(top: 4),
+        child: pw.Text(
+          '${cuadre['nota_periodo_caja'] ?? _notaPeriodoMovimientosCaja}',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+        ),
+      ),
+      if (cuadre['nota_universos'] != null)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 4),
+          child: pw.Text(
+            cuadre['nota_universos'].toString(),
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        ),
       if (porMetodo.isNotEmpty) ...[
         pw.SizedBox(height: 8),
-        pw.Text('Caja por método', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-        pw.Table.fromTextArray(
+        pw.Text('Caja por método',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        pw.TableHelper.fromTextArray(
           headers: ['Método', 'Total'],
-          data: porMetodo
-              .map((e) {
-                final m = e as Map<String, dynamic>;
-                return ['${m['metodo_pago']}', _fmt(m['total'])];
-              })
-              .toList(),
+          data: porMetodo.map((e) {
+            final m = e as Map<String, dynamic>;
+            return ['${m['metodo_pago']}', _fmt(m['total'])];
+          }).toList(),
         ),
       ],
       if (porTipo.isNotEmpty) ...[
         pw.SizedBox(height: 8),
-        pw.Text('Por tipo de pedido', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-        pw.Table.fromTextArray(
+        pw.Text('Por tipo de pedido',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        pw.TableHelper.fromTextArray(
           headers: ['Tipo', 'Pedidos', 'Ventas'],
-          data: porTipo
-              .map((e) {
-                final m = e as Map<String, dynamic>;
-                return [
-                  '${m['tipo']}',
-                  '${m['pedidos']}',
-                  _fmt(m['ventas']),
-                ];
-              })
-              .toList(),
+          data: porTipo.map((e) {
+            final m = e as Map<String, dynamic>;
+            return [
+              '${m['tipo']}',
+              '${m['pedidos']}',
+              _fmt(m['ventas']),
+            ];
+          }).toList(),
         ),
       ],
     ];
@@ -143,7 +162,7 @@ class ReporteExportFoody {
         style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
       ),
       pw.SizedBox(height: 6),
-      pw.Table.fromTextArray(
+      pw.TableHelper.fromTextArray(
         headers: ['#', 'Producto', 'Cantidad', 'Ventas'],
         data: [
           for (var i = 0; i < ranking.length; i++)
@@ -174,30 +193,26 @@ class ReporteExportFoody {
       ),
       pw.SizedBox(height: 6),
       if (porEstado.isNotEmpty)
-        pw.Table.fromTextArray(
+        pw.TableHelper.fromTextArray(
           headers: ['Estado', 'Total'],
-          data: porEstado
-              .map((e) {
-                final m = e as Map<String, dynamic>;
-                return ['${m['estado']}', '${m['total']}'];
-              })
-              .toList(),
+          data: porEstado.map((e) {
+            final m = e as Map<String, dynamic>;
+            return ['${m['estado']}', '${m['total']}'];
+          }).toList(),
         ),
       if (porDia.isNotEmpty) ...[
         pw.SizedBox(height: 8),
         pw.Text('Por día', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-        pw.Table.fromTextArray(
+        pw.TableHelper.fromTextArray(
           headers: ['Día', 'Pedidos', 'Ventas'],
-          data: porDia
-              .map((e) {
-                final m = e as Map<String, dynamic>;
-                return [
-                  '${m['dia']}',
-                  '${m['pedidos']}',
-                  _fmt(m['ventas']),
-                ];
-              })
-              .toList(),
+          data: porDia.map((e) {
+            final m = e as Map<String, dynamic>;
+            return [
+              '${m['dia']}',
+              '${m['pedidos']}',
+              _fmt(m['ventas']),
+            ];
+          }).toList(),
         ),
       ],
     ];
@@ -213,7 +228,7 @@ class ReporteExportFoody {
   }) {
     final filas = <List<dynamic>>[
       ['Foody - Reportes'],
-      ['Periodo', '$desde', hasta],
+      ['Periodo', desde, hasta],
       [],
     ];
 
@@ -234,8 +249,14 @@ class ReporteExportFoody {
         ['costo_domicilio', _num(r['costo_domicilio'])],
         ['descuentos', _num(r['descuentos'])],
         ['ventas_pedidos', _num(cuadre['ventas_pedidos'])],
-        ['ventas_caja', _num(cuadre['ventas_movimientos_caja'])],
+        ['movimientos_netos_caja', _num(cuadre['ventas_movimientos_caja'])],
         ['diferencia_cuadre', _num(cuadre['diferencia'])],
+        [
+          'nota_periodo_caja',
+          cuadre['nota_periodo_caja'] ?? _notaPeriodoMovimientosCaja,
+        ],
+        if (cuadre['nota_universos'] != null)
+          ['nota_universos', cuadre['nota_universos']],
       ]);
       final porTipo = financiero['por_tipo'] as List<dynamic>? ?? [];
       if (porTipo.isNotEmpty) {

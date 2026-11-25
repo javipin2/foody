@@ -6,8 +6,8 @@
 >
 > Al cerrar un ítem: `- [ ]` → `- [x]`, actualizar **Estado**, 1 línea en `AVANCE_PROYECTO.md` y el ID en `MASTER_STATUS.md`.
 
-**Última actualización:** 2026-11-22 — se reafirma piloto PC + Cloudflare Tunnel hasta terminar la app y decidir VPS.
-**Próximo foco recomendado:** resto 🟡 aceptados/ops · VIRAL-SYNC · térmica/VPS.
+**Última actualización:** 2026-11-24 — piloto PC + Cloudflare Tunnel conservado; `MES-GROUP-ACCOUNT-01` y `MES-GROUP-FLATTEN-01` pasan E2E; Nest `:3000` actualizado y Tunnel responde. `FIN-FIXED-PARTIAL-BALANCE-01` está resuelto; nómina/ciclos permanece pendiente como `FIN-PAYROLL-PERIOD-01`, junto a `FIN-REC-OPEN-01` y `FIN-TIP-01`.
+**Próximo foco recomendado:** continuar Pedidos → Cocina → Caja → Finanzas/Análisis y validar autenticación operativa; resolver política de enrolamiento legacy y recuperación de capability antes de producción. `CLIENT-DEVICE-CAP-01` tiene mitigación implementada; detalles y riesgos residuales en `AUDITORIA_CLIENTES_QR.md`.
 
 ### Decisiones founder (2026-08-08)
 
@@ -309,3 +309,28 @@ Doc: `docs/frontend/FRONTEND_ROADMAP.md`
 | 2026-08-11 | API-PAGE ✅ tope 200 + page opt-in usuarios/productos/insumos; Bloque C código (resta RBAC-MESERO-04) |
 | 2026-08-11 | Bloque C: BN-MOD-05 ✅ · BN-CTRL-04/05/10–12 ✅ · API-HTTP ✅; resta API-PAGE + RBAC-MESERO-04 |
 | 2026-08-08 | Creación: prioridades A→F, dependencias, checkboxes, mapa de estado |
+
+**Prioridad operativa actualizada (2026-11-24):** FIN-TZ-01 quedó corregido y activado en Nest :3000; local y Tunnel responden HTTP 200. `COC-CANCEL-NODISP-MERMA-01`, `COC-DISPATCH-INCOMPLETE-01`, `PED-EDIT-01` y `FIN-MIXED-REFUND-METHOD-01` pasaron E2E en clones PostgreSQL QA; `QA-PRINT-BYPASS-01` está corregido. Ninguno de estos builds recientes se considera activado en :3000 hasta resolver la activación coordinada. Se conserva como pendiente `FIN-GASTO-DATE-01` (registro vs fecha operativa del gasto), FIN-DATE-01 y FIN-REC-OPEN-01. COC-NODISP-COMMERCE-01 sigue antes de rediseñar el cierre de pedidos: acordar sustitución/ajuste/devolución y efectos en prepago, abono, factura, Caja e inventario.
+
+- [x] **PED-CLIENT-CANCEL-RACE-01** — revalidar cancelación de cliente bajo FOR UPDATE para que una aceptación concurrente no se pueda revertir desde el cliente. Regresión unitaria 1/1; build/runtime pendiente.
+
+**PED-CLIENT-CANCEL-RACE-01 — verificación:** suite Nest 34/34 suites y 79/79 pruebas; build OK. Fuente corregida, API diaria todavía requiere activación coordinada.
+
+- [x] **POS-COTIZACION-CASH-GUARD-01** — impedir cobro inmediato del aproximado local cuando falla cotización; requiere total servidor y da reintento. Flutter 16/16, analyzer/build OK; publicación y sesión real pendientes.
+
+- [ ] **COC-KDS-NULL-STATE-01** — guard de caja, recálculo y consulta KDS tratan NULL como pendiente. Nest 35/35 suites, 83/83 pruebas; build y formato OK. Pendiente activar proceso API en mantenimiento para aplicar runtime sin interrumpir Tunnel.
+
+- [x] **PED-DISCOUNT-READY-CLOSE-01** — saldo de salón cubierto por descuento cierra pedido listo/pagando por máquina central; suite 36/86 y build OK. Runtime pendiente de activación.
+- [ ] **FIN-DISCOUNT-REFUND-METHOD-01** — definir y modelar método real del reembolso por descuento (método original, selección real o mix); hoy NULL aparece como `sin_metodo` en reportes. No inferir ni alterar histórico.
+- [x] **KDS-LEGACY-STATE-UI-01** — estado de cocina nulo se muestra como pendiente en KDS; widget responsive 14/14. QA autenticada manual permanece pendiente.
+- [x] **NAV-ANL-01 / F4-03** — selector de secciones móvil (<720 px) y TabBar escritorio comprobados con widgets 390/1440 px; permisos e índice se conservan. Falta QA visual autenticada.
+- [x] **PUSH-PERM-STATUS-01** — comparar Firebase `NotificationSettings.authorizationStatus` para que permisos autorizados no bloqueen el token web; Flutter suite 236 aprobadas, 5 E2E omitidas, Dart focalizado sin error.
+- [x] **DOMI-TOTAL-ENTREGAS-ACCEPT-01** — contar `total_entregas` solo al confirmar entrega, no al aceptar oferta; 36 suites/87 pruebas y build OK. Runtime pendiente de activación.
+
+- [ ] **DOMI-LIQUIDACION-METODO-EXTERNO-01** — acordar semántica del ledger, capturar método de pago realmente recibido por el domiciliario y evitar metodo_pago='efectivo' como resumen de pagos mixtos. Después implementar idempotencia y validar cuadre entre pedidos, pagos, CxC y caja; no inventar medios ni alterar histórico.
+- [x] **PED-POS-REPLACE-ATOMIC-01** — reemplazar línea en una transacción idempotente; bloquea líneas ya cobradas y operaciones que requieren reembolso de abonos; Nest 37 suites/92 pruebas, Flutter global 237/5 E2E omitidas, POS+repo 20/20, build/analyzer OK. Runtime API :3000 pendiente de activación coordinada.
+- [x] **PED-CANCEL-COPY-01** — el diálogo Kanban ahora distingue reversa contable en Caja de reembolso realmente ejecutado por el proveedor de pago; sin cambio monetario.
+- [ ] **PED-CANCEL-REFUND-SEMANTICS-01** — decidir cómo se confirma/registra el reembolso externo cuando personal cancela un pedido ya pagado, y cómo conciliarlo con la reversa automática de Caja sin doble devolución.
+- [ ] **PED-CANCEL-RBAC-01** — decidir semántica de `cancelar_pedido`: hoy no se aplica; ruta exige `crear_pedido`, y el servicio usa rol/estado/ventana. UI ya oculta mutaciones no autorizadas por el contrato API vigente; no cambiar privilegios hasta definir matriz por rol.
+- [ ] **COC-DISPATCH-INCOMPLETE-01** — el gate compartido bloquea dispatch si alguna línea no está resuelta y el comando central impide estado global `listo` con líneas pendientes/NULL o pedido vacío; mensaje de error se conserva en UI. E2E 1/1 sobre clon PostgreSQL: transición bloqueada, asignación manual 400 y dispatch independiente no iniciado (`PEDIDO_NO_LISTO`); guard unitario 5/5. Falta activar el proceso API y verificar runtime; la prueba de dispatch automático queda cubierta por guard unitario, pues la ruta de pedido incompleto no alcanza un estado despachable.
+- [ ] **PED-EDIT-01** — editar preparación en `listo`/`pagando` devuelve línea y pedido a Cocina; edición/borrado/reemplazo no permite dejar un total inferior a lo ya recibido sin registrar devolución. E2E 4/4 en clon PostgreSQL QA: observación reabre Cocina; reducir, eliminar y reemplazar conservan ítems, total y abono tras 409/rollback. Falta activar el build en API :3000 y verificar runtime.

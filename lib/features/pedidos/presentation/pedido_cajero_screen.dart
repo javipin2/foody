@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
@@ -22,6 +24,7 @@ import 'package:reserva_canchas/features/pedidos/domain/linea_carrito.dart';
 import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 /// Constructor de pedido staff — layout POS (ref. foody_redesign_complete.html).
 class PedidoCajeroScreen extends StatefulWidget {
@@ -36,6 +39,10 @@ class PedidoCajeroScreen extends StatefulWidget {
     this.onPedidoModificado,
     this.ocultarCabecera = false,
     this.onIrCaja,
+    this.menuRepository,
+    this.mesasRepository,
+    this.cajaRepository,
+    this.pedidosRepository,
   });
 
   final String? sucursalId;
@@ -57,6 +64,10 @@ class PedidoCajeroScreen extends StatefulWidget {
 
   /// NAV-ADM2-10: saltar a Caja cuando no hay turno abierto.
   final VoidCallback? onIrCaja;
+  final MenuRepository? menuRepository;
+  final MesasRepository? mesasRepository;
+  final CajaRepository? cajaRepository;
+  final PedidosRepository? pedidosRepository;
 
   @override
   State<PedidoCajeroScreen> createState() => _PedidoCajeroScreenState();
@@ -65,10 +76,10 @@ class PedidoCajeroScreen extends StatefulWidget {
 class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _menuRepo = MenuRepository();
-  final _pedidosRepo = PedidosRepository();
-  final _mesasRepo = MesasRepository();
-  final _cajaRepo = CajaRepository();
+  late final MenuRepository _menuRepo;
+  late final _pedidosRepo = widget.pedidosRepository ?? PedidosRepository();
+  late final MesasRepository _mesasRepo;
+  late final CajaRepository _cajaRepo;
   final _busquedaCtrl = TextEditingController();
   final _notaCtrl = TextEditingController();
 
@@ -77,8 +88,11 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
   final List<LineaCarrito> _carrito = [];
   bool _cargando = true;
   bool _enviando = false;
+  String? _idempotencyKeyOperacion;
+  String? _firmaIdempotenciaOperacion;
   String? _error;
-  bool _cajaAbierta = true;
+  bool? _cajaAbierta;
+  String? _errorConsultaCaja;
   bool _ocultarAvisoHorario = false;
 
   String _tipoPedido = 'mesa';
@@ -92,6 +106,11 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
   final _clienteNombreCtrl = TextEditingController();
   final _clienteTelCtrl = TextEditingController();
   final _direccionCtrl = TextEditingController();
+  Timer? _timerEstimacion;
+  int _versionEstimacion = 0;
+  num? _totalEstimadoServidor;
+  bool _estimandoTotal = false;
+  String? _errorEstimacion;
   String _categoriaId = 'todo';
   RealtimeChannel? _canalCatalogo;
   PollRealtimeRespaldo? _pollRespaldo;
@@ -106,10 +125,125 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
   double get _totalVisual =>
       _carrito.fold<double>(0, (s, l) => s + l.subtotalPara(_tipoPedido));
 
+  double? _monto(String valor) =>
+      double.tryParse(valor.replaceAll(',', '').trim());
+
+  String get _etiquetaMetodoPago => switch (_tipoPedido) {
+        'mesa' => 'Método previsto al cobrar',
+        'domicilio' => 'Método de pago al entregar',
+        _ => 'Cobro ahora',
+      };
+
+  String get _ayudaMetodoPago => switch (_tipoPedido) {
+        'mesa' =>
+          'No se cobra al crear el pedido. Confirma el método al cerrar la cuenta.',
+        'domicilio' when _metodoPago == 'pendiente' =>
+          'El repartidor debe indicar el método. Si Admin marca la entrega manualmente, se registra efectivo.',
+        'domicilio' =>
+          'El repartidor confirma el método al entregar; Admin puede marcar la entrega manual desde Pedidos.',
+        _ when _metodoPago == 'pendiente' =>
+          'El cobro queda pendiente y no se registra en Caja todavía.',
+        _ => 'El cobro se registra en Caja al confirmar el pedido.',
+      };
+
+  String? get _errorPagoMixto {
+    if (!_pagoMixto) return null;
+    if (_estimandoTotal) return 'Actualizando el total del pedido…';
+    final total = _totalEstimadoServidor;
+    if (total == null) {
+      return _errorEstimacion ?? 'No hay un total del servidor para dividir.';
+    }
+    final monto1 = _monto(_montoMixto1Ctrl.text);
+    final monto2 = _monto(_montoMixto2Ctrl.text);
+    if (monto1 == null || monto2 == null || monto1 <= 0 || monto2 <= 0) {
+      return 'Ingresa dos montos mayores que cero.';
+    }
+    if ((monto1 + monto2 - total).abs() > 0.01) {
+      return 'Los pagos deben sumar ${_moneda.format(total)}.';
+    }
+    return null;
+  }
+
+  bool get _requiereCotizacionParaConfirmar =>
+      !widget.modoMesero &&
+      widget.pedidoIdAgregar == null &&
+      _tipoPedido == 'para_llevar' &&
+      _metodoPago != 'pendiente';
+
+  bool get _bloqueadoPorCotizacion =>
+      _requiereCotizacionParaConfirmar &&
+      (_estimandoTotal || _totalEstimadoServidor == null);
+
+  void _programarEstimacion() {
+    _timerEstimacion?.cancel();
+    final version = ++_versionEstimacion;
+    if (_carrito.isEmpty || widget.pedidoIdAgregar != null) {
+      setState(() {
+        _totalEstimadoServidor = null;
+        _estimandoTotal = false;
+        _errorEstimacion = null;
+      });
+      return;
+    }
+    if (_tipoPedido == 'domicilio' && _direccionCtrl.text.trim().isEmpty) {
+      setState(() {
+        _totalEstimadoServidor = null;
+        _estimandoTotal = false;
+        _errorEstimacion = 'Ingresa la dirección para cotizar el domicilio.';
+      });
+      return;
+    }
+    setState(() {
+      _totalEstimadoServidor = null;
+      _estimandoTotal = true;
+      _errorEstimacion = null;
+    });
+    final lineas = List<LineaCarrito>.of(_carrito);
+    final tipo = _tipoPedido;
+    final mesaId = tipo == 'mesa' ? (widget.mesaIdFija ?? _mesaId) : null;
+    final direccion = tipo == 'domicilio' ? _direccionCtrl.text.trim() : null;
+    _timerEstimacion = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final sid = widget.sucursalId;
+        if (sid == null) throw StateError('Sin sucursal para estimar.');
+        final datos = await _pedidosRepo.estimarTotales(
+          sucursalId: sid,
+          tipo: tipo,
+          lineas: lineas,
+          mesaId: mesaId,
+          direccionEntrega: direccion,
+        );
+        final total = datos['total'];
+        if (total is! num) {
+          throw const FormatException('El servidor no devolvió total.');
+        }
+        if (!mounted || version != _versionEstimacion) return;
+        setState(() {
+          _totalEstimadoServidor = total;
+          _estimandoTotal = false;
+          _errorEstimacion = null;
+        });
+      } catch (e) {
+        if (!mounted || version != _versionEstimacion) return;
+        setState(() {
+          _totalEstimadoServidor = null;
+          _estimandoTotal = false;
+          _errorEstimacion = mensajeErrorHttp(e, contexto: 'estimar pedido');
+        });
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _menuRepo = widget.menuRepository ?? MenuRepository();
+    _mesasRepo = widget.mesasRepository ?? MesasRepository();
+    _cajaRepo = widget.cajaRepository ?? CajaRepository();
     _tipoPedido = widget.modoMesero ? 'mesa' : 'para_llevar';
+    // El flujo de mesero registra el pedido sin cobrar; no debe enviar el
+    // valor POS predeterminado (efectivo) mientras la UI oculta ese selector.
+    if (widget.modoMesero) _metodoPago = 'pendiente';
     _mesaId = widget.mesaIdFija;
     _cargar();
     final sid = widget.sucursalId;
@@ -134,6 +268,8 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
   @override
   void dispose() {
     _pollRespaldo?.detener();
+    _timerEstimacion?.cancel();
+    _versionEstimacion++;
     FoodyRealtime.liberarCanal(_canalCatalogo);
     _busquedaCtrl.dispose();
     _notaCtrl.dispose();
@@ -162,14 +298,19 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
       });
     }
     try {
-      final menu = await _menuRepo.obtenerPorSucursal(sid);
-      final mesas = await _mesasRepo.listar(sid);
-      Map<String, dynamic>? caja;
-      try {
-        caja = await _cajaRepo.cajaActiva(sid);
-      } catch (_) {
-        caja = null;
-      }
+      Object? errorConsultaCaja;
+      final consultaCaja = _cajaRepo.cajaActiva(sid).catchError((Object error) {
+        errorConsultaCaja = error;
+        return null;
+      });
+      final resultados = await Future.wait<Object?>([
+        _menuRepo.obtenerPorSucursal(sid),
+        _mesasRepo.listar(sid),
+        consultaCaja,
+      ]);
+      final menu = resultados[0] as MenuModel;
+      final mesas = resultados[1] as List<Map<String, dynamic>>;
+      final caja = resultados[2] as Map<String, dynamic>?;
       if (!mounted) return;
       setState(() {
         _menu = menu;
@@ -177,7 +318,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         if (_mesaId == null && _mesas.isNotEmpty && _tipoPedido == 'mesa') {
           _mesaId = _mesas.first['id'] as String?;
         }
-        _cajaAbierta = caja != null;
+        _cajaAbierta = errorConsultaCaja == null ? caja != null : null;
+        _errorConsultaCaja = errorConsultaCaja == null
+            ? null
+            : mensajeErrorHttp(errorConsultaCaja!, contexto: 'consultar caja');
         _cargando = false;
       });
     } catch (e) {
@@ -200,7 +344,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
           menu == null || menu.productoEsDeCategoriaBebidas(producto)
               ? const []
               : menu.productosBebidasVendibles(excluirId: producto.id),
-      onAgregar: (lineas) => setState(() => _carrito.addAll(lineas)),
+      onAgregar: (lineas) {
+        setState(() => _carrito.addAll(lineas));
+        _programarEstimacion();
+      },
     );
   }
 
@@ -225,7 +372,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
       combo: combo,
       toppingsDisponibles: tops,
       sugerenciasBebidas: menu?.productosBebidasVendibles() ?? const [],
-      onAgregar: (lineas) => setState(() => _carrito.addAll(lineas)),
+      onAgregar: (lineas) {
+        setState(() => _carrito.addAll(lineas));
+        _programarEstimacion();
+      },
     );
   }
 
@@ -234,6 +384,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
     final nueva = l.cantidad + delta;
     if (nueva <= 0) {
       setState(() => _carrito.removeAt(index));
+      _programarEstimacion();
       return;
     }
     setState(() {
@@ -251,22 +402,48 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         imagenUrl: l.imagenUrl,
       );
     });
+    _programarEstimacion();
   }
 
   Future<void> _confirmarPedido() async {
     final sid = widget.sucursalId;
     if (sid == null || _carrito.isEmpty) return;
 
-    if (!widget.modoMesero && !_cajaAbierta) {
+    if (_pagoMixto && _errorPagoMixto != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorPagoMixto!)),
+      );
+      return;
+    }
+
+    if (_bloqueadoPorCotizacion) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Calcula el total con Foody antes de cobrar.'),
+        ),
+      );
+      return;
+    }
+
+    if (!widget.modoMesero && _cajaAbierta != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Abre la caja antes de registrar ventas.'),
-          action: widget.onIrCaja == null
-              ? null
-              : SnackBarAction(
-                  label: 'Ir a caja',
-                  onPressed: widget.onIrCaja!,
-                ),
+          content: Text(
+            _cajaAbierta == null
+                ? 'No se pudo verificar la caja. Reintenta la consulta.'
+                : 'Abre la caja antes de registrar ventas.',
+          ),
+          action: _cajaAbierta == null
+              ? SnackBarAction(
+                  label: 'Reintentar',
+                  onPressed: () => _cargar(silencioso: true),
+                )
+              : widget.onIrCaja == null
+                  ? null
+                  : SnackBarAction(
+                      label: 'Ir a caja',
+                      onPressed: widget.onIrCaja!,
+                    ),
         ),
       );
       return;
@@ -309,11 +486,8 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
           _tipoPedido == 'para_llevar' &&
           _pagoMixto &&
           _metodoPago != 'pendiente') {
-        final total = _totalVisual;
-        final m1 = double.tryParse(_montoMixto1Ctrl.text.replaceAll(',', '')) ??
-            total / 2;
-        final m2 = double.tryParse(_montoMixto2Ctrl.text.replaceAll(',', '')) ??
-            total - m1;
+        final m1 = _monto(_montoMixto1Ctrl.text)!;
+        final m2 = _monto(_montoMixto2Ctrl.text)!;
         pagos = [
           {'metodo_pago': _metodoPago, 'monto': m1},
           {'metodo_pago': _metodoPago2, 'monto': m2},
@@ -322,37 +496,85 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
 
       final nota = _notaCtrl.text.trim();
       final propina = double.tryParse(_propinaCtrl.text.replaceAll(',', ''));
+      final propinaOperacion = (!widget.modoMesero &&
+              _tipoPedido == 'para_llevar' &&
+              _metodoPago != 'pendiente' &&
+              propina != null &&
+              propina > 0)
+          ? propina
+          : null;
+      final observacionesOperacion = nota.isNotEmpty ? nota : null;
+      final nombreClienteOperacion =
+          _tipoPedido == 'domicilio' ? _clienteNombreCtrl.text.trim() : null;
+      final telefonoClienteOperacion =
+          _tipoPedido == 'domicilio' ? _clienteTelCtrl.text.trim() : null;
+      final direccionOperacion =
+          _tipoPedido == 'domicilio' ? _direccionCtrl.text.trim() : null;
+      final firmaOperacion = jsonEncode({
+        'sucursal_id': sid,
+        'tipo': _tipoPedido,
+        'mesa_id': mesaVinculada,
+        'pedido_id_agregar': agregarAPedido ? widget.pedidoIdAgregar : null,
+        'item_id_reemplazar': widget.itemIdReemplazar,
+        'cliente_nombre': nombreClienteOperacion,
+        'cliente_telefono': telefonoClienteOperacion,
+        'direccion_entrega': direccionOperacion,
+        'metodo_pago': pagos != null ? null : _metodoPago,
+        'pagos': pagos,
+        'propina': propinaOperacion,
+        'observaciones': observacionesOperacion,
+        'lineas': _carrito
+            .map(
+              (linea) => {
+                'producto_id': linea.productoId,
+                'combo_id': linea.comboId,
+                'cantidad': linea.cantidad,
+                'precio': linea.precioUnitarioPara(_tipoPedido),
+                'observaciones': linea.observaciones,
+                'toppings': linea.toppings.map((t) => t.id).toList()..sort(),
+                'bebidas': linea.bebidas
+                    .map((b) => {'id': b.id, 'cantidad': b.cantidad})
+                    .toList()
+                  ..sort((a, b) =>
+                      (a['id'] as String).compareTo(b['id'] as String)),
+              },
+            )
+            .toList(),
+      });
+      if (_firmaIdempotenciaOperacion != firmaOperacion) {
+        _idempotencyKeyOperacion = null;
+        _firmaIdempotenciaOperacion = firmaOperacion;
+      }
+      final idempotencyKey = _idempotencyKeyOperacion ??= const Uuid().v4();
       final datos = await _pedidosRepo.crearPedidoStaff(
         sucursalId: sid,
         tipo: _tipoPedido,
         lineas: _carrito,
         metodoPago: pagos != null ? null : _metodoPago,
         pagos: pagos,
-        propina: (!widget.modoMesero &&
-                _tipoPedido == 'para_llevar' &&
-                _metodoPago != 'pendiente' &&
-                propina != null &&
-                propina > 0)
-            ? propina
-            : null,
         mesaId: widget.modoMesero && widget.mesaIdFija != null
             ? widget.mesaIdFija
             : mesaVinculada,
         pedidoIdAgregar: agregarAPedido ? widget.pedidoIdAgregar : null,
-        clienteNombre:
-            _tipoPedido == 'domicilio' ? _clienteNombreCtrl.text.trim() : null,
-        clienteTelefono:
-            _tipoPedido == 'domicilio' ? _clienteTelCtrl.text.trim() : null,
-        direccionEntrega:
-            _tipoPedido == 'domicilio' ? _direccionCtrl.text.trim() : null,
-        observaciones: nota.isNotEmpty ? nota : null,
+        itemIdReemplazar: agregarAPedido ? widget.itemIdReemplazar : null,
+        clienteNombre: nombreClienteOperacion,
+        clienteTelefono: telefonoClienteOperacion,
+        direccionEntrega: direccionOperacion,
+        observaciones: observacionesOperacion,
+        propina: propinaOperacion,
+        idempotencyKey: idempotencyKey,
       );
       if (!mounted) return;
       final pendiente = _metodoPago == 'pendiente' &&
           !widget.modoMesero &&
           _tipoPedido == 'para_llevar';
       setState(() {
+        _idempotencyKeyOperacion = null;
+        _firmaIdempotenciaOperacion = null;
         _carrito.clear();
+        _totalEstimadoServidor = null;
+        _errorEstimacion = null;
+        _estimandoTotal = false;
         _notaCtrl.clear();
         _propinaCtrl.text = '0';
         if (_tipoPedido == 'domicilio') {
@@ -362,37 +584,18 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         }
         _enviando = false;
       });
-
-      final reemplazarId = widget.itemIdReemplazar;
-      if (agregarAPedido && reemplazarId != null && reemplazarId.isNotEmpty) {
-        try {
-          await _pedidosRepo.eliminarItemPedido(
-            pedidoId: widget.pedidoIdAgregar!,
-            itemId: reemplazarId,
-            sucursalId: sid,
-            motivo: 'Cambio de producto',
-          );
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Se agregó el nuevo, pero no se pudo quitar el anterior: '
-                  '${mensajeErrorHttp(e, contexto: 'cambiar producto')}',
-                ),
-                backgroundColor: Colors.orange.shade800,
-              ),
-            );
-          }
-        }
-      }
+      _programarEstimacion();
 
       if (!mounted) return;
       final numPedido = datos['numero_pedido'] ?? datos['id'];
       if (widget.modoMesero) {
         Navigator.of(context).pop(true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final messenger = ScaffoldMessenger.of(context);
+        if (agregarAPedido) {
+          widget.onPedidoModificado?.call();
+        }
+        messenger.showSnackBar(
           SnackBar(
             content: Text(
               widget.itemIdReemplazar != null && agregarAPedido
@@ -402,11 +605,9 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       : 'Pedido creado · $numPedido',
             ),
             backgroundColor: AnaliticaTokens.inventario,
+            duration: const Duration(seconds: 4),
           ),
         );
-        if (agregarAPedido) {
-          widget.onPedidoModificado?.call();
-        }
         if (pendiente) {
           await _ofrecerRegistrarFiado(
             sucursalId: sid,
@@ -634,15 +835,23 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 ],
               ),
             ),
-          if (!widget.modoMesero && !_cajaAbierta)
+          if (!widget.modoMesero && _cajaAbierta != true)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: OperacionAviso(
-                mensaje: 'No hay caja abierta. Abre turno en la pestaña Caja.',
+                mensaje: _cajaAbierta == null
+                    ? 'No pudimos verificar la caja. ${_errorConsultaCaja ?? ''}'
+                    : 'No hay caja abierta. Abre turno en la pestaña Caja.',
                 color: const Color(0xFFD97706).withValues(alpha: 0.12),
                 colorTexto: const Color(0xFF92400E),
-                accion: widget.onIrCaja != null ? 'Ir a Caja' : null,
-                onAccion: widget.onIrCaja,
+                accion: _cajaAbierta == null
+                    ? 'Reintentar'
+                    : widget.onIrCaja != null
+                        ? 'Ir a Caja'
+                        : null,
+                onAccion: _cajaAbierta == null
+                    ? () => _cargar(silencioso: true)
+                    : widget.onIrCaja,
               ),
             ),
           if (widget.itemIdReemplazar != null && widget.pedidoIdAgregar != null)
@@ -799,79 +1008,109 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       ),
                     ],
                   )
-                : GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      // ponytail: 3 cols en ~360px → overflow; 2 cols en compact.
-                      crossAxisCount:
-                          MediaQuery.sizeOf(context).width < 400 ? 2 : 3,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 0.85,
-                    ),
-                    itemCount: productos.length,
-                    itemBuilder: (_, i) {
-                      final p = productos[i];
-                      return Material(
-                        color: _scheme.surfaceContainerLow,
-                        borderRadius:
-                            BorderRadius.circular(AnaliticaTokens.r10),
-                        child: InkWell(
-                          onTap: () => _agregarProducto(p),
-                          borderRadius:
-                              BorderRadius.circular(AnaliticaTokens.r10),
-                          child: Container(
-                            padding: const EdgeInsets.all(10),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      // La grilla ocupa solo el panel de menú (el carrito
+                      // comparte el ancho en escritorio), así que decide
+                      // columnas con sus restricciones reales, no la ventana.
+                      final columnas = ((constraints.maxWidth - 32) / 178)
+                          .floor()
+                          .clamp(2, 5);
+                      final anchoImagen =
+                          ((constraints.maxWidth - 32 - ((columnas - 1) * 8)) /
+                                  columnas *
+                                  MediaQuery.devicePixelRatioOf(context))
+                              .round();
+                      return GridView.builder(
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columnas,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 1.35,
+                        ),
+                        itemCount: productos.length,
+                        itemBuilder: (_, i) {
+                          final p = productos[i];
+                          final placeholder = Container(
+                            height: 48,
+                            width: double.infinity,
                             decoration: BoxDecoration(
+                              color: _scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              Icons.restaurant,
+                              color: _scheme.onSurfaceVariant,
+                              size: 22,
+                            ),
+                          );
+                          return Material(
+                            color: _scheme.surfaceContainerLow,
+                            borderRadius:
+                                BorderRadius.circular(AnaliticaTokens.r10),
+                            child: InkWell(
+                              onTap: () => _agregarProducto(p),
                               borderRadius:
                                   BorderRadius.circular(AnaliticaTokens.r10),
-                              border: Border.all(
-                                color: _scheme.outlineVariant,
-                                width: 0.5,
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                      AnaliticaTokens.r10),
+                                  border: Border.all(
+                                    color: _scheme.outlineVariant,
+                                    width: 0.5,
+                                  ),
+                                  boxShadow: AnaliticaTokens.shadowSoft,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: p.imagenUrl != null &&
+                                              p.imagenUrl!.trim().isNotEmpty
+                                          ? CachedNetworkImage(
+                                              imageUrl: p.imagenUrl!,
+                                              width: double.infinity,
+                                              height: 48,
+                                              memCacheWidth: anchoImagen,
+                                              fit: BoxFit.cover,
+                                              placeholder: (_, __) =>
+                                                  placeholder,
+                                              errorWidget: (_, __, ___) =>
+                                                  placeholder,
+                                            )
+                                          : placeholder,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      p.nombre,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _scheme.onSurface,
+                                        height: 1.25,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _moneda.format(p.precio),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: _scheme.onSurface,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              boxShadow: AnaliticaTokens.shadowSoft,
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  height: 48,
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    color: _scheme.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Icon(
-                                    Icons.restaurant,
-                                    color: _scheme.onSurfaceVariant,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  p.nombre,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _scheme.onSurface,
-                                    height: 1.25,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _moneda.format(p.precio),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: _scheme.onSurface,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -974,10 +1213,12 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
+                Wrap(
+                  spacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Carrito · ',
+                      'Carrito',
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
@@ -985,7 +1226,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       ),
                     ),
                     Text(
-                      '${_carrito.length} items',
+                      '${_carrito.length} ${_carrito.length == 1 ? 'producto' : 'productos'}',
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
@@ -1012,7 +1253,13 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                                 ('para_llevar', 'Llevar'),
                               ],
                         seleccionada: _tipoPedido,
-                        onCambio: (v) => setState(() => _tipoPedido = v),
+                        onCambio: (v) {
+                          setState(() {
+                            _tipoPedido = v;
+                            if (v != 'para_llevar') _pagoMixto = false;
+                          });
+                          _programarEstimacion();
+                        },
                       ),
                     ),
                   ],
@@ -1053,7 +1300,10 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       ),
                     )
                     .toList(),
-                onChanged: (v) => setState(() => _mesaId = v),
+                onChanged: (v) {
+                  setState(() => _mesaId = v);
+                  _programarEstimacion();
+                },
               ),
             ),
           if (!widget.modoMesero &&
@@ -1085,6 +1335,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: _direccionCtrl,
+                    onChanged: (_) => _programarEstimacion(),
                     decoration: const InputDecoration(
                       labelText: 'Dirección de entrega *',
                       hintText: 'Calle, barrio, referencias',
@@ -1107,7 +1358,7 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 ],
               ),
             ),
-          if (!widget.modoMesero)
+          if (!widget.modoMesero && widget.pedidoIdAgregar == null)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
               child: Column(
@@ -1121,101 +1372,132 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                         'Pago mixto (CAJ-005)',
                         style: TextStyle(fontSize: 13),
                       ),
+                      key: const ValueKey<String>('pos-pago-mixto'),
                       value: _pagoMixto,
-                      onChanged: (v) => setState(() {
-                        _pagoMixto = v;
-                        if (v) {
-                          final t = _totalVisual;
-                          _montoMixto1Ctrl.text = (t / 2).round().toString();
-                          _montoMixto2Ctrl.text =
-                              (t - t / 2).round().toString();
-                        }
-                      }),
+                      onChanged: _estimandoTotal ||
+                              _totalEstimadoServidor == null
+                          ? null
+                          : (v) => setState(() {
+                                _pagoMixto = v;
+                                if (v) {
+                                  final total = _totalEstimadoServidor!;
+                                  final primero = (total / 2).roundToDouble();
+                                  _montoMixto1Ctrl.text =
+                                      primero.toStringAsFixed(0);
+                                  _montoMixto2Ctrl.text =
+                                      (total - primero).toStringAsFixed(0);
+                                }
+                              }),
+                    ),
+                  if (_tipoPedido == 'para_llevar' &&
+                      _carrito.isNotEmpty &&
+                      !_estimandoTotal &&
+                      _totalEstimadoServidor == null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        _errorEstimacion ??
+                            'Foody debe calcular el total antes de dividir el pago.',
+                        key: const ValueKey<String>('pos-error-estimacion'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _scheme.error,
+                        ),
+                      ),
                     ),
                   if (_pagoMixto && _tipoPedido == 'para_llevar') ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _metodoPago,
-                            isDense: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Método 1',
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'efectivo',
-                                child: Text('Efectivo'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'tarjeta',
-                                child: Text('Tarjeta'),
-                              ),
-                            ],
-                            onChanged: (v) => setState(
-                              () => _metodoPago = v ?? _metodoPago,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _montoMixto1Ctrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Monto 1',
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: _metodoPago2,
-                            isDense: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Método 2',
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'tarjeta',
-                                child: Text('Tarjeta'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'efectivo',
-                                child: Text('Efectivo'),
-                              ),
-                            ],
-                            onChanged: (v) => setState(
-                              () => _metodoPago2 = v ?? _metodoPago2,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _montoMixto2Ctrl,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Monto 2',
-                              isDense: true,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else
                     DropdownButtonFormField<String>(
+                      key: const ValueKey<String>('pos-metodo-mixto-1'),
                       initialValue: _metodoPago,
                       isDense: true,
+                      isExpanded: true,
                       decoration: const InputDecoration(
-                        labelText: 'Pago',
+                        labelText: 'Método de pago 1',
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'efectivo',
+                          child: Text('Efectivo'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'tarjeta',
+                          child: Text('Tarjeta'),
+                        ),
+                      ],
+                      onChanged: (v) => setState(
+                        () => _metodoPago = v ?? _metodoPago,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      key: const ValueKey<String>('pos-monto-mixto-1'),
+                      controller: _montoMixto1Ctrl,
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Monto 1',
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      key: const ValueKey<String>('pos-metodo-mixto-2'),
+                      initialValue: _metodoPago2,
+                      isDense: true,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Método de pago 2',
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'tarjeta',
+                          child: Text('Tarjeta'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'efectivo',
+                          child: Text('Efectivo'),
+                        ),
+                      ],
+                      onChanged: (v) => setState(
+                        () => _metodoPago2 = v ?? _metodoPago2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      key: const ValueKey<String>('pos-monto-mixto-2'),
+                      controller: _montoMixto2Ctrl,
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        labelText: 'Monto 2',
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                  if (_pagoMixto && _errorPagoMixto != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        _errorPagoMixto!,
+                        key: const ValueKey<String>('pos-error-pago-mixto'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _errorPagoMixto!.startsWith('Actualizando')
+                              ? _scheme.onSurfaceVariant
+                              : _scheme.error,
+                        ),
+                      ),
+                    ),
+                  if (!_pagoMixto || _tipoPedido != 'para_llevar')
+                    DropdownButtonFormField<String>(
+                      key: const ValueKey<String>('pos-metodo-pago'),
+                      initialValue: _metodoPago,
+                      isDense: true,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: _etiquetaMetodoPago,
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
@@ -1243,6 +1525,18 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       ],
                       onChanged: (v) =>
                           setState(() => _metodoPago = v ?? _metodoPago),
+                    ),
+                  if (!_pagoMixto || _tipoPedido != 'para_llevar')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _ayudaMetodoPago,
+                        key: const ValueKey<String>('pos-ayuda-pago'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   if (_tipoPedido == 'para_llevar' &&
                       _metodoPago != 'pendiente') ...[
@@ -1300,10 +1594,16 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    _btnQty(Icons.remove, () => _cambiarCantidad(i, -1)),
+                    _btnQty(
+                      Icons.remove,
+                      label: 'Reducir cantidad de ${l.nombre}',
+                      key: ValueKey<String>('pos-qty-decrease-$i'),
+                      onTap: () => _cambiarCantidad(i, -1),
+                    ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       child: Text(
+                        key: ValueKey<String>('pos-qty-value-$i'),
                         '${l.cantidad}',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
@@ -1311,7 +1611,12 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                         ),
                       ),
                     ),
-                    _btnQty(Icons.add, () => _cambiarCantidad(i, 1)),
+                    _btnQty(
+                      Icons.add,
+                      label: 'Aumentar cantidad de ${l.nombre}',
+                      key: ValueKey<String>('pos-qty-increase-$i'),
+                      onTap: () => _cambiarCantidad(i, 1),
+                    ),
                     const SizedBox(width: 8),
                     SizedBox(
                       width: 64,
@@ -1362,20 +1667,29 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 ),
                 const SizedBox(height: 8),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Total',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: _scheme.onSurface,
+                    Expanded(
+                      child: Text(
+                        _totalEstimadoServidor == null
+                            ? 'Aproximado'
+                            : 'Total estimado',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: _scheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
-                      _moneda.format(_totalVisual),
+                      _estimandoTotal
+                          ? 'Calculando…'
+                          : _moneda
+                              .format(_totalEstimadoServidor ?? _totalVisual),
+                      key: const ValueKey<String>('pos-total-estimado'),
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: _scheme.onSurface,
                       ),
@@ -1384,16 +1698,48 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'El total final lo calcula el servidor.',
+                  widget.pedidoIdAgregar != null
+                      ? 'El pedido existente conserva su total; aquí ves solo los productos que agregas.'
+                      : _carrito.isEmpty
+                          ? 'Agrega productos para cotizar el pedido.'
+                          : _estimandoTotal
+                              ? 'Calculando precio y promociones con Foody…'
+                              : _totalEstimadoServidor != null
+                                  ? 'Total calculado por Foody; se valida nuevamente al confirmar.'
+                                  : _tipoPedido == 'domicilio' &&
+                                          _direccionCtrl.text.trim().isEmpty
+                                      ? 'Ingresa la dirección para incluir la tarifa de domicilio.'
+                                      : 'No se pudo cotizar ahora. El total mostrado es aproximado.',
+                  key: const ValueKey<String>('pos-ayuda-estimacion'),
                   style: TextStyle(
                     fontSize: 11,
                     color: _scheme.onSurfaceVariant,
                   ),
                 ),
+                if (_requiereCotizacionParaConfirmar &&
+                    _carrito.isNotEmpty &&
+                    !_estimandoTotal &&
+                    _totalEstimadoServidor == null) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _carrito.isEmpty
+                          ? null
+                          : () => _programarEstimacion(),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Reintentar cotización'),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 FilledButton(
-                  onPressed:
-                      _carrito.isEmpty || _enviando ? null : _confirmarPedido,
+                  onPressed: _carrito.isEmpty ||
+                          _enviando ||
+                          _bloqueadoPorCotizacion ||
+                          (_pagoMixto && _errorPagoMixto != null)
+                      ? null
+                      : _confirmarPedido,
                   style: FilledButton.styleFrom(
                     backgroundColor: _scheme.primary,
                     foregroundColor: _scheme.onPrimary,
@@ -1419,19 +1765,37 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
     );
   }
 
-  Widget _btnQty(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        width: 22,
-        height: 22,
-        decoration: BoxDecoration(
-          border: Border.all(color: _scheme.outlineVariant),
-          borderRadius: BorderRadius.circular(4),
-          color: _scheme.surfaceContainerHighest,
+  Widget _btnQty(
+    IconData icon, {
+    required String label,
+    required Key key,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox.square(
+      key: key,
+      dimension: 44,
+      child: Tooltip(
+        message: label,
+        child: Semantics(
+          button: true,
+          label: label,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  border: Border.all(color: _scheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(8),
+                  color: _scheme.surfaceContainerHighest,
+                ),
+                child: Icon(icon, size: 15, color: _scheme.onSurfaceVariant),
+              ),
+            ),
+          ),
         ),
-        child: Icon(icon, size: 14, color: _scheme.onSurfaceVariant),
       ),
     );
   }

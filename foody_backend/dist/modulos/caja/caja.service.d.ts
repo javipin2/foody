@@ -51,6 +51,7 @@ export declare class CajaService {
         estado: string;
     }>;
     listarMovimientos(cajaId: string, sucursalId: string, page?: number, limit?: number): Promise<ResultadoPaginado<Record<string, unknown>>>;
+    listarMovimientosPedido(pedidoId: string, sucursalId: string, page?: number, limit?: number): Promise<ResultadoPaginado<Record<string, unknown>>>;
     retiroParcial(dto: RetiroCajaDto, usuarioId: string, sucursalId: string): Promise<{
         ok: boolean;
     }>;

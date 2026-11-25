@@ -418,9 +418,11 @@ class _VistaResumenState extends State<_VistaResumen> {
                   icono: Icons.receipt_long_outlined,
                 ),
                 FoodyControlTarjetaKpi(
-                  titulo: 'Ingresos Foody hoy',
+                  titulo: 'Comisión estimada hoy',
                   valor: moneda.format(d['ingresos_foody_hoy'] ?? 0),
                   icono: Icons.payments_outlined,
+                  descripcion:
+                      'Se registra al aceptar la oferta; no confirma recaudo.',
                 ),
               ],
             ),
@@ -1441,9 +1443,10 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                                     '${u['id']}',
                                     u['activo'] != true,
                                   );
+                                  if (!mounted) return;
                                   _recargar();
                                 } catch (e) {
-                                  if (mounted) {
+                                  if (context.mounted) {
                                     mostrarErrorSnackBar(context, e);
                                   }
                                 }
@@ -1482,7 +1485,7 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                                     '${u['id']}',
                                     passCtrl.text.trim(),
                                   );
-                                  if (mounted) {
+                                  if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                           content:
@@ -1490,7 +1493,7 @@ class _VistaUsuariosState extends State<_VistaUsuarios> {
                                     );
                                   }
                                 } catch (e) {
-                                  if (mounted) {
+                                  if (context.mounted) {
                                     mostrarErrorSnackBar(context, e);
                                   }
                                 }
@@ -1636,9 +1639,10 @@ class _VistaCiudadesState extends State<_VistaCiudades> {
                               '${c['id']}',
                               activa: c['activa'] != true,
                             );
+                            if (!mounted) return;
                             _recargar();
                           } catch (e) {
-                            if (mounted) {
+                            if (context.mounted) {
                               mostrarErrorSnackBar(context, e);
                             }
                           }
@@ -1740,8 +1744,9 @@ class _VistaConfigState extends State<_VistaConfig> {
                         '${c['clave']}',
                         ctrl.text.trim(),
                       );
+                      if (!mounted) return;
                       _recargar();
-                      if (mounted) {
+                      if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Configuración guardada'),
@@ -1749,7 +1754,7 @@ class _VistaConfigState extends State<_VistaConfig> {
                         );
                       }
                     } catch (e) {
-                      if (mounted) {
+                      if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(mensajeErrorHttp(e))),
                         );

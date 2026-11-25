@@ -30,7 +30,8 @@ class DashboardDomiciliarioScreen extends StatefulWidget {
       _DashboardDomiciliarioScreenState();
 }
 
-class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScreen> {
+class _DashboardDomiciliarioScreenState
+    extends State<DashboardDomiciliarioScreen> {
   final _repo = DomiciliariosRepository();
   final _tracking = TrackingUbicacionService();
   int _nav = 0;
@@ -196,22 +197,22 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
 
   Future<void> _entregar(Map<String, dynamic> pedido) async {
     final metodoOriginal = pedido['metodo_pago'] as String?;
-    final yaPagado =
-        metodoOriginal != null && metodoOriginal != 'pendiente';
-    final cobro = yaPagado
-        ? (metodo: metodoOriginal, metodoDomicilio: null)
-        : await _elegirCobro(pedido);
-    if (cobro == null) return;
+    final requiereApi = pedido['requiere_cobro'];
+    final requiereCobro = requiereApi is bool
+        ? requiereApi
+        : metodoOriginal == null || metodoOriginal == 'pendiente';
+    final cobro = requiereCobro ? await _elegirCobro(pedido) : null;
+    if (requiereCobro && cobro == null) return;
 
     try {
       await _repo.confirmarEntrega(
         pedido['id'] as String,
-        metodoPago: cobro.metodo,
-        metodoPagoDomicilio: cobro.metodoDomicilio,
+        metodoPago: cobro?.metodo ?? metodoOriginal,
+        metodoPagoDomicilio: cobro?.metodoDomicilio,
       );
       await _cargar();
       if (mounted) {
-        final aCuenta = cobro.metodo == 'pendiente_liquidacion';
+        final aCuenta = cobro?.metodo == 'pendiente_liquidacion';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -237,8 +238,9 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
     final permiteFiado = pedido['permite_fiado_domiciliario'] == true;
     final costoDom = num.tryParse('${pedido['costo_domicilio']}') ?? 0;
     final total = num.tryParse('${pedido['total']}') ?? 0;
-    final producto =
-        num.tryParse('${pedido['subtotal']}') ?? (total - costoDom);
+    final productoPendiente = num.tryParse('${pedido['producto_pendiente']}');
+    final domicilioPendiente = num.tryParse('${pedido['domicilio_pendiente']}');
+    final saldoPendiente = num.tryParse('${pedido['saldo_pendiente']}');
 
     const metodos = [
       ('efectivo', 'Efectivo', Icons.payments),
@@ -297,9 +299,13 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Producto ${_moneda.format(producto)}'
-                        '${costoDom > 0 ? ' · Domicilio ${_moneda.format(costoDom)}' : ''}'
-                        ' · Total ${_moneda.format(total)}',
+                        productoPendiente != null &&
+                                domicilioPendiente != null &&
+                                saldoPendiente != null
+                            ? 'Por cobrar: producto ${_moneda.format(productoPendiente)}'
+                                '${costoDom > 0 ? ' · domicilio ${_moneda.format(domicilioPendiente)}' : ''}'
+                                ' · saldo ${_moneda.format(saldoPendiente)}'
+                            : 'Total del pedido ${_moneda.format(total)}. Confirma el método del saldo pendiente.',
                         style: TextStyle(color: Colors.grey.shade700),
                       ),
                       const SizedBox(height: 16),
@@ -545,8 +551,7 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
             onSalir: estado == 'asignado'
                 ? () => _enCamino(p['id'] as String)
                 : null,
-            onEntregar:
-                estado == 'en_camino' ? () => _entregar(p) : null,
+            onEntregar: estado == 'en_camino' ? () => _entregar(p) : null,
           ),
         );
       },
@@ -607,7 +612,8 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icono, size: 64, color: ColoresFoody.primario.withValues(alpha: 0.5)),
+            Icon(icono,
+                size: 64, color: ColoresFoody.primario.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text(
               titulo,
@@ -638,7 +644,8 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
               child: _estadoVacio(
                 icono: Icons.two_wheeler_outlined,
                 titulo: 'Sin entregas pendientes',
-                subtitulo: 'Cuando el restaurante te asigne un pedido aparecerá aquí',
+                subtitulo:
+                    'Cuando el restaurante te asigne un pedido aparecerá aquí',
               ),
             ),
           ],
@@ -716,7 +723,8 @@ class _DashboardDomiciliarioScreenState extends State<DashboardDomiciliarioScree
                         child: _estadoVacio(
                           icono: Icons.receipt_long_outlined,
                           titulo: 'Sin entregas en este rango',
-                          subtitulo: 'Cambia el filtro de fechas o completa una entrega',
+                          subtitulo:
+                              'Cambia el filtro de fechas o completa una entrega',
                         ),
                       ),
                     ],

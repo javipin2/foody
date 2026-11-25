@@ -1,4 +1,3 @@
-import { QueryResultRow } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
@@ -67,7 +66,32 @@ export declare class DomiciliariosIndependientesService {
         asignacion_id: string;
         estado: string;
     }>;
-    pedidosActivos(domiciliarioId: string): Promise<QueryResultRow[]>;
+    pedidosActivos(domiciliarioId: string): Promise<{
+        saldo_pendiente: number;
+        requiere_cobro: boolean;
+        producto_total: number;
+        producto_pendiente: number;
+        domicilio_pendiente: number;
+        id: string;
+        numero_pedido: string;
+        estado: string;
+        cliente_nombre: string | null;
+        cliente_telefono: string | null;
+        direccion_entrega: string | null;
+        subtotal: string;
+        total: string;
+        monto_pagado: string;
+        metodo_pago: string | null;
+        costo_domicilio: string;
+        lat: string | null;
+        lng: string | null;
+        estado_asignacion: string;
+        asignado_at: string;
+        sucursal_nombre: string;
+        sucursal_direccion: string | null;
+        sucursal_lat: string | null;
+        sucursal_lng: string | null;
+    }[]>;
     marcarEnCamino(pedidoId: string, domiciliarioId: string): Promise<{
         pedido_id: string;
         estado: string;

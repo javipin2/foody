@@ -16,7 +16,10 @@ const core_1 = require("@nestjs/core");
 const validar_config_produccion_1 = require("../../core/config/validar-config-produccion");
 const database_service_1 = require("../../core/database/database.service");
 exports.RATE_LIMIT_META = 'rate_limit';
-const RateLimitPublico = (maximo = 60, ventanaMs = 60_000) => (0, common_1.SetMetadata)(exports.RATE_LIMIT_META, { maximo, ventanaMs });
+const RateLimitPublico = (maximo = 60, ventanaMs = 60_000) => (0, common_1.SetMetadata)(exports.RATE_LIMIT_META, {
+    maximo,
+    ventanaMs,
+});
 exports.RateLimitPublico = RateLimitPublico;
 let RateLimitGuard = class RateLimitGuard {
     static { RateLimitGuard_1 = this; }
@@ -41,6 +44,7 @@ let RateLimitGuard = class RateLimitGuard {
         const clave = `${ip}:${req.method}:${req.path}`;
         const ahora = Date.now();
         if ((0, validar_config_produccion_1.esProduccion)() || forzar) {
+            let cuentaDB = null;
             try {
                 const r = await this.database.consultarUno(`INSERT INTO rate_limit_entries (clave, ventana_ms, reinicio_at, cuenta)
            VALUES (
@@ -62,16 +66,18 @@ let RateLimitGuard = class RateLimitGuard {
                    ELSE rate_limit_entries.cuenta + 1
                  END
            RETURNING cuenta`, [clave, opts.ventanaMs]);
-                const cuenta = Number(r?.cuenta ?? 1);
-                if (cuenta > opts.maximo) {
+                cuentaDB = Number(r?.cuenta ?? 1);
+            }
+            catch {
+            }
+            if (cuentaDB !== null) {
+                if (cuentaDB > opts.maximo) {
                     throw new common_1.HttpException({
                         error: 'RATE_LIMIT',
                         message: 'Demasiadas peticiones. Intenta de nuevo en un momento.',
                     }, common_1.HttpStatus.TOO_MANY_REQUESTS);
                 }
                 return true;
-            }
-            catch {
             }
         }
         let entrada = RateLimitGuard_1.store.get(clave);

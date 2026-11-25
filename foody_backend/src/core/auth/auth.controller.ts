@@ -81,15 +81,16 @@ export class AuthController {
     return this.authService.perfil(usuario);
   }
 
-  /** Topics Realtime staff (HMAC). Opcional: ?sucursal_id= al cambiar sede. */
+  /** Topics Realtime staff (HMAC), opcionales: sucursal_id y cocina_id. */
   @Get('realtime-canales')
   @OmitirSuscripcionActiva()
   @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard)
   realtimeCanales(
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
+    @Query('cocina_id') cocinaId?: string,
   ) {
-    return this.authService.realtimeCanales(usuario, sucursalId);
+    return this.authService.realtimeCanales(usuario, sucursalId, cocinaId);
   }
 
   @Post('registrar-fcm')

@@ -31,10 +31,10 @@ class AnaliticaChartCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: AnaliticaTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        border: Border.all(color: AnaliticaTokens.border),
-        boxShadow: AnaliticaTokens.shadowSoft,
+        border: Border.all(color: AnaliticaTokens.borderOf(context)),
+        boxShadow: AnaliticaTokens.shadowSoftOf(context),
       ),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Column(
@@ -43,7 +43,8 @@ class AnaliticaChartCard extends StatelessWidget {
           Row(
             children: [
               if (icono != null) ...[
-                Icon(icono, size: 15, color: AnaliticaTokens.inkSoft),
+                Icon(icono,
+                    size: 15, color: AnaliticaTokens.inkSoftOf(context)),
                 const SizedBox(width: 6),
               ],
               Expanded(
@@ -52,19 +53,19 @@ class AnaliticaChartCard extends StatelessWidget {
                   children: [
                     Text(
                       titulo,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 13.5,
-                        color: AnaliticaTokens.ink,
+                        color: AnaliticaTokens.inkOf(context),
                         letterSpacing: -0.1,
                       ),
                     ),
                     if (subtitulo != null)
                       Text(
                         subtitulo!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
-                          color: AnaliticaTokens.inkSoft,
+                          color: AnaliticaTokens.inkSoftOf(context),
                         ),
                       ),
                   ],
@@ -76,19 +77,19 @@ class AnaliticaChartCard extends StatelessWidget {
           const SizedBox(height: 10),
           SizedBox(
             height: altura,
-            child: vacio ? _empty() : child,
+            child: vacio ? _empty(context) : child,
           ),
         ],
       ),
     );
   }
 
-  Widget _empty() {
+  Widget _empty(BuildContext context) {
     return Center(
       child: Text(
         mensajeVacio,
-        style: const TextStyle(
-          color: AnaliticaTokens.inkSoft,
+        style: TextStyle(
+          color: AnaliticaTokens.inkSoftOf(context),
           fontSize: 12.5,
         ),
       ),

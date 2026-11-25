@@ -52,6 +52,7 @@ class _PreviewMercado {
 Future<InsumoFormResultado?> mostrarDialogoInsumo({
   required BuildContext context,
   Map<String, dynamic>? insumoExistente,
+
   /// NAV-MC-04: preselección al crear desde Costos (ej. empaque).
   String? categoriaInicial,
 }) {
@@ -152,7 +153,8 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
     _categoria = _normalizarCategoria(catRaw, _esSoloCosto);
 
     _nombre = TextEditingController(text: ing?['nombre'] as String? ?? '');
-    _proveedor = TextEditingController(text: ing?['proveedor'] as String? ?? '');
+    _proveedor =
+        TextEditingController(text: ing?['proveedor'] as String? ?? '');
     _precioCompra = TextEditingController(
       text: ing?['precio_compra'] != null ? '${ing!['precio_compra']}' : '',
     );
@@ -199,7 +201,8 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
         context,
         InsumoFormResultado(
           nombre: nombre,
-          proveedor: _proveedor.text.trim().isEmpty ? null : _proveedor.text.trim(),
+          proveedor:
+              _proveedor.text.trim().isEmpty ? null : _proveedor.text.trim(),
           unidadBase: _categoria == 'mano_obra' ? 'servicio' : 'und',
           categoriaInsumo: _categoria,
           esSoloCosto: true,
@@ -224,7 +227,8 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
       context,
       InsumoFormResultado(
         nombre: nombre,
-        proveedor: _proveedor.text.trim().isEmpty ? null : _proveedor.text.trim(),
+        proveedor:
+            _proveedor.text.trim().isEmpty ? null : _proveedor.text.trim(),
         unidadBase: _unidad,
         categoriaInsumo: _categoria,
         precioCompra: precio,
@@ -309,11 +313,14 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _categoria,
                     decoration: FoodyFormEstilo.campo(label: 'Categoría'),
                     items: const [
-                      DropdownMenuItem(value: 'alimento', child: Text('Alimento')),
-                      DropdownMenuItem(value: 'empaque', child: Text('Empaque')),
+                      DropdownMenuItem(
+                          value: 'alimento', child: Text('Alimento')),
+                      DropdownMenuItem(
+                          value: 'empaque', child: Text('Empaque')),
                       DropdownMenuItem(
                         value: 'mano_obra',
                         child: Text('Mano de obra'),
@@ -361,14 +368,18 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _unidad,
                     decoration: FoodyFormEstilo.campo(label: 'Unidad'),
                     items: const [
                       DropdownMenuItem(value: 'g', child: Text('Gramo (g)')),
-                      DropdownMenuItem(value: 'kg', child: Text('Kilogramo (kg)')),
-                      DropdownMenuItem(value: 'ml', child: Text('Mililitro (ml)')),
+                      DropdownMenuItem(
+                          value: 'kg', child: Text('Kilogramo (kg)')),
+                      DropdownMenuItem(
+                          value: 'ml', child: Text('Mililitro (ml)')),
                       DropdownMenuItem(value: 'L', child: Text('Litro (L)')),
-                      DropdownMenuItem(value: 'und', child: Text('Unidad (und)')),
+                      DropdownMenuItem(
+                          value: 'und', child: Text('Unidad (und)')),
                     ],
                     onChanged: (v) => setState(() => _unidad = v ?? _unidad),
                   ),
@@ -433,6 +444,7 @@ class _DialogoInsumoFormState extends State<_DialogoInsumoForm> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _categoria,
                     decoration: FoodyFormEstilo.campo(label: 'Categoría'),
                     items: const [

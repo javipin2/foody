@@ -7,7 +7,9 @@
 > **Sucesora Prompt 07 (BD):** [`AUDITORIA_BD_SUPABASE.md`](AUDITORIA_BD_SUPABASE.md) — BD-\*.  
 > **Estado oficial:** [`MASTER_STATUS.md`](MASTER_STATUS.md) § RBAC (RBAC-\*).  
 > **Al cerrar un RBAC-\*:** marcar ✅ aquí + MASTER + viñeta en `AVANCE_PROYECTO.md`.  
-> **Prod-risk:** varios hallazgos permiten abuso de dinero / cross-tenant → priorizar RBAC-FIX-01…03 en la misma sesión si se remedian.
+> **Prod-risk:** quedan hallazgos de operaciones de Caja que usan permisos de lectura, limpieza global de promociones (`RBAC-TENANT-03`) y autorización de billing staff. El procesamiento manual de la cola global ya requiere Super Admin; `RBAC-TENANT-01` tiene regresión unitaria y QA autenticada cross-sucursal. La prueba entre restaurantes/tenants distintos aún falta.
+
+> **Revisión de código 2026-11-23:** cobro por pedido y por mesa ya requiere `cobrar_pedido`; `crear_pedido` protege alta, edición de líneas y el PATCH genérico de estado. El servicio restringe al rol mesero a `pagando`/`cancelado`; admin, gerente y cajero pueden pedir cualquier transición permitida por la FSM, dentro del alcance de sucursal. Los overrides por usuario solo reducen la plantilla de su rol; no hay roles personalizados ni permiso separado por transición implementado.
 
 ---
 
@@ -17,11 +19,11 @@
 |-----------|------|-----------|
 | Guards presentes | B | Casi todos los módulos staff llevan JWT+Activo+Suscripción+Rol |
 | Semántica `@Permisos` | C | Es **OR** (`.some`); OR demasiado amplio en cobro/estado/domi |
-| Mesero vs caja/admin | C− | **No** abre módulo caja; **sí** cobra y cambia estados vía pedidos |
-| Endpoints sin guard | C | Públicos intencionales OK; `anonimizar` + `prueba-web` peligrosos |
-| Multi-tenant ID swap | B− | Scope bloquea `sucursal_id` ajeno; **IDOR crítico en `POST /caja/cerrar`** |
+| Mesero vs caja/admin | C− | **No** abre módulo caja ni cobra; puede crear pedidos y transiciones limitadas por servicio |
+| Endpoints sensibles | B− | `anonimizar` exige prueba de posesión; `prueba-web` envía solo al usuario; cola global solo Super Admin; billing/diagnóstico aún parciales |
+| Multi-tenant ID swap | B | Scope de `POST /caja/cerrar` se valida contra la sucursal real de la caja; falta E2E autenticada cross-tenant |
 
-**Global Prompt 06:** ~**58 / 100** disciplina RBAC (piloto usable; escalada mesero + IDOR caja = deuda prod).
+**Global Prompt 06:** ~**58 / 100** es la valoración histórica de 2026-08-06; requiere recalcularse porque cierre de caja y tres rutas sensibles cambiaron y otros hallazgos continúan abiertos.
 
 **Qué ya está bien:**
 
@@ -58,9 +60,9 @@
 
 ## Índice de hallazgos
 
-| Prefijo | Tema | Abiertos |
-|---------|------|--------:|
-| RBAC-GUARD-* | Endpoints sin / con guard débil | 5 |
+| Prefijo | Tema | Hallazgos |
+|---------|------|----------:|
+| RBAC-GUARD-* | Endpoints sin / con guard débil | 2 |
 | RBAC-MESERO-* | Escalada mesero vía API | 5 |
 | RBAC-CAJA-* | Permisos de dinero flojos | 2 |
 | RBAC-TENANT-* | Multi-tenant / IDOR | 4 |
@@ -80,9 +82,9 @@ Leyenda: `🟣 abierto` · `🟡 parcial` · `✅ cerrado` · `📅 post-piloto`
 
 | ID | Estado | Sev | Hallazgo | Ejemplo que rompe |
 |----|--------|-----|----------|-------------------|
-| **RBAC-GUARD-01** | 🟣 | Alta | `DELETE /dispositivos/anonimizar/:device_id` **público** — sin prueba de posesión | `DELETE /api/v1/dispositivos/anonimizar/{device_id_victima}` → limpia dispositivo ajeno |
-| **RBAC-GUARD-02** | 🟣 | Alta | `POST /notificaciones/prueba-web` JWT **sin** `RolGuard`; fuerza `todos_web: true` | Header `Authorization: Bearer <token_mesero>` → `POST /api/v1/notificaciones/prueba-web` → blast FCM web global |
-| **RBAC-GUARD-03** | 🟣 | Media | `POST /notificaciones/procesar-cola` con solo `ver_dashboard` — cola **global** | Admin resto A: `POST /api/v1/notificaciones/procesar-cola` procesa pendientes de todos |
+| **RBAC-GUARD-01** | ✅ Código + regresión | Alta | La ruta es pública por diseño, pero antes de anonimizar exige FCM exacto guardado o sesión Supabase del `auth_uid` vinculado; sin prueba devuelve 403. La fila también elimina `capability_hash`. | Unitarias de posesión cubren secreto FCM, ausencia/discordancia y usuario Supabase correcto/incorrecto. Ver `dispositivos.service.spec.ts`. |
+| **RBAC-GUARD-02** | ✅ Código | Alta | `POST /notificaciones/prueba-web` requiere `RolGuard` + `ver_dashboard`; el controller fuerza `todos_web:false`, y el servicio solo recoge tokens web del usuario. | No blast global desde sesión staff. |
+| **RBAC-GUARD-03** | ✅ Código + regresión | Media | `POST /notificaciones/procesar-cola` afecta cola global; ahora requiere JWT, usuario activo y `SuperAdminGuard`, que revalida rol y ausencia de tenant en BD. El cron sigue siendo el camino automático. | Spec de metadata exige exactamente los guards de plataforma y no `ver_dashboard`. Smoke sin sesión: HTTP 401 local/Tunnel. |
 | **RBAC-GUARD-04** | 🟡 | Media | `GET /pagos/estado`, `POST /pagos/sincronizar` JWT sin RolGuard | Cualquier staff del restaurante ve/sincroniza billing (checkout sí mitiga en service) |
 | **RBAC-GUARD-05** | 🟡 | Baja | `GET /health*` público filtra cola impresión / realtime | Info ops; no IDOR de negocio |
 
@@ -99,8 +101,8 @@ Pregunta del prompt: *¿un mesero puede, por la API, acceder a caja o admin?*
 | Usuarios CRUD | **No** | `gestionar_usuarios` |
 | Reportes / analitica / inventario / dashboard | **No** | permisos admin |
 | Super `/super/*` | **No** | `SuperAdminGuard` |
-| **Cobrar** mesa/pedido | **Sí** | `@Permisos('ver_pedidos','crear_pedido')` OR |
-| **Cambiar estado** pedido | **Sí** | `@Permisos('ver_pedidos')` |
+| **Cobrar** mesa/pedido | **No** | ambas rutas usan `@Permisos('cobrar_pedido')`; migration `082` no asigna ese permiso a mesero |
+| **Cambiar estado** pedido | **Sí, con `crear_pedido`** | PATCH genérico usa un permiso que también se necesita para crear/editar líneas. Mesero está limitado en servicio a `pagando`/`cancelado`; admin/gerente/cajero pueden usar transiciones permitidas por FSM. No hay permiso separado por transición. Overrides por usuario solo quitan permisos de su plantilla |
 | Asignar domiciliario | **No** | solo `gestionar_domiciliarios` |
 | Crear pedido / mesas / aprobar QR | **Sí** | intencional |
 | Descuento | **No** | `aplicar_descuento` |
@@ -109,9 +111,9 @@ Pregunta del prompt: *¿un mesero puede, por la API, acceder a caja o admin?*
 
 | ID | Estado | Sev | Hallazgo | Petición que rompe el permiso esperado |
 |----|--------|-----|----------|----------------------------------------|
-| **RBAC-MESERO-01** | 🟣 **prod-risk** | Alta | Cobro de caja vía pedidos sin permiso de caja | `POST /api/v1/pedidos/{pedido_id}/cobrar` + Bearer mesero + body pagos → registra movimiento caja |
-| **RBAC-MESERO-02** | 🟣 **prod-risk** | Alta | Idem cobro cuenta mesa | `POST /api/v1/pedidos/mesa/{mesaId}/cobrar?sucursal_id=…` + Bearer mesero |
-| **RBAC-MESERO-03** | 🟣 | Alta | Cambiar estado Kanban / cancelar (sujeto a reglas de transición, no a rol cajero) | `PATCH /api/v1/pedidos/{id}/estado` `{ "estado": "listo" }` + Bearer mesero |
+| **RBAC-MESERO-01** | ✅ Código | Alta | Cobro de caja vía pedido protegido con permiso específico | `pedidos.controller.ts`: `@Permisos('cobrar_pedido')`; spec ejecuta guard: mesero 403 / cajero permitido |
+| **RBAC-MESERO-02** | ✅ Código | Alta | Cobro de cuenta mesa protegido con permiso específico | `pedidos.controller.ts`: `@Permisos('cobrar_pedido')`; spec ejecuta guard: mesero 403 / cajero permitido |
+| **RBAC-MESERO-03** | 🟡 Parcial | Media | PATCH con solo `ver_pedidos` no pasa; requiere `crear_pedido`. Mesero limitado por servicio a `pagando`/`cancelado`; admin/gerente/cajero tienen transiciones FSM. `crear_pedido` también autoriza edición de líneas. Decidir si separar alta/edición/transición antes de expandir roles | `pedidos.controller.ts`, `pedidos-estado.service.ts`, `pedidos.controller.spec.ts` |
 | **RBAC-MESERO-04** | ✅ | — | Asignar/reasignar domiciliario / dispatch | `POST /api/v1/domiciliarios-planta/asignar` + Bearer mesero → **403** |
 | **RBAC-MESERO-05** | ✅ | — | Módulo `/caja/*` admin/catálogo/reportes **bloqueados** (403) | `GET /api/v1/caja/activa/{sucursal}` + mesero → 403 |
 
@@ -142,12 +144,12 @@ Evidencia permisos: `pedidos.controller.ts` cobro/estado; `domiciliarios.control
 
 | ID | Estado | Sev | Hallazgo | Ejemplo que rompe |
 |----|--------|-----|----------|-------------------|
-| **RBAC-TENANT-01** | 🟣 **prod-risk** | Crítica | `POST /caja/cerrar` no valida que `caja_id` pertenezca a la sucursal del JWT | Cajero resto A con `cerrar_caja`: `POST /api/v1/caja/cerrar` `{ "caja_id": "<uuid_caja_resto_B>", "monto_final_contado": 0 }` → cierra turno de B, expira QR de B, Realtime en sede B. Controller solo hace `resolverEscritura(usuario, usuario.sucursal_id)` y service `WHERE id = $1` **sin** `sucursal_id` (`caja.service.ts:111-113`, `caja.controller.ts:55-62`) |
+| **RBAC-TENANT-01** | ✅ Fuente + unitarias + QA cross-sucursal | Crítica | `POST /caja/cerrar` consulta la caja bloqueando su fila y ejecuta `resolverEscritura(usuario, fila.sucursal_id)` antes de expirar QR o realizar escrituras. Una sede fuera del alcance del gerente recibe 403. | `verificar-idor-scope.ps1` contra PostgreSQL QA: gerente Centro intentó cerrar caja Norte; recibió 403 y la caja siguió abierta. La prueba usa dos sucursales del mismo restaurante demo; otro restaurante/tenant distinto aún requiere fixture y prueba dedicados. |
 | **RBAC-TENANT-02** | ✅ | — | Pedidos/mesas/productos/inventario: UUID + `AND sucursal_id` | Spoof pedido B → 404 |
 | **RBAC-TENANT-03** | 🟣 | Media | `POST /promociones/admin/limpiar-expiradas` efecto **global** (staff con `editar_productos`) | Admin A limpia estados Storage de todos los tenants |
-| **RBAC-TENANT-04** | 🟣 | Media | Colas globales impresión / FCM (`procesar-cola`) | Staff A drena jobs de B |
+| **RBAC-TENANT-04** | ✅ parcial | Media | La cola FCM manual ya exige Super Admin; cron interno procesa automáticamente. Revisar por separado el alcance de colas de impresión y sus tareas de administración. | Personal tenant no puede disparar `procesar-cola` |
 
-**Respuesta corta:** spoofear `sucursal_id` de otro restaurante **no** funciona en la mayoría de rutas. Spoofear **`caja_id` en cerrar** **sí** funciona (crítico).
+**Respuesta corta:** spoofear `sucursal_id` de otro restaurante **no** funciona en la mayoría de rutas revisadas. El intento de cerrar una caja ajena ahora se rechaza antes de cualquier escritura por `SucursalScopeService`; falta validar el flujo multi-tenant extremo a extremo contra PostgreSQL QA. La revisión de RBAC continúa abierta por los hallazgos anteriores.
 
 ---
 
@@ -156,7 +158,7 @@ Evidencia permisos: `pedidos.controller.ts` cobro/estado; `domiciliarios.control
 | Capacidad | admin/gerente | cajero | mesero | cocina | domi planta | super |
 |-----------|:-------------:|:------:|:------:|:------:|:-----------:|:-----:|
 | Ver/crear pedidos | ✅ | ✅ | ✅ | — | ver | ✅ |
-| Cobrar | ✅ | ✅ | ⚠️ **sí** | ❌ | ❌ | ✅ |
+| Cobrar | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
 | Abrir/cerrar caja | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
 | Catálogo / inventario | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Usuarios | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
@@ -174,15 +176,15 @@ Evidencia permisos: `pedidos.controller.ts` cobro/estado; `domiciliarios.control
 
 | ID | Prioridad | Acción | Cierra | Prod-risk |
 |----|-----------|--------|--------|-----------|
-| **RBAC-FIX-01** | P0 | `cerrar`: exigir `caja.sucursal_id === scoped` (mismo patrón `exigirCajaAbierta`) | RBAC-TENANT-01 | **Sí** |
-| **RBAC-FIX-02** | P0 | Cobrar: exigir `ver_caja` o permiso `cobrar_pedido` (quitar OR `ver_pedidos`/`crear_pedido` solo) | RBAC-MESERO-01/02 | **Sí** |
-| **RBAC-FIX-03** | P1 | `PATCH estado`: permiso dedicado / roles cocina+cajero+admin — no solo `ver_pedidos` | RBAC-MESERO-03 | Medio |
+| **RBAC-FIX-01** | ✅ Fuente + unitarias + QA cross-sucursal; cross-tenant pendiente | — | `cerrar`: valida el scope de la sucursal leída de la caja antes de cualquier efecto financiero. Prueba QA autenticada entre sedes del mismo restaurante: 403 y caja continúa abierta. | RBAC-TENANT-01 | Sin efecto fuera del alcance de sucursal |
+| **RBAC-FIX-02** | P0 | ✅ Código 2026-11-23: ambas rutas de cobro exigen `cobrar_pedido`; spec del guard bloquea mesero y permite cajero | RBAC-MESERO-01/02 | Cerrado en código; sin cobro real de prueba |
+| **RBAC-FIX-03** | P1 | 🟡 Parcial 2026-11-23: PATCH genérico exige `crear_pedido`; servicio limita al mesero a `pagando`/`cancelado`, mientras admin/gerente/cajero pueden transiciones FSM. UI explica alcance de `crear_pedido`. Decidir si separar alta/edición/transición y probar matriz antes de agregar roles | RBAC-MESERO-03 | Medio |
 | **RBAC-FIX-04** | P1 | Domi asignar: solo `gestionar_domiciliarios` | RBAC-MESERO-04 | ✅ cerrado 2026-08-11 (`verificar-rbac-mesero-04.ps1`) |
-| **RBAC-FIX-05** | P1 | Anonimizar: firma HMAC / Bearer device / o auth cliente | RBAC-GUARD-01 | Sí |
-| **RBAC-FIX-06** | P2 | `prueba-web`: quitar `todos_web` o restringir super_admin + no-prod; RolGuard en pagos staff | RBAC-GUARD-02/04 | Medio |
+| **RBAC-FIX-05** | ✅ Código + regresión | — | Anonimizar exige token FCM actual o sesión Supabase ligada al dispositivo; capability se limpia al anonimizar | RBAC-GUARD-01 | No se reproduce limpieza por ID conocido |
+| **RBAC-FIX-06** | 🟡 Parcial | P2 | `prueba-web` se limita al usuario actual; procesamiento global ahora es Super Admin. Sigue pendiente decidir protección/alcance de GET/POST billing staff | RBAC-GUARD-02/03/04 | Medio |
 | **RBAC-FIX-07** | P2 | Escrituras caja (fiado/gasto/devolución): permisos write dedicados; colas globales → cron/super | RBAC-CAJA-01, TENANT-03/04 | Medio |
 
-Extender `scripts/verificar-idor-scope.ps1` con caso **cerrar caja cross-restaurant** + smoke mesero cobro → 403 tras fix.
+`scripts/verificar-idor-scope.ps1` ya cubre cierre de caja entre sucursales y el smoke de permisos; queda agregar un segundo restaurante real en seed para validar aislamiento cross-tenant.
 
 ---
 
@@ -190,12 +192,12 @@ Extender `scripts/verificar-idor-scope.ps1` con caso **cerrar caja cross-restaur
 
 | Grupo | 🟣 | 🟡 | ✅ |
 |-------|---:|---:|---:|
-| RBAC-GUARD | 3 | 2 | 0 |
-| RBAC-MESERO | 3 | 0 | 2 |
+| RBAC-GUARD | 0 | 2 | 3 |
+| RBAC-MESERO | 0 | 1 | 4 |
 | RBAC-CAJA | 1 | 1 | 0 |
-| RBAC-TENANT | 3 | 0 | 1 |
-| **Total** | **10** | **3** | **3** |
-| RBAC-FIX | 6 abiertos · FIX-04 ✅ | | |
+| RBAC-TENANT | 1 | 1 | 2 |
+| **Total** | **2** | **5** | **9** |
+| RBAC-FIX | FIX-01 E2E pendiente; FIX-02/04/05 ✅; FIX-03/06 parcial; FIX-07 abierto | | |
 
 ---
 
@@ -203,12 +205,12 @@ Extender `scripts/verificar-idor-scope.ps1` con caso **cerrar caja cross-restaur
 
 | Fix | Evidencia |
 |-----|-----------|
-| RBAC-FIX-01 | Login cajero A; `POST /caja/cerrar` con `caja_id` de B → **403/404**; caja B sigue abierta |
-| RBAC-FIX-02 | Login mesero; `POST /pedidos/:id/cobrar` → **403**; cajero → 200 |
-| RBAC-FIX-03 | Mesero `PATCH …/estado` → 403 (salvo transiciones explícitamente permitidas) |
+| RBAC-FIX-01 | ✅ Scope unitario: la autorización consulta el restaurante de la caja y corta antes de mutaciones; falta E2E con tenant A/B y verificar que la caja B siga abierta |
+| RBAC-FIX-02 | Spec de `RolGuard` sobre ambos métodos: mesero (sin `cobrar_pedido`) → 403; cajero (con permiso) pasa guard. Falta smoke autenticado en BD QA |
+| RBAC-FIX-03 | Spec: `ver_pedidos` solo → 403; `crear_pedido` pasa guard. Servicio mantiene límite mesero `pagando`/`cancelado`; falta matriz de transiciones por rol |
 | RBAC-FIX-04 | Mesero `POST /domiciliarios-planta/asignar` → 403 (`verificar-rbac-mesero-04.ps1`) |
-| RBAC-FIX-05 | `DELETE anonimizar` sin prueba → 401/403 |
-| RBAC-FIX-06 | Mesero `prueba-web` → 403; no envía a tokens ajenos |
+| RBAC-FIX-05 | ✅ Unitarias: no prueba/FCM ajeno → false; FCM correcto o Supabase UID igual → true; UID distinto → false |
+| RBAC-FIX-06 | ✅ Controller `prueba-web` scope al usuario; `procesar-cola` metadata exige SuperAdminGuard. Billing staff aún pendiente |
 
 Credenciales demo: `admin@foody.demo` / mesero seed / `123456`. Script: ampliar `verificar-idor-scope.ps1`.
 
@@ -218,6 +220,7 @@ Credenciales demo: `admin@foody.demo` / mesero seed / `123456`. Script: ampliar 
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-11-23 | **RBAC-PEDIDOS-01** — Actualizada evidencia: cobros ya exigen `cobrar_pedido`; el guard de estado deja de aceptar solo lectura y requiere `crear_pedido`. Specs de ambos endpoints de cobro y estado. Permisos por transición quedan parcialmente pendientes |
 | 2026-08-11 | **RBAC-MESERO-04 / FIX-04 ✅** — planta sin OR `ver_pedidos`; script `verificar-rbac-mesero-04.ps1` |
 | 2026-08-06 | Enlace a Prompt 07 (`AUDITORIA_BD_SUPABASE.md`) |
 | 2026-08-06 | **Creación** Prompt 06 — RBAC-GUARD/MESERO/CAJA/TENANT + RBAC-FIX-01…07; ejemplos de petición; enlazado MASTER / AVANCE / README / ROADMAP |

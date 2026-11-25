@@ -20,6 +20,7 @@ const jwt_payload_1 = require("../../core/auth/jwt-payload");
 const jwt_auth_guard_1 = require("../../core/auth/guards/jwt-auth.guard");
 const rol_guard_1 = require("../../core/auth/guards/rol.guard");
 const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-activa.guard");
+const super_admin_guard_1 = require("../../core/auth/guards/super-admin.guard");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const notificaciones_service_1 = require("./notificaciones.service");
 let NotificacionesController = class NotificacionesController {
@@ -55,8 +56,7 @@ __decorate([
 ], NotificacionesController.prototype, "diagnostico", null);
 __decorate([
     (0, common_1.Post)('procesar-cola'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, suscripcion_activa_guard_1.SuscripcionActivaGuard, rol_guard_1.RolGuard),
-    (0, permisos_decorator_1.Permisos)('ver_dashboard'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, usuario_activo_guard_1.UsuarioActivoGuard, super_admin_guard_1.SuperAdminGuard),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)

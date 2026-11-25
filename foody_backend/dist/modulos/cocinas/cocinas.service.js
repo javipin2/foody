@@ -204,7 +204,6 @@ let CocinasService = class CocinasService {
     }
     async listarTickets(cocinaId, sucursalId) {
         await this.exigirCocina(cocinaId, sucursalId);
-        await this.evaluarDemorasEnCocina(cocinaId, sucursalId);
         return this.database.consultar(`SELECT p.id AS pedido_id, p.numero_pedido, p.tipo, p.estado,
               p.mesa_id, m.nombre AS mesa_nombre, p.cliente_nombre,
               p.observaciones, p.created_at,
@@ -250,7 +249,10 @@ let CocinasService = class CocinasService {
                SELECT 1 FROM pedido_items pi_pend
                WHERE pi_pend.pedido_id = p.id
                  AND pi_pend.cocina_id = $1
-                 AND pi_pend.estado_cocina NOT IN ('listo', 'no_disponible')
+                 AND (
+                   pi_pend.estado_cocina IS NULL
+                   OR pi_pend.estado_cocina NOT IN ('listo', 'no_disponible')
+                 )
              )
            )
          )
@@ -330,7 +332,8 @@ let CocinasService = class CocinasService {
             }
             const conteo = await client.query(`SELECT
            COUNT(*) FILTER (
-             WHERE estado_cocina NOT IN ('listo', 'no_disponible')
+             WHERE estado_cocina IS NULL
+                OR estado_cocina NOT IN ('listo', 'no_disponible')
            ) AS pendientes,
            COUNT(*) FILTER (
              WHERE estado_cocina IN ('preparando', 'listo')
@@ -437,11 +440,13 @@ let CocinasService = class CocinasService {
                 (dispatchResult.motivo === 'planta_asignada_auto' ||
                     dispatchResult.motivo === 'ya_asignado');
             if (!asignado) {
+                const detalle = dispatchResult.mensaje ??
+                    'No hubo asignación automática. Revisa el panel de domiciliarios.';
                 void this.alertasRiesgo.registrar({
                     sucursalId,
                     tipo: 'domicilio_listo_sin_asignar',
                     nivel: 'medio',
-                    descripcion: `Pedido listo — asignar domiciliario (${pedidoId})`,
+                    descripcion: `Pedido ${pedidoId}: ${detalle}`,
                     referenciaId: pedidoId,
                     referenciaTipo: 'pedido',
                     deduplicar: true,
@@ -477,26 +482,6 @@ let CocinasService = class CocinasService {
             throw new common_1.NotFoundException('Ítem no encontrado');
         const base = (item.observaciones ?? '').replace(/^\[URGENTE\]\s*/, '');
         return this.actualizarObservacionesItem(itemId, sucursalId, urgente ? `${obs}${base}`.trim() : base.trim());
-    }
-    async evaluarDemorasEnCocina(cocinaId, sucursalId) {
-        const demorados = await this.database.consultar(`SELECT DISTINCT p.id AS pedido_id, p.numero_pedido
-       FROM pedido_items pi
-       INNER JOIN pedidos p ON p.id = pi.pedido_id
-       WHERE pi.cocina_id = $1 AND p.sucursal_id = $2
-         AND pi.estado_cocina IN ('pendiente', 'preparando')
-         AND pi.created_at < now() - interval '20 minutes'
-         AND p.estado IN ('confirmado', 'en_cocina', 'pagando', 'pagado')`, [cocinaId, sucursalId]);
-        for (const d of demorados) {
-            await this.alertasRiesgo.registrar({
-                sucursalId,
-                tipo: 'demora_cocina',
-                nivel: 'medio',
-                descripcion: `Pedido ${d.numero_pedido} con ítems >20 min en cocina`,
-                referenciaId: d.pedido_id,
-                referenciaTipo: 'pedido',
-                deduplicar: true,
-            });
-        }
     }
     async exigirCocina(id, sucursalId) {
         const c = await this.database.consultarUno(`SELECT id FROM cocinas WHERE id = $1 AND sucursal_id = $2`, [id, sucursalId]);

@@ -24,14 +24,25 @@ class CajaAdminScreen extends ConsumerStatefulWidget {
   const CajaAdminScreen({
     super.key,
     this.sucursalId,
+    this.pedidoIdInicial,
+    this.onPedidoInicialUsado,
     this.onIrPedido,
+    this.onRevisarOperaciones,
+    this.etiquetaAccionTurnoLargo = 'Revisar operación',
+    this.textoAvisoTurnoLargo,
     this.onCajaEstadoCambiado,
     this.ocultarCabecera = false,
     this.permitirArqueoCiego = true,
+    this.repository,
   });
 
   final String? sucursalId;
+  final String? pedidoIdInicial;
+  final VoidCallback? onPedidoInicialUsado;
   final ValueChanged<String>? onIrPedido;
+  final VoidCallback? onRevisarOperaciones;
+  final String etiquetaAccionTurnoLargo;
+  final String? textoAvisoTurnoLargo;
 
   /// NAV-CJ-02: notifica al shell cajero tras abrir/cerrar turno.
   final ValueChanged<bool>? onCajaEstadoCambiado;
@@ -41,6 +52,7 @@ class CajaAdminScreen extends ConsumerStatefulWidget {
 
   /// NAV-CJ-14: el cajero no debería auto-activar arqueo ciego.
   final bool permitirArqueoCiego;
+  final CajaRepository? repository;
 
   @override
   ConsumerState<CajaAdminScreen> createState() => _CajaAdminScreenState();
@@ -50,7 +62,7 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     with WidgetsBindingObserver {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = CajaRepository();
+  late final _repo = widget.repository ?? CajaRepository();
   final _montoApertura = TextEditingController(text: '0');
   final _montoCierre = TextEditingController();
   final _conceptoGasto = TextEditingController();
@@ -62,6 +74,10 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
 
   Map<String, dynamic>? _caja;
   List<Map<String, dynamic>> _movimientos = [];
+  List<Map<String, dynamic>>? _movimientosPedido;
+  bool _cargandoMovimientosPedido = false;
+  String? _errorMovimientosPedido;
+  String? _pedidoConsultadoId;
   List<Map<String, dynamic>> _fiados = [];
   Map<String, dynamic>? _resumenCxC;
   bool _verHistorialFiados = false;
@@ -80,12 +96,30 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _pedidoConsultadoId = widget.pedidoIdInicial;
     _cargar();
+    if (_pedidoConsultadoId != null) {
+      unawaited(_cargarMovimientosPedido(_pedidoConsultadoId!));
+    }
     _suscribirRealtime();
     _pollRespaldo = PollRealtimeRespaldo(onActualizar: () async {
       if (mounted) await _cargar(silencioso: true);
     });
     unawaited(_pollRespaldo!.iniciar());
+  }
+
+  @override
+  void didUpdateWidget(covariant CajaAdminScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pedidoId = widget.pedidoIdInicial;
+    if (pedidoId != null &&
+        pedidoId.isNotEmpty &&
+        pedidoId != oldWidget.pedidoIdInicial &&
+        pedidoId != _pedidoConsultadoId) {
+      _pedidoConsultadoId = pedidoId;
+      _movimientosPedido = null;
+      unawaited(_cargarMovimientosPedido(pedidoId));
+    }
   }
 
   @override
@@ -182,6 +216,38 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
           _cargando = false;
         });
       }
+    }
+  }
+
+  Future<void> _cargarMovimientosPedido(String pedidoId) async {
+    if (mounted) {
+      setState(() {
+        _cargandoMovimientosPedido = true;
+        _errorMovimientosPedido = null;
+      });
+    }
+    try {
+      final sucursalId = widget.sucursalId;
+      if (sucursalId == null) throw StateError('Sin sucursal seleccionada');
+      final movimientos = await _repo.movimientosPedido(
+        pedidoId,
+        sucursalId: sucursalId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _movimientosPedido = movimientos;
+        _cargandoMovimientosPedido = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMovimientosPedido =
+            mensajeErrorHttp(e, contexto: 'movimientos del pedido');
+        _cargandoMovimientosPedido = false;
+        _movimientosPedido = const [];
+      });
+    } finally {
+      widget.onPedidoInicialUsado?.call();
     }
   }
 
@@ -581,6 +647,10 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   children: [
                     _metricasCaja(),
                     const SizedBox(height: 12),
+                    if (_pedidoConsultadoId != null) ...[
+                      _panelMovimientosPedido(),
+                      const SizedBox(height: 12),
+                    ],
                     _panelLateralCaja(scrollPropio: false),
                     const SizedBox(height: 16),
                     _listaMovimientos(),
@@ -727,8 +797,103 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
       children: [
         _metricasCaja(),
         const SizedBox(height: 12),
+        if (_pedidoConsultadoId != null) ...[
+          _panelMovimientosPedido(),
+          const SizedBox(height: 12),
+        ],
         _listaMovimientos(),
       ],
+    );
+  }
+
+  Widget _panelMovimientosPedido() {
+    final movimientos = _movimientosPedido ?? const <Map<String, dynamic>>[];
+    final numero = movimientos.isNotEmpty
+        ? movimientos.first['numero_pedido']?.toString()
+        : null;
+    final pedidoLabel = numero == null || numero.isEmpty
+        ? (_pedidoConsultadoId?.length ?? 0) > 8
+            ? _pedidoConsultadoId!.substring(0, 8)
+            : _pedidoConsultadoId ?? ''
+        : numero;
+    return Container(
+      key: const ValueKey('caja.movimientosPedido'),
+      decoration: _decoTarjeta(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Icon(Icons.receipt_long_outlined, color: _scheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Movimientos del pedido #$pedidoLabel',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _scheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (_cargandoMovimientosPedido)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (_errorMovimientosPedido == null)
+                  Text(
+                    '${movimientos.length} registros',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _scheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: _scheme.outlineVariant),
+          if (_cargandoMovimientosPedido)
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Center(child: Text('Buscando movimientos del pedido…')),
+            )
+          else if (_errorMovimientosPedido != null)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_errorMovimientosPedido!),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        final id = _pedidoConsultadoId;
+                        if (id != null) unawaited(_cargarMovimientosPedido(id));
+                      },
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (movimientos.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Text(
+                'Este pedido todavía no tiene movimientos registrados en caja.',
+                style: TextStyle(color: _scheme.onSurfaceVariant),
+              ),
+            )
+          else
+            ...movimientos.take(20).map(_filaMovimiento),
+        ],
+      ),
     );
   }
 
@@ -747,13 +912,54 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
             decoration: BoxDecoration(
               color: AnaliticaTokens.alertas.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              'Turno abierto ${horas.toStringAsFixed(1)} h. Cierra caja o haz arqueo.',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.alertas,
+              border: Border.all(
+                color: AnaliticaTokens.alertas.withValues(alpha: 0.28),
               ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.schedule_rounded,
+                  size: 20,
+                  color: AnaliticaTokens.alertas,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Turno abierto hace ${_duracionTurno(horas)}. '
+                        '${widget.textoAvisoTurnoLargo ?? 'Revisa pedidos, mesas y domicilios pendientes antes de cerrar.'}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AnaliticaTokens.alertas,
+                        ),
+                      ),
+                      if (widget.onRevisarOperaciones != null) ...[
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: TextButton.icon(
+                            key: const ValueKey('caja.revisarOperaciones'),
+                            onPressed: widget.onRevisarOperaciones,
+                            style: TextButton.styleFrom(
+                              foregroundColor: _scheme.primary,
+                              minimumSize: const Size(48, 48),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                            ),
+                            icon: const Icon(Icons.arrow_forward_rounded),
+                            label: Text(widget.etiquetaAccionTurnoLargo),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -788,6 +994,22 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     );
   }
 
+  String _duracionTurno(double horas) {
+    final minutosTotales = (horas * 60).round();
+    final dias = minutosTotales ~/ (24 * 60);
+    final horasRestantes = (minutosTotales % (24 * 60)) ~/ 60;
+    if (dias > 0) {
+      final dia = dias == 1 ? 'día' : 'días';
+      if (horasRestantes == 0) return '$dias $dia';
+      return '$dias $dia y $horasRestantes h';
+    }
+
+    final horasCompletas = minutosTotales ~/ 60;
+    final minutosRestantes = minutosTotales % 60;
+    if (minutosRestantes == 0) return '$horasCompletas h';
+    return '$horasCompletas h y $minutosRestantes min';
+  }
+
   Widget _listaMovimientos() {
     return Container(
       decoration: _decoTarjeta(),
@@ -798,15 +1020,17 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                Text(
-                  'Movimientos',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _scheme.onSurface,
+                Expanded(
+                  child: Text(
+                    'Movimientos',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _scheme.onSurface,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Text(
                   '${_movimientos.length} registros',
                   style: TextStyle(
@@ -1189,6 +1413,10 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
         32,
       ),
       children: [
+        if (_pedidoConsultadoId != null) ...[
+          _panelMovimientosPedido(),
+          const SizedBox(height: 12),
+        ],
         if (!widget.ocultarCabecera) ...[
           Text(
             'Admin / Operación',

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 
@@ -54,12 +56,14 @@ class FoodyDialogoShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    final viewInsets = MediaQuery.viewInsetsOf(context);
     final ancho = (size.width - 32).clamp(0.0, maxWidth);
-    final altoMax = size.height * maxHeightFactor;
+    final altoDisponible =
+        (size.height - viewInsets.vertical - 64).clamp(0.0, size.height);
+    final altoMax = math.min(size.height * maxHeightFactor, altoDisponible);
     final theme = Theme.of(context);
 
-    return AlertDialog(
-      scrollable: true,
+    return Dialog(
       constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: altoMax),
       backgroundColor: theme.colorScheme.surface,
       surfaceTintColor: Colors.transparent,
@@ -67,33 +71,51 @@ class FoodyDialogoShell extends StatelessWidget {
         borderRadius: BorderRadius.circular(FoodyFormEstilo.radio + 4),
       ),
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            titulo,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
+      child: SizedBox(
+        width: ancho,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  titulo,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (subtitulo != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitulo!,
+                    style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                  child: contenido,
+                ),
+                if (acciones.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: acciones,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (subtitulo != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              subtitulo!,
-              style: theme.textTheme.bodySmall?.copyWith(height: 1.35),
-            ),
-          ],
-        ],
+        ),
       ),
-      content: SizedBox(
-        width: ancho,
-        child: contenido,
-      ),
-      actions: acciones,
     );
   }
 }

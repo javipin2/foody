@@ -55,10 +55,7 @@ export class CajaController {
   @Post('abrir')
   @HttpCode(HttpStatus.CREATED)
   @Permisos('abrir_caja')
-  async abrir(
-    @Body() dto: AbrirCajaDto,
-    @UsuarioActual() usuario: JwtPayload,
-  ) {
+  async abrir(@Body() dto: AbrirCajaDto, @UsuarioActual() usuario: JwtPayload) {
     const id = await this.sucursalScope.resolverEscritura(
       usuario,
       dto.sucursal_id,
@@ -160,6 +157,27 @@ export class CajaController {
     );
   }
 
+  @Get('pedidos/:pedido_id/movimientos')
+  @Permisos('ver_caja')
+  async movimientosPedido(
+    @Param('pedido_id', ParseUUIDPipe) pedidoId: string,
+    @Query() query: PaginacionQueryDto,
+    @Query('sucursal_id', new ParseUUIDPipe({ optional: true }))
+    sucursalSolicitada: string | undefined,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    const sucursalId = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalSolicitada ?? usuario.sucursal_id,
+    );
+    return this.cajaService.listarMovimientosPedido(
+      pedidoId,
+      sucursalId,
+      query.page,
+      query.limit,
+    );
+  }
+
   @Post('retiro-parcial')
   @Permisos('hacer_retiro_parcial')
   async retiro(
@@ -191,10 +209,7 @@ export class CajaController {
 
   @Post('gastos')
   @Permisos('ver_caja')
-  async gasto(
-    @Body() dto: GastoCajaDto,
-    @UsuarioActual() usuario: JwtPayload,
-  ) {
+  async gasto(@Body() dto: GastoCajaDto, @UsuarioActual() usuario: JwtPayload) {
     const sucursalId = await this.sucursalScope.resolverEscritura(
       usuario,
       usuario.sucursal_id,

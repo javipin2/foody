@@ -35,6 +35,7 @@ const pedidos_inventario_service_1 = require("./pedidos-inventario.service");
 const pedidos_dispatch_hooks_service_1 = require("./pedidos-dispatch-hooks.service");
 const notificaciones_module_1 = require("../notificaciones/notificaciones.module");
 const pedidos_qr_cron_service_1 = require("./pedidos-qr-cron.service");
+const dispositivos_module_1 = require("../dispositivos/dispositivos.module");
 let PedidosModule = class PedidosModule {
 };
 exports.PedidosModule = PedidosModule;
@@ -53,6 +54,7 @@ exports.PedidosModule = PedidosModule = __decorate([
             realtime_module_1.RealtimeModule,
             impresion_module_1.ImpresionModule,
             notificaciones_module_1.NotificacionesModule,
+            dispositivos_module_1.DispositivosModule,
         ],
         controllers: [pedidos_controller_1.PedidosController, pedidos_public_controller_1.PedidosPublicController],
         providers: [

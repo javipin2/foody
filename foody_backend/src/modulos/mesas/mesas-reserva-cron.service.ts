@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 /** MES-016: libera mesas cuando expira `reserva_hasta`. */
 @Injectable()
@@ -15,6 +16,10 @@ export class MesasReservaCronService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Cron de reservas pausado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     setInterval(
       () =>
         void this.database.intentarAdvisoryLock(

@@ -13,22 +13,23 @@
  * - Mesa / para llevar / mostrador: `entregado` no vía Kanban; cierre = `pagado` (`POST .../cobrar`).
  * - Domicilio: `entregado` solo desde `en_camino` (app domiciliario).
  */
-export const TRANSICIONES_PEDIDO: Readonly<Record<string, readonly string[]>> = {
-  pendiente_aprobacion: ['en_cocina', 'rechazado', 'cancelado'],
-  pendiente: ['en_cocina', 'cancelado'],
-  /** Legacy — pedidos antigos; en UI se agrupan con en_cocina */
-  confirmado: ['en_cocina', 'listo', 'pagando', 'cancelado'],
-  en_cocina: ['listo', 'pagando', 'cancelado'],
-  /** VIE-01: agregar ítems demota a cocina; PED-PREPAGO: listo cobrado → pagado */
-  listo: ['pagando', 'entregado', 'cancelado', 'en_cocina', 'pagado'],
-  pagando: ['entregado', 'cancelado', 'en_cocina'],
-  asignado: ['en_camino', 'cancelado'],
-  en_camino: ['entregado', 'cancelado'],
-  entregado: [],
-  pagado: [],
-  cancelado: [],
-  rechazado: [],
-};
+export const TRANSICIONES_PEDIDO: Readonly<Record<string, readonly string[]>> =
+  {
+    pendiente_aprobacion: ['en_cocina', 'rechazado', 'cancelado'],
+    pendiente: ['en_cocina', 'cancelado'],
+    /** Legacy — pedidos antigos; en UI se agrupan con en_cocina */
+    confirmado: ['en_cocina', 'listo', 'pagando', 'cancelado'],
+    en_cocina: ['listo', 'pagando', 'cancelado'],
+    /** VIE-01: agregar ítems demota a cocina; PED-PREPAGO: listo cobrado → pagado */
+    listo: ['pagando', 'entregado', 'cancelado', 'en_cocina', 'pagado'],
+    pagando: ['entregado', 'cancelado', 'en_cocina'],
+    asignado: ['en_camino', 'cancelado'],
+    en_camino: ['entregado', 'cancelado'],
+    entregado: [],
+    pagado: [],
+    cancelado: [],
+    rechazado: [],
+  };
 
 /** F-06 / F-11: cocina no muta pedidos en cobro, ruta o terminal. */
 export const ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA = new Set([
@@ -42,10 +43,7 @@ export const ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA = new Set([
 ]);
 
 /** Pedido atado a mesa física (tipo mesa o mesa_id presente). */
-export function esPedidoEnMesa(
-  tipo: string,
-  mesaId?: string | null,
-): boolean {
+export function esPedidoEnMesa(tipo: string, mesaId?: string | null): boolean {
   return tipo === 'mesa' || (mesaId != null && mesaId !== '');
 }
 
@@ -102,7 +100,10 @@ export function estadoActivaCocina(estado: string): boolean {
 }
 
 /** Solo mesa / para llevar en salón pueden pasar a pagando manualmente. */
-export function puedeMarcarPagando(tipo: string, mesaId: string | null): boolean {
+export function puedeMarcarPagando(
+  tipo: string,
+  mesaId: string | null,
+): boolean {
   return tipo === 'mesa' || tipo === 'para_llevar' || mesaId != null;
 }
 
@@ -186,8 +187,7 @@ export function puedeForzarPagadoSinCocinaCompleta(
   motivo?: string | null,
 ): boolean {
   const r = (rol ?? '').trim();
-  const okRol =
-    r === 'admin' || r === 'gerente' || r === 'gerente_cadena';
+  const okRol = r === 'admin' || r === 'gerente' || r === 'gerente_cadena';
   return okRol && !!motivo?.trim();
 }
 
@@ -196,14 +196,20 @@ export function puedeForzarPagadoSinCocinaCompleta(
  * Pedido sin ítems → false (no cerrar vacío).
  */
 export async function pedidoCocinaCompleta(
-  client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ n: string; incompletos: string }> }> },
+  client: {
+    query: (
+      sql: string,
+      params?: unknown[],
+    ) => Promise<{ rows: Array<{ n: string; incompletos: string }> }>;
+  },
   pedidoId: string,
 ): Promise<boolean> {
   const r = await client.query(
     `SELECT
        COUNT(*)::text AS n,
        COUNT(*) FILTER (
-         WHERE estado_cocina NOT IN ('listo', 'no_disponible')
+         WHERE estado_cocina IS NULL
+            OR estado_cocina NOT IN ('listo', 'no_disponible')
        )::text AS incompletos
      FROM pedido_items WHERE pedido_id = $1`,
     [pedidoId],

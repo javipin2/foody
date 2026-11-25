@@ -158,7 +158,7 @@ Si el negocio **quiere** reopen, eso sería **nueva decisión de producto** (hoy
 |--|--|
 | **Clase** | **REGLA_CLARA** |
 | **Qué pasa** | Descuento del pedido abierto **se mantiene**; pedidos nuevos rechazan código; cobro = total congelado. |
-| **Matiz** | Agregar ítems después **no** reaplica % (**CONS-PROMO-ADD-01**). |
+| **Matiz (histórico)** | Este hallazgo se corrigió después: agregar, editar o eliminar ítems vuelve a calcular el descuento desde la promoción vinculada. Ver actualización CONS-PROMO-ADD-01 en `AUDITORIA_CONSISTENCIA_MODULOS.md`; la integración registrada cubre agregar. |
 | **Evidencia** | `verificar-promociones-precios` A |
 
 ---
@@ -220,7 +220,7 @@ Si el negocio **quiere** reopen, eso sería **nueva decisión de producto** (hoy
 | Cancelar `pagado` | Rechazado | REGLA_CLARA |
 | Cocina muta pedido en `pagando`/`pagado` | Ítem sí; estado pedido no | REGLA_CLARA |
 | PATCH Kanban a `pagado` | 400 (DTO) | REGLA_CLARA |
-| Prepago para llevar + cierre caja | Bloquea (PED-PREPAGO-01) | **BUG** ops |
+| Prepago para llevar + cierre caja | Saldo cero no bloquea cierre; pedido permanece visible en cocina y cierra `pagado` al terminar (PED-PREPAGO-01) | ✅ Corrección verificada en fuente y caso E2E de preparación; cierre real de caja QA aún sin recorrido específico |
 
 ### Opciones cobro pre-listo (compartidas con VIE-05)
 
@@ -246,9 +246,9 @@ Si el negocio **quiere** reopen, eso sería **nueva decisión de producto** (hoy
 | OK si… | Bloqueante si… |
 |--------|----------------|
 | Transfer mesa + historial | Pedidos `listo` con pendientes (VIE-01) |
-| Race 2 meseros no pierde ítems | Cierre caja con prepago (PED-PREPAGO) |
+| Race 2 meseros no pierde ítems | Los prepago con saldo cero no bloquean cierre; confirmar KDS antes de entregar |
 | Promo/precio snapshot | Cocina N/D traba pedido (COC-NODISP) |
-| Pagado no se reabre | Tablets sin refetch (VIE-12) |
+| Pagado no se reabre; prepago con saldo cero no bloquea cierre | Tablets sin refetch (VIE-12) |
 | Cola impresión en BD | Sin plan B papel / reimprimir |
 
 ---
@@ -261,7 +261,7 @@ Si el negocio **quiere** reopen, eso sería **nueva decisión de producto** (hoy
 | 2 | VIE-05 / VIE-13 | ✅ Decisión **C** implementada (2026-08-07) |
 | 3 | COC-NODISP + VIE-09 | ✅ COC-NODISP + decisión **C** fallo/merma |
 | 4 | VIE-12 / RT-RECON | Refetch al reconectar |
-| 5 | PED-PREPAGO-01 | Cerrar prepago vs cierre caja |
+| 5 | PED-PREPAGO-01 | ✅ Cerrado en fuente: saldo cero no bloquea caja; falta recorrido de cierre con fixture en QA aislada |
 | 6 | VIE-10 / COC-REIMP | Botón reimprimir / estado impresora visible |
 | 7 | VIE-QTY-01 | ✅ Decisión **C** — prohibir qty↓ en cocina |
 

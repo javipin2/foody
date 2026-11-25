@@ -19,6 +19,9 @@ class UsuariosAdminScreen extends StatefulWidget {
     this.sucursalId,
     this.puedeGestionarMultiSucursal = false,
     this.onIrCocinas,
+    this.repository,
+    this.sucursalesRepository,
+    this.cocinasRepository,
   });
 
   final String? sucursalId;
@@ -26,6 +29,9 @@ class UsuariosAdminScreen extends StatefulWidget {
 
   /// NAV-ADM2-20: crear estación si no hay cocinas.
   final VoidCallback? onIrCocinas;
+  final UsuariosRepository? repository;
+  final SucursalesRepository? sucursalesRepository;
+  final CocinasRepository? cocinasRepository;
 
   @override
   State<UsuariosAdminScreen> createState() => _UsuariosAdminScreenState();
@@ -34,9 +40,9 @@ class UsuariosAdminScreen extends StatefulWidget {
 class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = UsuariosRepository();
-  final _sucursalesRepo = SucursalesRepository();
-  final _cocinasRepo = CocinasRepository();
+  late final UsuariosRepository _repo;
+  late final SucursalesRepository _sucursalesRepo;
+  late final CocinasRepository _cocinasRepo;
   List<Map<String, dynamic>> _usuarios = [];
   List<Map<String, dynamic>> _sucursales = [];
   List<Map<String, dynamic>> _cocinas = [];
@@ -67,6 +73,9 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? UsuariosRepository();
+    _sucursalesRepo = widget.sucursalesRepository ?? SucursalesRepository();
+    _cocinasRepo = widget.cocinasRepository ?? CocinasRepository();
     _sucursalVistaId = widget.sucursalId;
     _inicializar();
   }
@@ -180,7 +189,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
       'cancelar_pedido': 'Cancelar pedidos',
       'cerrar_caja': 'Cerrar caja',
       'cobrar_pedido': 'Cobrar pedidos',
-      'crear_pedido': 'Crear pedidos',
+      'crear_pedido': 'Crear y operar pedidos',
       'editar_inventario': 'Editar inventario',
       'editar_productos': 'Crear/editar productos',
       'editar_stock': 'Editar stock',
@@ -249,6 +258,12 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                 _etiquetaPermiso(p),
                 style: const TextStyle(fontSize: 13),
               ),
+              subtitle: p == 'crear_pedido'
+                  ? const Text(
+                      'Incluye agregar o editar pedidos y solicitar cambios '
+                      'de estado válidos para el rol.',
+                    )
+                  : null,
               onChanged: (v) {
                 final next = Set<String>.from(seleccionados);
                 if (v == true) {
@@ -370,6 +385,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     initialValue: rol,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Rol'),
                     items: _rolesDisponibles
                         .map(
@@ -599,6 +615,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: rol,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Rol'),
                       items: _rolesDisponibles
                           .map(
@@ -758,6 +775,40 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
     final sid = _sucursalVistaId;
     if (sid == null) return;
     final activo = u['activo'] as bool? ?? true;
+    if (activo) {
+      final nombre = u['nombre'] as String? ?? 'este usuario';
+      final confirmado = await FoodyDialogo.mostrar<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: Icon(
+            Icons.person_off_outlined,
+            color: Theme.of(ctx).colorScheme.error,
+          ),
+          title: const Text('¿Desactivar el acceso?'),
+          content: Text(
+            '$nombre no podrá iniciar sesión en Foody hasta que vuelvas a '
+            'activar su cuenta.',
+          ),
+          actions: [
+            TextButton(
+              key: const ValueKey<String>('usuario-mantener-activo'),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Mantener activo'),
+            ),
+            FilledButton(
+              key: const ValueKey<String>('usuario-confirmar-desactivacion'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+                foregroundColor: Theme.of(ctx).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Desactivar acceso'),
+            ),
+          ],
+        ),
+      );
+      if (confirmado != true || !mounted) return;
+    }
     try {
       await _repo.cambiarEstado(
         usuarioId: u['id'] as String,
@@ -954,18 +1005,33 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                     color: _scheme.onSurface,
                     child: _usuarios.isEmpty
                         ? _vacio()
-                        : ListView.separated(
-                            padding: EdgeInsets.fromLTRB(
-                              compacto ? 12 : 20,
-                              4,
-                              compacto ? 12 : 20,
-                              32,
-                            ),
-                            itemCount: _usuarios.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (_, i) =>
-                                _tarjetaUsuario(_usuarios[i]),
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              final anchoTabla = constraints.maxWidth >= 1100;
+                              final padding = EdgeInsets.fromLTRB(
+                                compacto ? 12 : 20,
+                                4,
+                                compacto ? 12 : 20,
+                                32,
+                              );
+                              if (anchoTabla) {
+                                return ListView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  padding: padding,
+                                  children: [_tablaUsuarios()],
+                                );
+                              }
+                              return ListView.separated(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: padding,
+                                itemCount: _usuarios.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (_, i) =>
+                                    _tarjetaUsuario(_usuarios[i]),
+                              );
+                            },
                           ),
                   ),
       ),
@@ -1186,8 +1252,12 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                           _badge(_etiquetaRol(rol), colorRol),
                           if (cocina != null && cocina.isNotEmpty)
                             _badge(cocina, _scheme.onSurfaceVariant),
-                          if (!activo)
-                            _badge('Inactivo', _scheme.onSurfaceVariant),
+                          _badge(
+                            activo ? 'Activo' : 'Inactivo',
+                            activo
+                                ? AnaliticaTokens.inventario
+                                : _scheme.onSurfaceVariant,
+                          ),
                           if (esAdmin) _badge('Propietario', _scheme.onSurface),
                         ],
                       ),
@@ -1202,6 +1272,148 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
                   ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tablaUsuarios() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        border: Border.all(color: _scheme.outlineVariant),
+        boxShadow: AnaliticaTokens.shadowSoft,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            showCheckboxColumn: false,
+            horizontalMargin: 18,
+            columnSpacing: 28,
+            headingRowHeight: 48,
+            dataRowMinHeight: 64,
+            dataRowMaxHeight: 72,
+            headingRowColor: WidgetStatePropertyAll(
+              _scheme.surfaceContainerHighest,
+            ),
+            border: TableBorder(
+              horizontalInside: BorderSide(color: _scheme.outlineVariant),
+            ),
+            columns: const [
+              DataColumn(label: Text('Usuario')),
+              DataColumn(label: Text('Rol')),
+              DataColumn(label: Text('Estación')),
+              DataColumn(label: Text('Estado')),
+            ],
+            rows: _usuarios.map((u) {
+              final nombre = u['nombre'] as String? ?? '';
+              final email = u['email'] as String? ?? '';
+              final rol = u['rol'] as String?;
+              final cocina = u['cocina_nombre'] as String?;
+              final activo = u['activo'] as bool? ?? true;
+              final esAdmin = rol == 'admin';
+              final colorRol = _colorRol(rol);
+
+              return DataRow(
+                onSelectChanged: esAdmin ? null : (_) => _editarUsuario(u),
+                cells: [
+                  DataCell(
+                    SizedBox(
+                      width: 300,
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor: activo
+                                ? colorRol.withValues(alpha: 0.1)
+                                : _scheme.surfaceContainerHighest,
+                            foregroundColor:
+                                activo ? colorRol : _scheme.onSurfaceVariant,
+                            child: Text(
+                              _iniciales(nombre),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  nombre,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: activo
+                                        ? _scheme.onSurface
+                                        : _scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                Text(
+                                  email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _badge(_etiquetaRol(rol), colorRol),
+                        if (esAdmin) _badge('Propietario', _scheme.onSurface),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      cocina?.isNotEmpty == true ? cocina! : '—',
+                      style: TextStyle(color: _scheme.onSurfaceVariant),
+                    ),
+                  ),
+                  DataCell(
+                    esAdmin
+                        ? _badge('Protegido', _scheme.onSurfaceVariant)
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _badge(
+                                activo ? 'Activo' : 'Inactivo',
+                                activo
+                                    ? AnaliticaTokens.inventario
+                                    : _scheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 8),
+                              Switch.adaptive(
+                                value: activo,
+                                activeTrackColor: _scheme.primary,
+                                onChanged: (_) => _toggleActivo(u),
+                              ),
+                            ],
+                          ),
+                  ),
+                ],
+              );
+            }).toList(),
           ),
         ),
       ),

@@ -35,6 +35,7 @@ const MENSAJES_NEGOCIO = {
     FALLO_PREPARACION_MOTIVO: 'Indica el motivo del fallo de preparación (obligatorio).',
     IMPRESION_SIN_COCINA: 'Este pedido no tiene ítems de cocina para imprimir.',
     PEDIDO_NO_ENCONTRADO: 'Pedido no encontrado en esta sucursal.',
+    COBRO_REQUERIDO: 'Indica un método de pago válido al confirmar la entrega del domicilio.',
 };
 const CODIGOS_ERROR_PRESERVAR = new Set([
     'STOCK_INSUFICIENTE',
@@ -66,6 +67,7 @@ const CODIGOS_ERROR_PRESERVAR = new Set([
     'QR_TOKEN_DUPLICADO',
     'REGISTRO_CERRADO',
     'REGISTRO_CUPO',
+    'COBRO_REQUERIDO',
 ]);
 let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
     logger = new common_1.Logger(HttpExceptionFilter_1.name);
@@ -89,7 +91,8 @@ let HttpExceptionFilter = HttpExceptionFilter_1 = class HttpExceptionFilter {
                     if (anidado.mensaje != null) {
                         mensaje = String(anidado.mensaje);
                     }
-                    if (anidado.message != null && mensaje === 'Ocurrió un error inesperado') {
+                    if (anidado.message != null &&
+                        mensaje === 'Ocurrió un error inesperado') {
                         mensaje = String(anidado.message);
                     }
                     if (anidado.error != null) {

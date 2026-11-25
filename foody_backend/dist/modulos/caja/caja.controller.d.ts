@@ -56,6 +56,7 @@ export declare class CajaController {
         caja_registrada: boolean;
     }>;
     movimientos(cajaId: string, query: PaginacionQueryDto, usuario: JwtPayload): Promise<import("../../compartido/dto/paginacion.dto").ResultadoPaginado<Record<string, unknown>>>;
+    movimientosPedido(pedidoId: string, query: PaginacionQueryDto, sucursalSolicitada: string | undefined, usuario: JwtPayload): Promise<import("../../compartido/dto/paginacion.dto").ResultadoPaginado<Record<string, unknown>>>;
     retiro(dto: RetiroCajaDto, usuario: JwtPayload): Promise<{
         ok: boolean;
     }>;

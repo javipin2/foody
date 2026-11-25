@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
 import { PromocionesService } from './promociones.service';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 /** STOR-01: limpia estados expirados + Storage cada 6 h. */
 @Injectable()
@@ -14,6 +15,10 @@ export class PromocionesCronService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Cron de promociones pausado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     // Primera pasada a los 2 min (dejar arrancar Storage); luego cada 6 h.
     setTimeout(
       () =>

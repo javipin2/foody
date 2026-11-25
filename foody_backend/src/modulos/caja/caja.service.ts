@@ -42,7 +42,10 @@ export class CajaService {
     private readonly sucursalScope: SucursalScopeService,
   ) {}
 
-  async obtenerActiva(sucursalId: string, opciones: { ocultarSaldo?: boolean } = {}) {
+  async obtenerActiva(
+    sucursalId: string,
+    opciones: { ocultarSaldo?: boolean } = {},
+  ) {
     const caja = await this.database.consultarUno(
       `SELECT c.*,
               u.nombre AS usuario_apertura_nombre,
@@ -80,7 +83,11 @@ export class CajaService {
       }
     }
     if (opciones.ocultarSaldo && caja.arqueo_ciego) {
-      const { saldo_sistema: _, total_ventas: __, ...rest } = base as Record<string, unknown>;
+      const {
+        saldo_sistema: _,
+        total_ventas: __,
+        ...rest
+      } = base as Record<string, unknown>;
       return { ...rest, arqueo_ciego: true };
     }
     return base;
@@ -94,7 +101,12 @@ export class CajaService {
              sucursal_id, usuario_apertura_id, monto_inicial, estado, arqueo_ciego
            ) VALUES ($1,$2,$3,'abierta',$4)
            RETURNING id`,
-          [dto.sucursal_id, usuarioId, dto.monto_inicial, dto.arqueo_ciego ?? false],
+          [
+            dto.sucursal_id,
+            usuarioId,
+            dto.monto_inicial,
+            dto.arqueo_ciego ?? false,
+          ],
         );
         const cajaId = insert.rows[0].id;
 
@@ -328,7 +340,54 @@ export class CajaService {
     );
   }
 
-  async retiroParcial(dto: RetiroCajaDto, usuarioId: string, sucursalId: string) {
+  async listarMovimientosPedido(
+    pedidoId: string,
+    sucursalId: string,
+    page?: number,
+    limit?: number,
+  ): Promise<ResultadoPaginado<Record<string, unknown>>> {
+    const pedido = await this.database.consultarUno(
+      `SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2`,
+      [pedidoId, sucursalId],
+    );
+    if (!pedido) throw new NotFoundException('Pedido no encontrado');
+
+    const pag = resolverPaginacion(page, limit, 50);
+    const [items, totalRow] = await Promise.all([
+      this.database.consultar(
+        `SELECT m.id, m.caja_id, c.estado AS caja_estado, p.numero_pedido,
+                m.tipo, m.monto,
+                m.metodo_pago, m.descripcion, m.pedido_id, m.created_at,
+                u.nombre AS responsable
+         FROM movimientos_caja m
+         INNER JOIN cajas c ON c.id = m.caja_id AND c.sucursal_id = m.sucursal_id
+         INNER JOIN pedidos p ON p.id = m.pedido_id AND p.sucursal_id = m.sucursal_id
+         LEFT JOIN usuarios u ON u.id = m.usuario_id
+         WHERE m.pedido_id = $1 AND m.sucursal_id = $2
+         ORDER BY m.created_at DESC
+         LIMIT $3 OFFSET $4`,
+        [pedidoId, sucursalId, pag.limit, pag.offset],
+      ),
+      this.database.consultarUno<{ count: number }>(
+        `SELECT COUNT(*)::int AS count
+         FROM movimientos_caja WHERE pedido_id = $1 AND sucursal_id = $2`,
+        [pedidoId, sucursalId],
+      ),
+    ]);
+
+    return envolverPaginado(
+      items as Record<string, unknown>[],
+      totalRow?.count ?? 0,
+      pag.page,
+      pag.limit,
+    );
+  }
+
+  async retiroParcial(
+    dto: RetiroCajaDto,
+    usuarioId: string,
+    sucursalId: string,
+  ) {
     await this.exigirCajaAbierta(dto.caja_id, sucursalId);
 
     const result = await this.database.enTransaccion(async (client) => {
@@ -403,10 +462,7 @@ export class CajaService {
     };
   }
 
-  async crearCuentaPorCobrar(
-    dto: CrearCuentaPorCobrarDto,
-    usuarioId: string,
-  ) {
+  async crearCuentaPorCobrar(dto: CrearCuentaPorCobrarDto, usuarioId: string) {
     if (dto.pedido_id) {
       const pedido = await this.database.consultarUno(
         `SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2`,
@@ -528,10 +584,11 @@ export class CajaService {
         });
       }
 
-      const disponibleTurno = await this.cajaMovimientos.netoVentasDisponiblesTurno(
-        client,
-        params.caja_id,
-      );
+      const disponibleTurno =
+        await this.cajaMovimientos.netoVentasDisponiblesTurno(
+          client,
+          params.caja_id,
+        );
       if (monto > disponibleTurno + 0.01) {
         throw new BadRequestException({
           error: 'DEVOLUCION_EXCEDE_VENTAS_TURNO',
@@ -590,14 +647,18 @@ export class CajaService {
     return result;
   }
 
-  async registrarGasto(dto: GastoCajaDto, usuarioId: string, sucursalId: string) {
+  async registrarGasto(
+    dto: GastoCajaDto,
+    usuarioId: string,
+    sucursalId: string,
+  ) {
     await this.exigirCajaAbierta(dto.caja_id, sucursalId);
 
     const result = await this.database.enTransaccion(async (client) => {
       await client.query(
         `INSERT INTO gastos
            (sucursal_id, caja_id, concepto, monto, categoria, usuario_id, origen, fecha)
-         VALUES ($1,$2,$3,$4,$5,$6,'caja', CURRENT_DATE)`,
+         VALUES ($1,$2,$3,$4,$5,$6,'caja', (now() AT TIME ZONE 'America/Bogota')::date)`,
         [
           sucursalId,
           dto.caja_id,

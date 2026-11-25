@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 
 /// Estados de pantalla reutilizables (carga, error, vacío, plan bloqueado).
@@ -76,86 +75,91 @@ class FoodyEstadoUi {
   }
 
   static Widget bloqueadoSuscripcion({required VoidCallback onReactivarPlan}) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: ColoresFoody.error.withValues(alpha: 0.25),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+    return Builder(
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: scheme.error.withValues(alpha: 0.25),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: ColoresFoody.error.withValues(alpha: 0.1),
-                    ),
-                    child: const Icon(
-                      Icons.lock_outline_rounded,
-                      size: 36,
-                      color: ColoresFoody.error,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Plan no activo',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    kMensajeSuscripcionBloqueada,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.45,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: onReactivarPlan,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: ColoresFoody.primario,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: scheme.error.withValues(alpha: 0.1),
+                        ),
+                        child: Icon(
+                          Icons.lock_outline_rounded,
+                          size: 36,
+                          color: scheme.error,
                         ),
                       ),
-                      icon: const Icon(Icons.workspace_premium_outlined),
-                      label: const Text('Reactivar plan'),
-                    ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Plan no activo',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurface,
+                            ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        kMensajeSuscripcionBloqueada,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              height: 1.45,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: onReactivarPlan,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: scheme.primary,
+                            foregroundColor: scheme.onPrimary,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.workspace_premium_outlined),
+                          label: const Text('Reactivar plan'),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -188,42 +192,78 @@ class FoodyEstadoUi {
     return Builder(
       builder: (context) {
         final scheme = Theme.of(context).colorScheme;
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.cloud_off_outlined,
-                    size: 48, color: scheme.onSurfaceVariant),
-                const SizedBox(height: 16),
-                Text(
-                  mensaje,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 15, height: 1.4),
-                ),
-                if (onReintentar != null) ...[
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: onReintentar,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: scheme.primary,
-                      foregroundColor: scheme.onPrimary,
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final estrecho = constraints.maxWidth < 420;
+            return Center(
+              child: Padding(
+                padding: EdgeInsets.all(estrecho ? 16 : 24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: scheme.outlineVariant),
                     ),
-                    child: Text(etiquetaReintentar),
+                    child: Padding(
+                      padding: EdgeInsets.all(estrecho ? 20 : 28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: scheme.error.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.cloud_off_outlined,
+                              size: 28,
+                              color: scheme.error,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            mensaje,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(height: 1.5),
+                          ),
+                          if (onReintentar != null) ...[
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: estrecho ? double.infinity : 240,
+                              height: 48,
+                              child: FilledButton(
+                                onPressed: onReintentar,
+                                child: Text(etiquetaReintentar),
+                              ),
+                            ),
+                          ],
+                          if (onAccionSecundaria != null &&
+                              etiquetaAccionSecundaria != null) ...[
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 48,
+                              child: TextButton(
+                                onPressed: onAccionSecundaria,
+                                child: Text(etiquetaAccionSecundaria),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-                ],
-                if (onAccionSecundaria != null &&
-                    etiquetaAccionSecundaria != null) ...[
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: onAccionSecundaria,
-                    child: Text(etiquetaAccionSecundaria),
-                  ),
-                ],
-              ],
-            ),
-          ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -239,48 +279,74 @@ class FoodyEstadoUi {
     return Builder(
       builder: (context) {
         final scheme = Theme.of(context).colorScheme;
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icono, size: 56, color: scheme.onSurfaceVariant),
-                const SizedBox(height: 16),
-                Text(
-                  titulo,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final estrecho = constraints.maxWidth < 380;
+            return Center(
+              child: Padding(
+                padding: EdgeInsets.all(estrecho ? 24 : 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: scheme.surfaceContainerHigh,
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(icono, size: 30, color: scheme.primary),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        titulo,
+                        textAlign: TextAlign.center,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                      ),
+                      if (subtitulo != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          subtitulo,
+                          textAlign: TextAlign.center,
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                    height: 1.5,
+                                  ),
+                        ),
+                      ],
+                      if (etiquetaAccion != null && onAccion != null) ...[
+                        const SizedBox(height: 20),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minWidth: 160,
+                            minHeight: 48,
+                            maxWidth: 280,
+                          ),
+                          child: FilledButton(
+                            onPressed: onAccion,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: scheme.primary,
+                              foregroundColor: scheme.onPrimary,
+                              minimumSize: const Size(160, 48),
+                            ),
+                            child: Text(etiquetaAccion),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                if (subtitulo != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitulo,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: scheme.onSurfaceVariant,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-                if (etiquetaAccion != null && onAccion != null) ...[
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: onAccion,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: scheme.primary,
-                      foregroundColor: scheme.onPrimary,
-                    ),
-                    child: Text(etiquetaAccion),
-                  ),
-                ],
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

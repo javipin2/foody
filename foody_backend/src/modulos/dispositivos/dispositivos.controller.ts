@@ -22,15 +22,36 @@ export class DispositivosController {
 
   @Post('registrar')
   @RateLimitPublico(30, 60_000)
-  registrar(@Body() body: RegistrarDispositivoDto) {
-    return this.dispositivosService.registrar(body);
+  registrar(
+    @Body() body: RegistrarDispositivoDto,
+    @Headers('x-foody-device-capability') capability?: string,
+  ) {
+    if (!capability) {
+      throw new ForbiddenException({
+        error: 'DISPOSITIVO_NO_AUTORIZADO',
+        message: 'No se pudo comprobar la posesión de este dispositivo.',
+      });
+    }
+    return this.dispositivosService.registrar({
+      ...body,
+      device_capability: capability,
+    });
   }
 
   /** Cliente Google: asocia auth_uid al device y reclama pedidos del device. */
   @Post('vincular-auth')
   @RateLimitPublico(20, 60_000)
-  vincularAuth(@Body() body: VincularAuthDispositivoDto) {
-    return this.dispositivosService.vincularAuth(body);
+  vincularAuth(
+    @Body() body: VincularAuthDispositivoDto,
+    @Headers('x-foody-device-capability') capability?: string,
+  ) {
+    if (!capability) {
+      throw new ForbiddenException({
+        error: 'DISPOSITIVO_NO_AUTORIZADO',
+        message: 'No se pudo comprobar la posesión de este dispositivo.',
+      });
+    }
+    return this.dispositivosService.vincularAuth(body, capability);
   }
 
   /**

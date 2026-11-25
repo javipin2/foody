@@ -5,12 +5,17 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
+import { esQaSinEfectosExternos } from '../config/qa-safety';
 
 @Injectable()
 export class SupabaseAuthService {
   private readonly client: SupabaseClient | null;
 
   constructor(config: ConfigService) {
+    if (esQaSinEfectosExternos()) {
+      this.client = null;
+      return;
+    }
     const url = config.get<string>('SUPABASE_URL');
     const key = config.get<string>('SUPABASE_SERVICE_KEY');
     this.client = url && key ? createClient(url, key) : null;

@@ -16,10 +16,12 @@ class SucursalesAdminScreen extends StatefulWidget {
     super.key,
     this.onIrHorarios,
     this.onIrZonas,
+    this.repository,
   });
 
   final VoidCallback? onIrHorarios;
   final VoidCallback? onIrZonas;
+  final SucursalesRepository? repository;
 
   @override
   State<SucursalesAdminScreen> createState() => _SucursalesAdminScreenState();
@@ -28,7 +30,7 @@ class SucursalesAdminScreen extends StatefulWidget {
 class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = SucursalesRepository();
+  late final SucursalesRepository _repo;
   final _almacenamiento = AlmacenamientoRepository();
   final _picker = ImagePicker();
   List<Map<String, dynamic>> _sucursales = [];
@@ -40,7 +42,19 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? SucursalesRepository();
     _cargar();
+  }
+
+  Widget _contenidoDialogo(BuildContext context, Widget child) {
+    final size = MediaQuery.sizeOf(context);
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: size.width * 0.9,
+        maxHeight: size.height * 0.58,
+      ),
+      child: SingleChildScrollView(child: child),
+    );
   }
 
   Future<void> _cargar() async {
@@ -127,25 +141,28 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Datos de marca'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nombreCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del restaurante',
+        content: _contenidoDialogo(
+          ctx,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nombreCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del restaurante',
+                ),
+                textCapitalization: TextCapitalization.words,
               ),
-              textCapitalization: TextCapitalization.words,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: telCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Teléfono (opcional)',
+              const SizedBox(height: 12),
+              TextField(
+                controller: telCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Teléfono (opcional)',
+                ),
+                keyboardType: TextInputType.phone,
               ),
-              keyboardType: TextInputType.phone,
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -217,41 +234,44 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
             ),
           ],
         ),
-        content: SizedBox(
-          width: 520,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
-                  ),
-                  child: AspectRatio(
-                    aspectRatio: esBanner ? 16 / 7 : 1,
-                    child: InteractiveViewer(
-                      child: Image.network(
-                        url,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (_, __, ___) => _placeholderBanner(),
+        content: _contenidoDialogo(
+          ctx,
+          SizedBox(
+            width: 520,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(ctx).height * 0.5,
+                    ),
+                    child: AspectRatio(
+                      aspectRatio: esBanner ? 16 / 7 : 1,
+                      child: InteractiveViewer(
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) => _placeholderBanner(),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                esBanner
-                    ? 'Banner · recomendado 1600×600'
-                    : 'Logo circular · recomendado 800×800',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _scheme.onSurfaceVariant,
+                const SizedBox(height: 8),
+                Text(
+                  esBanner
+                      ? 'Banner · recomendado 1600×600'
+                      : 'Logo circular · recomendado 800×800',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [
@@ -279,22 +299,25 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Nueva sucursal'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nombreCtrl,
-              decoration: const InputDecoration(labelText: 'Nombre'),
-              autofocus: true,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: dirCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Dirección (opcional)',
+        content: _contenidoDialogo(
+          ctx,
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nombreCtrl,
+                decoration: const InputDecoration(labelText: 'Nombre'),
+                autofocus: true,
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              TextField(
+                controller: dirCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Dirección (opcional)',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -344,32 +367,35 @@ class _SucursalesAdminScreenState extends State<SucursalesAdminScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           title: const Text('Editar sucursal'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nombreCtrl,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-                autofocus: true,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: dirCtrl,
-                decoration: const InputDecoration(labelText: 'Dirección'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: telCtrl,
-                decoration: const InputDecoration(labelText: 'Teléfono'),
-                keyboardType: TextInputType.phone,
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Sucursal activa'),
-                value: activa,
-                onChanged: (v) => setLocal(() => activa = v),
-              ),
-            ],
+          content: _contenidoDialogo(
+            ctx,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nombreCtrl,
+                  decoration: const InputDecoration(labelText: 'Nombre'),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: dirCtrl,
+                  decoration: const InputDecoration(labelText: 'Dirección'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: telCtrl,
+                  decoration: const InputDecoration(labelText: 'Teléfono'),
+                  keyboardType: TextInputType.phone,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Sucursal activa'),
+                  value: activa,
+                  onChanged: (v) => setLocal(() => activa = v),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

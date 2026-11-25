@@ -2,6 +2,9 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
+  IsString,
+  MaxLength,
+  MinLength,
   IsOptional,
   IsUUID,
   Max,
@@ -42,6 +45,15 @@ export class ListarPedidosQueryDto {
   @IsOptional()
   @IsUUID()
   mesera_id?: string;
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  q?: string;
 }
 
 /** GET /pedidos/cerrados-hoy (BN-DTO-24). */

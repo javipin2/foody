@@ -1,5 +1,6 @@
 export declare function repartirCobroDomicilio(total: number, costoDomicilio: number, montoPagado: number): {
     saldo: number;
+    productoTotal: number;
     productoPendiente: number;
     domicilioPendiente: number;
 };

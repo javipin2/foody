@@ -42,6 +42,7 @@ export declare class AlertasRiesgoService {
     constructor(database: DatabaseService, realtime: RealtimeBroadcastService, notificaciones: NotificacionesService, transactionHooks: TransactionHooksService);
     registrarEnTransaccion(client: PoolClient, params: RegistrarAlertaParams): Promise<boolean>;
     registrar(params: RegistrarAlertaParams): Promise<void>;
+    registrarVariasEnTransaccion(alertas: RegistrarAlertaParams[]): Promise<number>;
     private despuesDeInsertar;
     private enviarPushSiCritica;
     evaluarCancelacionesFrecuentes(client: PoolClient, sucursalId: string, usuarioId: string, pedidoId: string): Promise<void>;

@@ -8,10 +8,14 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeografiaService = void 0;
 const common_1 = require("@nestjs/common");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let GeografiaService = class GeografiaService {
     cache = new Map();
     maxCache = 300;
     async buscarDirecciones(consulta, opciones = {}) {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            throw new common_1.ServiceUnavailableException('Geocodificación externa desactivada por FOODY_QA_SIN_EFECTOS');
+        }
         const q = consulta.trim();
         if (q.length < 3) {
             throw new common_1.BadRequestException('La búsqueda debe tener al menos 3 caracteres');

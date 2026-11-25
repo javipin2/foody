@@ -14,6 +14,7 @@ exports.MesasReservaCronService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let MesasReservaCronService = MesasReservaCronService_1 = class MesasReservaCronService {
     database;
     realtime;
@@ -25,6 +26,10 @@ let MesasReservaCronService = MesasReservaCronService_1 = class MesasReservaCron
         this.realtime = realtime;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Cron de reservas pausado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_MESAS_RESERVA_CRON, () => this.expirarReservas()), 5 * 60_000);
         setTimeout(() => void this.database.intentarAdvisoryLock(this.LOCK_MESAS_RESERVA_CRON, () => this.expirarReservas()), 20_000);
     }

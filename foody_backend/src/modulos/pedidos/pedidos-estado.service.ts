@@ -6,9 +6,15 @@ import {
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
-import { AlertasRiesgoService, UMBRALES_ALERTA } from '../alertas/alertas-riesgo.service';
+import {
+  AlertasRiesgoService,
+  UMBRALES_ALERTA,
+} from '../alertas/alertas-riesgo.service';
 import { CosteoService } from '../costeo/costeo.service';
-import { PedidosCajaAuditoriaService, METODOS_CON_CAJA } from './pedidos-caja-auditoria.service';
+import {
+  PedidosCajaAuditoriaService,
+  METODOS_CON_CAJA,
+} from './pedidos-caja-auditoria.service';
 import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
 import { PedidosInventarioService } from './pedidos-inventario.service';
 import {
@@ -63,7 +69,9 @@ export class PedidosEstadoService {
     contexto?: { rol: string; permisos: string[] },
   ) {
     if (
-      !ESTADOS_KANBAN.includes(nuevoEstado as (typeof ESTADOS_KANBAN)[number]) &&
+      !ESTADOS_KANBAN.includes(
+        nuevoEstado as (typeof ESTADOS_KANBAN)[number],
+      ) &&
       nuevoEstado !== 'pendiente_aprobacion' &&
       nuevoEstado !== 'cancelado' &&
       nuevoEstado !== 'rechazado'
@@ -114,12 +122,16 @@ export class PedidosEstadoService {
       }
 
       if (nuevoEstado === 'cancelado' && contexto) {
-        this.soporte.validarCancelacion(
-          pedido,
-          contexto.rol,
-          contexto.permisos,
-          motivo,
-        );
+        if (contexto.rol === 'cliente') {
+          this.soporte.validarCancelacionCliente(pedido, motivo);
+        } else {
+          this.soporte.validarCancelacion(
+            pedido,
+            contexto.rol,
+            contexto.permisos,
+            motivo,
+          );
+        }
       }
 
       const anterior = pedido.estado;
@@ -135,7 +147,14 @@ export class PedidosEstadoService {
         };
       }
 
-      if (!transicionEstadoPermitida(anterior, nuevoEstado, pedido.tipo, pedido.mesa_id)) {
+      if (
+        !transicionEstadoPermitida(
+          anterior,
+          nuevoEstado,
+          pedido.tipo,
+          pedido.mesa_id,
+        )
+      ) {
         throw new BadRequestException({
           error: 'TRANSICION_ESTADO_INVALIDA',
           message: `No se puede pasar de «${anterior}» a «${nuevoEstado}»`,
@@ -156,7 +175,8 @@ export class PedidosEstadoService {
       ) {
         throw new BadRequestException({
           error: 'PAGANDO_NO_APLICA',
-          message: 'Solo pedidos de mesa o para llevar pueden marcarse como pagando',
+          message:
+            'Solo pedidos de mesa o para llevar pueden marcarse como pagando',
         });
       }
 
@@ -181,11 +201,12 @@ export class PedidosEstadoService {
       }
 
       if (nuevoEstado === 'cancelado' && pedido.stock_descontado) {
-        const requiereMerma = await this.inventario.pedidoRequiereMermaAlCancelar(
-          client,
-          pedidoId,
-          anterior,
-        );
+        const requiereMerma =
+          await this.inventario.pedidoRequiereMermaAlCancelar(
+            client,
+            pedidoId,
+            anterior,
+          );
         if (requiereMerma) {
           await this.inventario.registrarMermaPedidoCompleto(
             client,
@@ -228,10 +249,7 @@ export class PedidosEstadoService {
       });
 
       // Domicilio marcado entregado sin app domiciliario: cobrar saldo pendiente en caja.
-      if (
-        nuevoEstado === 'entregado' &&
-        pedido.tipo === 'domicilio'
-      ) {
+      if (nuevoEstado === 'entregado' && pedido.tipo === 'domicilio') {
         const totalPedido = Number(pedido.total);
         const pagado = Number(pedido.monto_pagado ?? 0);
         const metodo =
@@ -408,11 +426,14 @@ export class PedidosEstadoService {
           (dispatchResult.motivo === 'planta_asignada_auto' ||
             dispatchResult.motivo === 'ya_asignado');
         if (!asignado) {
+          const detalle =
+            dispatchResult.mensaje ??
+            'No hubo asignación automática. Revisa el panel de domiciliarios.';
           void this.alertasRiesgo.registrar({
             sucursalId,
             tipo: 'domicilio_listo_sin_asignar',
             nivel: 'medio',
-            descripcion: `Pedido listo — asignar domiciliario (${pedidoId})`,
+            descripcion: `Pedido ${pedidoId}: ${detalle}`,
             referenciaId: pedidoId,
             referenciaTipo: 'pedido',
             deduplicar: true,
@@ -421,7 +442,7 @@ export class PedidosEstadoService {
             sucursal_id: sucursalId,
             tipo: 'domicilio_requiere_asignacion',
             titulo: 'Domicilio listo — asignar repartidor',
-            cuerpo: 'No hubo asignación automática. Revisa el panel de domiciliarios.',
+            cuerpo: detalle,
             roles: ['admin', 'gerente', 'domiciliario_planta'],
             datos: {
               pedido_id: pedidoId,
@@ -514,7 +535,9 @@ export class PedidosEstadoService {
       );
       if (!pedido) throw new NotFoundException('Pedido no encontrado');
       if (pedido.estado !== 'pendiente_aprobacion') {
-        throw new BadRequestException('El pedido no está pendiente de aprobación');
+        throw new BadRequestException(
+          'El pedido no está pendiente de aprobación',
+        );
       }
 
       const meseraOk = await this.soporte.consultarUnoCliente<{
@@ -670,7 +693,9 @@ export class PedidosEstadoService {
       );
       if (!pedido) throw new NotFoundException('Pedido no encontrado');
       if (pedido.estado !== estadoEsperado) {
-        throw new BadRequestException('El pedido no está pendiente de aprobación');
+        throw new BadRequestException(
+          'El pedido no está pendiente de aprobación',
+        );
       }
 
       if (nuevoEstado === 'rechazado' && pedido.stock_descontado) {
@@ -817,11 +842,7 @@ export class PedidosEstadoService {
   }
 
   /** Cancelación por el cliente (device_id + reglas de tiempo). */
-  async cancelarPorCliente(
-    pedidoId: string,
-    deviceId: string,
-    motivo: string,
-  ) {
+  async cancelarPorCliente(pedidoId: string, deviceId: string, motivo: string) {
     const pedido = await this.database.consultarUno<{
       id: string;
       sucursal_id: string;
@@ -843,15 +864,12 @@ export class PedidosEstadoService {
       'cliente',
       'cancelado',
       motivo.trim(),
+      { rol: 'cliente', permisos: [] },
     );
   }
 
   /** Cliente en mesa solicita atención de mesera (FCM + cooldown 90 s). */
-  async llamarMesera(
-    pedidoId: string,
-    deviceId: string,
-    mensaje?: string,
-  ) {
+  async llamarMesera(pedidoId: string, deviceId: string, mensaje?: string) {
     const pedido = await this.database.consultarUno<{
       id: string;
       sucursal_id: string;

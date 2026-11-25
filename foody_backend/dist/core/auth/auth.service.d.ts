@@ -161,7 +161,7 @@ export declare class AuthService {
     logout(jwt: JwtPayload): Promise<{
         cerrado: boolean;
     }>;
-    realtimeCanales(jwt: JwtPayload, sucursalIdQuery?: string): Promise<{
+    realtimeCanales(jwt: JwtPayload, sucursalIdQuery?: string, cocinaIdQuery?: string): Promise<{
         realtime_canales: Record<string, string>;
     }>;
     resumenSuscripcion(restauranteId: string | null | undefined): Promise<{

@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import sharp from 'sharp';
 import { DatabaseService } from '../../core/database/database.service';
 import { MenuCacheService } from '../../core/cache/menu-cache.service';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 export type TipoImagenFoody =
   | 'producto'
@@ -78,8 +79,14 @@ export class AlmacenamientoService implements OnModuleInit {
     private readonly database: DatabaseService,
     private readonly menuCache: MenuCacheService,
   ) {
-    const url = this.config.get<string>('SUPABASE_URL');
-    const key = this.config.get<string>('SUPABASE_SERVICE_KEY');
+    const aislado = esQaSinEfectosExternos();
+    const url = aislado ? undefined : this.config.get<string>('SUPABASE_URL');
+    const key = aislado
+      ? undefined
+      : this.config.get<string>('SUPABASE_SERVICE_KEY');
+    if (aislado) {
+      this.logger.warn('Storage desactivado por FOODY_QA_SIN_EFECTOS');
+    }
     this.bucket =
       this.config.get<string>('SUPABASE_STORAGE_BUCKET') ?? 'foody-assets';
     this.cliente = url && key ? createClient(url, key) : null;

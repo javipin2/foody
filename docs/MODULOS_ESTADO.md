@@ -81,9 +81,9 @@
 | **Estado** | 🟡 Parcial / ~90% |
 | **Hecho** | Grid, CRUD, QR, transferir, unir, reservar; turno; aprobación; split cobro; pedido público QR |
 | **Hecho** | … + precio server-side + token permanente verificados (`verificar-qr-cliente.ps1`, Prompt 17) |
-| **Falta** | Autoservicio sin mesero; exigir `mesa_id` en QR; auto-rechazo continuo; rotar token |
+| **Falta** | Autoservicio sin mesero (decisión de producto); auto-rechazo continuo; rotar token |
 | **Audit** | `docs/archivo/auditorias-prompts/AUDITORIA_CLIENTES_QR.md` · `docs/archivo/auditorias-prompts/AUDITORIA_MESEROS_MESAS.md` |
-| **Prioridad falta** | Media (QR-MESA-ID-01 / QR-AUTO-01 si producto lo pide) |
+| **Prioridad falta** | Media (QR-AUTO-01 si producto lo pide; QR-MESA-ID-01 cerrado en fuente, ver MASTER) |
 
 ---
 

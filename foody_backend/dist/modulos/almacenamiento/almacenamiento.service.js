@@ -21,6 +21,7 @@ const crypto_1 = require("crypto");
 const sharp_1 = __importDefault(require("sharp"));
 const database_service_1 = require("../../core/database/database.service");
 const menu_cache_service_1 = require("../../core/cache/menu-cache.service");
+const qa_safety_1 = require("../../core/config/qa-safety");
 const TIPOS_IMAGEN = [
     'producto',
     'categoria',
@@ -67,8 +68,14 @@ let AlmacenamientoService = AlmacenamientoService_1 = class AlmacenamientoServic
         this.config = config;
         this.database = database;
         this.menuCache = menuCache;
-        const url = this.config.get('SUPABASE_URL');
-        const key = this.config.get('SUPABASE_SERVICE_KEY');
+        const aislado = (0, qa_safety_1.esQaSinEfectosExternos)();
+        const url = aislado ? undefined : this.config.get('SUPABASE_URL');
+        const key = aislado
+            ? undefined
+            : this.config.get('SUPABASE_SERVICE_KEY');
+        if (aislado) {
+            this.logger.warn('Storage desactivado por FOODY_QA_SIN_EFECTOS');
+        }
         this.bucket =
             this.config.get('SUPABASE_STORAGE_BUCKET') ?? 'foody-assets';
         this.cliente = url && key ? (0, supabase_js_1.createClient)(url, key) : null;

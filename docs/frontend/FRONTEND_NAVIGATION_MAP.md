@@ -18,6 +18,8 @@ El inventario histórico de este documento es una fotografía de julio de 2026; 
 
 Las entradas de sucursales, horarios, zonas, cocinas y usuarios se conservan dentro de Configuración además del índice para ofrecer navegación directa. Visibilidad sigue usando permisos existentes; el índice filtra cada opción por los mismos permisos. Las rutas `/admin/panel?seccion=...` y los deep links existentes se mantienen.
 
+El índice central presenta cuatro agrupaciones por tarea: **Negocio** (identidad y sedes), **Atención y entrega** (horarios y zonas), **Operación** (cocinas e impresión) y **Equipo** (usuarios y permisos). Las cinco opciones son enlaces a pantallas canónicas, no formularios nuevos. Las pruebas de widget validan 320/390/820/1440 px, los dos temas y el filtro por permiso.
+
 **Pendiente funcional real:** no se identificó un módulo central de métodos de pago del establecimiento. Los medios capturados al cobrar pedidos no equivalen a una preferencia de aceptación/configuración; la suscripción de Foody (Wompi) es otro dominio. No se presenta un enlace ficticio.
 
 ### Decisiones de arquitectura preparadas

@@ -20,6 +20,7 @@ class MejorarPlanScreen extends StatefulWidget {
     this.pagoIdInicial,
     this.onPlanActualizado,
     this.onPagoIniciado,
+    this.repository,
   });
 
   final String planActual;
@@ -31,6 +32,9 @@ class MejorarPlanScreen extends StatefulWidget {
   /// Avisa al panel para poll en paralelo (tiempo real al volver de Wompi).
   final ValueChanged<String>? onPagoIniciado;
 
+  /// Permite probar la presentación sin invocar la API de pagos.
+  final PagosRepository? repository;
+
   @override
   State<MejorarPlanScreen> createState() => _MejorarPlanScreenState();
 }
@@ -39,7 +43,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
     with WidgetsBindingObserver {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = PagosRepository();
+  late final PagosRepository _repo;
   final _moneda = NumberFormat.currency(
     locale: 'es_CO',
     symbol: r'$',
@@ -67,6 +71,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? PagosRepository();
     WidgetsBinding.instance.addObserver(this);
     _planSeleccionado = _planInicial();
     _ultimoPagoId = widget.pagoIdInicial;
@@ -918,7 +923,10 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
                                 PlanesComercialesFoody.nombre(plan),
@@ -928,8 +936,7 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                                   color: _scheme.onSurface,
                                 ),
                               ),
-                              if (destacado) ...[
-                                const SizedBox(width: 8),
+                              if (destacado)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 7,
@@ -951,7 +958,6 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
                                     ),
                                   ),
                                 ),
-                              ],
                             ],
                           ),
                         ],

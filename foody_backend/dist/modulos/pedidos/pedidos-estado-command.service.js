@@ -33,6 +33,15 @@ let PedidosEstadoCommandService = class PedidosEstadoCommandService {
                 message: `No se puede pasar de ${anterior} a ${nuevo} (origen: ${params.origen})`,
             });
         }
+        if (nuevo === 'listo') {
+            const completa = await (0, pedido_estados_1.pedidoCocinaCompleta)(client, params.pedidoId);
+            if (!completa) {
+                throw new common_1.BadRequestException({
+                    error: 'COCINA_INCOMPLETA_PARA_LISTO',
+                    message: 'No se puede marcar el pedido como listo hasta resolver todos sus ítems en Cocina.',
+                });
+            }
+        }
         if (params.origen === 'cobro' && nuevo === 'pagado') {
             const completa = await (0, pedido_estados_1.pedidoCocinaCompleta)(client, params.pedidoId);
             if (!completa &&
@@ -74,7 +83,9 @@ let PedidosEstadoCommandService = class PedidosEstadoCommandService {
             return !['cancelado', 'rechazado', 'pagado'].includes(anterior);
         }
         if (origen === 'dispatch' || origen === 'domiciliario') {
-            if (anterior === 'listo' && nuevo === 'asignado' && tipo === 'domicilio') {
+            if (anterior === 'listo' &&
+                nuevo === 'asignado' &&
+                tipo === 'domicilio') {
                 return true;
             }
             if (anterior === 'asignado' && nuevo === 'en_camino')

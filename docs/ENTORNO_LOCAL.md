@@ -195,3 +195,11 @@ chmod +x scripts/setup-ubuntu-vps.sh
 | API 500 `Tenant or user not found` | Usar `postgres.<POOLER_TENANT_ID>` en `DATABASE_URL`, no solo `postgres` |
 | Supabase no arranca | RAM (mín. ~4 GB libres para stack completo) |
 | Zone mismatch web | Ver comentarios en `lib/main.dart` (web) |
+
+### Arranque con Cloudflare Tunnel (MODO=tunel)
+
+Si se usa el acceso remoto de prueba, el lanzador recomendado es `scripts\\iniciar1\\iniciar-foody-subdominios.bat` (atajo del lanzador en `scripts/`). Requiere Docker/Supabase y API :3000 disponibles; mantiene cliente :8081, Equipo :8080 y `cloudflared` existentes. El script sincroniza `config/foody-entorno.env` y recompila únicamente el flavor cuyo build falta o quedó más viejo que el código. Verificar `/admin/login` de Equipo, `/` cliente y `/api/v1/salud` en localhost y en los dominios configurados.
+
+**Verificación añadida (2026-11-24):** el BAT ejecuta `scripts/verificar-tunel-publico.ps1` y solo informa éxito si las tres rutas públicas responden HTTP 200; un proceso `cloudflared` existente puede estar desconectado del túnel (Cloudflare 1033). Para iniciar el conector, `scripts/iniciar-cloudflare-tunnel.ps1` usa un archivo temporal con ACL limitada al usuario y lo elimina al terminar; no pasar el token como argumento inline. Revisión de esta sesión: Cliente, Equipo y salud API dieron 200 tanto local como públicamente. No se modificaron OAuth, `.env` ni rutas del Tunnel. El token actual debe rotarse por su exposición accidental previa cuando se autorice esa operación.
+
+Si `supabase-db` no está arriba, inspeccionar primero `docker compose ps` y `docker inspect` del contenedor. Iniciar el contenedor existente puede preservar su volumen cuando solo estaba detenido. **No ejecutar `scripts/setup-supabase-docker.sh` como reparación automática sin revisar su efecto sobre datos:** el script puede bajar/eliminar contenedores y borrar la carpeta de Supabase, que en esta instalación contiene el bind mount `volumes/db/data`. Nunca usar `down -v`, borrar directorios ni recrear la DB como primer intento de recuperación.

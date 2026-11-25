@@ -1,4 +1,4 @@
-# Suite E2E completa Foody (auditoria + impresion + multi-sucursal + P2)
+# Suite E2E completa Foody (auditoria + impresion + multi-sucursal + P2), solo BD QA aislada
 # Uso: .\scripts\verificar-todos-e2e.ps1
 # Alias: .\scripts\verificar-ci.ps1 -Completo
 

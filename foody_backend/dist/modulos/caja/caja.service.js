@@ -81,7 +81,12 @@ let CajaService = class CajaService {
                 const insert = await client.query(`INSERT INTO cajas (
              sucursal_id, usuario_apertura_id, monto_inicial, estado, arqueo_ciego
            ) VALUES ($1,$2,$3,'abierta',$4)
-           RETURNING id`, [dto.sucursal_id, usuarioId, dto.monto_inicial, dto.arqueo_ciego ?? false]);
+           RETURNING id`, [
+                    dto.sucursal_id,
+                    usuarioId,
+                    dto.monto_inicial,
+                    dto.arqueo_ciego ?? false,
+                ]);
                 const cajaId = insert.rows[0].id;
                 await this.cajaMovimientos.insertar(client, {
                     cajaId,
@@ -242,6 +247,28 @@ let CajaService = class CajaService {
          ORDER BY m.created_at DESC
          LIMIT $2 OFFSET $3`, [cajaId, pag.limit, pag.offset]),
             this.database.consultarUno(`SELECT COUNT(*)::int AS count FROM movimientos_caja WHERE caja_id = $1`, [cajaId]),
+        ]);
+        return (0, paginacion_dto_1.envolverPaginado)(items, totalRow?.count ?? 0, pag.page, pag.limit);
+    }
+    async listarMovimientosPedido(pedidoId, sucursalId, page, limit) {
+        const pedido = await this.database.consultarUno(`SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]);
+        if (!pedido)
+            throw new common_1.NotFoundException('Pedido no encontrado');
+        const pag = (0, paginacion_dto_1.resolverPaginacion)(page, limit, 50);
+        const [items, totalRow] = await Promise.all([
+            this.database.consultar(`SELECT m.id, m.caja_id, c.estado AS caja_estado, p.numero_pedido,
+                m.tipo, m.monto,
+                m.metodo_pago, m.descripcion, m.pedido_id, m.created_at,
+                u.nombre AS responsable
+         FROM movimientos_caja m
+         INNER JOIN cajas c ON c.id = m.caja_id AND c.sucursal_id = m.sucursal_id
+         INNER JOIN pedidos p ON p.id = m.pedido_id AND p.sucursal_id = m.sucursal_id
+         LEFT JOIN usuarios u ON u.id = m.usuario_id
+         WHERE m.pedido_id = $1 AND m.sucursal_id = $2
+         ORDER BY m.created_at DESC
+         LIMIT $3 OFFSET $4`, [pedidoId, sucursalId, pag.limit, pag.offset]),
+            this.database.consultarUno(`SELECT COUNT(*)::int AS count
+         FROM movimientos_caja WHERE pedido_id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]),
         ]);
         return (0, paginacion_dto_1.envolverPaginado)(items, totalRow?.count ?? 0, pag.page, pag.limit);
     }
@@ -441,7 +468,7 @@ let CajaService = class CajaService {
         const result = await this.database.enTransaccion(async (client) => {
             await client.query(`INSERT INTO gastos
            (sucursal_id, caja_id, concepto, monto, categoria, usuario_id, origen, fecha)
-         VALUES ($1,$2,$3,$4,$5,$6,'caja', CURRENT_DATE)`, [
+         VALUES ($1,$2,$3,$4,$5,$6,'caja', (now() AT TIME ZONE 'America/Bogota')::date)`, [
                 sucursalId,
                 dto.caja_id,
                 dto.concepto,

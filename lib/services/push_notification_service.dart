@@ -225,8 +225,8 @@ class PushNotificationService {
           badge: true,
           sound: true,
         );
-        if (permission != AuthorizationStatus.authorized &&
-            permission != AuthorizationStatus.provisional) {
+        if (permission.authorizationStatus != AuthorizationStatus.authorized &&
+            permission.authorizationStatus != AuthorizationStatus.provisional) {
           const msg =
               'Para recibir promociones, permite notificaciones en la configuración del sitio '
               '(icono de candado en la barra de direcciones → Notificaciones → Permitir).';

@@ -184,7 +184,12 @@ export class PedidosInventarioService {
     sucursalId: string,
     productoId: string,
     cantidadPedida: number,
-    falta: { ingrediente_id: string; nombre: string; necesita: number; unidad: string },
+    falta: {
+      ingrediente_id: string;
+      nombre: string;
+      necesita: number;
+      unidad: string;
+    },
     incluirEmpaques: boolean,
   ): Promise<string> {
     const incluidos = await client.query<{
@@ -199,8 +204,11 @@ export class PedidosInventarioService {
       [productoId, sucursalId],
     );
 
-    const viasIncluidos: { nombre: string; cantidadTotal: number; necesita: number }[] =
-      [];
+    const viasIncluidos: {
+      nombre: string;
+      cantidadTotal: number;
+      necesita: number;
+    }[] = [];
 
     for (const inc of incluidos.rows) {
       const cantIncluidos = cantidadPedida * Number(inc.cantidad);
@@ -514,9 +522,7 @@ export class PedidosInventarioService {
 
       let costoLinea = 0;
       const faltasLinea = ingredientes
-        .filter(
-          (ing) => ing.descontar_stock && ing.stock_actual < ing.cantidad,
-        )
+        .filter((ing) => ing.descontar_stock && ing.stock_actual < ing.cantidad)
         .map((ing) => ({
           ingrediente_id: ing.ingrediente_id,
           nombre: ing.nombre,
@@ -579,10 +585,12 @@ export class PedidosInventarioService {
     }
 
     const catalogo: CambioDisponibilidadProducto[] = [
-      ...[...catalogoPorProducto.entries()].map(([producto_id, disponible]) => ({
-        producto_id,
-        disponible,
-      })),
+      ...[...catalogoPorProducto.entries()].map(
+        ([producto_id, disponible]) => ({
+          producto_id,
+          disponible,
+        }),
+      ),
     ];
 
     return { costos: costosPorProducto, catalogo };
@@ -728,11 +736,15 @@ export class PedidosInventarioService {
     const items = await client.query<{
       producto_id: string;
       cantidad: string;
+      estado_cocina: string;
     }>(
-      `SELECT producto_id, cantidad FROM pedido_items WHERE pedido_id = $1`,
+      `SELECT producto_id, cantidad, estado_cocina
+       FROM pedido_items WHERE pedido_id = $1`,
       [pedidoId],
     );
     for (const item of items.rows) {
+      // Cocina ya registró esta merma al marcar la línea no disponible.
+      if (item.estado_cocina === 'no_disponible') continue;
       await this.registrarMermaLineaProducto(
         client,
         sucursalId,

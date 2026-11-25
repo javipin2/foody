@@ -16,18 +16,25 @@ import 'package:reserva_canchas/features/reportes/data/reportes_repository.dart'
 import 'package:reserva_canchas/features/reportes/utils/reporte_export_foody.dart';
 import 'package:share_plus/share_plus.dart';
 
+const _notaPeriodoMovimientosCaja =
+    'En movimientos ligados a un pedido se usa la fecha de creación del pedido; si no tienen pedido, la fecha del movimiento.';
+
 /// Reportes admin — misma línea visual que Centro de Inteligencia.
 class ReportesAdminScreen extends StatefulWidget {
   const ReportesAdminScreen({
     super.key,
     this.sucursalId,
     this.onIrAnalitica,
+    this.repository,
+    this.auditoriaRepository,
   });
 
   final String? sucursalId;
 
   /// NAV-ADM2-12: puente a Centro de Análisis.
   final VoidCallback? onIrAnalitica;
+  final ReportesRepository? repository;
+  final AuditoriaRepository? auditoriaRepository;
 
   @override
   State<ReportesAdminScreen> createState() => _ReportesAdminScreenState();
@@ -37,8 +44,8 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     with SingleTickerProviderStateMixin {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = ReportesRepository();
-  final _auditoriaRepo = AuditoriaRepository();
+  late final ReportesRepository _repo;
+  late final AuditoriaRepository _auditoriaRepo;
   late TabController _tabs;
   int _dias = 7;
   bool _cargando = true;
@@ -67,6 +74,8 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? ReportesRepository();
+    _auditoriaRepo = widget.auditoriaRepository ?? AuditoriaRepository();
     _tabs = TabController(length: 4, vsync: this);
     _tabs.addListener(() {
       if (_tabs.index == 3 && _timeline == null && !_cargandoTimeline) {
@@ -169,15 +178,17 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         productos: _productos,
         pedidos: _pedidos,
       );
-      await Share.shareXFiles(
-        [
-          XFile.fromData(
-            bytes,
-            mimeType: 'application/pdf',
-            name: _nombreArchivo('pdf'),
-          ),
-        ],
-        subject: 'Reporte Foody $desde — $hasta',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              mimeType: 'application/pdf',
+              name: _nombreArchivo('pdf'),
+            ),
+          ],
+          subject: 'Reporte Foody $desde — $hasta',
+        ),
       );
     } catch (e) {
       if (mounted) {
@@ -197,15 +208,17 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         productos: _productos,
         pedidos: _pedidos,
       );
-      await Share.shareXFiles(
-        [
-          XFile.fromData(
-            bytes,
-            mimeType: 'text/csv',
-            name: _nombreArchivo('csv'),
-          ),
-        ],
-        subject: 'Reporte Foody $desde — $hasta',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              mimeType: 'text/csv',
+              name: _nombreArchivo('csv'),
+            ),
+          ],
+          subject: 'Reporte Foody $desde — $hasta',
+        ),
       );
     } catch (e) {
       if (mounted) {
@@ -509,7 +522,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         const SizedBox(height: 16),
         const AnaliticaSectionHeader(
           titulo: 'Cuadre de caja',
-          subtitulo: 'Tickets vs cobrado neto (universos distintos)',
+          subtitulo: 'Tickets del periodo vs movimientos netos de caja',
           icono: Icons.balance_outlined,
         ),
         AnaliticaSurface(
@@ -523,8 +536,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                 _moneda.format(_num(cuadre['ventas_pedidos'])),
               ),
               _filaCuadre(
-                (cuadre['etiqueta_ventas_caja'] as String?) ??
-                    'Cobrado en caja (neto)',
+                'Movimientos netos de caja',
                 _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
               ),
               Divider(height: 20, color: _scheme.outlineVariant),
@@ -535,19 +547,39 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                 color: colorDiferencia(),
               ),
               const SizedBox(height: 8),
-              Text(
-                (cuadre['nota_universos'] as String?)?.trim().isNotEmpty == true
-                    ? cuadre['nota_universos'] as String
-                    : diferencia.abs() < 1
-                        ? 'Cuadre OK — tickets y caja coinciden.'
-                        : diferencia > 0
-                            ? 'Hay más en tickets que en caja (cobros pendientes o sin registrar).'
-                            : 'Hay más en caja que en tickets (revisar movimientos manuales o duplicados).',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _scheme.onSurfaceVariant,
-                  height: 1.35,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    (cuadre['nota_universos'] as String?)?.trim().isNotEmpty ==
+                            true
+                        ? cuadre['nota_universos'] as String
+                        : diferencia.abs() < 1
+                            ? 'Cuadre OK — tickets y caja coinciden.'
+                            : diferencia > 0
+                                ? 'Hay más en tickets que en caja (cobros pendientes o sin registrar).'
+                                : 'Hay más en caja que en tickets (revisar movimientos manuales o duplicados).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    (cuadre['nota_periodo_caja'] as String?)
+                                ?.trim()
+                                .isNotEmpty ==
+                            true
+                        ? cuadre['nota_periodo_caja'] as String
+                        : _notaPeriodoMovimientosCaja,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _scheme.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
               ),
               if ((cuadre['movimientos_venta'] ?? 0) != 0)
                 Padding(
@@ -957,8 +989,9 @@ class _PeriodChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final esquema = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? AnaliticaTokens.ink : AnaliticaTokens.surface,
+      color: selected ? esquema.primaryContainer : esquema.surfaceContainerLow,
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         onTap: onTap,
@@ -968,7 +1001,7 @@ class _PeriodChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: selected ? AnaliticaTokens.ink : AnaliticaTokens.border,
+              color: selected ? esquema.primary : esquema.outlineVariant,
             ),
           ),
           child: Text(
@@ -976,7 +1009,9 @@ class _PeriodChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: selected ? Colors.white : AnaliticaTokens.inkMuted,
+              color: selected
+                  ? esquema.onPrimaryContainer
+                  : esquema.onSurfaceVariant,
             ),
           ),
         ),

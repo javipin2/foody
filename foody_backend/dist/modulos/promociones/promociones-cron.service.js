@@ -14,6 +14,7 @@ exports.PromocionesCronService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
 const promociones_service_1 = require("./promociones.service");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let PromocionesCronService = PromocionesCronService_1 = class PromocionesCronService {
     promociones;
     database;
@@ -24,6 +25,10 @@ let PromocionesCronService = PromocionesCronService_1 = class PromocionesCronSer
         this.database = database;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Cron de promociones pausado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         setTimeout(() => void this.database.intentarAdvisoryLock(this.LOCK_PROMOCIONES_CRON, () => this.ejecutar()), 120_000);
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_PROMOCIONES_CRON, () => this.ejecutar()), 6 * 60 * 60 * 1000);
     }

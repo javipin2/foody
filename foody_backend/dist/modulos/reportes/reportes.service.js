@@ -73,9 +73,11 @@ let ReportesService = class ReportesService {
                 diferencia: Math.round((ventasPedidos - ventasCaja) * 100) / 100,
                 movimientos_venta: Number(caja?.movimientos ?? 0),
                 etiqueta_ventas_pedidos: 'Tickets (total pedidos)',
-                etiqueta_ventas_caja: 'Cobrado en caja (neto)',
+                etiqueta_ventas_caja: 'Movimientos netos de caja',
+                nota_periodo_caja: 'Para movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
                 nota_universos: 'Tickets suma pedidos del período (incluye abiertos sin cobrar). ' +
-                    'Caja es neto venta−devolución. Diferencia esperable con mesas/domicilios pendientes.',
+                    'Caja suma ventas menos devoluciones. En movimientos ligados a pedido usa la fecha de creación del pedido; sin pedido, la fecha del movimiento. ' +
+                    'Por eso no representa necesariamente el efectivo recibido en el rango. Diferencia esperable con mesas/domicilios pendientes.',
                 por_metodo_caja: porMetodoCaja.map((f) => ({
                     metodo_pago: f.metodo_pago,
                     total: Number(f.total),
@@ -160,8 +162,15 @@ let ReportesService = class ReportesService {
         };
     }
     resolverRango(desde, hasta) {
-        const hoy = new Date();
-        const hastaDate = hasta ? new Date(hasta) : hoy;
+        const hoy = new Intl.DateTimeFormat('en-CA', {
+            timeZone: ventas_metricas_sql_1.SQL_TZ_NEGOCIO,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(new Date());
+        const hastaDate = hasta
+            ? new Date(hasta)
+            : new Date(`${hoy}T00:00:00.000Z`);
         const desdeDate = desde
             ? new Date(desde)
             : new Date(hastaDate.getTime() - 6 * 24 * 60 * 60 * 1000);

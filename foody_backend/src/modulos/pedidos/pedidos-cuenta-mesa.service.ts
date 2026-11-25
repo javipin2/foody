@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PoolClient, QueryResultRow } from 'pg';
 import { DatabaseService } from '../../core/database/database.service';
 import { SQL_WHERE_PEDIDO_BLOQUEA_MESA } from './pedido-estados';
@@ -27,7 +24,10 @@ export class PedidosCuentaMesaService {
     }
 
     const grupoId = mesa.mesa_grupo_id ?? mesa.id;
-    const mesasGrupo = await this.database.consultar<{ id: string; nombre: string }>(
+    const mesasGrupo = await this.database.consultar<{
+      id: string;
+      nombre: string;
+    }>(
       `SELECT id, nombre FROM mesas
        WHERE sucursal_id = $1 AND activa = true
          AND (id = $2 OR mesa_grupo_id = $2)
@@ -76,11 +76,11 @@ export class PedidosCuentaMesaService {
        LEFT JOIN productos pr ON pr.id = pi.producto_id
        LEFT JOIN cocinas c ON c.id = pi.cocina_id
        WHERE p.sucursal_id = $1
-         AND p.mesa_id = $2
+         AND p.mesa_id = ANY($2::uuid[])
          AND (${SQL_WHERE_PEDIDO_BLOQUEA_MESA})
        GROUP BY p.id, u_m.nombre
        ORDER BY p.created_at ASC`,
-      [sucursalId, mesaId],
+      [sucursalId, mesasGrupo.map((m) => m.id)],
     );
 
     const totalAcumulado = pedidos.reduce((sum, p) => {
@@ -101,10 +101,10 @@ export class PedidosCuentaMesaService {
               u.nombre AS responsable_nombre
        FROM pagos_pedido pp
        LEFT JOIN usuarios u ON u.id = pp.usuario_id
-       WHERE pp.mesa_id = $1 AND pp.sucursal_id = $2
+       WHERE pp.mesa_id = ANY($1::uuid[]) AND pp.sucursal_id = $2
        ORDER BY pp.created_at DESC
        LIMIT 30`,
-      [mesaId, sucursalId],
+      [mesasGrupo.map((m) => m.id), sucursalId],
     );
 
     return {
@@ -114,15 +114,16 @@ export class PedidosCuentaMesaService {
       cuenta: {
         modo: 'unificada',
         cantidad_tickets: pedidos.length,
-        mesa_grupo: mesasGrupo.length > 1
-          ? {
-              mesas: mesasGrupo.map((m) => ({
-                id: m.id,
-                nombre: m.nombre,
-                es_actual: m.id === mesa.id,
-              })),
-            }
-          : null,
+        mesa_grupo:
+          mesasGrupo.length > 1
+            ? {
+                mesas: mesasGrupo.map((m) => ({
+                  id: m.id,
+                  nombre: m.nombre,
+                  es_actual: m.id === mesa.id,
+                })),
+              }
+            : null,
       },
       pagos_abonos: pagosAbonos.map((p) => ({
         id: p.id,
@@ -172,20 +173,39 @@ export class PedidosCuentaMesaService {
     mesaId: string,
     sucursalId: string,
   ) {
+    const mesa = await this.consultarUnoCliente<{
+      mesa_grupo_id: string | null;
+    }>(
+      client,
+      `SELECT mesa_grupo_id FROM mesas WHERE id = $1 AND sucursal_id = $2`,
+      [mesaId, sucursalId],
+    );
+    if (!mesa) return;
+    const raizId = mesa.mesa_grupo_id ?? mesaId;
+    const grupo = await client.query<{ id: string }>(
+      `SELECT id FROM mesas
+       WHERE sucursal_id = $1 AND (id = $2 OR mesa_grupo_id = $2)
+       ORDER BY id FOR UPDATE`,
+      [sucursalId, raizId],
+    );
+    const mesaIds = grupo.rows.map((fila) => fila.id);
+    if (!mesaIds.length) return;
+
     const activo = await this.consultarUnoCliente<{ n: number }>(
       client,
       `SELECT COUNT(*)::int AS n FROM pedidos
-       WHERE mesa_id = $1 AND sucursal_id = $2
+       WHERE mesa_id = ANY($1::uuid[]) AND sucursal_id = $2
          AND (${SQL_WHERE_PEDIDO_BLOQUEA_MESA})`,
-      [mesaId, sucursalId],
+      [mesaIds, sucursalId],
     );
     if ((activo?.n ?? 0) === 0) {
       await client.query(
         `UPDATE mesas
          SET mesera_asignada_id = NULL, mesera_asignada_at = NULL,
              estado_operativo = 'libre', mesa_grupo_id = NULL
-         WHERE id = $1 AND sucursal_id = $2`,
-        [mesaId, sucursalId],
+         WHERE id = ANY($1::uuid[]) AND sucursal_id = $2
+           AND estado_operativo IN ('ocupada', 'pagando')`,
+        [mesaIds, sucursalId],
       );
     }
   }

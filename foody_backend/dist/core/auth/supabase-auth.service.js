@@ -13,9 +13,14 @@ exports.SupabaseAuthService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const supabase_js_1 = require("@supabase/supabase-js");
+const qa_safety_1 = require("../config/qa-safety");
 let SupabaseAuthService = class SupabaseAuthService {
     client;
     constructor(config) {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.client = null;
+            return;
+        }
         const url = config.get('SUPABASE_URL');
         const key = config.get('SUPABASE_SERVICE_KEY');
         this.client = url && key ? (0, supabase_js_1.createClient)(url, key) : null;

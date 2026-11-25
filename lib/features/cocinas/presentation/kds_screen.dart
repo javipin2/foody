@@ -11,6 +11,7 @@ import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/cocinas/data/cocinas_repository.dart';
+import 'package:reserva_canchas/services/app_backend.dart';
 
 /// Panel de cocina (KDS). Realtime + poll de respaldo.
 ///
@@ -22,6 +23,7 @@ class KdsScreen extends StatefulWidget {
     this.standalone = false,
     this.sucursalId,
     this.onIrConfigCocinas,
+    this.repository,
   });
 
   /// Si es true se muestra como pantalla completa (rol cocina). Dentro del
@@ -33,6 +35,7 @@ class KdsScreen extends StatefulWidget {
 
   /// NAV-ADM2-09: desde embed admin → config cocinas.
   final VoidCallback? onIrConfigCocinas;
+  final CocinasRepository? repository;
 
   @override
   State<KdsScreen> createState() => _KdsScreenState();
@@ -41,7 +44,7 @@ class KdsScreen extends StatefulWidget {
 class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = CocinasRepository();
+  late final _repo = widget.repository ?? CocinasRepository();
   List<Map<String, dynamic>> _cocinas = [];
   String? _cocinaId;
   List<Map<String, dynamic>> _tickets = [];
@@ -111,8 +114,10 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
         _cargandoInicial = false;
       });
       if (_cocinaId != null) {
-        await _cargarTickets(silencioso: true);
-        _suscribirRealtime(_cocinaId!);
+        // En la primera lectura no ocultar un error: una cocina vacía y una
+        // API que no respondió deben tener estados visuales distintos.
+        await _cargarTickets();
+        await _suscribirRealtime(_cocinaId!);
         _pollRespaldo?.detener();
         _pollRespaldo = PollRealtimeRespaldo(
           onActualizar: () => _cargarTickets(silencioso: true),
@@ -128,16 +133,30 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _suscribirRealtime(String cocinaId) {
+  Future<void> _suscribirRealtime(String cocinaId) async {
+    if (!AppBackend.supabaseReady) return;
     if (_canalCocina != null) {
       Supabase.instance.client.removeChannel(_canalCocina!);
       _canalCocina = null;
     }
-    _canalCocina = FoodyRealtime.suscribirCocina(
-      cocinaId,
-      onActualizado: () => _cargarTickets(silencioso: true),
-      onReconectado: () => _cargarTickets(silencioso: true),
-    );
+    try {
+      await _repo.prepararCanalRealtimeCocina(
+        cocinaId: cocinaId,
+        sucursalId: widget.sucursalId,
+      );
+      if (!mounted || _cocinaId != cocinaId || !AppBackend.supabaseReady) {
+        return;
+      }
+      _canalCocina = FoodyRealtime.suscribirCocina(
+        cocinaId,
+        onActualizado: () => _cargarTickets(silencioso: true),
+        onReconectado: () => _cargarTickets(silencioso: true),
+      );
+    } catch (_) {
+      // El sondeo de respaldo mantiene operativo el KDS si el canal firmado
+      // aún no está disponible o Supabase no puede abrir la suscripción.
+      _canalCocina = null;
+    }
   }
 
   Future<void> _cargarTickets({bool silencioso = false}) async {
@@ -147,7 +166,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       setState(() => _refrescando = true);
     }
     try {
-      final tickets = await _repo.tickets(cocinaId);
+      final tickets = (await _repo.tickets(cocinaId)).toList();
       if (!mounted) return;
       tickets.sort((a, b) {
         final ua = _prioridadSort(a);
@@ -334,49 +353,132 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
         ticket['numero_pedido'] as String? ??
         '';
     if (pedidoId.isEmpty || _marcandoTodo.contains(pedidoId)) return;
+    final itemsPendientes = _itemsDe(ticket).where((item) {
+      final estado = item['estado_cocina'] as String? ?? 'pendiente';
+      return estado != 'listo' && estado != 'no_disponible';
+    }).toList();
+    var actualizados = 0;
+    var omitidos = 0;
+    Object? error;
     setState(() => _marcandoTodo.add(pedidoId));
     try {
-      for (final item in _itemsDe(ticket)) {
-        final estado = item['estado_cocina'] as String? ?? 'pendiente';
-        if (estado == 'listo' || estado == 'no_disponible') continue;
+      for (final item in itemsPendientes) {
         final itemId = item['item_id'] as String?;
-        if (itemId == null) continue;
-        if (_itemsEnVuelo.contains(itemId)) continue;
+        if (itemId == null || _itemsEnVuelo.contains(itemId)) {
+          omitidos++;
+          continue;
+        }
         setState(() => _itemsEnVuelo.add(itemId));
         try {
           await _repo.cambiarEstadoItem(
             itemId: itemId,
             estadoCocina: 'listo',
           );
+          actualizados++;
+        } catch (e) {
+          error = e;
+          break;
         } finally {
           if (mounted) setState(() => _itemsEnVuelo.remove(itemId));
         }
       }
-      await _cargarTickets(silencioso: true);
-      if (!mounted) return;
-      if (!_pestanaListos) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Ticket listo — pasó a Listos'),
-            action: SnackBarAction(
-              label: 'Ver',
-              onPressed: () => setState(() => _pestanaListos = true),
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
     } catch (e) {
-      if (!mounted) return;
+      error = e;
+    } finally {
+      if (mounted) {
+        await _cargarTickets();
+        if (mounted) setState(() => _marcandoTodo.remove(pedidoId));
+      }
+    }
+    if (!mounted) return;
+    if (error != null || omitidos > 0) {
+      final detalle = error == null
+          ? 'Algunos ítems ya estaban en proceso o no tienen identificador.'
+          : mensajeErrorHttp(error, contexto: 'marcar todo listo');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(mensajeErrorHttp(e, contexto: 'marcar todo listo')),
+          content: Text(
+            'Se confirmaron $actualizados de ${itemsPendientes.length} ítems. '
+            'Revisa los pendientes. $detalle',
+          ),
           backgroundColor: AnaliticaTokens.alertas,
         ),
       );
-    } finally {
-      if (mounted) setState(() => _marcandoTodo.remove(pedidoId));
+      return;
     }
+    if (!_pestanaListos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Ticket listo — pasó a Listos'),
+          action: SnackBarAction(
+            label: 'Ver',
+            onPressed: () => setState(() => _pestanaListos = true),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _volverACocina(Map<String, dynamic> ticket) async {
+    final pedidoId = ticket['pedido_id'] as String? ??
+        ticket['numero_pedido'] as String? ??
+        '';
+    if (pedidoId.isEmpty || _marcandoTodo.contains(pedidoId)) return;
+    final itemsListos = _itemsDe(ticket)
+        .where((item) => item['estado_cocina'] == 'listo')
+        .toList();
+    var actualizados = 0;
+    var omitidos = 0;
+    Object? error;
+    setState(() => _marcandoTodo.add(pedidoId));
+    try {
+      for (final item in itemsListos) {
+        final itemId = item['item_id'] as String?;
+        if (itemId == null || _itemsEnVuelo.contains(itemId)) {
+          omitidos++;
+          continue;
+        }
+        setState(() => _itemsEnVuelo.add(itemId));
+        try {
+          await _repo.cambiarEstadoItem(
+            itemId: itemId,
+            estadoCocina: 'preparando',
+          );
+          actualizados++;
+        } catch (e) {
+          error = e;
+          break;
+        } finally {
+          if (mounted) setState(() => _itemsEnVuelo.remove(itemId));
+        }
+      }
+    } catch (e) {
+      error = e;
+    } finally {
+      if (mounted) {
+        await _cargarTickets();
+        if (mounted) setState(() => _marcandoTodo.remove(pedidoId));
+      }
+    }
+    if (!mounted) return;
+    if (error != null || omitidos > 0) {
+      setState(() => _pestanaListos = false);
+      final detalle = error == null
+          ? 'Algunos ítems ya estaban en proceso o no tienen identificador.'
+          : mensajeErrorHttp(error, contexto: 'volver a cocina');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Se devolvieron $actualizados de ${itemsListos.length} ítems. '
+            'Revisa los pendientes. $detalle',
+          ),
+          backgroundColor: AnaliticaTokens.alertas,
+        ),
+      );
+      return;
+    }
+    setState(() => _pestanaListos = false);
   }
 
   Future<void> _cerrarSesion() async {
@@ -786,8 +888,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                     onSelected: (_) {
                       final id = c['id'] as String;
                       setState(() => _cocinaId = id);
-                      _suscribirRealtime(id);
-                      _cargarTickets(silencioso: true);
+                      unawaited(_suscribirRealtime(id));
+                      unawaited(_cargarTickets(silencioso: true));
                     },
                   ),
               ],
@@ -862,14 +964,21 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: selected
-                      ? (overDark ? Colors.white : _scheme.onSurface)
-                      : (overDark ? Colors.white60 : _scheme.onSurfaceVariant),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: selected
+                        ? (overDark ? Colors.white : _scheme.onSurface)
+                        : (overDark
+                            ? Colors.white60
+                            : _scheme.onSurfaceVariant),
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -1108,6 +1217,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                       if (!modoListos && pendientes > 1) ...[
                         const SizedBox(height: 4),
                         FilledButton.icon(
+                          key: const ValueKey<String>('kds-mark-all-ready'),
                           onPressed:
                               marcando ? null : () => _marcarTodoListo(t),
                           style: FilledButton.styleFrom(
@@ -1130,22 +1240,20 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                       if (modoListos) ...[
                         const SizedBox(height: 2),
                         TextButton.icon(
-                          onPressed: () async {
-                            for (final item in items) {
-                              if (item['estado_cocina'] != 'listo') continue;
-                              final id = item['item_id'] as String?;
-                              if (id == null) continue;
-                              await _repo.cambiarEstadoItem(
-                                itemId: id,
-                                estadoCocina: 'preparando',
-                              );
-                            }
-                            await _cargarTickets(silencioso: true);
-                            if (!mounted) return;
-                            setState(() => _pestanaListos = false);
-                          },
-                          icon: const Icon(Icons.undo, size: 16),
-                          label: const Text('Volver a cocina'),
+                          key: const ValueKey<String>('kds-return-to-kitchen'),
+                          onPressed: marcando ? null : () => _volverACocina(t),
+                          icon: marcando
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.undo, size: 16),
+                          label: Text(
+                            marcando ? 'Actualizando…' : 'Volver a cocina',
+                          ),
                           style: TextButton.styleFrom(
                             foregroundColor: _scheme.onSurfaceVariant,
                             visualDensity: VisualDensity.compact,
@@ -1315,81 +1423,111 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           ),
           if (!modoListos && !cerrado) ...[
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: FilledButton(
-                    onPressed:
-                        enVuelo ? null : () => _cambiarEstado(itemId, 'listo'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _verde,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                    ),
-                    child: enVuelo
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Listo',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                IconButton.outlined(
-                  tooltip: 'Preparando',
-                  onPressed: enVuelo || estado == 'preparando'
-                      ? null
-                      : () => _cambiarEstado(itemId, 'preparando'),
-                  icon: Icon(
-                    Icons.local_fire_department,
-                    color: estado == 'preparando'
-                        ? _amber
-                        : _scheme.onSurfaceVariant,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton.outlined(
-                  tooltip: itemUrgente ? 'Quitar urgente' : 'Marcar urgente',
-                  onPressed: enVuelo
-                      ? null
-                      : () => _togglePrioridad(itemId, !itemUrgente),
-                  icon: Icon(
-                    Icons.priority_high,
-                    color: itemUrgente ? _amber : _scheme.onSurfaceVariant,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton.outlined(
-                  tooltip: 'Nota cocina',
-                  onPressed: enVuelo
-                      ? null
-                      : () => _editarObservacionesItem(itemId, obsItem),
-                  icon: Icon(
-                    Icons.sticky_note_2_outlined,
-                    color: obsItem
-                            .replaceFirst(RegExp(r'^\[URGENTE\]\s*'), '')
-                            .isNotEmpty
-                        ? AnaliticaTokens.pedidos
-                        : _scheme.onSurfaceVariant,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton.outlined(
-                  tooltip: 'Fallo / No se pudo',
+            Builder(
+              builder: (context) {
+                final botonListo = FilledButton(
                   onPressed:
-                      enVuelo ? null : () => _dialogoNoDisponible(itemId),
-                  icon: const Icon(Icons.block, color: _rojo),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
+                      enVuelo ? null : () => _cambiarEstado(itemId, 'listo'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _verde,
+                    minimumSize: const Size(0, 48),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: enVuelo
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Marcar listo',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                );
+                final acciones = <Widget>[
+                  IconButton.outlined(
+                    tooltip: 'Preparando',
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    onPressed: enVuelo || estado == 'preparando'
+                        ? null
+                        : () => _cambiarEstado(itemId, 'preparando'),
+                    icon: Icon(
+                      Icons.local_fire_department,
+                      color: estado == 'preparando'
+                          ? _amber
+                          : _scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  IconButton.outlined(
+                    tooltip: itemUrgente ? 'Quitar urgente' : 'Marcar urgente',
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    onPressed: enVuelo
+                        ? null
+                        : () => _togglePrioridad(itemId, !itemUrgente),
+                    icon: Icon(
+                      Icons.priority_high,
+                      color: itemUrgente ? _amber : _scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  IconButton.outlined(
+                    tooltip: 'Nota cocina',
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    onPressed: enVuelo
+                        ? null
+                        : () => _editarObservacionesItem(itemId, obsItem),
+                    icon: Icon(
+                      Icons.sticky_note_2_outlined,
+                      color: obsItem
+                              .replaceFirst(RegExp(r'^\[URGENTE\]\s*'), '')
+                              .isNotEmpty
+                          ? AnaliticaTokens.pedidos
+                          : _scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  IconButton.outlined(
+                    tooltip: 'Fallo / No se pudo',
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
+                    ),
+                    onPressed:
+                        enVuelo ? null : () => _dialogoNoDisponible(itemId),
+                    icon: const Icon(Icons.block, color: _rojo),
+                  ),
+                ];
+                if (narrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      botonListo,
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Wrap(spacing: 4, children: acciones),
+                      ),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(flex: 3, child: botonListo),
+                    const SizedBox(width: 6),
+                    ...acciones,
+                  ],
+                );
+              },
             ),
           ] else if (!modoListos && estado == 'listo') ...[
             Align(
@@ -1456,6 +1594,11 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     if (minutos < 60) return '$minutos min';
     final h = minutos ~/ 60;
     final m = minutos % 60;
+    if (h >= 24) {
+      final dias = h ~/ 24;
+      final horas = h % 24;
+      return horas == 0 ? '${dias}d' : '${dias}d ${horas}h';
+    }
     if (m == 0) return '${h}h';
     return '${h}h ${m}m';
   }
@@ -1486,7 +1629,9 @@ class _DialogoNoDisponible extends StatefulWidget {
 }
 
 class _DialogoNoDisponibleState extends State<_DialogoNoDisponible> {
+  final _formKey = GlobalKey<FormState>();
   final _motivo = TextEditingController();
+  AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
 
   @override
   void dispose() {
@@ -1494,16 +1639,47 @@ class _DialogoNoDisponibleState extends State<_DialogoNoDisponible> {
     super.dispose();
   }
 
+  void _confirmar() {
+    if (!_formKey.currentState!.validate()) {
+      setState(() => _autovalidateMode = AutovalidateMode.onUserInteraction);
+      return;
+    }
+    Navigator.pop(context, _motivo.text.trim());
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Fallo de preparación'),
-      content: TextField(
-        controller: _motivo,
-        autofocus: true,
-        decoration: const InputDecoration(
-          labelText: 'Motivo (obligatorio)',
-          hintText: 'Sin ingrediente, se quemó, agotado…',
+      content: Form(
+        key: _formKey,
+        autovalidateMode: _autovalidateMode,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Se registrará una alerta, una posible merma si el inventario '
+              'ya se descontó y el producto dejará de ofrecerse en el menú.',
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              key: const ValueKey<String>('kds-motivo-fallo'),
+              controller: _motivo,
+              autofocus: true,
+              maxLines: 2,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _confirmar(),
+              validator: (value) => value?.trim().isNotEmpty == true
+                  ? null
+                  : 'Escribe el motivo para continuar.',
+              decoration: const InputDecoration(
+                labelText: 'Motivo (obligatorio)',
+                hintText: 'Sin ingrediente, se quemó, agotado…',
+                helperText: ' ',
+              ),
+            ),
+          ],
         ),
       ),
       actions: [
@@ -1512,7 +1688,7 @@ class _DialogoNoDisponibleState extends State<_DialogoNoDisponible> {
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _motivo.text.trim()),
+          onPressed: _confirmar,
           child: const Text('Confirmar'),
         ),
       ],

@@ -44,7 +44,7 @@ WHERE p.sucursal_id = '$sid'
   AND (p.estado <> 'entregado' OR COALESCE(p.monto_pagado, 0) < p.total - 0.01)
 ORDER BY pi.created_at
 "@
-    $raw = docker exec supabase-db psql -U postgres -d postgres -t -A -c $sql 2>$null
+    $raw = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -t -A -c $sql 2>$null
     $ids = @($raw -split "`n" | Where-Object { $_.Trim() -ne '' })
     $saldoSql = @"
 SELECT COALESCE(SUM(GREATEST(p.total - COALESCE(p.monto_pagado,0), 0)), 0)::text
@@ -53,7 +53,7 @@ WHERE p.sucursal_id = '$sid' AND p.mesa_id = '$MesaId'
   AND p.estado NOT IN ('cancelado','rechazado','pagado')
   AND (p.estado <> 'entregado' OR COALESCE(p.monto_pagado, 0) < p.total - 0.01)
 "@
-    $saldo = [double](docker exec supabase-db psql -U postgres -d postgres -t -A -c $saldoSql 2>$null)
+    $saldo = [double](docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -t -A -c $saldoSql 2>$null)
     return @{
         items = $ids
         datos = @{ total_acumulado = $saldo; pedidos = @() }
@@ -87,18 +87,20 @@ if (-not ($crear2.ok -and $crear2.json.exito)) {
     throw "Crear pedido 2: $($crear2.json.mensaje)"
 }
 
+$cocinaTokPrep = Get-FoodyToken 'cocina@foody.demo'
+$infoItemsPrep = Get-ItemIdsMesa -MesaId $Mesa
+foreach ($iid in @($infoItemsPrep.items)) {
+    $r = Invoke-FoodyApi -Method PATCH -Path "/cocina/items/$iid/estado" -Headers $cocinaTokPrep.headers -Body @{
+        estado_cocina = 'listo'
+    }
+    if (-not ($r.ok -and $r.json.exito)) { throw "Marcar ítem listo $iid : $($r.json.mensaje)" }
+}
+
 $pedidoId = $crear1.json.datos.pedido_id
 $listo = Invoke-FoodyApi -Method PATCH -Path "/pedidos/$pedidoId/estado?sucursal_id=$sid" -Headers $h -Body @{ estado = 'listo' }
 if (-not ($listo.ok -and $listo.json.exito)) { throw "Pasar a listo: $($listo.json.mensaje)" }
 
-# VIE-05 C: ítems a nivel cocina listos (cobro→pagado)
-$cocinaTokPrep = Get-FoodyToken 'cocina@foody.demo'
-$infoItemsPrep = Get-ItemIdsMesa -MesaId $Mesa
-foreach ($iid in @($infoItemsPrep.items)) {
-    $null = Invoke-FoodyApi -Method PATCH -Path "/cocina/items/$iid/estado" -Headers $cocinaTokPrep.headers -Body @{
-        estado_cocina = 'listo'
-    }
-}
+# Cocina resuelve las líneas antes del estado global y del cobro.
 
 $pagando = Invoke-FoodyApi -Method PATCH -Path "/pedidos/$pedidoId/estado?sucursal_id=$sid" -Headers $h -Body @{ estado = 'pagando' }
 if (-not ($pagando.ok -and $pagando.json.exito)) { throw "Pasar a pagando: $($pagando.json.mensaje)" }
@@ -141,7 +143,8 @@ if ($codigoExceso -ne 'ITEMS_EXCEDEN_SALDO') {
 }
 
 $splitItem = Invoke-FoodyApi -Method POST -Path "/pedidos/mesa/$Mesa/cobrar?sucursal_id=$sid" -Headers $h -Body @{
-    item_ids    = @($item1)
+    # El primer ticket quedó parcialmente pagado; el segundo conserva su saldo completo.
+    item_ids    = @($item2)
     metodo_pago = 'tarjeta'
 }
 if (-not ($splitItem.ok -and $splitItem.json.exito)) {

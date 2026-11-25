@@ -27,6 +27,7 @@ class ListarPedidosQueryDto {
     page;
     limit;
     mesera_id;
+    q;
 }
 exports.ListarPedidosQueryDto = ListarPedidosQueryDto;
 __decorate([
@@ -60,6 +61,14 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], ListarPedidosQueryDto.prototype, "mesera_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => typeof value === 'string' ? value.trim() : value),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(2),
+    (0, class_validator_1.MaxLength)(80),
+    __metadata("design:type", String)
+], ListarPedidosQueryDto.prototype, "q", void 0);
 class ListarCerradosHoyQueryDto {
     sucursal_id;
     mesera_id;

@@ -4,6 +4,7 @@ export declare class ListarPedidosQueryDto {
     page?: number;
     limit?: number;
     mesera_id?: string;
+    q?: string;
 }
 export declare class ListarCerradosHoyQueryDto {
     sucursal_id?: string;

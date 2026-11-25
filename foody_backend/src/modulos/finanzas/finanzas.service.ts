@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
+import { fechaHoyNegocio } from '../../compartido/fecha-negocio.util';
 import { ActualizarCostoFijoDto } from './dto/actualizar-costo-fijo.dto';
 import { ActualizarEmpleadoDto } from './dto/actualizar-empleado.dto';
 import { CrearCostoFijoDto } from './dto/crear-costo-fijo.dto';
@@ -28,7 +29,7 @@ function normalizarCategoria(raw?: string | null): string {
 }
 
 function hoyIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return fechaHoyNegocio();
 }
 
 @Injectable()
@@ -189,8 +190,7 @@ export class FinanzasService {
     }
 
     const fecha = dto.fecha ?? hoyIso();
-    const concepto =
-      dto.concepto?.trim() || `Pago ${fijo.concepto}`;
+    const concepto = dto.concepto?.trim() || `Pago ${fijo.concepto}`;
 
     // caja_id NULL a propósito: no toca arqueo del cajero
     const gasto = await this.database.consultarUno<{
@@ -375,8 +375,7 @@ export class FinanzasService {
 
     const fecha = dto.fecha ?? hoyIso();
     const concepto =
-      dto.concepto?.trim() ||
-      `Nómina ${emp.nombre} (${emp.frecuencia_pago})`;
+      dto.concepto?.trim() || `Nómina ${emp.nombre} (${emp.frecuencia_pago})`;
 
     const gasto = await this.database.consultarUno<{
       id: string;
@@ -412,11 +411,7 @@ export class FinanzasService {
 
   // --- Libro de egresos ---
 
-  async listarGastos(
-    sucursalId: string,
-    desde?: string,
-    hasta?: string,
-  ) {
+  async listarGastos(sucursalId: string, desde?: string, hasta?: string) {
     const d = desde ?? hoyIso().slice(0, 8) + '01';
     const h = hasta ?? hoyIso();
     const filas = await this.database.consultar<{
@@ -511,19 +506,24 @@ export class FinanzasService {
       this.database.consultar<{
         id: string;
         concepto: string;
-        monto_mensual: string;
+        monto_pendiente: string;
         categoria: string;
         dia_pago: number | null;
       }>(
-        `SELECT cf.id, cf.concepto, cf.monto_mensual::text,
+        `SELECT cf.id, cf.concepto,
+                GREATEST(cf.monto_mensual - pagos.monto_pagado, 0)::text AS monto_pendiente,
                 COALESCE(cf.categoria, 'otros') AS categoria, cf.dia_pago
          FROM costos_operativos_fijos cf
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(g.monto), 0) AS monto_pagado
+           FROM gastos g
+           WHERE g.costo_fijo_id = cf.id
+             AND g.sucursal_id = cf.sucursal_id
+             AND g.origen = 'fijo'
+             AND g.fecha >= $2::date AND g.fecha <= $3::date
+         ) pagos ON true
          WHERE cf.sucursal_id = $1 AND cf.activo = true
-           AND NOT EXISTS (
-             SELECT 1 FROM gastos g
-             WHERE g.costo_fijo_id = cf.id
-               AND g.fecha >= $2::date AND g.fecha <= $3::date
-           )
+           AND pagos.monto_pagado < cf.monto_mensual
          ORDER BY COALESCE(cf.dia_pago, 99), cf.concepto`,
         [sucursalId, mesDesde, mesHasta],
       ),
@@ -555,7 +555,7 @@ export class FinanzasService {
         id: f.id,
         tipo: 'fijo' as const,
         concepto: f.concepto,
-        monto: Number(f.monto_mensual),
+        monto: Number(f.monto_pendiente),
         categoria: f.categoria,
         dia_pago: dia,
         urgente: vencido,
@@ -694,8 +694,11 @@ export class FinanzasService {
     pendientes_count: number;
     delta_utilidad_pct: number | null;
   }) {
-    const out: { codigo: string; nivel: 'info' | 'aviso' | 'alerta'; mensaje: string }[] =
-      [];
+    const out: {
+      codigo: string;
+      nivel: 'info' | 'aviso' | 'alerta';
+      mensaje: string;
+    }[] = [];
     if (p.utilidad_neta < 0) {
       out.push({
         codigo: 'perdida_mes',
@@ -742,14 +745,16 @@ export class FinanzasService {
       out.push({
         codigo: 'mejor_que_anterior',
         nivel: 'info',
-        mensaje: 'Vas mejor que el mes pasado en utilidad neta. Mantén el ritmo.',
+        mensaje:
+          'Vas mejor que el mes pasado en utilidad neta. Mantén el ritmo.',
       });
     }
     if (out.length === 0) {
       out.push({
         codigo: 'ok',
         nivel: 'info',
-        mensaje: 'Sin alertas fuertes: registra gastos al día y revisa Rentabilidad.',
+        mensaje:
+          'Sin alertas fuertes: registra gastos al día y revisa Rentabilidad.',
       });
     }
     return out;

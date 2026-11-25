@@ -5,6 +5,8 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
 import { CajaMovimientosService } from '../../core/caja/caja-movimientos.service';
 import { PedidosSoporteService } from './pedidos-soporte.service';
+import { PedidosEstadoCommandService } from './pedidos-estado-command.service';
+import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
 export declare class PedidosDescuentoService {
     private readonly database;
     private readonly facturacion;
@@ -12,13 +14,16 @@ export declare class PedidosDescuentoService {
     private readonly soporte;
     private readonly auditoria;
     private readonly cajaMovimientos;
-    constructor(database: DatabaseService, facturacion: FacturacionService, alertasRiesgo: AlertasRiesgoService, soporte: PedidosSoporteService, auditoria: AuditoriaService, cajaMovimientos: CajaMovimientosService);
+    private readonly estadoCommand;
+    private readonly cuentaMesa;
+    constructor(database: DatabaseService, facturacion: FacturacionService, alertasRiesgo: AlertasRiesgoService, soporte: PedidosSoporteService, auditoria: AuditoriaService, cajaMovimientos: CajaMovimientosService, estadoCommand: PedidosEstadoCommandService, cuentaMesa: PedidosCuentaMesaService);
     aplicarDescuento(pedidoId: string, sucursalId: string, usuarioId: string, dto: AplicarDescuentoDto, contexto: {
         rol: string;
         permisos: string[];
     }): Promise<{
         id: string;
         estado: string;
+        mesa_id: string | null;
         descuento: number;
         porcentaje: number;
         total: number;

@@ -26,6 +26,9 @@ class CostosMargenesScreen extends StatefulWidget {
     this.productoIdInicial,
     this.onVolverAlMenu,
     this.onIrInsumos,
+    this.costeoRepository,
+    this.inventarioRepository,
+    this.catalogoRepository,
   });
 
   final String? sucursalId;
@@ -36,6 +39,9 @@ class CostosMargenesScreen extends StatefulWidget {
 
   /// NAV-MG-03: atajo a Insumos (subrecetas / mercado).
   final VoidCallback? onIrInsumos;
+  final CosteoRepository? costeoRepository;
+  final InventarioRepository? inventarioRepository;
+  final CatalogoAdminRepository? catalogoRepository;
 
   @override
   State<CostosMargenesScreen> createState() => _CostosMargenesScreenState();
@@ -45,9 +51,9 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     with SingleTickerProviderStateMixin {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _costeoRepo = CosteoRepository();
-  final _inventarioRepo = InventarioRepository();
-  final _catalogoRepo = CatalogoAdminRepository();
+  late final CosteoRepository _costeoRepo;
+  late final InventarioRepository _inventarioRepo;
+  late final CatalogoAdminRepository _catalogoRepo;
 
   List<Map<String, dynamic>> _productos = [];
   List<Map<String, dynamic>> _ingredientes = [];
@@ -80,6 +86,9 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
   @override
   void initState() {
     super.initState();
+    _costeoRepo = widget.costeoRepository ?? CosteoRepository();
+    _inventarioRepo = widget.inventarioRepository ?? InventarioRepository();
+    _catalogoRepo = widget.catalogoRepository ?? CatalogoAdminRepository();
     _tabsDetalle;
     _seleccionadoId = widget.productoIdInicial;
     _cargar();

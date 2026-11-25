@@ -2,7 +2,7 @@
 # Uso: .\scripts\verificar-multi-sucursal.ps1
 
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:3000/api/v1'
+$base = 'http://127.0.0.1:3001/api/v1'
 
 function Login-Staff {
   param([string]$Email, [string]$Pass = '123456')

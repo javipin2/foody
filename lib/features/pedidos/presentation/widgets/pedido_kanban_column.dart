@@ -16,6 +16,7 @@ class PedidoKanbanColumn extends StatelessWidget {
     required this.colorReloj,
     required this.onTapPedido,
     required this.onAccionRapida,
+    this.puedeAccionRapida,
     this.pieBuilder,
   });
 
@@ -28,6 +29,7 @@ class PedidoKanbanColumn extends StatelessWidget {
   final Color Function(int) colorReloj;
   final void Function(PedidoAdminModel) onTapPedido;
   final Future<void> Function(PedidoAdminModel) onAccionRapida;
+  final bool Function(PedidoAdminModel)? puedeAccionRapida;
   final Widget? Function(PedidoAdminModel)? pieBuilder;
 
   @override
@@ -115,6 +117,8 @@ class PedidoKanbanColumn extends StatelessWidget {
                           colorReloj: colorReloj,
                           onTap: () => onTapPedido(p),
                           onAccionRapida: () => onAccionRapida(p),
+                          mostrarAccionRapida:
+                              puedeAccionRapida?.call(p) ?? true,
                           pieExtra: pieBuilder?.call(p),
                         ),
                       );

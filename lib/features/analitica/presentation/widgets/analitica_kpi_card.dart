@@ -31,6 +31,7 @@ class AnaliticaKpiCard extends StatefulWidget {
   final List<double>? sparkline;
   final String? estado;
   final String? tooltip;
+
   /// Métricas primarias (más peso tipográfico).
   final bool destacado;
 
@@ -43,7 +44,7 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.acento ?? AnaliticaTokens.chart;
+    final color = widget.acento ?? AnaliticaTokens.chartOf(context);
     final delta = widget.deltaPct;
     Color? deltaColor;
     String? deltaTxt;
@@ -58,7 +59,7 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
         deltaTxt = '${delta.toStringAsFixed(1)}%';
         deltaIcon = Icons.arrow_downward_rounded;
       } else {
-        deltaColor = AnaliticaTokens.inkSoft;
+        deltaColor = AnaliticaTokens.inkSoftOf(context);
         deltaTxt = '0%';
         deltaIcon = Icons.remove_rounded;
       }
@@ -70,13 +71,16 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
-          color: AnaliticaTokens.surface,
+          color: AnaliticaTokens.surfaceOf(context),
           borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
           border: Border.all(
-            color: _hover ? AnaliticaTokens.border : AnaliticaTokens.borderSoft,
+            color: _hover
+                ? AnaliticaTokens.borderOf(context)
+                : AnaliticaTokens.borderSoftOf(context),
           ),
-          boxShadow:
-              _hover ? AnaliticaTokens.shadowLift : AnaliticaTokens.shadowSoft,
+          boxShadow: _hover
+              ? AnaliticaTokens.shadowLiftOf(context)
+              : AnaliticaTokens.shadowSoftOf(context),
         ),
         child: Material(
           color: Colors.transparent,
@@ -97,9 +101,9 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
                       Expanded(
                         child: Text(
                           widget.etiqueta,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
-                            color: AnaliticaTokens.inkMuted,
+                            color: AnaliticaTokens.inkMutedOf(context),
                             fontWeight: FontWeight.w500,
                             letterSpacing: 0.1,
                           ),
@@ -110,10 +114,10 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
                       if (widget.estado != null)
                         Text(
                           widget.estado!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w500,
-                            color: AnaliticaTokens.inkSoft,
+                            color: AnaliticaTokens.inkSoftOf(context),
                           ),
                         ),
                     ],
@@ -126,9 +130,10 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
                       key: ValueKey(widget.valor),
                       style: TextStyle(
                         fontSize: widget.destacado ? 20 : 17,
-                        fontWeight:
-                            widget.destacado ? FontWeight.w700 : FontWeight.w600,
-                        color: AnaliticaTokens.ink,
+                        fontWeight: widget.destacado
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        color: AnaliticaTokens.inkOf(context),
                         height: 1.1,
                         letterSpacing: -0.3,
                       ),
@@ -164,7 +169,9 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
                             const SizedBox(width: 6),
                             Text(
                               '·',
-                              style: TextStyle(color: Colors.grey.shade300),
+                              style: TextStyle(
+                                color: AnaliticaTokens.borderOf(context),
+                              ),
                             ),
                             const SizedBox(width: 6),
                           ],
@@ -173,9 +180,9 @@ class _AnaliticaKpiCardState extends State<AnaliticaKpiCard> {
                           Expanded(
                             child: Text(
                               widget.subtitulo!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10.5,
-                                color: AnaliticaTokens.inkSoft,
+                                color: AnaliticaTokens.inkSoftOf(context),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

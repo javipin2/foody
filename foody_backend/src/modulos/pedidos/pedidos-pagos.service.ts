@@ -10,6 +10,7 @@ import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast
 import { CobrarMesaDto, PagoLineaDto } from './dto/cobrar-mesa.dto';
 import { PedidosCajaAuditoriaService } from './pedidos-caja-auditoria.service';
 import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
+import { SQL_VENTA_LINEA_ITEM } from './sql-venta-linea-item';
 import {
   SQL_WHERE_PEDIDO_BLOQUEA_MESA,
   pedidoCocinaCompleta,
@@ -52,7 +53,7 @@ export class PedidosPagosService {
 
     const ctx: ContextoCobro = { usuarioId, rol };
 
-    const result = await this.database.enTransaccion(async (client) => {
+    const result = (await this.database.enTransaccion(async (client) => {
       const again = await this.leerCobroIdempotenteEnTx(
         client,
         dto.idempotency_key,
@@ -71,8 +72,12 @@ export class PedidosPagosService {
       );
       if (!mesa) throw new NotFoundException('Mesa no encontrada');
 
-      const mesaIds = await this.resolverMesasGrupo(client, mesa);
-      const pedidos = await this.obtenerPedidosActivos(client, sucursalId, mesaIds);
+      const mesaIds = await this.resolverMesasGrupo(client, sucursalId, mesa);
+      const pedidos = await this.obtenerPedidosActivos(
+        client,
+        sucursalId,
+        mesaIds,
+      );
       if (!pedidos.length) {
         throw new BadRequestException({
           error: 'MESA_SIN_PEDIDOS',
@@ -89,24 +94,34 @@ export class PedidosPagosService {
         );
       }
 
-      const montoObjetivo = await this.calcularMontoObjetivo(
-        client,
+      const montosItems = itemIds?.length
+        ? await this.calcularMontosItems(client, itemIds)
+        : null;
+      if (montosItems) this.validarSaldoItems(pedidos, montosItems);
+
+      const montoObjetivo = this.calcularMontoObjetivo(
         dto,
         pedidos,
-        itemIds,
+        montosItems,
       );
       const pagos = this.normalizarPagos(dto, montoObjetivo);
       const montoCobrar = pagos.reduce((s, p) => s + p.monto, 0);
       const propina = dto.propina ?? 0;
 
       const montosPorPedido = await this.distribuirMonto(
-        client,
         pedidos,
         montoCobrar,
-        itemIds,
+        montosItems,
+      );
+      const saldoCajaPorPedido = new Map(
+        pedidos.map((pedido) => [
+          pedido.id,
+          montosPorPedido.get(pedido.id) ?? 0,
+        ]),
       );
 
-      const cobrados: { id: string; numero_pedido: string; total: number }[] = [];
+      const cobrados: { id: string; numero_pedido: string; total: number }[] =
+        [];
       let totalCobrado = 0;
 
       for (const p of pedidos) {
@@ -121,7 +136,12 @@ export class PedidosPagosService {
           montoCobrar > 0 ? propina * (asignado / montoCobrar) : 0;
 
         if (quedaPagado) {
-          await this.exigirCocinaCompletaParaPagado(client, p.id, ctx, dto.motivo);
+          await this.exigirCocinaCompletaParaPagado(
+            client,
+            p.id,
+            ctx,
+            dto.motivo,
+          );
           const anterior = p.estado;
           const metodoPrincipal = pagos[0]?.metodo_pago ?? 'efectivo';
           await client.query(
@@ -159,12 +179,19 @@ export class PedidosPagosService {
              WHERE id = $1`,
             [p.id, nuevoPagado, fraccionPropina],
           );
-          if (!['pagando', 'pagado', 'cancelado', 'rechazado'].includes(p.estado)) {
+          if (
+            !['pagando', 'pagado', 'cancelado', 'rechazado'].includes(p.estado)
+          ) {
             await client.query(
               `INSERT INTO estados_pedido_historial
                  (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
                VALUES ($1, $2, 'pagando', $3, $4)`,
-              [p.id, p.estado, usuarioId, dto.motivo?.trim() || 'Abono cuenta mesa'],
+              [
+                p.id,
+                p.estado,
+                usuarioId,
+                dto.motivo?.trim() || 'Abono cuenta mesa',
+              ],
             );
           }
         }
@@ -210,17 +237,42 @@ export class PedidosPagosService {
           }
         }
 
-        await this.cajaAuditoria.registrarVentaEnCaja(
-          client,
-          sucursalId,
-          cobrados[0]?.id ?? pedidos[0].id,
-          pago.monto,
-          pago.metodo_pago,
-          {
-            exigirCaja: true,
-            descripcion: `Cobro mesa ${mesa.nombre}`,
-          },
-        );
+        // Distribuye cada línea de pago entre los tickets cuyo saldo se cubrió.
+        // Si se asociara el cobro completo al primer ticket, Caja lo limitaría al
+        // total de ese pedido y el resto de la cuenta quedaría sin movimiento.
+        let restantePago = pago.monto;
+        for (const pedido of pedidos) {
+          const saldoPedido = saldoCajaPorPedido.get(pedido.id) ?? 0;
+          const asignado = Math.min(restantePago, saldoPedido);
+          if (asignado <= 0.01) continue;
+
+          const registrado = await this.cajaAuditoria.registrarVentaEnCaja(
+            client,
+            sucursalId,
+            pedido.id,
+            asignado,
+            pago.metodo_pago,
+            {
+              exigirCaja: true,
+              descripcion: `Cobro mesa ${mesa.nombre}`,
+            },
+          );
+          if (!registrado) {
+            throw new BadRequestException({
+              error: 'MOVIMIENTO_CAJA_NO_REGISTRADO',
+              message: `No se pudo registrar en Caja el pago del pedido ${pedido.numero_pedido}`,
+            });
+          }
+          saldoCajaPorPedido.set(pedido.id, saldoPedido - asignado);
+          restantePago -= asignado;
+        }
+        if (restantePago > 0.01) {
+          throw new BadRequestException({
+            error: 'DISTRIBUCION_COBRO_INVALIDA',
+            message:
+              'No se pudo distribuir el pago entre los pedidos de la mesa',
+          });
+        }
       }
 
       const pedidosPost = await this.obtenerPedidosActivos(
@@ -266,7 +318,7 @@ export class PedidosPagosService {
         payload,
       );
       return payload;
-    }) as {
+    })) as {
       mesa_id: string;
       mesa_nombre: string;
       total_cobrado: number;
@@ -306,14 +358,17 @@ export class PedidosPagosService {
 
     const ctx: ContextoCobro = { usuarioId, rol };
 
-    const result = await this.database.enTransaccion(async (client) => {
+    const result = (await this.database.enTransaccion(async (client) => {
       const again = await this.leerCobroIdempotenteEnTx(
         client,
         dto.idempotency_key,
       );
       if (again) return again;
 
-      const pedido = await this.consultarUnoCliente<PedidoActivo & { mesa_id: string | null }>(client,
+      const pedido = await this.consultarUnoCliente<
+        PedidoActivo & { mesa_id: string | null }
+      >(
+        client,
         `SELECT id, numero_pedido, estado, total, monto_pagado, metodo_pago, mesa_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
         [pedidoId, sucursalId],
@@ -326,11 +381,12 @@ export class PedidosPagosService {
         });
       }
 
-      const saldo = Math.max(0, Number(pedido.total) - Number(pedido.monto_pagado));
+      const saldo = Math.max(
+        0,
+        Number(pedido.total) - Number(pedido.monto_pagado),
+      );
       const montoObjetivo =
-        dto.monto_parcial != null
-          ? Math.min(dto.monto_parcial, saldo)
-          : saldo;
+        dto.monto_parcial != null ? Math.min(dto.monto_parcial, saldo) : saldo;
       if (montoObjetivo <= 0) {
         throw new BadRequestException({
           error: 'SIN_SALDO',
@@ -364,7 +420,12 @@ export class PedidosPagosService {
           `INSERT INTO estados_pedido_historial
              (pedido_id, estado_anterior, estado_nuevo, usuario_id, motivo)
            VALUES ($1, $2, 'pagado', $3, $4)`,
-          [pedidoId, anterior, usuarioId, dto.motivo?.trim() || 'Cobro en caja'],
+          [
+            pedidoId,
+            anterior,
+            usuarioId,
+            dto.motivo?.trim() || 'Cobro en caja',
+          ],
         );
       } else {
         await client.query(
@@ -415,7 +476,10 @@ export class PedidosPagosService {
           pedidoId,
           pago.monto,
           pago.metodo_pago,
-          { exigirCaja: true, descripcion: `Cobro pedido ${pedido.numero_pedido}` },
+          {
+            exigirCaja: true,
+            descripcion: `Cobro pedido ${pedido.numero_pedido}`,
+          },
         );
       }
 
@@ -447,7 +511,7 @@ export class PedidosPagosService {
         payload,
       );
       return payload;
-    }) as {
+    })) as {
       pedido_id: string;
       numero_pedido: string;
       total_cobrado: number;
@@ -536,14 +600,13 @@ export class PedidosPagosService {
     );
   }
 
-  private async calcularMontoObjetivo(
-    client: PoolClient,
+  private calcularMontoObjetivo(
     dto: CobrarMesaDto,
     pedidos: PedidoActivo[],
-    itemIds: string[] | null,
-  ): Promise<number> {
-    if (itemIds?.length) {
-      return this.subtotalItems(client, itemIds);
+    montosItems: Map<string, number> | null,
+  ): number {
+    if (montosItems) {
+      return [...montosItems.values()].reduce((sum, monto) => sum + monto, 0);
     }
     if (dto.monto_parcial != null) {
       const saldo = this.saldoPendientePedidos(pedidos);
@@ -591,12 +654,15 @@ export class PedidosPagosService {
 
   private async resolverMesasGrupo(
     client: PoolClient,
+    sucursalId: string,
     mesa: { id: string; mesa_grupo_id: string | null },
   ): Promise<string[]> {
     const grupoId = mesa.mesa_grupo_id ?? mesa.id;
     const filas = await client.query<{ id: string }>(
-      `SELECT id FROM mesas WHERE id = $1 OR mesa_grupo_id = $1`,
-      [grupoId],
+      `SELECT id FROM mesas
+       WHERE sucursal_id = $2 AND activa = true
+         AND (id = $1 OR mesa_grupo_id = $1)`,
+      [grupoId, sucursalId],
     );
     return filas.rows.map((r) => r.id);
   }
@@ -638,39 +704,70 @@ export class PedidosPagosService {
     return itemIds;
   }
 
-  private async subtotalItems(
+  private async calcularMontosItems(
     client: PoolClient,
     itemIds: string[],
-  ): Promise<number> {
-    const res = await client.query<{ subtotal: string }>(
-      `SELECT COALESCE(SUM(cantidad * precio_unitario), 0) AS subtotal
-       FROM pedido_items WHERE id = ANY($1::uuid[])`,
+  ): Promise<Map<string, number>> {
+    const res = await client.query<{
+      pedido_id: string;
+      subtotal_items: string;
+      subtotal_pedido: string;
+      descuento: string;
+    }>(
+      `SELECT pi.pedido_id,
+              SUM(${SQL_VENTA_LINEA_ITEM}) AS subtotal_items,
+              p.subtotal AS subtotal_pedido,
+              p.descuento
+       FROM pedido_items pi
+       JOIN pedidos p ON p.id = pi.pedido_id
+       WHERE pi.id = ANY($1::uuid[])
+       GROUP BY pi.pedido_id, p.subtotal, p.descuento`,
       [itemIds],
     );
-    return Number(res.rows[0]?.subtotal ?? 0);
+    const montos = new Map<string, number>();
+    for (const fila of res.rows) {
+      const bruto = Number(fila.subtotal_items ?? 0);
+      const subtotal = Number(fila.subtotal_pedido ?? 0);
+      const descuento = Number(fila.descuento ?? 0);
+      const descuentoAsignado =
+        subtotal > 0 ? Math.min(descuento, (bruto / subtotal) * descuento) : 0;
+      montos.set(
+        fila.pedido_id,
+        Math.max(0, Math.round((bruto - descuentoAsignado) * 100) / 100),
+      );
+    }
+    return montos;
   }
 
-  private async distribuirMonto(
-    client: PoolClient,
+  private validarSaldoItems(
+    pedidos: PedidoActivo[],
+    montosItems: Map<string, number>,
+  ): void {
+    const pedidosPorId = new Map(pedidos.map((pedido) => [pedido.id, pedido]));
+    for (const [pedidoId, montoItem] of montosItems) {
+      const pedido = pedidosPorId.get(pedidoId);
+      if (!pedido) continue;
+      const saldo = Math.max(
+        0,
+        Number(pedido.total) - Number(pedido.monto_pagado),
+      );
+      if (montoItem > saldo + 0.01) {
+        throw new BadRequestException({
+          error: 'ITEMS_EXCEDEN_SALDO',
+          message: `Los ítems del pedido ${pedido.numero_pedido} superan su saldo (${saldo})`,
+        });
+      }
+    }
+  }
+
+  private distribuirMonto(
     pedidos: PedidoActivo[],
     monto: number,
-    itemIds: string[] | null,
-  ): Promise<Map<string, number>> {
+    montosItems: Map<string, number> | null,
+  ): Map<string, number> {
     const montosPorPedido = new Map<string, number>();
-    if (itemIds?.length) {
-      const filas = await client.query<{
-        pedido_id: string;
-        subtotal: string;
-      }>(
-        `SELECT pedido_id, SUM(cantidad * precio_unitario) AS subtotal
-         FROM pedido_items WHERE id = ANY($1::uuid[])
-         GROUP BY pedido_id`,
-        [itemIds],
-      );
-      for (const f of filas.rows) {
-        montosPorPedido.set(f.pedido_id, Number(f.subtotal));
-      }
-      return montosPorPedido;
+    if (montosItems) {
+      return new Map(montosItems);
     }
     let restante = monto;
     for (const p of pedidos) {

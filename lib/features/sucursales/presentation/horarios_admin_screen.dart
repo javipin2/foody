@@ -19,9 +19,14 @@ const _nombresDia = [
 
 /// Horarios de apertura por día (admin/gerente).
 class HorariosAdminScreen extends StatefulWidget {
-  const HorariosAdminScreen({super.key, required this.sucursalId});
+  const HorariosAdminScreen({
+    super.key,
+    required this.sucursalId,
+    this.repository,
+  });
 
   final String? sucursalId;
+  final SucursalesRepository? repository;
 
   @override
   State<HorariosAdminScreen> createState() => _HorariosAdminScreenState();
@@ -30,7 +35,7 @@ class HorariosAdminScreen extends StatefulWidget {
 class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = SucursalesRepository();
+  late final SucursalesRepository _repo;
   List<Map<String, dynamic>> _horarios = [];
   bool _cargando = true;
   String? _error;
@@ -38,6 +43,7 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? SucursalesRepository();
     _cargar();
   }
 
@@ -154,67 +160,72 @@ class _HorariosAdminScreenState extends State<HorariosAdminScreen> {
 
           return AlertDialog(
             title: Text(_nombreDia(h['dia_semana'])),
-            content: SizedBox(
-              width: 320,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Toca una hora para elegirla de la lista',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: _scheme.onSurfaceVariant,
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 360,
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.58,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Toca una hora para elegirla de la lista',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: _scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  _BotonHora(
-                    etiqueta: 'Apertura',
-                    hora: _fmtHora(apertura),
-                    onTap: pickApertura,
-                  ),
-                  const SizedBox(height: 10),
-                  _BotonHora(
-                    etiqueta: 'Cierre',
-                    hora: _fmtHora(cierre),
-                    onTap: pickCierre,
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final p in const [
-                        (
-                          TimeOfDay(hour: 8, minute: 0),
-                          TimeOfDay(hour: 22, minute: 0),
-                        ),
-                        (
-                          TimeOfDay(hour: 10, minute: 0),
-                          TimeOfDay(hour: 21, minute: 0),
-                        ),
-                        (
-                          TimeOfDay(hour: 11, minute: 0),
-                          TimeOfDay(hour: 23, minute: 0),
-                        ),
-                      ])
-                        ActionChip(
-                          label: Text(
-                            '${_fmtHora(p.$1)}–${_fmtHora(p.$2)}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
+                    const SizedBox(height: 14),
+                    _BotonHora(
+                      etiqueta: 'Apertura',
+                      hora: _fmtHora(apertura),
+                      onTap: pickApertura,
+                    ),
+                    const SizedBox(height: 10),
+                    _BotonHora(
+                      etiqueta: 'Cierre',
+                      hora: _fmtHora(cierre),
+                      onTap: pickCierre,
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final p in const [
+                          (
+                            TimeOfDay(hour: 8, minute: 0),
+                            TimeOfDay(hour: 22, minute: 0),
                           ),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => setDlg(() {
-                            apertura = p.$1;
-                            cierre = p.$2;
-                          }),
-                        ),
-                    ],
-                  ),
-                ],
+                          (
+                            TimeOfDay(hour: 10, minute: 0),
+                            TimeOfDay(hour: 21, minute: 0),
+                          ),
+                          (
+                            TimeOfDay(hour: 11, minute: 0),
+                            TimeOfDay(hour: 23, minute: 0),
+                          ),
+                        ])
+                          ActionChip(
+                            label: Text(
+                              '${_fmtHora(p.$1)}–${_fmtHora(p.$2)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => setDlg(() {
+                              apertura = p.$1;
+                              cierre = p.$2;
+                            }),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -643,11 +654,12 @@ class _DialogoListaHorasState extends State<_DialogoListaHoras> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
     return AlertDialog(
       title: Text(widget.titulo),
       content: SizedBox(
-        width: 280,
-        height: 360,
+        width: size.width < 400 ? size.width * 0.68 : 280,
+        height: size.height < 600 ? size.height * 0.48 : 360,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

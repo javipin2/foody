@@ -54,6 +54,7 @@ class SaaSTokens {
   static const double r10 = 10;
   static const double r12 = 12;
   static const double r16 = 16;
+  static const double radioPill = 20;
 
   static const double s4 = 4;
   static const double s8 = 8;
@@ -62,6 +63,10 @@ class SaaSTokens {
   static const double s20 = 20;
   static const double s24 = 24;
   static const double s32 = 32;
+
+  // Motion used by shared admin controls; consumers honor reduced motion.
+  static const Duration duracionControl = Duration(milliseconds: 140);
+  static const Duration duracionTransicion = Duration(milliseconds: 180);
 
   static List<BoxShadow> shadowSoft(BuildContext context) => [
         BoxShadow(

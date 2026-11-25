@@ -4,10 +4,11 @@ exports.hoyBogota = hoyBogota;
 exports.diasEntre = diasEntre;
 exports.resolverPeriodoAnalitica = resolverPeriodoAnalitica;
 const common_1 = require("@nestjs/common");
-const TZ = 'America/Bogota';
+const fecha_negocio_util_1 = require("../../compartido/fecha-negocio.util");
+const TZ = fecha_negocio_util_1.ZONA_HORARIA_NEGOCIO;
 const MAX_DIAS_RANGO = 366;
 function hoyBogota() {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
+    return (0, fecha_negocio_util_1.fechaHoyNegocio)();
 }
 function addDaysYmd(ymd, dias) {
     const dt = new Date(`${ymd}T12:00:00`);

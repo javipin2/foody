@@ -11,6 +11,7 @@ Future<String?> mostrarAsignarMeseroSheet({
   required PedidoAdminModel pedido,
   required String sucursalId,
   String? meseraPreseleccionadaId,
+  UsuariosRepository? usuariosRepository,
 }) {
   final ancho = MediaQuery.sizeOf(context).width;
   if (FoodyBreakpoints.esExpanded(ancho)) {
@@ -19,11 +20,12 @@ Future<String?> mostrarAsignarMeseroSheet({
       builder: (ctx) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440),
+          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 680),
           child: _AsignarMeseroContenido(
             pedido: pedido,
             sucursalId: sucursalId,
             meseraPreseleccionadaId: meseraPreseleccionadaId,
+            repository: usuariosRepository,
             onCerrar: () => Navigator.pop(ctx),
             onConfirmar: (id) => Navigator.pop(ctx, id),
           ),
@@ -41,6 +43,7 @@ Future<String?> mostrarAsignarMeseroSheet({
         pedido: pedido,
         sucursalId: sucursalId,
         meseraPreseleccionadaId: meseraPreseleccionadaId,
+        repository: usuariosRepository,
         onCerrar: () => Navigator.pop(ctx),
         onConfirmar: (id) => Navigator.pop(ctx, id),
       ),
@@ -54,6 +57,7 @@ class _AsignarMeseroContenido extends StatefulWidget {
     required this.sucursalId,
     required this.onCerrar,
     required this.onConfirmar,
+    this.repository,
     this.meseraPreseleccionadaId,
   });
 
@@ -62,13 +66,15 @@ class _AsignarMeseroContenido extends StatefulWidget {
   final String? meseraPreseleccionadaId;
   final VoidCallback onCerrar;
   final ValueChanged<String> onConfirmar;
+  final UsuariosRepository? repository;
 
   @override
-  State<_AsignarMeseroContenido> createState() => _AsignarMeseroContenidoState();
+  State<_AsignarMeseroContenido> createState() =>
+      _AsignarMeseroContenidoState();
 }
 
 class _AsignarMeseroContenidoState extends State<_AsignarMeseroContenido> {
-  final _repo = UsuariosRepository();
+  late final _repo = widget.repository ?? UsuariosRepository();
   late Future<List<Map<String, dynamic>>> _future;
   String? _seleccion;
   bool _enviando = false;
@@ -83,7 +89,7 @@ class _AsignarMeseroContenidoState extends State<_AsignarMeseroContenido> {
   @override
   Widget build(BuildContext context) {
     final mesa = widget.pedido.mesaNombre?.trim();
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -158,20 +164,23 @@ class _AsignarMeseroContenidoState extends State<_AsignarMeseroContenido> {
                       child: Text(m['nombre'] as String? ?? '—'),
                     ),
                 ],
-                onChanged: _enviando
-                    ? null
-                    : (v) => setState(() => _seleccion = v),
+                onChanged:
+                    _enviando ? null : (v) => setState(() => _seleccion = v),
               );
             },
           ),
           const SizedBox(height: 20),
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            runAlignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               TextButton(
                 onPressed: _enviando ? null : widget.onCerrar,
                 child: const Text('Cancelar'),
               ),
-              const Spacer(),
               FilledButton(
                 onPressed: _enviando || _seleccion == null
                     ? null
@@ -182,7 +191,7 @@ class _AsignarMeseroContenidoState extends State<_AsignarMeseroContenido> {
                 style: FilledButton.styleFrom(
                   backgroundColor: ColoresFoody.primario,
                 ),
-                child: const Text('Confirmar y a cocina'),
+                child: const Text('Confirmar y enviar a cocina'),
               ),
             ],
           ),

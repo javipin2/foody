@@ -5,6 +5,7 @@ import { JwtPayload } from '../../core/auth/jwt-payload';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
 import { RolGuard } from '../../core/auth/guards/rol.guard';
 import { SuscripcionActivaGuard } from '../../core/auth/guards/suscripcion-activa.guard';
+import { SuperAdminGuard } from '../../core/auth/guards/super-admin.guard';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
 import { NotificacionesService } from './notificaciones.service';
 
@@ -20,8 +21,7 @@ export class NotificacionesController {
   }
 
   @Post('procesar-cola')
-  @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, RolGuard)
-  @Permisos('ver_dashboard')
+  @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuperAdminGuard)
   procesarCola() {
     return this.notificaciones.procesarPendientes(100);
   }

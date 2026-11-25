@@ -143,7 +143,7 @@ Leyenda estado: `🟣 abierto` · `🟡 parcial / aceptado` · `✅ cerrado` · 
 | **AQ-SCALE-02** | 🟣 **prod-risk** | Crons por réplica | `setInterval` DIY (AQ-DUP-05) | Trabajo duplicado / races sin advisory lock o leader |
 | **AQ-SCALE-03** | 🟣 | N+1 SQL hot paths | Menu combos 1 query/combo; clone catálogo per-row; stock expansión por ítem | Latencia menú + crear pedido bajo pico |
 | **AQ-SCALE-04** | 🟣 | Cache menú in-memory | `CacheModule` max ~200, TTL 300s | Thrashing entre muchas sucursales |
-| **AQ-SCALE-05** | 🟣 **prod-risk** | Rate-limit en `Map` estático | Por proceso | Inútil con N réplicas; crecimiento memoria IP×path |
+| **AQ-SCALE-05** | 🟡 **verificación de activación pendiente** | Rate-limit usa contador compartido Postgres; el `catch` del 429 lo degradaba a fallback `Map` por proceso | Fix en fuente 2026-11-23; 3 specs focalizados + build OK. API :3000 sigue con proceso anterior | Si falla SQL continúa fail-open al mapa local; comprobar contador 429 en despliegue y decidir política fail-open/fail-closed |
 | **AQ-SCALE-06** | 🟡 | Realtime channel Map | Por sucursal/cocina/domi (bien shardeado) | Riesgo límites Supabase + hygiene de canales |
 | **AQ-SCALE-07** | 🟡 | Listados / health globales | Pedidos default LIMIT 100; auditoría 500; impresión `COUNT(*)` sin `sucursal_id` | Respuestas pesadas / scan global jobs |
 | **AQ-SCALE-08** | 🟡 | God screens Flutter | `menu_admin` ~2.2k · `mesas_grid` ~2.1k · inventario ~1.9k LOC | No escala de **equipo** (merge hell), no de tenants |

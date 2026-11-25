@@ -3,7 +3,8 @@ import 'package:reserva_canchas/core/modelos/respuesta_api.dart';
 import 'package:reserva_canchas/core/red/cliente_dio.dart';
 
 class CajaRepository {
-  CajaRepository({Dio? dio}) : _dio = dio ?? ClienteDio.instancia(conAuthStaff: true);
+  CajaRepository({Dio? dio})
+      : _dio = dio ?? ClienteDio.instancia(conAuthStaff: true);
 
   final Dio _dio;
 
@@ -71,6 +72,39 @@ class CajaRepository {
     return all;
   }
 
+  Future<List<Map<String, dynamic>>> movimientosPedido(
+    String pedidoId, {
+    required String sucursalId,
+  }) async {
+    final all = <Map<String, dynamic>>[];
+    var page = 1;
+    const limit = 100;
+    while (page <= 50) {
+      final r = await _dio.get<Map<String, dynamic>>(
+        '/caja/pedidos/$pedidoId/movimientos',
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          'sucursal_id': sucursalId,
+        },
+      );
+      if (r.data == null) throw Exception('Respuesta vacía');
+      final env = RespuestaApi<Map<String, dynamic>>.fromJson(
+        r.data!,
+        (raw) => Map<String, dynamic>.from(raw as Map<String, dynamic>),
+      );
+      if (!env.exito || env.datos == null) throw Exception(env.mensaje);
+      final datos = env.datos!;
+      all.addAll((datos['items'] as List<dynamic>? ?? []).map(
+        (item) => Map<String, dynamic>.from(item as Map<String, dynamic>),
+      ));
+      final totalPages = (datos['totalPages'] as num?)?.toInt() ?? 1;
+      if (page >= totalPages) break;
+      page++;
+    }
+    return all;
+  }
+
   Future<void> registrarGasto({
     required String cajaId,
     required String concepto,
@@ -89,8 +123,7 @@ class CajaRepository {
   }) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/caja/cuentas-por-cobrar/$sucursalId',
-      queryParameters:
-          incluirPagadas ? {'incluir_pagadas': 'true'} : null,
+      queryParameters: incluirPagadas ? {'incluir_pagadas': 'true'} : null,
     );
     if (r.data == null) throw Exception('Respuesta vacía');
     final env = RespuestaApi<List<dynamic>>.fromJson(
@@ -103,7 +136,8 @@ class CajaRepository {
         .toList();
   }
 
-  Future<Map<String, dynamic>> resumenCuentasPorCobrar(String sucursalId) async {
+  Future<Map<String, dynamic>> resumenCuentasPorCobrar(
+      String sucursalId) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/caja/cuentas-por-cobrar/$sucursalId/resumen',
     );
@@ -130,7 +164,8 @@ class CajaRepository {
     _validar(r.data);
   }
 
-  Future<void> pagarCuenta(String cuentaId, {String metodoPago = 'efectivo'}) async {
+  Future<void> pagarCuenta(String cuentaId,
+      {String metodoPago = 'efectivo'}) async {
     final r = await _dio.patch<Map<String, dynamic>>(
       '/caja/cuentas-por-cobrar/$cuentaId/pagar',
       data: {'metodo_pago': metodoPago},

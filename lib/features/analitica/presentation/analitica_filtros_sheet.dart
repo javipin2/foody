@@ -25,6 +25,7 @@ class AnaliticaFiltros {
   List<String> meseraIds;
   List<String> cocinaIds;
   List<String> categoriaIds;
+
   /// `frecuente`, `nuevo` o null = todos.
   String? clienteSegmento;
 
@@ -76,10 +77,14 @@ class AnaliticaFiltros {
     if (soloPendientePago) partes.add('Solo pendiente pago');
     if (meseraIds.isNotEmpty) partes.add('Meseros: ${meseraIds.length}');
     if (cocinaIds.isNotEmpty) partes.add('Cocinas: ${cocinaIds.length}');
-    if (categoriaIds.isNotEmpty) partes.add('Categorías: ${categoriaIds.length}');
+    if (categoriaIds.isNotEmpty) {
+      partes.add('Categorías: ${categoriaIds.length}');
+    }
     if (clienteSegmento != null) {
       partes.add(
-        clienteSegmento == 'frecuente' ? 'Clientes frecuentes' : 'Clientes nuevos',
+        clienteSegmento == 'frecuente'
+            ? 'Clientes frecuentes'
+            : 'Clientes nuevos',
       );
     }
     return partes.isEmpty ? 'Sin filtros' : partes.join(' · ');
@@ -123,7 +128,7 @@ Future<AnaliticaFiltros?> mostrarAnaliticaFiltrosSheet({
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    backgroundColor: AnaliticaTokens.surface,
+    backgroundColor: AnaliticaTokens.surfaceOf(context),
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
@@ -148,7 +153,8 @@ class _AnaliticaFiltrosSheetBody extends StatefulWidget {
       _AnaliticaFiltrosSheetBodyState();
 }
 
-class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> {
+class _AnaliticaFiltrosSheetBodyState
+    extends State<_AnaliticaFiltrosSheetBody> {
   final _usuariosRepo = UsuariosRepository();
   final _cocinasRepo = CocinasRepository();
   final _catalogoRepo = CatalogoAdminRepository();
@@ -215,13 +221,13 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: AnaliticaTokens.surfaceMuted,
+                  color: AnaliticaTokens.surfaceMutedOf(context),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.tune_rounded,
                   size: 16,
-                  color: AnaliticaTokens.inkMuted,
+                  color: AnaliticaTokens.inkMutedOf(context),
                 ),
               ),
               const SizedBox(width: 12),
@@ -240,9 +246,9 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                       _f.activos == 0
                           ? 'Sin filtros activos'
                           : '${_f.activos} filtros activos · ${_f.etiquetaResumen()}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
-                        color: AnaliticaTokens.inkMuted,
+                        color: AnaliticaTokens.inkMutedOf(context),
                       ),
                     ),
                   ],
@@ -259,7 +265,10 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
           else if (_error != null)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             )
           else
             Flexible(
@@ -273,7 +282,7 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                         Expanded(
                           child: DropdownButtonFormField<int?>(
                             decoration: _inputDeco('Desde (h)'),
-                            value: _f.horaDesde,
+                            initialValue: _f.horaDesde,
                             items: [
                               const DropdownMenuItem(
                                 value: null,
@@ -292,7 +301,7 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                         Expanded(
                           child: DropdownButtonFormField<int?>(
                             decoration: _inputDeco('Hasta (h)'),
-                            value: _f.horaHasta,
+                            initialValue: _f.horaHasta,
                             items: [
                               const DropdownMenuItem(
                                 value: null,
@@ -319,8 +328,11 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                           FilterChip(
                             label: Text(e.$2),
                             selected: _f.estados.contains(e.$1),
-                            selectedColor: AnaliticaTokens.surfaceMuted,
-                            checkmarkColor: AnaliticaTokens.ink,
+                            selectedColor:
+                                Theme.of(context).colorScheme.primaryContainer,
+                            checkmarkColor: Theme.of(context)
+                                .colorScheme
+                                .onPrimaryContainer,
                             onSelected: (_) => _toggleLista(_f.estados, e.$1),
                           ),
                       ],
@@ -329,7 +341,7 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Solo pendiente de pago'),
                       value: _f.soloPendientePago,
-                      activeColor: AnaliticaTokens.ventas,
+                      activeThumbColor: AnaliticaTokens.ventas,
                       onChanged: (v) =>
                           setState(() => _f.soloPendientePago = v),
                     ),
@@ -349,7 +361,9 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                             FilterChip(
                               label: Text(m['nombre'] as String? ?? ''),
                               selected: _f.meseraIds.contains('${m['id']}'),
-                              selectedColor: AnaliticaTokens.surfaceMuted,
+                              selectedColor: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer,
                               onSelected: (_) =>
                                   _toggleLista(_f.meseraIds, '${m['id']}'),
                             ),
@@ -368,7 +382,9 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                             FilterChip(
                               label: Text(c['nombre'] as String? ?? ''),
                               selected: _f.cocinaIds.contains('${c['id']}'),
-                              selectedColor: AnaliticaTokens.surfaceMuted,
+                              selectedColor: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer,
                               onSelected: (_) =>
                                   _toggleLista(_f.cocinaIds, '${c['id']}'),
                             ),
@@ -391,7 +407,9 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                               label: Text(cat['nombre'] as String? ?? ''),
                               selected:
                                   _f.categoriaIds.contains('${cat['id']}'),
-                              selectedColor: AnaliticaTokens.surfaceMuted,
+                              selectedColor: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer,
                               onSelected: (_) => _toggleLista(
                                 _f.categoriaIds,
                                 '${cat['id']}',
@@ -425,8 +443,8 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
               OutlinedButton(
                 onPressed: () => setState(_f.limpiar),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AnaliticaTokens.inkMuted,
-                  side: const BorderSide(color: AnaliticaTokens.border),
+                  foregroundColor: AnaliticaTokens.inkMutedOf(context),
+                  side: BorderSide(color: AnaliticaTokens.borderOf(context)),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -439,7 +457,8 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
                 icon: const Icon(Icons.check_rounded, size: 18),
                 label: const Text('Aplicar'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.ink,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -456,14 +475,14 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
         labelText: label,
         isDense: true,
         filled: true,
-        fillColor: AnaliticaTokens.surfaceMuted,
+        fillColor: AnaliticaTokens.surfaceMutedOf(context),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AnaliticaTokens.border),
+          borderSide: BorderSide(color: AnaliticaTokens.borderOf(context)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AnaliticaTokens.border),
+          borderSide: BorderSide(color: AnaliticaTokens.borderOf(context)),
         ),
       );
 
@@ -478,7 +497,7 @@ class _AnaliticaFiltrosSheetBodyState extends State<_AnaliticaFiltrosSheetBody> 
             titulo,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
-                  color: AnaliticaTokens.ink,
+                  color: AnaliticaTokens.inkOf(context),
                 ),
           ),
         ],

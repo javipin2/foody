@@ -3,7 +3,7 @@
 > **Documento vivo** — actualizar si cambia `foody_backend/src/modulos/pedidos/pedido-estados.ts`  
 > Implementación: `pedido-estados.ts`, `pedidos-estado.service.ts`, `PedidoAdminModel.accionRapida`
 
-**Última actualización:** 2026-08-06 — Prompt 11: salón no usa `entregado`; cierre = `pagado` vía cobro. Ver `AUDITORIA_PEDIDOS_CICLO_VIDA.md`.
+**Última actualización:** 2026-11-24 — además del ciclo válido, `listo` exige al menos un ítem y todos resueltos (`listo`/`no_disponible`) en Cocina; Kanban y cambios automáticos pasan por la validación central. Ver `AUDITORIA_PEDIDOS_CICLO_VIDA.md`.
 
 ---
 
@@ -16,6 +16,8 @@
 5. **`confirmado`** queda en BD por pedidos antiguos; en UI se muestra en columna **En cocina**.
 6. **Mesa (`tipo=mesa` o `mesa_id`):** no usar botón Kanban «Entregado» — cerrar con **cobro** → `pagado` libera mesa.
 7. **Domicilio:** `entregado` solo desde `en_camino` (app domiciliario); cobro contra entrega exige método de pago al confirmar.
+8. **`listo`:** solo cuando el pedido tiene ítems y todos están resueltos en Cocina (`listo` o `no_disponible`); se valida en el comando central para Kanban y Cocina automática.
+9. **Editar preparación después de presentar la cuenta o marcar listo:** si cambia cantidad, toppings u observaciones, la línea vuelve a `pendiente`; si el pedido estaba `listo`/`pagando`, reabre en `en_cocina` y notifica Cocina en la misma transacción.
 
 ---
 
@@ -42,7 +44,7 @@ Cliente pide → pendiente_aprobacion
 ```
 Crear pedido → en_cocina
   → listo → pagando → cobrar → pagado
-  (si método de caja al crear: monto_pagado se llena ya — PED-PREPAGO-01: hoy el estado puede quedar en_cocina)
+  (si método de caja al crear: `monto_pagado=total`; sigue en `en_cocina` para que KDS procese. El saldo cero no bloquea cierre de caja y, al resolver todos los ítems, cocina lo transiciona a `pagado` — PED-PREPAGO-01 cerrado.)
 ```
 
 ### Para llevar / domicilio (cliente app)
@@ -57,7 +59,7 @@ Cliente pide → pendiente
 
 ```
 pendiente (cliente o staff) → en_cocina
-  → listo → [asignar repartidor] → asignado → en_camino → entregado
+  → Cocina resuelve todas las líneas → listo → [asignar repartidor] → asignado → en_camino → entregado
   (sin pagando; cobro puede ser al crear o en caja según método de pago)
 ```
 
@@ -83,6 +85,8 @@ stateDiagram-v2
   }
 
   en_cocina --> listo: Cocina lista
+  listo --> en_cocina: Agregar o modificar línea
+  pagando --> en_cocina: Modificar preparación
   listo --> pagando: Mesa / llevar
   listo --> asignado: Domicilio asignar
   pagando --> pagado: Cobrar caja
@@ -117,7 +121,7 @@ stateDiagram-v2
 |---------------|---------------|-----------|
 | Pendiente QR | Aprobar → `en_cocina` | — |
 | Pendiente | A cocina | A cocina |
-| En cocina | Listo | Listo |
+| En cocina | Listo (solo con todas las líneas resueltas) | Listo (solo con todas las líneas resueltas) |
 | Listo | Pagando | Asignar repartidor (UI) |
 | Pagando | Cobrar (sheet/caja) | — |
 | En camino | — | Entregado |
@@ -139,6 +143,7 @@ stateDiagram-v2
 Ver código fuente: `foody_backend/src/modulos/pedidos/pedido-estados.ts`
 
 Cambio clave 2026-06-19 (P0): mesa bloquea `→ entregado` vía PATCH; domicilio `→ entregado` solo desde `en_camino`.
+Regla añadida 2026-11-24: transición a `listo` consulta en la transacción las líneas de Cocina y rechaza pedidos vacíos o con estado NULL/pendiente/preparando.
 
 ---
 
@@ -148,3 +153,5 @@ Cambio clave 2026-06-19 (P0): mesa bloquea `→ entregado` vía PATCH; domicilio
 |-------|--------|
 | 2026-06-19 | **P0 E2E:** mesa no libera sin cobro; domicilio sin saltar repartidor; KDS no regresa a `confirmado` |
 | 2026-06-19 | Flujo unificado; sin columna Confirmado; aprobar QR → `en_cocina`; staff crea en `en_cocina`; fix ruta FCM cliente |
+| 2026-11-24 | `listo` requiere líneas presentes y resueltas en Cocina; se centraliza la regla y el historial no se escribe al fallar |
+| 2026-11-24 | Agregar o cambiar preparación en `listo`/`pagando` reabre `en_cocina`; reducir el total debajo del monto recibido exige registrar devolución antes |

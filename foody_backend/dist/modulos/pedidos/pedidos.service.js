@@ -54,6 +54,17 @@ let PedidosService = class PedidosService {
         OR (p.tipo = 'mesa' AND p.mesera_id IS NULL AND m.mesera_asignada_id IS NULL)
       )`;
         }
+        let filtroBusqueda = '';
+        if (opciones.busqueda) {
+            params.push(`%${opciones.busqueda}%`);
+            const idx = params.length;
+            filtroBusqueda = ` AND (
+        p.numero_pedido::text ILIKE $${idx}
+        OR COALESCE(p.cliente_nombre, '') ILIKE $${idx}
+        OR COALESCE(p.cliente_telefono, '') ILIKE $${idx}
+        OR COALESCE(m.nombre, '') ILIKE $${idx}
+      )`;
+        }
         const fromJoin = `
        FROM pedidos p
        LEFT JOIN mesas m ON m.id = p.mesa_id
@@ -74,7 +85,7 @@ let PedidosService = class PedidosService {
          ORDER BY fecha DESC
          LIMIT 1
        ) h ON true
-       WHERE p.sucursal_id = $1 ${filtroActivos}${filtroMesera}`;
+       WHERE p.sucursal_id = $1 ${filtroActivos}${filtroMesera}${filtroBusqueda}`;
         const selectCols = `SELECT p.id, p.numero_pedido, p.tipo, p.estado, p.cliente_nombre,
               p.cliente_telefono, p.direccion_entrega, p.total,
               COALESCE(p.monto_pagado, 0) AS monto_pagado, p.metodo_pago,
@@ -269,6 +280,9 @@ let PedidosService = class PedidosService {
     }
     async agregarItems(pedidoId, sucursalId, dto, opciones = {}) {
         return this.items.agregarItems(pedidoId, sucursalId, dto, opciones);
+    }
+    async reemplazarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto, opciones = {}) {
+        return this.items.reemplazarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto, opciones);
     }
     async actualizarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto) {
         return this.items.actualizarItemPedido(pedidoId, itemId, sucursalId, usuarioId, dto);

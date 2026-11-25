@@ -1,11 +1,47 @@
 # Foody — Roadmap Frontend (documento maestro)
 
+### 2026-11-24 — AR-17 navegación Pedido → Caja
+
+El detalle transmite el ID del pedido a Caja y actualiza el deep link. Caja consulta el historial del pedido de forma separada al turno activo y muestra pagos aunque sean de turnos cerrados o no exista caja abierta. Nest valida permiso/sucursal y evita revelar pedidos de otra sucursal; migración 093 añade índice parcial y se aplicó solo a QA. Widget de Caja cubre 320/390/820/1440; análisis focalizado limpio; global Flutter 269 aprobadas/5 omitidas/0 fallidas; Nest 49 suites/125 pruebas y build OK. El caso E2E de caja cerrada está escrito pero :3001 no escucha, por lo que sigue sin ejecutar. El candidato Equipo Release compiló pero no se publicó: la nueva ruta responde 404 en :3000/Tunnel (el proceso arrancó antes del build actual). La verificación autenticada queda pendiente de activación coordinada.
+
+### 2026-11-24 — regresión global y ciclo de vida de vistas
+
+Reverificación global previa al cambio de AR-17: `flutter test --no-pub` pasó 265 pruebas y omitió 5. `flutter analyze --no-pub` terminó con código 1 por 25 issues informativas, sin errores ni warnings; se preservaron los avisos del registro OAuth. Menú ofrece edición de precios directa junto al producto; Cocinas carga estaciones e impresoras en paralelo; detalle de pedido respeta `ver_caja`. Las vistas tienen pruebas responsive de widget, pero el recorrido visual autenticado vista por vista sigue pendiente.
+
+### 2026-11-24 — CLIENT-DOM-CONTACT-01
+
+Checkout muestra validación inline de teléfono de contacto para domicilio (7–15 dígitos), acepta formato internacional, mantiene nombre opcional y no exige teléfono para recoger/mesa/encargo. `validar_telefono_checkout_test.dart` 3/3, `checkout_screen_responsive_test.dart` sin overflow en 320/390/820/1440 px y analyzer focalizado limpio. Backend DTO y E2E QA también verificados; pendiente activación de Nest :3000 antes de probar el flujo en Tunnel.
+
+### 2026-11-24 — PED-POS-CAP-01 / estado vacío de carrito
+
+POS enlaza la cotización con el contrato de capability que exige Nest: registra el dispositivo una vez y adjunta el secreto a `/pedidos/estimar`. Estado vacío ya indica agregar productos y no presenta reintento deshabilitado. Tests del repositorio 5/5, pantalla POS 17/17 y analyzer focalizado sin issues. Equipo autenticado por Tunnel mostró total del servidor de 35.000 COP y habilitó Confirmar; no se creó pedido. Release de Cliente y Equipo publicado; bundles locales y públicos coinciden por SHA-256 y seis endpoints responden HTTP 200.
+
+### 2026-11-24 — GLOB-ERROR-STATE-RESP-01
+
+El estado de error compartido ahora usa una superficie temática con ancho limitado, jerarquía de icono/mensaje y acciones de 48 px; en móvil el reintento ocupa el ancho disponible. Se comprobó claro/oscuro en 320, 390, 820 y 1440 px. `foody_estado_ui_test.dart`: 8/8; analyzer limpio. F5-03 avanza parcialmente: falta migrar y revisar estados ad hoc de cada feature.
+
+### 2026-11-24 — Recuperación de acciones masivas KDS
+
+“Todo listo” y “Volver a cocina” notifican resultados parciales y refrescan el ticket. Si falla la reversión, la vista cambia a Cocina para no ocultar el pedido. Prueba KDS 12/12; regresión Flutter 211/5 omitidas; analyzer limpio. Rebuild Cliente/Equipo, smoke de seis endpoints local/público HTTP 200. Pendiente QA autenticada y dispositivo/impresora real.
+
+### 2026-11-24 — DOM-READ-PARALLEL-01
+
+Resumen de liquidación y registro de domicilios independientes se solicitan ahora en paralelo. Prueba widget mantiene ambas respuestas pendientes y verifica que ambas solicitudes ya comenzaron; no supone tiempo de red específico. Domiciliarios 5/5, Flutter 212/5 omitidas, analyzer limpio. Rebuild publicado, los hashes públicos coinciden con los artefactos locales y seis endpoints responden HTTP 200.
+
+### 2026-11-24 — DOM-STALE-01
+
+Refresh manual/Realtime conserva lo que ya está pintado en vez de reemplazar la pantalla por skeleton. Si la consulta falla, se conservan los datos con error inline y acción de reintento. Prueba del GET pendiente/fallido; Domiciliarios 6/6, Flutter 213/5 omitidas, analyzer limpio. Build Cliente/Equipo publicado con hashes públicos iguales al artefacto local; los seis endpoints responden HTTP 200.
+
 > **Fuente de verdad del trabajo Flutter/UI.**  
 > Actualizar al cerrar cada sesión de frontend. Sincronizar resumen en [`../MASTER_STATUS.md`](../MASTER_STATUS.md).
 
-**Última actualización:** 2026-11-22 — Diálogos operativos, validación de formularios y diseño adaptable de Foody Control.
+**Última actualización:** 2026-11-24 — POS consulta cotización server-side para pago mixto. Smoke del atajo Tunnel reconstruyó Cliente/Equipo, URLs locales/públicas de Cliente/Equipo y API respondieron HTTP 200, los bundles JS locales/públicos coinciden. Regresión Flutter 209 aprobadas/5 omitidas; analyzer focalizado del POS limpio. Sigue pendiente QA visual autenticada (herramienta de captura no devolvió imagen de Chrome), acceso operativo por rol y definición del guard universal de Caja para pedidos con cobro diferido. Tunnel y OAuth conservados.
 
-**Próximo paso:** completar los formularios y vistas que aún no cubre la oleada y verificar claro/oscuro, estados y tamaños por rol. El entorno de referencia sigue en `MODO=tunel`.
+**Próximo paso:** ampliar cobertura de alta, acceso y operación por rol; reconstruir Cliente/Equipo y ejecutar regresión visual autenticada.
+
+### 2026-11-24 — KDS “Todo listo” con recuperación parcial
+
+La acción detiene la secuencia al primer ítem fallido, refresca ticket y comunica los éxitos parciales junto con pendientes reintentables. Widget 11/11; regresión Flutter 210/5 omitidas; analyzer focalizado limpio. Launcher reconstruyó Cliente y Equipo release; ambos subdominios y salud API responden HTTP 200 local y vía Tunnel. Sin tocar Nest/OAuth/datos. Sigue pendiente QA autenticada y dispositivo/impresora reales.
 
 ### Secuencia del rediseño Foody (2026-11-22)
 
@@ -25,6 +61,7 @@ La etapa 2 requiere validación de uso por roles durante QA. La etapa 3 se mater
 - **Comisión sobre ventas:** no se encontró cálculo general porcentual aplicado al subtotal de ventas. No asumir que existe.
 - **Cargo de domicilios:** `MEMORIA.md`, migración `011_super_admin.sql` y `ConfiguracionGlobalModule` documentan/configuran 15% como comisión sobre la entrega independiente; el servicio de domiciliarios calcula comisión e ingreso estimado del repartidor. Definir si Foody la cobra, quién paga, base (tarifa antes/después de ajustes), impuestos y cuándo se registra.
 - **Pago al domiciliario:** `ganancias_domiciliario` almacena montos estimados y estado de pago; la auditoría previa no localizó un flujo de liquidación que cierre esta comisión end-to-end. Requiere revisión de endpoints/pantallas antes de darla por resuelta.
+- **Auditoría 2026-11-24:** comprobado en controlador, servicio y UI: no hay operación que cambie `ganancias_domiciliario.pagado`; el panel solo muestra el saldo por pagar. La fila nace cuando aceptan oferta, antes de la entrega, y Super Admin la suma como ingreso del día. `DOM-INDEP-SETTLE-01`: antes de implementar payout, definir quién paga, fuente del dinero, devengo (aceptar/entregar/cobrar), cancelación/reclamo y comprobante; el ingreso actual debe entenderse como comisión estimada/acumulada, no recaudo confirmado. Ver `archivo/auditorias-prompts/AUDITORIA_REPORTES.md`.
 - **Multi-tenant:** conservar aislamiento por organización (`restaurante_id`) y autorización/alcance por sede (`sucursal_id`) como invariantes a verificar. Preparar módulos verticales para otros sectores sin añadirlos al producto hasta que gastronomía tenga adopción probada.
 
 ---
@@ -137,7 +174,7 @@ La etapa 2 requiere validación de uso por roles durante QA. La etapa 3 se mater
 | ID | Tarea | Estado | Doc |
 |----|-------|--------|-----|
 | F2-01 | Pedido (kanban) → Ver mesa | ✅ | AR-01 |
-| F2-02 | Pedido → Movimiento caja | 🟡 | AR-17 · NAV-ADM-02 (Ir a caja; falta link movimiento) |
+| F2-02 | Pedido → Movimiento caja | 🟡 | AR-17 · NAV-ADM-02: link, endpoint scoped, vista de historial y pruebas listos en fuente; falta activar Nest :3000 y comprobar con sesión autorizada en Tunnel |
 | F2-03 | Pedido → Factura (borrador) | ✅ | AR-18 · NAV-ADM-02 |
 | F2-04 | Factura → Pedido origen | ✅ | AR-19 · NAV-ADM-17 |
 | F2-05 | Mesa QR tile → Aprobar sin abrir sheet completo | 🟡 | AR-03 · NAV-ADM-04 (Revisar; inline ⏳) |
@@ -164,9 +201,9 @@ Ver lista completa: **[FRONTEND_ACCESOS_RAPIDOS.md](FRONTEND_ACCESOS_RAPIDOS.md)
 | ID | Tarea | Estado | Doc |
 |----|-------|--------|-----|
 | F4-01 | Favoritos en sidebar (3 módulos pinneados) | ✅ | AR-29 |
-| F4-02 | Reducir tabs Inventario (agrupar o subnav) | ⏳ | UX auditoría § Inventario |
-| F4-03 | Reducir tabs Analítica en móvil | ⏳ | UX auditoría § Analítica |
-| F4-04 | Unificar grid mesas mesero/cajero/admin (mismos patrones) | ⏳ | UX transversal |
+| F4-02 | Reducir tabs Inventario (agrupar o subnav) | ✅ | Selector compacto tipo menú bajo breakpoint; desktop conserva cinco áreas. `inventario_seccion_selector_test.dart` 6/6 (320/390 claro-oscuro, 820/1440) y analyzer limpio. |
+| F4-03 | Reducir tabs Analítica en móvil | ✅ | Selector único sincronizado con TabController bajo 720 px; Widget tests 390/1440 px. QA autenticada/visual pendiente. |
+| F4-04 | Unificar grid mesas mesero/cajero/admin (mismos patrones) | ✅ | Los tres roles reutilizan `MesasGridWidget`; variantes se limitan a modo/acciones autorizadas. Prueba de grid y diálogos 10/10; analyzer limpio. |
 | F4-05 | Wizard crear restaurante (super admin) | ⏳ | AR-37 |
 
 ---
@@ -177,7 +214,7 @@ Ver lista completa: **[FRONTEND_ACCESOS_RAPIDOS.md](FRONTEND_ACCESOS_RAPIDOS.md)
 |----|-------|--------|-------|
 | F5-01 | Renombrar paquete `reserva_canchas` → foody (P3-05) | ⏳ | Solo Dart |
 | F5-02 | Animaciones legacy → `ColoresFoody` / `TemaFoody` | ⏳ | |
-| F5-03 | Estados vacío/error consistentes en todas las features | ⏳ | |
+| F5-03 | Estados vacío/error consistentes en todas las features | 🟡 | `FoodyEstadoUi.errorUi` refinado; migración y QA por feature pendientes |
 | F5-04 | Responsive tablet: sidebar labels siempre visibles opción | ⏳ | |
 
 ---
@@ -190,12 +227,12 @@ Ver lista completa: **[FRONTEND_ACCESOS_RAPIDOS.md](FRONTEND_ACCESOS_RAPIDOS.md)
 |----|-------|--------|-----|
 | F6-01 | Extender `TemaFoody` (buttons, inputs, cards, chips, tabs) | ✅ | DS-01 |
 | F6-02 | Cliente: menú + carrito + checkout (Uber/Square) | 🟡 | DS-02 — + seguimiento/mis pedidos Analítica + Google historial |
-| F6-03 | Admin CRUD → `OperacionUi` + tabla Shopify | ⏳ | DS-03 |
+| F6-03 | Admin CRUD → `OperacionUi` + tabla Shopify | 🟡 | DS-03 — Usuarios confirma desactivación; Menú comunica progreso/error en disponibilidad y ofrece edición de precios explícita. Faltan patrones CRUD compartidos y unificar tablas por módulo |
 | F6-04 | Splash + logo Foody (quitar legacy) | ✅ | DS-04 |
 | F6-05 | Unificar fondos cliente (`ColoresFoody` vs hex sueltos) | ⏳ | DS-05 |
 | F6-06 | Empty/error states ilustrados | 🟡 | DS-06 — `FoodyEstadoUi` en ciudades/mis-pedidos |
 | F6-07 | Secundario/acento en CTAs secundarios | ⏳ | DS-07 |
-| F6-08 | Inventario/Analítica: menos tabs, sub-nav | ⏳ | DS-08 |
+| F6-08 | Inventario/Analítica: menos tabs, sub-nav | 🟡 | DS-08 — Inventario ya usa selector compacto móvil y Análisis selector de métricas; Inventario 6/6 tests (320/390 light/dark, 820/1440 escritorio). Pendiente decidir si reorganizar las cinco áreas en sub-nav lateral en pantallas grandes; QA visual autenticada pendiente. |
 
 **Referencias visuales internas (8+/10):** KDS, Sidebar admin, Menú cliente (base), Kanban.
 
@@ -310,11 +347,30 @@ Detalle UX staff/cliente baseline: **FRONTEND_UX_AUDITORIA.md**. Cliente profund
 
 ## Changelog frontend
 
+- **2026-11-24:** **GLOB-ERROR-STATE-RESP-01** — estado de error compartido con superficie del tema, ancho máximo, acciones de 48 px y CTA ancho en móvil. Tests 8/8 (320/390/820/1440, claro/oscuro), analyzer limpio. Cliente/Equipo release publicados por el lanzador; hosts locales/públicos y API salud HTTP 200, bundles SHA-256 locales/públicos idénticos. Build JS terminó con advertencias preexistentes de Wasm/CupertinoIcons. Falta migración de estados ad hoc y QA autenticada.
+- **2026-11-24:** **F4-04 Mesas por rol** — confirmado que admin, cajero y mesero componen el mismo `MesasGridWidget`, con parámetros solo para el modo operativo y las acciones del rol. Suite `mesas_grid_widget_test.dart`: 10/10; analyzer de los tres paneles y widget limpio.
+
+- **2026-11-23:** **UX/RBAC-USUARIOS-01** — permiso `crear_pedido` se presenta como «Crear y operar pedidos» con su alcance real (líneas y transiciones FSM). El formulario detectó overflow en selector de rol a 320 px; `isExpanded` lo corrige en crear/editar. Usuarios widget tests 4/4 incluyendo 320×568; suite Flutter completa 160/5 omitidas; analyze focalizado limpio. Cliente/Equipo release recompilados y cinco rutas locales/públicas responden HTTP 200; cloudflared/API permanecieron activos. Matriz de autorización backend sin cambio; QA autenticada por roles sigue pendiente.
+- **2026-11-23:** **COC-NODISP-DOM-01 (guard backend)** — no hay cambio visual requerido hasta que se defina el flujo de ajuste parcial/abonos. UI de domicilios debe presentar el error de asignación que devuelve Nest; activación del backend y QA autenticada aislada pendientes.
+- **2026-11-23:** **UX-DOMI-NUMERIC-01** — La UI normaliza importes API `num` o `String` para KPIs, comisiones y confirmación de liquidación; no altera cálculos ni liquidaciones en backend. Fixture usa importes string en 390/820/1440; `dart analyze` limpio, suite 131/5 skips. Rebuild túnel pendiente.
+- **2026-11-23:** **UX-INV-MERCADO-EMPTY-LAYOUT-01** — Mercado diferencia lista filtrada vacía de catálogo sin datos y permite quitar búsqueda/filtros; el vacío se vuelve desplazable a 320×568. La prueba integrada encontró y cubrió además un `Spacer` dentro de tarjeta de alto intrínseco que causaba `RenderFlex` al mostrar precio de compra; reemplazado por espaciado fijo. Pantalla + selector: 7 pruebas, analyze limpio y suite global 131 aprobadas/5 E2E mutadoras omitidas. Cliente/Equipo release reconstruidos; endpoints locales y públicos de ambos sitios y salud API responden HTTP 200. Túnel/OAuth sin cambios. Falta QA autenticada de tareas/roles.
+- **2026-11-23:** **UX-MENU-EMPTY-RECOVERY-01** — La lista de productos conserva el vacío inicial con CTA «Crear primer producto» y presenta una recuperación específica cuando búsqueda/filtros no tienen coincidencias. Prueba de búsqueda→limpiar→producto visible añadida; `menu_admin_screen_test.dart`: 9/9 en 320/390/820/1440 px, analyze limpio. Suite global 130 aprobadas/5 E2E mutadoras omitidas; Cliente/Equipo release reconstruidos y los hosts locales/públicos más salud API responden HTTP 200. Tema oscuro y QA autenticada de subflujos siguen abiertos.
+- **2026-11-23:** **UX-PED-EMPTY-RECOVERY-01** — Pedidos diferencia «No hay pedidos en [estado]» de cero coincidencias por canal/búsqueda y ofrece limpiar filtros para volver a la lista; no cambia estados ni llamadas. Widget tests: 6/6 para 320/390/820/1440 y flujo filtro domicilio→limpiar→pedido visible; analyze limpio; suite global 129 aprobadas y 5 E2E mutadoras omitidas; release Cliente/Equipo reconstruidos y verificados HTTP 200 local/público. QA autenticada sigue pendiente.
+
 | Fecha | Cambio |
 |-------|--------|
+| 2026-11-22 | **Usuarios admin** — tabla densa en escritorio y cards en móvil/tablet; estado con etiqueta textual; test responsive 390/820/1440 px. Los permisos y acciones existentes se conservan. |
+| 2026-11-22 | **Inicio — centro de operación** — indicadores con destino reconocible y expansión animada de paneles; respeta reducir movimiento y conserva destinos/umbrales. |
+| 2026-11-22 | **Domiciliarios admin** — resumen de independientes diferencia comisión Foody y saldo por pagar; normalización de importes PostgreSQL `numeric` en repositorio Flutter; tests de contrato y responsive en 390/820/1440 px. QA visual autenticado y tema oscuro pendiente. |
 | 2026-11-22 | **Menú admin / Productos** — tabla densa tema-aware para escritorio y tarjetas existentes para móvil/tablet; acciones de disponibilidad, precios, cocina, toppings, foto y costos intactas; falta analyzer final y QA visual. |
 | 2026-11-22 | **Oleada admin / inventario** — listado Mercado con tabla desktop/grid tablet/cards móvil; registro de movimientos prioriza transición de stock; Traslados responsivo; shells de formulario y editor de Subreceta respetan tema claro/oscuro. API y flujos intactos; análisis focalizado sin errores (1 info previo en interpolación de subreceta); QA visual pendiente. |
 | 2026-11-22 | **Insumos responsive** — hero azul oscuro/naranja, acción Nuevo insumo en escritorio, resumen con datos disponibles y tabs iconográficas; lógica/backend intactos |
+| 2026-11-22 | **Caja + Facturación** — pruebas widget 320/390/820/1440; Facturación verifica lista móvil y tabla escritorio; no se alteran reglas ni API. |
+| 2026-11-22 | **Tarjeta Kanban de pedido** — QA 280/320/390/820/1440 detectó y permitió corregir overflow de número/tiempo/total en tarjeta estrecha; `dart analyze` limpio. |
+| 2026-11-22 | **KDS** — QA sin Supabase en 320/390/820/1440; overflow pestañas corregido y fallo de suscripción ya no interrumpe la pantalla/polling de respaldo. QA Realtime autenticado sigue pendiente. |
+| 2026-11-22 | **Mesas** — grilla basada en ancho disponible, no en MediaQuery global; prueba en móvil y tablet con sidebar/contenido limitado. Sheets aún requieren auditoría. |
+| 2026-11-22 | **Detalle de cuenta Mesa** — tokens de superficie/texto/borde dependen del tema; prueba en claro/oscuro a 320×568 y 390×844 con datos de ticket. |
+| 2026-11-22 | **Pedidos Kanban** — pruebas de estado vacío, acción de cambio a columnas y pedido activo; corrige prefijo duplicado de nombre de mesa. |
 | 2026-08-04 | **Checkout cliente UX** — ink AppBar/tipo/pago/campos/CTA; tip confirmación |
 | 2026-08-04 | **Carrito detalle** — tap sheet Incluye/extras, swipe borrar, Vaciar |
 | 2026-08-04 | **Carrito cliente UX** — ink AppBar/pasos/cards/CTA; qty pill animada |
@@ -377,3 +433,15 @@ Detalle UX staff/cliente baseline: **FRONTEND_UX_AUDITORIA.md**. Cliente profund
 ## Próximas instrucciones del producto
 
 Añadir en **[FRONTEND_INSTRUCCIONES.md](FRONTEND_INSTRUCCIONES.md)** cada nueva petición. Este roadmap se actualiza al priorizarlas en fases.
+
+**2026-11-24 — PED-POS-REPLACE-ATOMIC-01:** el reemplazo usa un único endpoint Nest y transacción compartida para agregar/quitar, guarda idempotencia y UI hace una sola petición. Se bloquea si la línea ya fue cobrada/asignada, o si el nuevo total requiere reembolso. Nest 37 suites/92 pruebas; Flutter global 237 aprobadas/5 E2E omitidas, POS + repositorio 20/20; analyzer focalizado limpio; web release compilada en salida QA aislada, con avisos heredados de Wasm/iconos. API :3000 no reiniciada; corrección aún no activa en runtime.
+
+### 2026-11-24 — KDS interpreta estados heredados de cocina
+
+`estado_cocina` NULL/desconocido queda como pendiente en Cocina, no se filtra a Listos y mantiene acción accesible “Marcar listo”. Nueva regresión con `estado_cocina: null`; suite KDS 14/14, responsive en 320/390/820/1440 px. Chrome quedó en `/admin/login`; QA autenticada por rol y captura visual siguen pendientes, sin tocar credenciales.
+
+**Disponibilidad tras cambios de fuente (2026-11-24):** API salud, Cliente y Equipo respondieron HTTP 200 en localhost y Tunnel (6/6). Es smoke de disponibilidad, no valida sesión autenticada ni activa los artefactos compilados; no hubo reinicio/publicación.
+
+### 2026-11-24 — navegación compacta de Inventario validada
+
+Inventario ya presenta selector emergente con icono, sección activa y progreso «Sección n de 5» en compactos; escritorio conserva navegación visible para Mercado, Movimientos, Subrecetas, Conteo y Traslados. `inventario_seccion_selector_test.dart` 6/6 (320/390 claro y oscuro, 820/1440) y analyzer focalizado limpio. F4-02 queda cerrado como subnavegación responsive; la agrupación conceptual de entidades queda como decisión aparte si cambian módulos.

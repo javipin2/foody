@@ -19,11 +19,13 @@ class AlertasAdminScreen extends StatefulWidget {
     super.key,
     this.sucursalId,
     this.onNavegarReferencia,
+    this.repository,
   });
 
   final String? sucursalId;
   final void Function(String referenciaTipo, String referenciaId)?
       onNavegarReferencia;
+  final AlertasRepository? repository;
 
   @override
   State<AlertasAdminScreen> createState() => _AlertasAdminScreenState();
@@ -32,7 +34,7 @@ class AlertasAdminScreen extends StatefulWidget {
 class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = AlertasRepository();
+  late final AlertasRepository _repo;
   List<Map<String, dynamic>> _alertas = [];
   bool _soloPendientes = true;
   bool _cargando = true;
@@ -46,6 +48,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? AlertasRepository();
     _cargar();
     _suscribirRealtime();
     _pollRespaldo = PollRealtimeRespaldo(onActualizar: () async {
@@ -121,12 +124,13 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
   }
 
   Color _colorNivel(String? nivel) {
+    final oscuro = _scheme.brightness == Brightness.dark;
     switch (nivel) {
       case 'critico':
       case 'alto':
-        return AnaliticaTokens.alertas;
+        return oscuro ? const Color(0xFFFCA5A5) : AnaliticaTokens.alertas;
       case 'medio':
-        return const Color(0xFFD97706);
+        return oscuro ? const Color(0xFFFCD34D) : const Color(0xFFD97706);
       default:
         return _scheme.onSurfaceVariant;
     }
@@ -362,12 +366,12 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                         visualDensity: VisualDensity.compact,
                       ),
                       icon: _evaluando
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: _scheme.onPrimary,
                               ),
                             )
                           : const Icon(Icons.bolt_outlined, size: 18),
@@ -425,7 +429,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
             color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
             border: Border.all(color: _scheme.outlineVariant),
-            boxShadow: AnaliticaTokens.shadowSoft,
+            boxShadow: AnaliticaTokens.shadowSoftOf(context),
           ),
           child: Column(
             children: [
@@ -471,7 +475,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
             color: _scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
             border: Border.all(color: _scheme.outlineVariant),
-            boxShadow: AnaliticaTokens.shadowSoft,
+            boxShadow: AnaliticaTokens.shadowSoftOf(context),
           ),
           child: Column(
             children: [
@@ -545,7 +549,7 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
             border: Border.all(color: _scheme.outlineVariant),
-            boxShadow: AnaliticaTokens.shadowSoft,
+            boxShadow: AnaliticaTokens.shadowSoftOf(context),
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
@@ -604,12 +608,14 @@ class _AlertasAdminScreenState extends State<AlertasAdminScreen> {
                   ),
                 ),
                 if (revisada)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 4, top: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 6),
                     child: Icon(
                       Icons.check_circle_outline,
                       size: 20,
-                      color: AnaliticaTokens.inventario,
+                      color: _scheme.brightness == Brightness.dark
+                          ? const Color(0xFF4ADE80)
+                          : AnaliticaTokens.inventario,
                     ),
                   )
                 else

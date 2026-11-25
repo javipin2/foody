@@ -16,6 +16,7 @@ const config_1 = require("@nestjs/config");
 const app_1 = require("firebase-admin/app");
 const messaging_1 = require("firebase-admin/messaging");
 const fs_1 = require("fs");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let FcmService = FcmService_1 = class FcmService {
     config;
     log = new common_1.Logger(FcmService_1.name);
@@ -24,6 +25,10 @@ let FcmService = FcmService_1 = class FcmService {
         this.config = config;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.log.warn('Firebase Admin desactivado por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         if ((0, app_1.getApps)().length > 0) {
             this.listo = true;
             return;

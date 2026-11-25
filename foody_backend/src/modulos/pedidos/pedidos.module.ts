@@ -26,6 +26,7 @@ import { PedidosInventarioService } from './pedidos-inventario.service';
 import { PedidosDispatchHooksService } from './pedidos-dispatch-hooks.service';
 import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 import { PedidosQrCronService } from './pedidos-qr-cron.service';
+import { DispositivosModule } from '../dispositivos/dispositivos.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { PedidosQrCronService } from './pedidos-qr-cron.service';
     RealtimeModule,
     ImpresionModule,
     NotificacionesModule,
+    DispositivosModule,
   ],
   controllers: [PedidosController, PedidosPublicController],
   providers: [

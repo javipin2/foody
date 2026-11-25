@@ -71,6 +71,10 @@ let CajaController = class CajaController {
         const sucursalId = await this.sucursalScope.resolverLecturaOperativa(usuario, usuario.sucursal_id);
         return this.cajaService.listarMovimientos(cajaId, sucursalId, query.page, query.limit);
     }
+    async movimientosPedido(pedidoId, query, sucursalSolicitada, usuario) {
+        const sucursalId = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalSolicitada ?? usuario.sucursal_id);
+        return this.cajaService.listarMovimientosPedido(pedidoId, sucursalId, query.page, query.limit);
+    }
     async retiro(dto, usuario) {
         const sucursalId = await this.sucursalScope.resolverEscritura(usuario, usuario.sucursal_id);
         return this.cajaService.retiroParcial(dto, usuario.sub, sucursalId);
@@ -101,8 +105,7 @@ __decorate([
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [abrir_caja_dto_1.AbrirCajaDto,
-        jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [abrir_caja_dto_1.AbrirCajaDto, jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "abrir", null);
 __decorate([
@@ -167,6 +170,17 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "movimientos", null);
 __decorate([
+    (0, common_1.Get)('pedidos/:pedido_id/movimientos'),
+    (0, permisos_decorator_1.Permisos)('ver_caja'),
+    __param(0, (0, common_1.Param)('pedido_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, common_1.Query)('sucursal_id', new common_1.ParseUUIDPipe({ optional: true }))),
+    __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, paginacion_dto_1.PaginacionQueryDto, Object, jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], CajaController.prototype, "movimientosPedido", null);
+__decorate([
     (0, common_1.Post)('retiro-parcial'),
     (0, permisos_decorator_1.Permisos)('hacer_retiro_parcial'),
     __param(0, (0, common_1.Body)()),
@@ -192,8 +206,7 @@ __decorate([
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [gasto_caja_dto_1.GastoCajaDto,
-        jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [gasto_caja_dto_1.GastoCajaDto, jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "gasto", null);
 exports.CajaController = CajaController = __decorate([

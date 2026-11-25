@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:reserva_canchas/core/config/app_flavor.dart';
@@ -201,9 +202,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
                     Icons.arrow_back_rounded,
                     color: AnaliticaTokens.ink,
                   ),
-                  onPressed: ocupado
-                      ? null
-                      : () => AbrirAppCliente.ejecutar(context),
+                  onPressed:
+                      ocupado ? null : () => AbrirAppCliente.ejecutar(context),
                 ),
               ),
             ),
@@ -287,8 +287,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
                               ),
                               decoration: AuthFormEstilo.campo(
                                 label: 'Correo',
-                                prefixIcon:
-                                    const Icon(Icons.email_outlined),
+                                prefixIcon: const Icon(Icons.email_outlined),
                               ),
                               validator: (v) => v == null || !v.contains('@')
                                   ? 'Correo inválido'
@@ -304,8 +303,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
                               ),
                               decoration: AuthFormEstilo.campo(
                                 label: 'Contraseña',
-                                prefixIcon:
-                                    const Icon(Icons.lock_outline),
+                                prefixIcon: const Icon(Icons.lock_outline),
                                 suffixIcon: IconButton(
                                   icon: Icon(
                                     _ocultar
@@ -318,10 +316,9 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
                                       setState(() => _ocultar = !_ocultar),
                                 ),
                               ),
-                              validator: (v) =>
-                                  v == null || v.length < 4
-                                      ? 'Mínimo 4 caracteres'
-                                      : null,
+                              validator: (v) => v == null || v.length < 4
+                                  ? 'Mínimo 4 caracteres'
+                                  : null,
                             ),
                             const SizedBox(height: 20),
                             if (AppBackend.supabaseReady) ...[
@@ -404,73 +401,75 @@ class _StaffLoginScreenState extends State<StaffLoginScreen>
                               ),
                             ),
                             const SizedBox(height: 16),
-                            Material(
-                              color: AnaliticaTokens.surfaceMuted,
-                              borderRadius: BorderRadius.circular(10),
-                              child: InkWell(
-                                onTap: () => setState(
-                                  () => _demoExpandido = !_demoExpandido,
-                                ),
+                            if (kDebugMode) ...[
+                              Material(
+                                color: AnaliticaTokens.surfaceMuted,
                                 borderRadius: BorderRadius.circular(10),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.info_outline,
-                                        size: 16,
-                                        color: AnaliticaTokens.inkSoft,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Expanded(
-                                        child: Text(
-                                          'Cuentas demo',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: AnaliticaTokens.inkMuted,
-                                          ),
-                                        ),
-                                      ),
-                                      Icon(
-                                        _demoExpandido
-                                            ? Icons.expand_less
-                                            : Icons.expand_more,
-                                        size: 18,
-                                        color: AnaliticaTokens.inkSoft,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (_demoExpandido) ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: AnaliticaTokens.border,
+                                child: InkWell(
+                                  onTap: () => setState(
+                                    () => _demoExpandido = !_demoExpandido,
                                   ),
                                   borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Text(
-                                  'admin@foody.demo · super@foody.demo · cocina@foody.demo\n'
-                                  'Empleado: tu correo Foody (ej. domi@foody.demo)\n'
-                                  'Cajero/mesero: Foody Control → Usuarios\n'
-                                  'Contraseña demo: 123456\n'
-                                  'Independiente: botón abajo → repartidor@foody.demo',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    height: 1.45,
-                                    color: AnaliticaTokens.inkMuted,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.info_outline,
+                                          size: 16,
+                                          color: AnaliticaTokens.inkSoft,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Expanded(
+                                          child: Text(
+                                            'Cuentas demo',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: AnaliticaTokens.inkMuted,
+                                            ),
+                                          ),
+                                        ),
+                                        Icon(
+                                          _demoExpandido
+                                              ? Icons.expand_less
+                                              : Icons.expand_more,
+                                          size: 18,
+                                          color: AnaliticaTokens.inkSoft,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
+                              if (_demoExpandido) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: AnaliticaTokens.border,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text(
+                                    'admin@foody.demo · super@foody.demo · cocina@foody.demo\n'
+                                    'Empleado: tu correo Foody (ej. domi@foody.demo)\n'
+                                    'Cajero/mesero: Foody Control → Usuarios\n'
+                                    'Contraseña demo: 123456\n'
+                                    'Independiente: botón abajo → repartidor@foody.demo',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      height: 1.45,
+                                      color: AnaliticaTokens.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                             const SizedBox(height: 8),
                             TextButton(

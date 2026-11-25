@@ -13,13 +13,17 @@ export function sqlPedidosValidos(prefijoColumna = ''): string {
 export const SQL_PEDIDOS_VALIDOS = sqlPedidosValidos();
 export const SQL_PEDIDOS_VALIDOS_P = sqlPedidosValidos('p.');
 
-/** Rango [desde, hasta] inclusive por día (placeholders ya numerados, ej. `$2`). */
+/** Rango [desde, hasta] inclusive por día calendario de negocio (America/Bogota).
+ * Las fechas llegan como YYYY-MM-DD; convertir explícitamente el inicio local a
+ * timestamptz evita que la zona horaria de la sesión PostgreSQL desplace el día.
+ * La columna queda sin función para permitir el uso de índices por created_at.
+ */
 export function sqlFechaRango(
   col: string,
   pDesde: string,
   pHasta: string,
 ): string {
-  return `${col} >= ${pDesde}::timestamptz AND ${col} < (${pHasta}::date + interval '1 day')`;
+  return `${col} >= (${pDesde}::date::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}') AND ${col} < ((${pHasta}::date + interval '1 day')::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}')`;
 }
 
 /** Reportes clásico: $1=sucursal, $2=desde, $3=hasta */
@@ -31,8 +35,8 @@ export const SQL_FECHA_PEDIDOS_P_P2_P3 = sqlFechaRango(
 );
 
 export const SQL_FECHA_CAJA_COALESCED_P2_P3 =
-  `( (p.created_at IS NOT NULL AND p.created_at >= $2::timestamptz AND p.created_at < ($3::date + interval '1 day'))` +
-  ` OR (p.created_at IS NULL AND m.created_at >= $2::timestamptz AND m.created_at < ($3::date + interval '1 day')) )`;
+  `( (p.created_at IS NOT NULL AND p.created_at >= ($2::date::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}') AND p.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}'))` +
+  ` OR (p.created_at IS NULL AND m.created_at >= ($2::date::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}') AND m.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}')) )`;
 
 /** Neto venta − devolución en movimientos_caja. */
 export const SQL_NETO_MOVIMIENTO_CAJA =

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -10,13 +11,18 @@ import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
 import { PedidosEstadoCommandService } from '../pedidos/pedidos-estado-command.service';
-import { PedidosDispatchHooksService } from '../pedidos/pedidos-dispatch-hooks.service';
+import {
+  PedidosDispatchHooksService,
+  ResultadoDispatchAuto,
+} from '../pedidos/pedidos-dispatch-hooks.service';
 import { ConfiguracionGlobalService } from '../../core/config/configuracion-global.module';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 const MAX_NOTIFICADOS = 5;
 
 @Injectable()
 export class DispatchService implements OnModuleInit {
+  private readonly logger = new Logger(DispatchService.name);
   private expirandoOfertas = false;
   private readonly LOCK_TICK_EXPIRAR_OFERTAS = 9200001;
 
@@ -46,20 +52,126 @@ export class DispatchService implements OnModuleInit {
     return this.configGlobal.ofertaExpiraSeg();
   }
 
+  async validarPedidoParaDespacho(
+    pedidoId: string,
+    sucursalId: string,
+    client?: PoolClient,
+  ): Promise<
+    | {
+        valido: true;
+        pedido: {
+          id: string;
+          tipo: string;
+          estado: string;
+          tiene_items: boolean;
+          tiene_items_no_disponibles: boolean;
+          tiene_items_cocina_pendientes: boolean;
+        };
+      }
+    | { valido: false; motivo: string; mensaje: string }
+  > {
+    const sql = `SELECT p.id, p.tipo, p.estado,
+           EXISTS (
+             SELECT 1 FROM pedido_items pi WHERE pi.pedido_id = p.id
+           ) AS tiene_items,
+           EXISTS (
+             SELECT 1 FROM pedido_items pi
+             WHERE pi.pedido_id = p.id AND pi.estado_cocina = 'no_disponible'
+           ) AS tiene_items_no_disponibles,
+           EXISTS (
+             SELECT 1 FROM pedido_items pi
+             WHERE pi.pedido_id = p.id
+               AND (pi.estado_cocina IS NULL
+                 OR pi.estado_cocina NOT IN ('listo', 'no_disponible'))
+           ) AS tiene_items_cocina_pendientes
+         FROM pedidos p
+         WHERE p.id = $1 AND p.sucursal_id = $2${client ? ' FOR UPDATE' : ''}`;
+    const pedido = client
+      ? (await client.query(sql, [pedidoId, sucursalId])).rows[0]
+      : await this.database.consultarUno(sql, [pedidoId, sucursalId]);
+
+    if (!pedido) {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_NO_ENCONTRADO',
+        mensaje: 'Pedido no encontrado en esta sede.',
+      };
+    }
+    if (pedido.tipo !== 'domicilio') {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_NO_ES_DOMICILIO',
+        mensaje:
+          'Solo los pedidos de domicilio pueden asignarse a un repartidor.',
+      };
+    }
+    if (pedido.estado !== 'listo') {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_NO_LISTO',
+        mensaje: 'El pedido debe estar listo para asignar un repartidor.',
+      };
+    }
+    if (pedido.tiene_items !== true) {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_SIN_ITEMS',
+        mensaje:
+          'El pedido no tiene productos para entregar. Revísalo antes de despachar.',
+      };
+    }
+    if (pedido.tiene_items_no_disponibles === true) {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_ITEMS_NO_DISPONIBLES',
+        mensaje:
+          'Este domicilio contiene productos marcados como no disponibles. Revisa el pedido, ajusta las líneas y confirma el total antes de asignar un repartidor.',
+      };
+    }
+    if (pedido.tiene_items_cocina_pendientes === true) {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_COCINA_INCOMPLETA',
+        mensaje:
+          'Este pedido aún tiene productos pendientes de preparación. Confirma cada línea en Cocina antes de asignar el domiciliario.',
+      };
+    }
+
+    return { valido: true, pedido };
+  }
+
+  private resultadoBloqueado(
+    validacion: Exclude<
+      Awaited<ReturnType<DispatchService['validarPedidoParaDespacho']>>,
+      { valido: true }
+    >,
+  ) {
+    return {
+      iniciado: false,
+      motivo: validacion.motivo,
+      mensaje: validacion.mensaje,
+    };
+  }
+
   private get comisionFoodyPct() {
     return this.configGlobal.comisionFoodyPct();
   }
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Despacho automático pausado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     // AQ-CYCLE-01: pedidos llama hooks; nosotros somos el handler.
     this.pedidosDispatchHooks.registrar((pedidoId, sucursalId) =>
       this.intentarDispatchAutomatico(pedidoId, sucursalId),
     );
     setInterval(
-      () => void this.database.intentarAdvisoryLock(
-        this.LOCK_TICK_EXPIRAR_OFERTAS,
-        () => this.tickExpirarOfertas(),
-      ),
+      () =>
+        void this.database.intentarAdvisoryLock(
+          this.LOCK_TICK_EXPIRAR_OFERTAS,
+          () => this.tickExpirarOfertas(),
+        ),
       30_000,
     );
   }
@@ -94,20 +206,22 @@ export class DispatchService implements OnModuleInit {
     return filas.length;
   }
 
-  async intentarDispatchAutomatico(pedidoId: string, sucursalId: string) {
-    const pedido = await this.database.consultarUno<{
-      id: string;
-      tipo: string;
-      estado: string;
-      costo_domicilio: string;
-    }>(
-      `SELECT id, tipo, estado, costo_domicilio FROM pedidos
-       WHERE id = $1 AND sucursal_id = $2`,
-      [pedidoId, sucursalId],
-    );
-    if (!pedido || pedido.tipo !== 'domicilio' || pedido.estado !== 'listo') {
-      return { iniciado: false, motivo: 'pedido_no_aplica' };
+  async intentarDispatchAutomatico(
+    pedidoId: string,
+    sucursalId: string,
+  ): Promise<ResultadoDispatchAuto> {
+    if (esQaSinEfectosExternos()) {
+      return {
+        iniciado: false,
+        motivo: 'qa_sin_efectos',
+        mensaje: 'Despacho automático desactivado durante E2E.',
+      };
     }
+    const validacion = await this.validarPedidoParaDespacho(
+      pedidoId,
+      sucursalId,
+    );
+    if (!validacion.valido) return this.resultadoBloqueado(validacion);
 
     const asignado = await this.database.consultarUno<{ id: string }>(
       `SELECT id FROM asignaciones_domicilio
@@ -121,6 +235,9 @@ export class DispatchService implements OnModuleInit {
     const plantaLibres = await this.contarPlantaLibres(sucursalId);
     if (plantaLibres > 0) {
       const auto = await this.asignarPrimeraPlantaLibre(pedidoId, sucursalId);
+      if (auto && 'bloqueado' in auto && auto.bloqueado) {
+        return this.resultadoBloqueado(auto.bloqueado);
+      }
       if (auto) {
         return { iniciado: true, motivo: 'planta_asignada_auto', ...auto };
       }
@@ -130,16 +247,21 @@ export class DispatchService implements OnModuleInit {
   }
 
   /** Asigna el primer domiciliario de planta libre (FIFO por nombre). */
-  private async asignarPrimeraPlantaLibre(pedidoId: string, sucursalId: string) {
+  private async asignarPrimeraPlantaLibre(
+    pedidoId: string,
+    sucursalId: string,
+  ) {
     const result = await this.database.enTransaccion(async (client) => {
-      const pedido = await client.query<{ id: string; estado: string; tipo: string }>(
-        `SELECT id, estado, tipo FROM pedidos
-         WHERE id = $1 AND sucursal_id = $2
-         FOR UPDATE`,
-        [pedidoId, sucursalId],
+      const validacion = await this.validarPedidoParaDespacho(
+        pedidoId,
+        sucursalId,
+        client,
       );
-      const fila = pedido.rows[0];
-      if (!fila || fila.tipo !== 'domicilio' || fila.estado !== 'listo') {
+      if (!validacion.valido) {
+        return { bloqueado: validacion };
+      }
+      const fila = validacion.pedido;
+      if (fila.tipo !== 'domicilio' || fila.estado !== 'listo') {
         return null;
       }
 
@@ -213,12 +335,16 @@ export class DispatchService implements OnModuleInit {
     });
 
     if (!result) return null;
+    if ('bloqueado' in result) return result;
 
-    void this.realtime.domiciliarioPlantaActualizado(result.domiciliario_usuario_id, {
-      pedido_id: result.pedido_id,
-      sucursal_id: sucursalId,
-      accion: 'asignado',
-    });
+    void this.realtime.domiciliarioPlantaActualizado(
+      result.domiciliario_usuario_id,
+      {
+        pedido_id: result.pedido_id,
+        sucursal_id: sucursalId,
+        accion: 'asignado',
+      },
+    );
     void this.realtime.pedidoActualizado({
       pedido_id: result.pedido_id,
       sucursal_id: sucursalId,
@@ -241,6 +367,12 @@ export class DispatchService implements OnModuleInit {
   }
 
   async iniciarBusquedaIndependientes(pedidoId: string, sucursalId: string) {
+    const validacion = await this.validarPedidoParaDespacho(
+      pedidoId,
+      sucursalId,
+    );
+    if (!validacion.valido) return this.resultadoBloqueado(validacion);
+
     await this.expirarOfertasVencidas(pedidoId);
 
     const ofertaActiva = await this.database.consultarUno<{ id: string }>(
@@ -249,7 +381,11 @@ export class DispatchService implements OnModuleInit {
       [pedidoId],
     );
     if (ofertaActiva) {
-      return { iniciado: false, motivo: 'oferta_activa', oferta_id: ofertaActiva.id };
+      return {
+        iniciado: false,
+        motivo: 'oferta_activa',
+        oferta_id: ofertaActiva.id,
+      };
     }
 
     const ultimoIntento = await this.database.consultarUno<{ intento: number }>(
@@ -260,7 +396,11 @@ export class DispatchService implements OnModuleInit {
     const intentoNumero = (ultimoIntento?.intento ?? 0) + 1;
     if (intentoNumero > this.maxIntentos) {
       await this.crearAlertaSinDomiciliario(pedidoId, sucursalId);
-      return { iniciado: false, motivo: 'max_intentos', intento: intentoNumero };
+      return {
+        iniciado: false,
+        motivo: 'max_intentos',
+        intento: intentoNumero,
+      };
     }
 
     const sucursal = await this.database.consultarUno<{
@@ -305,12 +445,23 @@ export class DispatchService implements OnModuleInit {
 
     if (!candidatos.length) {
       // Persistir intento vacío para que el radio avance en el siguiente.
-      await this.database.consultar(
-        `INSERT INTO ofertas_pedido (
-           pedido_id, sucursal_id, radio_busqueda_km, intento_numero, estado, expira_at
-         ) VALUES ($1,$2,$3,$4,'expirada', now())`,
-        [pedidoId, sucursalId, radioKm, intentoNumero],
-      );
+      const registro = await this.database.enTransaccion(async (client) => {
+        const actual = await this.validarPedidoParaDespacho(
+          pedidoId,
+          sucursalId,
+          client,
+        );
+        if (!actual.valido) return { bloqueado: actual };
+        await client.query(
+          `INSERT INTO ofertas_pedido (
+             pedido_id, sucursal_id, radio_busqueda_km, intento_numero, estado, expira_at
+           ) VALUES ($1,$2,$3,$4,'expirada', now())`,
+          [pedidoId, sucursalId, radioKm, intentoNumero],
+        );
+        return { bloqueado: null };
+      });
+      if (registro.bloqueado)
+        return this.resultadoBloqueado(registro.bloqueado);
       if (intentoNumero >= this.maxIntentos) {
         await this.crearAlertaSinDomiciliario(pedidoId, sucursalId);
       }
@@ -330,6 +481,13 @@ export class DispatchService implements OnModuleInit {
     const expiraAt = new Date(Date.now() + this.ofertaExpiraSeg * 1000);
 
     const oferta = await this.database.enTransaccion(async (client) => {
+      const actual = await this.validarPedidoParaDespacho(
+        pedidoId,
+        sucursalId,
+        client,
+      );
+      if (!actual.valido) return { bloqueado: actual };
+
       const insert = await client.query<{ id: string }>(
         `INSERT INTO ofertas_pedido (
            pedido_id, sucursal_id, radio_busqueda_km, intento_numero, expira_at
@@ -346,8 +504,10 @@ export class DispatchService implements OnModuleInit {
         );
       }
 
-      return { id: ofertaId, notificados: notificados.length };
+      return { id: ofertaId, notificados: notificados.length, bloqueado: null };
     });
+
+    if (oferta.bloqueado) return this.resultadoBloqueado(oferta.bloqueado);
 
     void this.notificaciones.enviar({
       sucursal_id: sucursalId,
@@ -512,12 +672,7 @@ export class DispatchService implements OnModuleInit {
     });
   }
 
-  distanciaKm(
-    lat1: number,
-    lng1: number,
-    lat2: number,
-    lng2: number,
-  ): number {
+  distanciaKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
     const dLng = ((lng2 - lng1) * Math.PI) / 180;

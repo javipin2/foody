@@ -84,7 +84,7 @@ Reconfirmado en código 2026-08-06 (≡ RBAC-\* abiertos). Spoof sede ajena: **b
 | **SEC-RLIMIT-01** | 🟡 | Baja | Guard NO-OP fuera prod (CI); `RATE_LIMIT_FORZAR=1` para QA |
 | **SEC-RLIMIT-02** | ✅ | — | Login + create pedido tienen `@RateLimitPublico` (prod) |
 | **SEC-RLIMIT-03** | ✅ | — | Menú / ciudades / geografía con `@RateLimitPublico` |
-| **SEC-RLIMIT-04** | 🟡 | Baja | Store `Map` in-memory (rompe multi-réplica) ≡ AQ-SCALE-05 |
+| **SEC-RLIMIT-04** | 🟡 | Media | El contador Postgres compartido sí existe; un `catch` capturaba también el 429 y degradaba al mapa local. Fix fuente 2026-11-23 + 3 specs y build OK; falta activación/verificación en el Nest vivo. Ante error DB el fallback sigue fail-open por diseño actual (decidir fail-open/fail-closed). ≡ AQ-SCALE-05 / RL-GLOBAL-01 |
 
 ---
 

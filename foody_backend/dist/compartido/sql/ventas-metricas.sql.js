@@ -10,12 +10,12 @@ function sqlPedidosValidos(prefijoColumna = '') {
 exports.SQL_PEDIDOS_VALIDOS = sqlPedidosValidos();
 exports.SQL_PEDIDOS_VALIDOS_P = sqlPedidosValidos('p.');
 function sqlFechaRango(col, pDesde, pHasta) {
-    return `${col} >= ${pDesde}::timestamptz AND ${col} < (${pHasta}::date + interval '1 day')`;
+    return `${col} >= (${pDesde}::date::timestamp AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}') AND ${col} < ((${pHasta}::date + interval '1 day')::timestamp AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}')`;
 }
 exports.SQL_FECHA_PEDIDOS_P2_P3 = sqlFechaRango('created_at', '$2', '$3');
 exports.SQL_FECHA_PEDIDOS_P_P2_P3 = sqlFechaRango('p.created_at', '$2', '$3');
-exports.SQL_FECHA_CAJA_COALESCED_P2_P3 = `( (p.created_at IS NOT NULL AND p.created_at >= $2::timestamptz AND p.created_at < ($3::date + interval '1 day'))` +
-    ` OR (p.created_at IS NULL AND m.created_at >= $2::timestamptz AND m.created_at < ($3::date + interval '1 day')) )`;
+exports.SQL_FECHA_CAJA_COALESCED_P2_P3 = `( (p.created_at IS NOT NULL AND p.created_at >= ($2::date::timestamp AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}') AND p.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}'))` +
+    ` OR (p.created_at IS NULL AND m.created_at >= ($2::date::timestamp AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}') AND m.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}')) )`;
 exports.SQL_NETO_MOVIMIENTO_CAJA = `CASE WHEN m.tipo = 'venta' THEN m.monto ELSE -m.monto END`;
 exports.SQL_TIPOS_MOV_CAJA_VENTA = `m.tipo IN ('venta', 'devolucion')`;
 exports.SQL_DIA_LOCAL = `(created_at AT TIME ZONE '${exports.SQL_TZ_NEGOCIO}')::date`;

@@ -15,19 +15,25 @@ const pedidos_module_1 = require("../pedidos/pedidos.module");
 const cocina_tickets_controller_1 = require("./cocina-tickets.controller");
 const cocinas_controller_1 = require("./cocinas.controller");
 const cocinas_service_1 = require("./cocinas.service");
+const cocinas_demoras_cron_service_1 = require("./cocinas-demoras-cron.service");
 const impresoras_controller_1 = require("./impresoras.controller");
 let CocinasModule = class CocinasModule {
 };
 exports.CocinasModule = CocinasModule;
 exports.CocinasModule = CocinasModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule, alertas_module_1.AlertasModule, domiciliarios_module_1.DomiciliariosModule, (0, common_1.forwardRef)(() => pedidos_module_1.PedidosModule)],
+        imports: [
+            auth_module_1.AuthModule,
+            alertas_module_1.AlertasModule,
+            domiciliarios_module_1.DomiciliariosModule,
+            (0, common_1.forwardRef)(() => pedidos_module_1.PedidosModule),
+        ],
         controllers: [
             cocinas_controller_1.CocinasController,
             impresoras_controller_1.ImpresorasController,
             cocina_tickets_controller_1.CocinaTicketsController,
         ],
-        providers: [cocinas_service_1.CocinasService],
+        providers: [cocinas_service_1.CocinasService, cocinas_demoras_cron_service_1.CocinasDemorasCronService],
         exports: [cocinas_service_1.CocinasService],
     })
 ], CocinasModule);

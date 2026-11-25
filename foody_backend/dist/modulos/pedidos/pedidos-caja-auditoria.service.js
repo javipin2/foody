@@ -47,9 +47,9 @@ let PedidosCajaAuditoriaService = class PedidosCajaAuditoriaService {
     }
     async registrarVentaEnCaja(client, sucursalId, pedidoId, total, metodoPago, opciones) {
         if (!exports.METODOS_CON_CAJA.includes(metodoPago)) {
-            return;
+            return false;
         }
-        await this.cajaMovimientos.registrarVentaPedido(client, {
+        return this.cajaMovimientos.registrarVentaPedido(client, {
             sucursalId,
             pedidoId,
             monto: total,

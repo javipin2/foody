@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { NotificacionesService } from '../../modulos/notificaciones/notificaciones.service';
 import { PagosRecurrentesService } from '../../modulos/pagos/pagos-recurrentes.service';
+import { esQaSinEfectosExternos } from '../config/qa-safety';
 
 type SuscripcionAviso = {
   id: string;
@@ -26,6 +27,10 @@ export class SuscripcionesCronService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Cron de suscripciones pausado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     void this.database.intentarAdvisoryLock(
       this.LOCK_SUSCRIPCIONES_CRON,
       () => this.ejecutar(),

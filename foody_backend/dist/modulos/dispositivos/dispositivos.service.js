@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DispositivosService = void 0;
+const node_crypto_1 = require("node:crypto");
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
 const supabase_auth_service_1 = require("../../core/auth/supabase-auth.service");
@@ -21,26 +22,55 @@ let DispositivosService = class DispositivosService {
         this.supabaseAuth = supabaseAuth;
     }
     async registrar(datos) {
-        await this.database.consultar(`INSERT INTO dispositivos_cliente (device_id, fcm_token, ciudad_id, plataforma, ultimo_acceso)
-       VALUES ($1, $2, $3, $4, now())
+        const hash = this.hashCapability(datos.device_capability);
+        const fila = await this.database.consultarUno(`INSERT INTO dispositivos_cliente
+         (device_id, fcm_token, ciudad_id, plataforma, ultimo_acceso, capability_hash)
+       VALUES ($1, $2, $3, $4, now(), $5)
        ON CONFLICT (device_id) DO UPDATE SET
          fcm_token = COALESCE(EXCLUDED.fcm_token, dispositivos_cliente.fcm_token),
          ciudad_id = COALESCE(EXCLUDED.ciudad_id, dispositivos_cliente.ciudad_id),
          plataforma = COALESCE(EXCLUDED.plataforma, dispositivos_cliente.plataforma),
-         ultimo_acceso = now()
-       WHERE dispositivos_cliente.anonimizado = false`, [
+         ultimo_acceso = now(),
+         capability_hash = COALESCE(dispositivos_cliente.capability_hash, EXCLUDED.capability_hash)
+       WHERE dispositivos_cliente.anonimizado = false
+         AND (dispositivos_cliente.capability_hash IS NULL
+           OR dispositivos_cliente.capability_hash = EXCLUDED.capability_hash)
+       RETURNING device_id`, [
             datos.device_id,
             datos.fcm_token ?? null,
             datos.ciudad_id ?? null,
             datos.plataforma ?? 'android',
+            hash,
         ]);
-        return { device_id: datos.device_id, registrado: true };
+        return { device_id: datos.device_id, registrado: !!fila };
     }
-    async vincularAuth(datos) {
+    async verificarCapability(deviceId, capability) {
+        if (!/^[a-f0-9]{64}$/i.test(capability))
+            return false;
+        const fila = await this.database.consultarUno(`SELECT capability_hash, anonimizado
+       FROM dispositivos_cliente
+       WHERE device_id = $1`, [deviceId]);
+        if (!fila || fila.anonimizado || !fila.capability_hash)
+            return false;
+        const esperado = Buffer.from(fila.capability_hash, 'hex');
+        const recibido = Buffer.from(this.hashCapability(capability), 'hex');
+        return (esperado.length === recibido.length && (0, node_crypto_1.timingSafeEqual)(esperado, recibido));
+    }
+    async exigirCapability(deviceId, capability) {
+        if (!capability ||
+            !(await this.verificarCapability(deviceId, capability))) {
+            throw new common_1.ForbiddenException({
+                error: 'DISPOSITIVO_NO_AUTORIZADO',
+                message: 'No se pudo comprobar la posesión de este dispositivo.',
+            });
+        }
+    }
+    async vincularAuth(datos, capability) {
         const deviceId = datos.device_id?.trim();
         if (!deviceId) {
             throw new common_1.BadRequestException('device_id es obligatorio');
         }
+        await this.exigirCapability(deviceId, capability);
         const user = await this.supabaseAuth.usuarioDesdeAccessToken(datos.access_token);
         const authUid = user.id;
         await this.database.consultar(`INSERT INTO dispositivos_cliente (device_id, auth_uid, ultimo_acceso, plataforma)
@@ -72,7 +102,9 @@ let DispositivosService = class DispositivosService {
        WHERE device_id = $1`, [deviceId]);
         if (!fila || fila.anonimizado)
             return false;
-        if (prueba.fcm_token && fila.fcm_token && prueba.fcm_token === fila.fcm_token) {
+        if (prueba.fcm_token &&
+            fila.fcm_token &&
+            prueba.fcm_token === fila.fcm_token) {
             return true;
         }
         if (prueba.access_token && fila.auth_uid) {
@@ -91,14 +123,25 @@ let DispositivosService = class DispositivosService {
        SET fcm_token = NULL,
            ciudad_id = NULL,
            auth_uid = NULL,
+           capability_hash = NULL,
            anonimizado = true,
            anonimizado_at = now()
        WHERE device_id = $1 AND anonimizado = false
        RETURNING device_id`, [deviceId]);
         if (!fila) {
-            return { device_id: deviceId, anonimizado: false, motivo: 'no_encontrado' };
+            return {
+                device_id: deviceId,
+                anonimizado: false,
+                motivo: 'no_encontrado',
+            };
         }
         return { device_id: deviceId, anonimizado: true };
+    }
+    hashCapability(capability) {
+        if (!/^[a-f0-9]{64}$/i.test(capability)) {
+            throw new common_1.BadRequestException('device_capability no es válida');
+        }
+        return (0, node_crypto_1.createHash)('sha256').update(capability.toLowerCase()).digest('hex');
     }
 };
 exports.DispositivosService = DispositivosService;

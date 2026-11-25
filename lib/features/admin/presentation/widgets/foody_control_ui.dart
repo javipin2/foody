@@ -91,12 +91,14 @@ class FoodyControlTarjetaKpi extends StatelessWidget {
     required this.valor,
     required this.icono,
     this.color,
+    this.descripcion,
   });
 
   final String titulo;
   final String valor;
   final IconData icono;
   final Color? color;
+  final String? descripcion;
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +132,17 @@ class FoodyControlTarjetaKpi extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              if (descripcion != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  descripcion!,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.25,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

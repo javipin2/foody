@@ -49,6 +49,7 @@ const bcrypt = __importStar(require("bcrypt"));
 const database_service_1 = require("../../core/database/database.service");
 const configuracion_global_module_1 = require("../../core/config/configuracion-global.module");
 const onboarding_restaurante_service_1 = require("../../core/onboarding/onboarding-restaurante.service");
+const ventas_metricas_sql_1 = require("../../compartido/sql/ventas-metricas.sql");
 const notificaciones_service_1 = require("../notificaciones/notificaciones.service");
 let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
     database;
@@ -233,10 +234,10 @@ let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
     }
     async estadisticas() {
         const pedidosHoy = await this.database.consultarUno(`SELECT COUNT(*)::text AS total FROM pedidos
-       WHERE created_at >= CURRENT_DATE`);
+       WHERE ${ventas_metricas_sql_1.SQL_PEDIDO_ES_HOY}`);
         const ingresosFoody = await this.database.consultarUno(`SELECT COALESCE(SUM(comision_foody), 0)::text AS total
        FROM ganancias_domiciliario
-       WHERE created_at >= CURRENT_DATE`);
+       WHERE ${ventas_metricas_sql_1.SQL_PEDIDO_ES_HOY}`);
         const resumen = await this.resumenGlobal();
         const selfService = await this.metricasSelfService();
         return {

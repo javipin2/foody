@@ -1,6 +1,8 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
-import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/features/admin/data/pedidos_repository.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_grupo.dart';
@@ -16,6 +18,8 @@ Future<void> mostrarBusquedaAdmin({
   required ValueChanged<String> onIrSeccion,
   required ValueChanged<String> onIrMesa,
   ValueChanged<String>? onIrPedido,
+  PedidosRepository? pedidosRepository,
+  MesasRepository? mesasRepository,
 }) async {
   // Incluye módulos bloqueados por plan (preview borroso + upgrade).
   final modulos = <({MenuAdminItem item, String grupo})>[];
@@ -36,13 +40,13 @@ Future<void> mostrarBusquedaAdmin({
     }
   }
 
-  final pedidosFuture = cargar(
-    PedidosRepository().listarActivos(sucursalId: sucursalId),
-    'buscar pedidos',
-  );
-  final mesasFuture =
-      cargar(MesasRepository().listar(sucursalId), 'buscar mesas');
+  final pedidosRepo = pedidosRepository ?? PedidosRepository();
+  Future<({List<PedidoAdminModel> datos, String? error})> pedidosFuture =
+      Future.value((datos: <PedidoAdminModel>[], error: null));
+  final mesasRepo = mesasRepository ?? MesasRepository();
+  var mesasFuture = cargar(mesasRepo.listar(sucursalId), 'buscar mesas');
   var filtro = '';
+  Timer? temporizadorBusqueda;
 
   await FoodyDialogo.mostrar<void>(
     context: context,
@@ -57,15 +61,12 @@ Future<void> mostrarBusquedaAdmin({
                   pedidosSnapshot.data?.datos ?? <PedidoAdminModel>[];
               final mesas =
                   mesasSnapshot.data?.datos ?? <Map<String, dynamic>>[];
-              final cargandoEntidades =
-                  !pedidosSnapshot.hasData || !mesasSnapshot.hasData;
-              final errores = [
-                pedidosSnapshot.data?.error,
-                mesasSnapshot.data?.error,
-              ].whereType<String>();
-              final scheme = Theme.of(context).colorScheme;
               final q = filtro.trim().toLowerCase();
-
+              final buscandoPedidos = q.length >= 2 && !pedidosSnapshot.hasData;
+              final cargandoMesas = !mesasSnapshot.hasData;
+              final errorPedidos = pedidosSnapshot.data?.error;
+              final errorMesas = mesasSnapshot.data?.error;
+              final scheme = Theme.of(context).colorScheme;
               final pedidosMatch = q.isEmpty
                   ? <PedidoAdminModel>[]
                   : pedidos
@@ -73,6 +74,9 @@ Future<void> mostrarBusquedaAdmin({
                         (p) =>
                             p.numeroPedido.toLowerCase().contains(q) ||
                             (p.clienteNombre ?? '').toLowerCase().contains(q) ||
+                            (p.clienteTelefono ?? '')
+                                .toLowerCase()
+                                .contains(q) ||
                             (p.mesaNombre ?? '').toLowerCase().contains(q),
                       )
                       .take(6)
@@ -98,58 +102,141 @@ Future<void> mostrarBusquedaAdmin({
                       .take(8)
                       .toList();
 
-              final sinResultados = q.isNotEmpty &&
-                  !cargandoEntidades &&
+              final sinResultados = q.length >= 2 &&
+                  !buscandoPedidos &&
+                  errorPedidos == null &&
+                  errorMesas == null &&
                   pedidosMatch.isEmpty &&
                   mesasMatch.isEmpty &&
                   modulosMatch.isEmpty;
 
-              return AlertDialog(
-                title: const Text('Buscar en Foody'),
-                content: SizedBox(
-                  width: (MediaQuery.sizeOf(context).width - 48)
-                      .clamp(280.0, 720.0),
+              final screen = MediaQuery.sizeOf(context);
+              final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+              final altoMaximo = math.max(
+                180.0,
+                math.min(640.0, screen.height - keyboard - 48),
+              );
+
+              return Dialog(
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 24,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.min(680.0, screen.width - 32),
+                    maxHeight: altoMaximo,
+                  ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      TextField(
-                        autofocus: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Módulo, pedido o mesa',
-                          hintText: 'Escribe un nombre o número',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 18, 12, 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Buscar en Foody',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Cerrar búsqueda',
+                              onPressed: () => Navigator.pop(ctx),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
                         ),
-                        onChanged: (v) => setState(() => filtro = v),
                       ),
-                      if (cargandoEntidades) ...[
-                        const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        child: TextField(
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          decoration: const InputDecoration(
+                            labelText: 'Buscar módulos, pedidos o mesas',
+                            hintText: 'Nombre, teléfono o número de pedido',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                          onChanged: (v) {
+                            temporizadorBusqueda?.cancel();
+                            final consulta = v.trim();
+                            setState(() {
+                              filtro = v;
+                              pedidosFuture = Future.value(
+                                (datos: <PedidoAdminModel>[], error: null),
+                              );
+                            });
+                            if (consulta.length >= 2) {
+                              temporizadorBusqueda = Timer(
+                                const Duration(milliseconds: 250),
+                                () => setState(() {
+                                  pedidosFuture = cargar(
+                                    pedidosRepo.buscarActivos(
+                                      sucursalId: sucursalId,
+                                      consulta: consulta,
+                                    ),
+                                    'buscar pedidos',
+                                  );
+                                }),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                      if (buscandoPedidos || cargandoMesas)
                         const LinearProgressIndicator(
-                          semanticsLabel: 'Buscando pedidos y mesas',
+                          semanticsLabel: 'Buscando coincidencias',
                         ),
-                      ],
-                      for (final error in errores) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          error,
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant),
+                      if (errorPedidos != null)
+                        _ErrorBusqueda(
+                          mensaje: errorPedidos,
+                          onReintentar: q.length < 2
+                              ? null
+                              : () => setState(() {
+                                    pedidosFuture = cargar(
+                                      pedidosRepo.buscarActivos(
+                                        sucursalId: sucursalId,
+                                        consulta: filtro.trim(),
+                                      ),
+                                      'buscar pedidos',
+                                    );
+                                  }),
                         ),
-                      ],
-                      const SizedBox(height: 12),
+                      if (errorMesas != null)
+                        _ErrorBusqueda(
+                          mensaje: errorMesas,
+                          onReintentar: () => setState(() {
+                            mesasFuture = cargar(
+                              mesasRepo.listar(sucursalId),
+                              'buscar mesas',
+                            );
+                          }),
+                        ),
                       Flexible(
                         child: ListView(
                           shrinkWrap: true,
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
                           children: [
                             if (pedidosMatch.isNotEmpty) ...[
-                              _tituloSeccion('Pedidos'),
+                              _tituloSeccion(context, 'Pedidos activos'),
                               ...pedidosMatch.map(
                                 (p) => ListTile(
-                                  leading: const Icon(
-                                    Icons.receipt_long,
-                                    color: ColoresFoody.primario,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  title: Text(p.numeroPedido),
+                                  leading: Icon(
+                                    Icons.receipt_long,
+                                    color: scheme.primary,
+                                  ),
+                                  title: Text(
+                                    p.numeroPedido,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                   subtitle: Text(
                                     [
                                       if (p.mesaNombre != null)
@@ -158,7 +245,10 @@ Future<void> mostrarBusquedaAdmin({
                                         p.clienteNombre!,
                                       p.estado.replaceAll('_', ' '),
                                     ].where((s) => s.isNotEmpty).join(' · '),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
+                                  trailing: const Icon(Icons.chevron_right),
                                   onTap: () {
                                     Navigator.pop(ctx);
                                     if (onIrPedido != null) {
@@ -171,15 +261,19 @@ Future<void> mostrarBusquedaAdmin({
                               ),
                             ],
                             if (mesasMatch.isNotEmpty) ...[
-                              _tituloSeccion('Mesas'),
+                              _tituloSeccion(context, 'Mesas'),
                               ...mesasMatch.map(
                                 (m) => ListTile(
-                                  leading: const Icon(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  leading: Icon(
                                     Icons.table_restaurant,
-                                    color: ColoresFoody.secundario,
+                                    color: scheme.secondary,
                                   ),
                                   title: Text('${m['nombre']}'),
                                   subtitle: Text('${m['estado'] ?? 'mesa'}'),
+                                  trailing: const Icon(Icons.chevron_right),
                                   onTap: () {
                                     Navigator.pop(ctx);
                                     onIrMesa('${m['id']}');
@@ -188,23 +282,34 @@ Future<void> mostrarBusquedaAdmin({
                               ),
                             ],
                             if (modulosMatch.isNotEmpty) ...[
-                              _tituloSeccion('Módulos'),
+                              _tituloSeccion(
+                                context,
+                                q.isEmpty ? 'Accesos rápidos' : 'Módulos',
+                              ),
                               ...modulosMatch.map(
                                 (e) => ListTile(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                   leading: Icon(
                                     e.item.bloqueadoPorPlan
                                         ? Icons.lock_outline
                                         : e.item.icono,
                                     color: e.item.bloqueadoPorPlan
-                                        ? Colors.grey
-                                        : ColoresFoody.primario,
+                                        ? scheme.onSurfaceVariant
+                                        : scheme.primary,
                                   ),
-                                  title: Text(e.item.titulo),
+                                  title: Text(
+                                    e.item.titulo,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                   subtitle: Text(
                                     e.item.bloqueadoPorPlan
                                         ? '${e.grupo} · Requiere plan superior'
                                         : e.grupo,
                                   ),
+                                  trailing: const Icon(Icons.chevron_right),
                                   onTap: () {
                                     Navigator.pop(ctx);
                                     onIrSeccion(e.item.ruta);
@@ -212,28 +317,43 @@ Future<void> mostrarBusquedaAdmin({
                                 ),
                               ),
                             ],
+                            if (q.length == 1 &&
+                                pedidosMatch.isEmpty &&
+                                mesasMatch.isEmpty &&
+                                modulosMatch.isEmpty)
+                              const _NotaBusqueda(
+                                icono: Icons.keyboard,
+                                texto:
+                                    'Escribe al menos 2 caracteres para buscar pedidos.',
+                              ),
                             if (sinResultados)
-                              Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Text(
-                                  'Sin resultados para «$filtro»',
-                                  textAlign: TextAlign.center,
-                                  style:
-                                      TextStyle(color: scheme.onSurfaceVariant),
-                                ),
+                              _NotaBusqueda(
+                                icono: Icons.search_off,
+                                texto: 'Sin resultados para «$filtro».',
+                              ),
+                            if (q.isEmpty && modulosMatch.isEmpty)
+                              const _NotaBusqueda(
+                                icono: Icons.search,
+                                texto:
+                                    'Escribe para buscar pedidos, mesas o módulos.',
                               ),
                           ],
+                        ),
+                      ),
+                      Divider(height: 1, color: scheme.outlineVariant),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 6, 16, 8),
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Cerrar'),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cerrar'),
-                  ),
-                ],
               );
             },
           ),
@@ -241,18 +361,76 @@ Future<void> mostrarBusquedaAdmin({
       );
     },
   );
+  temporizadorBusqueda?.cancel();
 }
 
-Widget _tituloSeccion(String titulo) {
+Widget _tituloSeccion(BuildContext context, String titulo) {
   return Padding(
-    padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
+    padding: const EdgeInsets.fromLTRB(8, 12, 8, 5),
     child: Text(
       titulo,
       style: const TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w700,
-        color: ColoresFoody.primario,
       ),
     ),
   );
+}
+
+class _ErrorBusqueda extends StatelessWidget {
+  const _ErrorBusqueda({required this.mensaje, this.onReintentar});
+
+  final String mensaje;
+  final VoidCallback? onReintentar;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 0),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, color: scheme.error, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              mensaje,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          if (onReintentar != null)
+            TextButton(
+                onPressed: onReintentar, child: const Text('Reintentar')),
+        ],
+      ),
+    );
+  }
+}
+
+class _NotaBusqueda extends StatelessWidget {
+  const _NotaBusqueda({required this.icono, required this.texto});
+
+  final IconData icono;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      child: Column(
+        children: [
+          Icon(icono, size: 24, color: scheme.onSurfaceVariant),
+          const SizedBox(height: 8),
+          Text(
+            texto,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
 }

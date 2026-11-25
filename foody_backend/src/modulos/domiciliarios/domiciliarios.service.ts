@@ -14,6 +14,7 @@ import { AsignarDomiciliarioDto } from './dto/asignar-domiciliario.dto';
 import { ConfirmarEntregaDto } from './dto/confirmar-entrega.dto';
 import { UbicacionEntregaDto } from './dto/independiente.dto';
 import { repartirCobroDomicilio } from './cobro-domicilio.util';
+import { DispatchService } from './dispatch.service';
 
 @Injectable()
 export class DomiciliariosService {
@@ -24,6 +25,7 @@ export class DomiciliariosService {
     private readonly cajaAuditoria: PedidosCajaAuditoriaService,
     private readonly pedidosEstadoCommand: PedidosEstadoCommandService,
     private readonly pedidosSoporte: PedidosSoporteService,
+    private readonly dispatch: DispatchService,
   ) {}
 
   async listarPlantaDisponibles(sucursalId: string) {
@@ -52,25 +54,21 @@ export class DomiciliariosService {
 
   async asignarPlanta(dto: AsignarDomiciliarioDto, usuarioAdminId: string) {
     const result = await this.database.enTransaccion(async (client) => {
-      const pedido = await this.consultarUno<{ id: string; tipo: string; estado: string }>(
+      const validacion = await this.dispatch.validarPedidoParaDespacho(
+        dto.pedido_id,
+        dto.sucursal_id,
         client,
-        `SELECT id, tipo, estado FROM pedidos
-         WHERE id = $1 AND sucursal_id = $2
-         FOR UPDATE`,
-        [dto.pedido_id, dto.sucursal_id],
       );
-
-      if (!pedido) {
-        throw new NotFoundException('Pedido no encontrado');
+      if (!validacion.valido) {
+        if (validacion.motivo === 'PEDIDO_NO_ENCONTRADO') {
+          throw new NotFoundException(validacion.mensaje);
+        }
+        throw new BadRequestException({
+          error: validacion.motivo,
+          message: validacion.mensaje,
+        });
       }
-      if (pedido.tipo !== 'domicilio') {
-        throw new BadRequestException('Solo pedidos de domicilio admiten asignación');
-      }
-      if (pedido.estado !== 'listo') {
-        throw new BadRequestException(
-          'El pedido debe estar en estado listo para asignar domiciliario',
-        );
-      }
+      const pedido = validacion.pedido;
 
       const domiciliario = await this.consultarUno<{
         id: string;
@@ -79,7 +77,8 @@ export class DomiciliariosService {
       }>(
         client,
         `SELECT dp.id, dp.sucursal_id, dp.usuario_id FROM domiciliarios_planta dp
-         WHERE dp.id = $1 AND dp.activo = true`,
+         WHERE dp.id = $1 AND dp.activo = true
+         FOR UPDATE`,
         [dto.domiciliario_planta_id],
       );
       if (!domiciliario || domiciliario.sucursal_id !== dto.sucursal_id) {
@@ -210,7 +209,8 @@ export class DomiciliariosService {
       }>(
         client,
         `SELECT dp.id, dp.sucursal_id, dp.usuario_id FROM domiciliarios_planta dp
-         WHERE dp.id = $1 AND dp.activo = true`,
+         WHERE dp.id = $1 AND dp.activo = true
+         FOR UPDATE`,
         [dto.domiciliario_planta_id],
       );
       if (!domiciliario || domiciliario.sucursal_id !== dto.sucursal_id) {
@@ -450,7 +450,27 @@ export class DomiciliariosService {
       throw new NotFoundException('No eres domiciliario de planta registrado');
     }
 
-    return this.database.consultar(
+    const pedidos = await this.database.consultar<{
+      id: string;
+      numero_pedido: string;
+      tipo: string;
+      estado: string;
+      cliente_nombre: string | null;
+      cliente_telefono: string | null;
+      direccion_entrega: string | null;
+      lat: string | null;
+      lng: string | null;
+      subtotal: string;
+      costo_domicilio: string;
+      total: string;
+      monto_pagado: string;
+      metodo_pago: string | null;
+      created_at: string;
+      estado_asignacion: string;
+      asignado_at: string;
+      permite_fiado_domiciliario: boolean;
+      domicilio_ingresa_a_caja: boolean;
+    }>(
       `SELECT p.id,
               p.numero_pedido,
               p.tipo,
@@ -463,6 +483,7 @@ export class DomiciliariosService {
               p.subtotal,
               p.costo_domicilio,
               p.total,
+              COALESCE(p.monto_pagado, 0) AS monto_pagado,
               p.metodo_pago,
               p.created_at,
               ad.estado AS estado_asignacion,
@@ -478,6 +499,22 @@ export class DomiciliariosService {
        ORDER BY ad.asignado_at ASC`,
       [domiciliario.id],
     );
+
+    return pedidos.map((pedido) => {
+      const cobro = repartirCobroDomicilio(
+        Number(pedido.total),
+        Number(pedido.costo_domicilio ?? 0),
+        Number(pedido.monto_pagado ?? 0),
+      );
+      return {
+        ...pedido,
+        saldo_pendiente: cobro.saldo,
+        requiere_cobro: cobro.saldo > 0.01,
+        producto_total: cobro.productoTotal,
+        producto_pendiente: cobro.productoPendiente,
+        domicilio_pendiente: cobro.domicilioPendiente,
+      };
+    });
   }
 
   /** Cuentas de domicilios entregados a cuenta del domiciliario, por liquidar. */

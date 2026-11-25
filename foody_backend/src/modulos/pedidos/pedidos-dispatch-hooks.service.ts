@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 export type ResultadoDispatchAuto = {
   iniciado: boolean;
   motivo?: string;
+  mensaje?: string;
 };
 
 type HandlerDispatchAuto = (

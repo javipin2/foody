@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 import { FcmService } from './fcm.service';
 
 export type EncolarNotificacionDto = {
@@ -33,10 +34,7 @@ export class NotificacionesService {
   ) {}
 
   /** Push de prueba — rama por rol (BN-CTRL-10). */
-  async enviarPrueba(usuario: {
-    sub: string;
-    rol: string;
-  }) {
+  async enviarPrueba(usuario: { sub: string; rol: string }) {
     const base = {
       tipo: 'prueba_foody',
       titulo: 'Foody — prueba FCM',
@@ -103,6 +101,15 @@ export class NotificacionesService {
   }
 
   async procesarPendientes(limite = 50) {
+    if (esQaSinEfectosExternos()) {
+      this.log.warn('Procesamiento FCM bloqueado en QA aislada');
+      return {
+        procesadas: 0,
+        enviados: 0,
+        abandonadas: 0,
+        modo: 'qa_sin_efectos',
+      };
+    }
     const maxIntentos = this.maxIntentosFcm();
     const pendientes = await this.database.consultar<{
       id: string;
@@ -387,7 +394,9 @@ export class NotificacionesService {
 
     const deviceId = n.payload['device_id'] as string | undefined;
     if (deviceId) {
-      const fila = await this.database.consultarUno<{ fcm_token: string | null }>(
+      const fila = await this.database.consultarUno<{
+        fcm_token: string | null;
+      }>(
         `SELECT fcm_token FROM dispositivos_cliente
          WHERE device_id = $1 AND anonimizado = false AND fcm_token IS NOT NULL`,
         [deviceId],

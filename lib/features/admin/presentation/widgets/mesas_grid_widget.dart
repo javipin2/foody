@@ -11,6 +11,7 @@ import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
 import 'package:reserva_canchas/core/red/manejo_error_plan.dart';
+import 'package:reserva_canchas/core/tema/foody_formulario.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_skeleton.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/admin/data/pedidos_repository.dart';
@@ -37,6 +38,11 @@ const _motivosRechazoQr = [
   'Otro',
 ];
 
+void _liberarControlDespuesDelDialogo(TextEditingController control) {
+  unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 200), control.dispose));
+}
+
 class MesasGridWidget extends ConsumerStatefulWidget {
   const MesasGridWidget({
     super.key,
@@ -47,6 +53,8 @@ class MesasGridWidget extends ConsumerStatefulWidget {
     this.meseraUsuarioId,
     this.mesaIdInicial,
     this.onMesaAbierta,
+    this.mesasRepository,
+    this.verificarBackend,
   }) : assert(
           !(modoMesero && modoCajero),
           'modoMesero y modoCajero son mutuamente excluyentes',
@@ -63,6 +71,8 @@ class MesasGridWidget extends ConsumerStatefulWidget {
   final String? meseraUsuarioId;
   final String? mesaIdInicial;
   final VoidCallback? onMesaAbierta;
+  final MesasRepository? mesasRepository;
+  final Future<bool> Function()? verificarBackend;
 
   @override
   ConsumerState<MesasGridWidget> createState() => _MesasGridWidgetState();
@@ -73,7 +83,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
   final _pedidosRepo = PedidosRepository();
-  final _mesasRepo = MesasRepository();
+  late final _mesasRepo = widget.mesasRepository ?? MesasRepository();
   final _usuariosRepo = UsuariosRepository();
   late Future<List<Map<String, dynamic>>> _future;
   List<Map<String, dynamic>>? _mesasCache;
@@ -176,7 +186,8 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
   }
 
   Future<void> _comprobarApiMesas() async {
-    final ok = await backendMesasActualizado();
+    final ok =
+        await (widget.verificarBackend?.call() ?? backendMesasActualizado());
     if (mounted) setState(() => _apiMesasOk = ok);
   }
 
@@ -216,9 +227,10 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     final ctrl = TextEditingController();
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nueva mesa'),
-        content: TextField(
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Nueva mesa',
+        maxWidth: 440,
+        contenido: TextField(
           controller: ctrl,
           decoration: const InputDecoration(
             labelText: 'Nombre (ej. Mesa 5)',
@@ -226,7 +238,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
           ),
           autofocus: true,
         ),
-        actions: [
+        acciones: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar')),
@@ -238,7 +250,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
       ),
     );
     if (ok != true) {
-      ctrl.dispose();
+      _liberarControlDespuesDelDialogo(ctrl);
       return;
     }
     try {
@@ -259,7 +271,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
         }
       }
     }
-    ctrl.dispose();
+    _liberarControlDespuesDelDialogo(ctrl);
   }
 
   Future<void> _opcionesMesa(Map<String, dynamic> mesa) async {
@@ -328,84 +340,96 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
         context: context,
         barrierDismissible: true,
         builder: (ctx) {
+          final altoDisponible = (MediaQuery.sizeOf(ctx).height -
+                  MediaQuery.viewInsetsOf(ctx).vertical -
+                  32)
+              .clamp(180.0, MediaQuery.sizeOf(ctx).height);
           return Dialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'QR — $nombre',
-                      style: Theme.of(ctx).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 16),
-                    Center(
-                      child: SizedBox(
-                        width: 200,
-                        height: 200,
-                        child: QrImageView(
-                          data: url,
-                          size: 200,
-                          backgroundColor: Colors.white,
+              constraints: BoxConstraints(
+                maxWidth: 360,
+                maxHeight: altoDisponible,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'QR — $nombre',
+                        style: Theme.of(ctx).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 16),
+                      Center(
+                        child: SizedBox(
+                          width: 200,
+                          height: 200,
+                          child: QrImageView(
+                            data: url,
+                            size: 200,
+                            backgroundColor: Colors.white,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 72),
-                      child: SingleChildScrollView(
-                        child: SelectableText(
-                          url,
-                          style: const TextStyle(fontSize: 12),
+                      const SizedBox(height: 12),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 72),
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            url,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        try {
-                          final bytes = await MesaQrPdfFoody.generar(
-                            nombreMesa: nombre,
-                            urlQr: url,
-                          );
-                          await _compartirPdfQr(bytes, nombre);
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            mostrarErrorSnackBar(
-                              ctx,
-                              e,
-                              contexto: 'generar PDF del QR',
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          try {
+                            final bytes = await MesaQrPdfFoody.generar(
+                              nombreMesa: nombre,
+                              urlQr: url,
                             );
+                            await _compartirPdfQr(bytes, nombre);
+                          } catch (e) {
+                            if (ctx.mounted) {
+                              mostrarErrorSnackBar(
+                                ctx,
+                                e,
+                                contexto: 'generar PDF del QR',
+                              );
+                            }
                           }
-                        }
-                      },
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                      label: const Text('PDF / Imprimir'),
-                    ),
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: url));
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Enlace copiado')),
-                        );
-                      },
-                      icon: const Icon(Icons.link, size: 18),
-                      label: const Text('Copiar enlace'),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Cerrar'),
+                        },
+                        icon:
+                            const Icon(Icons.picture_as_pdf_outlined, size: 18),
+                        label: const Text('PDF / Imprimir'),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: url));
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Enlace copiado')),
+                          );
+                        },
+                        icon: const Icon(Icons.link, size: 18),
+                        label: const Text('Copiar enlace'),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cerrar'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -425,10 +449,18 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     final ctrl = TextEditingController(text: '${mesa['nombre']}');
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Renombrar mesa'),
-        content: TextField(controller: ctrl, autofocus: true),
-        actions: [
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Renombrar mesa',
+        maxWidth: 440,
+        contenido: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Nombre de la mesa',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        acciones: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar')),
@@ -447,7 +479,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
       );
       _recargarMesas();
     }
-    ctrl.dispose();
+    _liberarControlDespuesDelDialogo(ctrl);
   }
 
   Future<void> _desactivarMesa(Map<String, dynamic> mesa) async {
@@ -455,10 +487,12 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     if (sid == null) return;
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Desactivar mesa'),
-        content: Text('¿Desactivar ${mesa['nombre']}?'),
-        actions: [
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Desactivar mesa',
+        subtitulo: 'La mesa dejará de aparecer en la operación de esta sede.',
+        maxWidth: 440,
+        contenido: Text('¿Desactivar ${mesa['nombre']}?'),
+        acciones: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar')),
@@ -496,10 +530,12 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     );
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Reservar ${mesa['nombre']}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Reservar ${mesa['nombre']}',
+        subtitulo: 'Datos de la reserva y hora límite.',
+        maxWidth: 460,
+        contenido: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: nombreCtrl,
@@ -526,7 +562,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
             ),
           ],
         ),
-        actions: [
+        acciones: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar')),
@@ -537,9 +573,9 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
       ),
     );
     if (ok != true) {
-      nombreCtrl.dispose();
-      telCtrl.dispose();
-      hastaCtrl.dispose();
+      _liberarControlDespuesDelDialogo(nombreCtrl);
+      _liberarControlDespuesDelDialogo(telCtrl);
+      _liberarControlDespuesDelDialogo(hastaCtrl);
       return;
     }
     try {
@@ -560,9 +596,9 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
         );
       }
     }
-    nombreCtrl.dispose();
-    telCtrl.dispose();
-    hastaCtrl.dispose();
+    _liberarControlDespuesDelDialogo(nombreCtrl);
+    _liberarControlDespuesDelDialogo(telCtrl);
+    _liberarControlDespuesDelDialogo(hastaCtrl);
   }
 
   Future<void> _cancelarReservaMesa(Map<String, dynamic> mesa) async {
@@ -596,27 +632,35 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
           title: Text('Unir con ${mesaPrincipal['nombre']}'),
-          content: SizedBox(
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: otras
-                  .map(
-                    (m) => CheckboxListTile(
-                      value: seleccionadas.contains(m['id']),
-                      title: Text(m['nombre'] as String? ?? 'Mesa'),
-                      onChanged: (v) {
-                        setDialog(() {
-                          if (v == true) {
-                            seleccionadas.add('${m['id']}');
-                          } else {
-                            seleccionadas.remove('${m['id']}');
-                          }
-                        });
-                      },
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 320,
+              maxHeight:
+                  (MediaQuery.sizeOf(ctx).height * 0.45).clamp(140.0, 360.0),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: otras.map((m) {
+                  return CheckboxListTile(
+                    value: seleccionadas.contains(m['id']),
+                    title: Text(
+                      m['nombre'] as String? ?? 'Mesa',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  )
-                  .toList(),
+                    onChanged: (v) {
+                      setDialog(() {
+                        if (v == true) {
+                          seleccionadas.add('${m['id']}');
+                        } else {
+                          seleccionadas.remove('${m['id']}');
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
             ),
           ),
           actions: [
@@ -877,44 +921,47 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     if (!mounted) return;
     destino = await FoodyDialogo.mostrar<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Transferir pedido'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Desde ${mesaOrigen['nombre']} → elige mesa destino',
-                style: Theme.of(ctx).textTheme.bodyMedium,
+      builder: (ctx) => FoodyDialogoShell(
+        titulo: 'Transferir pedido',
+        subtitulo: 'Desde ${mesaOrigen['nombre']} · elige una mesa libre.',
+        maxWidth: 520,
+        contenido: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight:
+                    (MediaQuery.sizeOf(ctx).height * 0.35).clamp(120.0, 280.0),
               ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: libres.length,
-                  itemBuilder: (context, i) {
-                    final m = libres[i];
-                    return ListTile(
-                      title: Text(m['nombre'] as String? ?? 'Mesa'),
-                      onTap: () => Navigator.pop(ctx, m),
-                    );
-                  },
-                ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: libres.length,
+                itemBuilder: (context, i) {
+                  final m = libres[i];
+                  return ListTile(
+                    title: Text(
+                      m['nombre'] as String? ?? 'Mesa',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => Navigator.pop(ctx, m),
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: motivoCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo (opcional)',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: motivoCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Motivo (opcional)',
+                border: OutlineInputBorder(),
               ),
-            ],
-          ),
+              maxLines: 2,
+            ),
+          ],
         ),
-        actions: [
+        acciones: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancelar'),
@@ -924,7 +971,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     );
 
     if (destino == null) {
-      motivoCtrl.dispose();
+      _liberarControlDespuesDelDialogo(motivoCtrl);
       return;
     }
 
@@ -957,7 +1004,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
         );
       }
     }
-    motivoCtrl.dispose();
+    _liberarControlDespuesDelDialogo(motivoCtrl);
   }
 
   Future<void> _abrirPedidoMesa(
@@ -1095,48 +1142,46 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialog) {
-          return AlertDialog(
-            title: const Text('Asignar turno de mesas'),
-            content: SizedBox(
-              width: 420,
-              child: mesas.isEmpty
-                  ? const Text('No hay mesas activas en esta sucursal.')
-                  : SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: mesas.map((mesa) {
-                          final mesaId = mesa['id'] as String;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: DropdownButtonFormField<String?>(
-                              initialValue: asignaciones[mesaId],
-                              decoration: InputDecoration(
-                                labelText: mesa['nombre'] as String? ?? 'Mesa',
-                                border: const OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              items: [
-                                const DropdownMenuItem<String?>(
-                                  value: null,
-                                  child: Text('Sin asignar'),
-                                ),
-                                ...meseras.map(
-                                  (u) => DropdownMenuItem<String?>(
-                                    value: u['id'] as String,
-                                    child: Text(u['nombre'] as String? ?? ''),
-                                  ),
-                                ),
-                              ],
-                              onChanged: (v) {
-                                setDialog(() => asignaciones[mesaId] = v);
-                              },
+          return FoodyDialogoShell(
+            titulo: 'Asignar turno de mesas',
+            maxWidth: 520,
+            contenido: mesas.isEmpty
+                ? const Text('No hay mesas activas en esta sucursal.')
+                : SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: mesas.map((mesa) {
+                        final mesaId = mesa['id'] as String;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: DropdownButtonFormField<String?>(
+                            initialValue: asignaciones[mesaId],
+                            decoration: InputDecoration(
+                              labelText: mesa['nombre'] as String? ?? 'Mesa',
+                              border: const OutlineInputBorder(),
+                              isDense: true,
                             ),
-                          );
-                        }).toList(),
-                      ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Sin asignar'),
+                              ),
+                              ...meseras.map(
+                                (u) => DropdownMenuItem<String?>(
+                                  value: u['id'] as String,
+                                  child: Text(u['nombre'] as String? ?? ''),
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              setDialog(() => asignaciones[mesaId] = v);
+                            },
+                          ),
+                        );
+                      }).toList(),
                     ),
-            ),
-            actions: [
+                  ),
+            acciones: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Cancelar'),
@@ -1203,13 +1248,16 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setSt) => AlertDialog(
-          title: const Text('Motivo de rechazo'),
-          content: Column(
+        builder: (context, setSt) => FoodyDialogoShell(
+          titulo: 'Motivo de rechazo',
+          subtitulo: 'El motivo queda asociado al pedido QR rechazado.',
+          maxWidth: 460,
+          contenido: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: motivoSel,
+                initialValue: motivoSel,
                 decoration: const InputDecoration(
                   labelText: 'Motivo',
                   border: OutlineInputBorder(),
@@ -1234,7 +1282,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
               ],
             ],
           ),
-          actions: [
+          acciones: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
@@ -1259,7 +1307,7 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
       );
       _recargarMesas();
     }
-    otroCtrl.dispose();
+    _liberarControlDespuesDelDialogo(otroCtrl);
   }
 
   int _contarQrPendientes(List<Map<String, dynamic>> mesas) {
@@ -1726,6 +1774,17 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
     );
   }
 
+  Widget _centradoConScroll(Widget child) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Widget _grid() {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _future,
@@ -1734,193 +1793,206 @@ class _MesasGridWidgetState extends ConsumerState<MesasGridWidget>
           return AnaliticaSkeleton.tab();
         }
         if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.cloud_off_outlined,
-                    size: 40,
-                    color: _scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    mensajeErrorHttp(snapshot.error!, contexto: 'cargar mesas'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: _recargarMesas,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _scheme.primary,
-                      foregroundColor: _scheme.onPrimary,
+          return _centradoConScroll(
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.cloud_off_outlined,
+                      size: 40,
+                      color: _scheme.onSurfaceVariant,
                     ),
-                    child: const Text('Reintentar'),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    Text(
+                      mensajeErrorHttp(snapshot.error!,
+                          contexto: 'cargar mesas'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: _scheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _recargarMesas,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _scheme.primary,
+                        foregroundColor: _scheme.onPrimary,
+                      ),
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
         }
         final mesas = snapshot.data ?? [];
         if (mesas.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: _scheme.surfaceContainerLow,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: _scheme.outlineVariant),
-                    ),
-                    child: Icon(
-                      Icons.table_restaurant_outlined,
-                      size: 32,
-                      color: _scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Sin mesas en el salón',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _scheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.modoMesero || widget.modoCajero
-                        ? 'Pide al administrador que cree las mesas del salón.'
-                        : 'Crea la primera mesa para empezar a operar.',
-                    style: TextStyle(
-                      color: _scheme.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  if (!widget.modoMesero && !widget.modoCajero) ...[
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _crearMesa,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _scheme.primary,
-                        foregroundColor: _scheme.onPrimary,
+          return _centradoConScroll(
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: _scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _scheme.outlineVariant),
                       ),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Crear primera mesa'),
+                      child: Icon(
+                        Icons.table_restaurant_outlined,
+                        size: 32,
+                        color: _scheme.onSurfaceVariant,
+                      ),
                     ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Sin mesas en el salón',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.modoMesero || widget.modoCajero
+                          ? 'Pide al administrador que cree las mesas del salón.'
+                          : 'Crea la primera mesa para empezar a operar.',
+                      style: TextStyle(
+                        color: _scheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    if (!widget.modoMesero && !widget.modoCajero) ...[
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: _crearMesa,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _scheme.primary,
+                          foregroundColor: _scheme.onPrimary,
+                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Crear primera mesa'),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           );
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _resumenMesas(mesas),
-            const SizedBox(height: 10),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  final f = _cargarMesas();
-                  setState(() => _future = f);
-                  await f;
-                },
-                color: _scheme.onSurface,
-                child: Builder(
-                  builder: (context) {
-                    final filtradas = mesas.where((m) {
-                      final e = m['pedido_estado'] as String?;
-                      final ocupada =
-                          m['pedido_id'] != null && e != 'pendiente_aprobacion';
-                      final libre = m['pedido_id'] == null;
-                      final qr = e == 'pendiente_aprobacion';
-                      switch (_filtroMesas) {
-                        case 'por_cobrar':
-                          return ocupada;
-                        case 'libres':
-                          return libre;
-                        case 'qr':
-                          return qr;
-                        default:
-                          return true;
-                      }
-                    }).toList();
-                    // ponytail: orden visual piso — QR → ocupadas → libres.
-                    filtradas.sort((a, b) {
-                      int peso(Map<String, dynamic> m) {
-                        if (m['pedido_estado'] == 'pendiente_aprobacion') {
-                          return 0;
-                        }
-                        if (m['pedido_id'] != null) return 1;
-                        if (m['estado_operativo'] == 'reservada') return 2;
-                        return 3;
-                      }
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final alturaReducida = constraints.maxHeight < 420;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _resumenMesas(mesas),
+                SizedBox(height: alturaReducida ? 4 : 10),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      final f = _cargarMesas();
+                      setState(() => _future = f);
+                      await f;
+                    },
+                    color: _scheme.onSurface,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final filtradas = mesas.where((m) {
+                          final e = m['pedido_estado'] as String?;
+                          final ocupada = m['pedido_id'] != null &&
+                              e != 'pendiente_aprobacion';
+                          final libre = m['pedido_id'] == null;
+                          final qr = e == 'pendiente_aprobacion';
+                          switch (_filtroMesas) {
+                            case 'por_cobrar':
+                              return ocupada;
+                            case 'libres':
+                              return libre;
+                            case 'qr':
+                              return qr;
+                            default:
+                              return true;
+                          }
+                        }).toList();
+                        // ponytail: orden visual piso — QR → ocupadas → libres.
+                        filtradas.sort((a, b) {
+                          int peso(Map<String, dynamic> m) {
+                            if (m['pedido_estado'] == 'pendiente_aprobacion') {
+                              return 0;
+                            }
+                            if (m['pedido_id'] != null) return 1;
+                            if (m['estado_operativo'] == 'reservada') return 2;
+                            return 3;
+                          }
 
-                      final c = peso(a).compareTo(peso(b));
-                      if (c != 0) return c;
-                      return '${a['nombre']}'.compareTo('${b['nombre']}');
-                    });
-                    if (filtradas.isEmpty) {
-                      return ListView(
-                        children: [
-                          const SizedBox(height: 48),
-                          Center(
-                            child: Text(
-                              _filtroMesas == 'por_cobrar'
-                                  ? 'No hay mesas por cobrar'
-                                  : _filtroMesas == 'libres'
-                                      ? 'No hay mesas libres'
-                                      : 'Sin mesas en este filtro',
-                              style: TextStyle(
-                                color: _scheme.onSurfaceVariant,
+                          final c = peso(a).compareTo(peso(b));
+                          if (c != 0) return c;
+                          return '${a['nombre']}'.compareTo('${b['nombre']}');
+                        });
+                        if (filtradas.isEmpty) {
+                          return ListView(
+                            children: [
+                              const SizedBox(height: 48),
+                              Center(
+                                child: Text(
+                                  _filtroMesas == 'por_cobrar'
+                                      ? 'No hay mesas por cobrar'
+                                      : _filtroMesas == 'libres'
+                                          ? 'No hay mesas libres'
+                                          : 'Sin mesas en este filtro',
+                                  style: TextStyle(
+                                    color: _scheme.onSurfaceVariant,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
+                          );
+                        }
+                        final w = constraints.maxWidth;
+                        final cols = w >= 1200
+                            ? 5
+                            : w >= 900
+                                ? 4
+                                : w >= 600
+                                    ? 3
+                                    : w < 400
+                                        ? 2
+                                        : 2;
+                        return GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: cols,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            // Más alto = mejor hit target para meseros en tablet/móvil.
+                            childAspectRatio: w < 400
+                                ? 0.82
+                                : w < 700
+                                    ? 0.9
+                                    : 1.05,
                           ),
-                        ],
-                      );
-                    }
-                    final w = MediaQuery.sizeOf(context).width;
-                    final cols = FoodyBreakpoints.esLarge(w)
-                        ? 5
-                        : FoodyBreakpoints.esExpanded(w)
-                            ? 4
-                            : w < 400
-                                ? 2
-                                : 3;
-                    return GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cols,
-                        mainAxisSpacing: 10,
-                        crossAxisSpacing: 10,
-                        // Más alto = mejor hit target para meseros en tablet/móvil.
-                        childAspectRatio: w < 400
-                            ? 0.82
-                            : w < 700
-                                ? 0.9
-                                : 1.05,
-                      ),
-                      itemCount: filtradas.length,
-                      itemBuilder: (context, index) =>
-                          _tarjetaMesaPiso(filtradas[index]),
-                    );
-                  },
+                          itemCount: filtradas.length,
+                          itemBuilder: (context, index) =>
+                              _tarjetaMesaPiso(filtradas[index]),
+                        );
+                      },
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         );
       },
     );

@@ -22,11 +22,22 @@ class AnaliticaCharts {
     Color(0xFF4B5563),
     Color(0xFF2563EB),
   ];
+  static const _coloresOscuros = [
+    Color(0xFFD1D5DB),
+    Color(0xFF9CA3AF),
+    Color(0xFF6B7280),
+    Color(0xFF4B5563),
+    Color(0xFFE5E7EB),
+    Color(0xFF60A5FA),
+  ];
 
   static double numOf(dynamic v) =>
       v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 
-  static BarChartData barrasHora(List<dynamic> porHora) {
+  static BarChartData barrasHora(List<dynamic> porHora, {bool oscuro = false}) {
+    final ink = oscuro ? const Color(0xFFF3F4F6) : AnaliticaTokens.ink;
+    final inkSoft = oscuro ? const Color(0xFF9CA3AF) : AnaliticaTokens.inkSoft;
+    final grid = oscuro ? const Color(0xFF2A2E36) : AnaliticaTokens.borderSoft;
     final spots = <BarChartGroupData>[];
     for (final raw in porHora) {
       final m = raw as Map<String, dynamic>;
@@ -38,8 +49,9 @@ class AnaliticaCharts {
             BarChartRodData(
               toY: numOf(m['ventas']),
               width: 7,
-              color: AnaliticaTokens.chart,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+              color: oscuro ? const Color(0xFFD1D5DB) : AnaliticaTokens.chart,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(3)),
             ),
           ],
         ),
@@ -51,14 +63,15 @@ class AnaliticaCharts {
         show: true,
         drawVerticalLine: false,
         getDrawingHorizontalLine: (_) => FlLine(
-          color: AnaliticaTokens.borderSoft,
+          color: grid,
           strokeWidth: 1,
         ),
       ),
       borderData: FlBorderData(show: false),
       titlesData: FlTitlesData(
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
@@ -68,9 +81,9 @@ class AnaliticaCharts {
               if (v % 3 != 0) return const SizedBox.shrink();
               return Text(
                 '${v.toInt()}h',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
-                  color: AnaliticaTokens.inkSoft,
+                  color: inkSoft,
                 ),
               );
             },
@@ -79,7 +92,7 @@ class AnaliticaCharts {
       ),
       barTouchData: BarTouchData(
         touchTooltipData: BarTouchTooltipData(
-          getTooltipColor: (_) => AnaliticaTokens.ink,
+          getTooltipColor: (_) => ink,
           getTooltipItem: (group, _, rod, __) => BarTooltipItem(
             '${group.x}h · ${_moneda.format(rod.toY)}',
             const TextStyle(
@@ -94,7 +107,10 @@ class AnaliticaCharts {
     );
   }
 
-  static LineChartData lineaDia(List<dynamic> porDia) {
+  static LineChartData lineaDia(List<dynamic> porDia, {bool oscuro = false}) {
+    final ink = oscuro ? const Color(0xFFF3F4F6) : AnaliticaTokens.ink;
+    final inkSoft = oscuro ? const Color(0xFF9CA3AF) : AnaliticaTokens.inkSoft;
+    final grid = oscuro ? const Color(0xFF2A2E36) : AnaliticaTokens.borderSoft;
     final spots = <FlSpot>[];
     final labels = <int, String>{};
     for (var i = 0; i < porDia.length; i++) {
@@ -114,14 +130,15 @@ class AnaliticaCharts {
         drawVerticalLine: false,
         horizontalInterval: null,
         getDrawingHorizontalLine: (_) => FlLine(
-          color: AnaliticaTokens.borderSoft,
+          color: grid,
           strokeWidth: 1,
         ),
       ),
       borderData: FlBorderData(show: false),
       titlesData: FlTitlesData(
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
@@ -134,9 +151,9 @@ class AnaliticaCharts {
                 padding: const EdgeInsets.only(right: 6),
                 child: Text(
                   _moneda.format(v),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 9,
-                    color: AnaliticaTokens.inkSoft,
+                    color: inkSoft,
                   ),
                   textAlign: TextAlign.right,
                 ),
@@ -157,9 +174,9 @@ class AnaliticaCharts {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   t,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
-                    color: AnaliticaTokens.inkSoft,
+                    color: inkSoft,
                   ),
                 ),
               );
@@ -175,7 +192,7 @@ class AnaliticaCharts {
           return spotIndexes.map((i) {
             return TouchedSpotIndicatorData(
               FlLine(
-                color: AnaliticaTokens.inkSoft.withValues(alpha: 0.45),
+                color: inkSoft.withValues(alpha: 0.6),
                 strokeWidth: 1,
                 dashArray: [4, 3],
               ),
@@ -193,17 +210,21 @@ class AnaliticaCharts {
           }).toList();
         },
         touchTooltipData: LineTouchTooltipData(
-          getTooltipColor: (_) => Colors.white,
+          getTooltipColor: (_) =>
+              oscuro ? const Color(0xFF22262E) : Colors.white,
           tooltipRoundedRadius: 8,
-          tooltipPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          tooltipBorder: const BorderSide(color: AnaliticaTokens.border),
+          tooltipPadding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          tooltipBorder: BorderSide(
+            color: oscuro ? const Color(0xFF3A3F49) : AnaliticaTokens.border,
+          ),
           getTooltipItems: (touched) => touched.map((s) {
             final i = s.x.toInt();
             final fecha = labels[i] ?? '';
             return LineTooltipItem(
               '${_moneda.format(s.y)}\n$fecha',
-              const TextStyle(
-                color: AnaliticaTokens.ink,
+              TextStyle(
+                color: ink,
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
                 height: 1.35,
@@ -246,7 +267,7 @@ class AnaliticaCharts {
                 accent.withValues(alpha: 0.08),
                 accent.withValues(alpha: 0.0),
               ],
-              stops: const [0.0, 0.25,0.5, 0.75, 1.0],
+              stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
             ),
           ),
         ),
@@ -254,18 +275,22 @@ class AnaliticaCharts {
     );
   }
 
-  static PieChartData pieMetodo(List<dynamic> porMetodo) {
+  static PieChartData pieMetodo(List<dynamic> porMetodo,
+      {bool oscuro = false}) {
     final sections = <PieChartSectionData>[];
     for (var i = 0; i < porMetodo.length; i++) {
       final m = porMetodo[i] as Map<String, dynamic>;
       sections.add(
         PieChartSectionData(
           value: numOf(m['total']),
-          color: colores[i % colores.length],
+          color: (oscuro ? _coloresOscuros : colores)[i % colores.length],
           radius: 46,
           title: '',
           showTitle: false,
-          borderSide: const BorderSide(color: Colors.white, width: 2),
+          borderSide: BorderSide(
+            color: oscuro ? const Color(0xFF16181D) : Colors.white,
+            width: 2,
+          ),
         ),
       );
     }
@@ -276,15 +301,17 @@ class AnaliticaCharts {
     );
   }
 
-  static PieChartData donutNiveles(List<dynamic> niveles) {
+  static PieChartData donutNiveles(List<dynamic> niveles,
+      {bool oscuro = false}) {
     final sections = <PieChartSectionData>[];
     for (var i = 0; i < niveles.length; i++) {
       final m = niveles[i] as Map<String, dynamic>;
       final n = '${m['nivel']}'.toLowerCase();
       final color = switch (n) {
         'critico' || 'alto' => AnaliticaTokens.alertas,
-        'medio' => AnaliticaTokens.chartMuted,
-        _ => AnaliticaTokens.chart,
+        'medio' =>
+          oscuro ? const Color(0xFF9CA3AF) : AnaliticaTokens.chartMuted,
+        _ => oscuro ? const Color(0xFFD1D5DB) : AnaliticaTokens.chart,
       };
       sections.add(
         PieChartSectionData(
@@ -293,7 +320,10 @@ class AnaliticaCharts {
           radius: 44,
           title: '',
           showTitle: false,
-          borderSide: const BorderSide(color: Colors.white, width: 2),
+          borderSide: BorderSide(
+            color: oscuro ? const Color(0xFF16181D) : Colors.white,
+            width: 2,
+          ),
         ),
       );
     }
@@ -304,7 +334,8 @@ class AnaliticaCharts {
           ? [
               PieChartSectionData(
                 value: 1,
-                color: Colors.grey.shade200,
+                color:
+                    oscuro ? const Color(0xFF4B5563) : const Color(0xFFEEEEEE),
                 radius: 44,
                 showTitle: false,
               ),
@@ -319,9 +350,14 @@ class AnaliticaCharts {
     required String nombreKey,
     int maxItems = 6,
     Color? color,
+    bool oscuro = false,
   }) {
     final slice = items.take(maxItems).toList();
-    final c = color ?? AnaliticaTokens.chart;
+    final c =
+        color ?? (oscuro ? const Color(0xFFD1D5DB) : AnaliticaTokens.chart);
+    final inkSoft = oscuro ? const Color(0xFF9CA3AF) : AnaliticaTokens.inkSoft;
+    final ink = oscuro ? const Color(0xFFF3F4F6) : AnaliticaTokens.ink;
+    final grid = oscuro ? const Color(0xFF2A2E36) : AnaliticaTokens.borderSoft;
     final groups = <BarChartGroupData>[];
     for (var i = 0; i < slice.length; i++) {
       final m = slice[i] as Map<String, dynamic>;
@@ -345,14 +381,15 @@ class AnaliticaCharts {
         show: true,
         drawVerticalLine: false,
         getDrawingHorizontalLine: (_) => FlLine(
-          color: AnaliticaTokens.borderSoft,
+          color: grid,
           strokeWidth: 1,
         ),
       ),
       borderData: FlBorderData(show: false),
       titlesData: FlTitlesData(
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
@@ -367,9 +404,9 @@ class AnaliticaCharts {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   nombre,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 9,
-                    color: AnaliticaTokens.inkSoft,
+                    color: inkSoft,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -380,7 +417,7 @@ class AnaliticaCharts {
       ),
       barTouchData: BarTouchData(
         touchTooltipData: BarTouchTooltipData(
-          getTooltipColor: (_) => AnaliticaTokens.ink,
+          getTooltipColor: (_) => ink,
           getTooltipItem: (group, _, rod, __) {
             final i = group.x.toInt();
             final nombre = i >= 0 && i < slice.length
@@ -401,7 +438,16 @@ class AnaliticaCharts {
     );
   }
 
-  static Widget leyendaPie(List<dynamic> items, String labelKey, String valueKey) {
+  static Widget leyendaPie(
+    List<dynamic> items,
+    String labelKey,
+    String valueKey, {
+    bool oscuro = false,
+  }) {
+    final ink = oscuro ? const Color(0xFFF3F4F6) : AnaliticaTokens.ink;
+    final inkMuted =
+        oscuro ? const Color(0xFF9CA3AF) : AnaliticaTokens.inkMuted;
+    final palette = oscuro ? _coloresOscuros : colores;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -415,7 +461,7 @@ class AnaliticaCharts {
                   width: 7,
                   height: 7,
                   decoration: BoxDecoration(
-                    color: colores[i % colores.length],
+                    color: palette[i % palette.length],
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -423,19 +469,19 @@ class AnaliticaCharts {
                 Expanded(
                   child: Text(
                     '${(items[i] as Map)[labelKey] ?? '—'}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
-                      color: AnaliticaTokens.inkMuted,
+                      color: inkMuted,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Text(
                   _moneda.format(numOf((items[i] as Map)[valueKey])),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AnaliticaTokens.ink,
+                    color: ink,
                   ),
                 ),
               ],
@@ -449,8 +495,9 @@ class AnaliticaCharts {
   static LineChartData lineaDiaVsAnterior(
     List<dynamic> porDia, {
     double? ventasAnteriorTotal,
+    bool oscuro = false,
   }) {
-    final base = lineaDia(porDia);
+    final base = lineaDia(porDia, oscuro: oscuro);
     if (ventasAnteriorTotal == null || porDia.isEmpty) return base;
 
     final n = porDia.length;
@@ -473,7 +520,7 @@ class AnaliticaCharts {
         LineChartBarData(
           spots: refSpots,
           isCurved: false,
-          color: AnaliticaTokens.chartMuted,
+          color: oscuro ? const Color(0xFF9CA3AF) : AnaliticaTokens.chartMuted,
           barWidth: 1.5,
           dashArray: const [6, 4],
           dotData: const FlDotData(show: false),

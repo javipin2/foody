@@ -5,14 +5,19 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { FacturacionService } from '../facturacion/facturacion.service';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
 import { CosteoService } from '../costeo/costeo.service';
 import { AgregarItemsPedidoDto } from './dto/agregar-items-pedido.dto';
+import { ReemplazarItemPedidoDto } from './dto/reemplazar-item-pedido.dto';
 import { ActualizarItemPedidoDto } from './dto/actualizar-item-pedido.dto';
-import { PedidosSoporteService, OpcionesStaffPedido } from './pedidos-soporte.service';
+import {
+  PedidosSoporteService,
+  OpcionesStaffPedido,
+} from './pedidos-soporte.service';
 import { PedidosInventarioService } from './pedidos-inventario.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PedidosEstadoCommandService } from './pedidos-estado-command.service';
@@ -23,6 +28,18 @@ const ESTADOS_PEDIDO_CERRADO = [
   'rechazado',
   'pagado',
 ] as const;
+
+type ResultadoAgregarItemsPedido = {
+  pedido_id: string;
+  numero_pedido: string;
+  subtotal: number;
+  delta_subtotal: number;
+  total: number;
+  estado: string;
+  mesa_id: string | null;
+  catalogo_cambios?: { producto_id: string; disponible: boolean }[];
+  idempotente?: boolean;
+};
 
 /** Subdominio: agregar y eliminar ?tems en pedidos abiertos. */
 @Injectable()
@@ -67,9 +84,7 @@ export class PedidosItemsService {
       return Math.min(Math.max(0, descuentoActual), subtotalNuevo);
     }
     const pct =
-      fila.descuento_porcentaje != null
-        ? Number(fila.descuento_porcentaje)
-        : 0;
+      fila.descuento_porcentaje != null ? Number(fila.descuento_porcentaje) : 0;
     const fijo =
       fila.descuento_monto != null ? Number(fila.descuento_monto) : 0;
     if (pct > 0) {
@@ -81,11 +96,51 @@ export class PedidosItemsService {
     return Math.min(Math.max(0, descuentoActual), subtotalNuevo);
   }
 
+  private async volverACocinaSiEsNecesario(
+    client: PoolClient,
+    pedido: { id: string; estado: string; tipo: string },
+    sucursalId: string,
+    usuarioId: string | null,
+    motivo: string,
+  ): Promise<string> {
+    if (!['listo', 'pagando'].includes(pedido.estado)) return pedido.estado;
+
+    await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
+      pedidoId: pedido.id,
+      sucursalId,
+      nuevoEstado: 'en_cocina',
+      origen: 'sistema',
+      usuarioId,
+      motivo,
+      estadoAnterior: pedido.estado,
+      tipo: pedido.tipo,
+    });
+    return 'en_cocina';
+  }
+
+  private validarReduccionTotalConSaldo(
+    totalAnterior: number,
+    totalNuevo: number,
+    montoPagado: number,
+  ) {
+    const reduceTotal = totalNuevo + 0.01 < totalAnterior;
+    const dejaSobrepago = totalNuevo + 0.01 < montoPagado;
+    if (!reduceTotal || !dejaSobrepago) return;
+
+    throw new ConflictException({
+      error: 'PEDIDO_EDIT_REQUIERE_REEMBOLSO',
+      message:
+        'El nuevo total sería menor que el monto recibido. Registra la devolución antes de reducir este pedido.',
+    });
+  }
+
   async agregarItems(
     pedidoId: string,
     sucursalId: string,
     dto: AgregarItemsPedidoDto,
     opciones: OpcionesStaffPedido = {},
+    clientTransaccion?: PoolClient,
+    notificar = true,
   ) {
     const items = dto.items ?? [];
     const combos = dto.combos ?? [];
@@ -93,7 +148,15 @@ export class PedidosItemsService {
       throw new BadRequestException('Debes incluir al menos un ?tem o combo');
     }
 
-    const resultado = await this.database.enTransaccion(async (client) => {
+    const idempotencyKey = dto.idempotency_key?.trim();
+    const huellaSolicitud = idempotencyKey
+      ? createHash('sha256')
+          .update(JSON.stringify({ items, combos }))
+          .digest('hex')
+      : null;
+    const ejecutar = async (
+      client: PoolClient,
+    ): Promise<ResultadoAgregarItemsPedido> => {
       const pedido = await this.soporte.consultarUnoCliente<{
         id: string;
         numero_pedido: string;
@@ -115,6 +178,31 @@ export class PedidosItemsService {
         [pedidoId, sucursalId],
       );
       if (!pedido) throw new NotFoundException('Pedido no encontrado');
+
+      // Replays are checked before terminal-state validation: the original
+      // addition may have committed even if its HTTP response was lost.
+      if (idempotencyKey) {
+        const previo = await this.soporte.consultarUnoCliente<{
+          resultado: ResultadoAgregarItemsPedido;
+          huella: string;
+        }>(
+          client,
+          `SELECT resultado, huella FROM pedidos_items_idempotencia
+           WHERE pedido_id = $1 AND clave = $2`,
+          [pedidoId, idempotencyKey],
+        );
+        if (previo) {
+          if (previo.huella !== huellaSolicitud) {
+            throw new ConflictException({
+              error: 'IDEMPOTENCY_KEY_REUSED',
+              message:
+                'La clave de reintento ya se usó con otros ítems para este pedido',
+            });
+          }
+          return { ...previo.resultado, idempotente: true };
+        }
+      }
+
       if (
         (ESTADOS_PEDIDO_CERRADO as readonly string[]).includes(pedido.estado)
       ) {
@@ -215,7 +303,10 @@ export class PedidosItemsService {
         if (!producto?.disponible) {
           throw new BadRequestException('PRODUCTO_NO_DISPONIBLE');
         }
-        const precioUnit = this.soporte.precioVentaProducto(producto, pedido.tipo);
+        const precioUnit = this.soporte.precioVentaProducto(
+          producto,
+          pedido.tipo,
+        );
         let lineaTotal = precioUnit * item.cantidad;
         const toppings: {
           id: string;
@@ -508,14 +599,7 @@ export class PedidosItemsService {
              pedido_id, pedido_item_id, sucursal_id,
              precio_venta, costo_al_momento, margen_porcentaje
            ) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [
-            pedidoId,
-            itemId,
-            sucursalId,
-            precioVenta,
-            costoTotal,
-            margenPct,
-          ],
+          [pedidoId, itemId, sucursalId, precioVenta, costoTotal, margenPct],
         );
         for (const t of linea.toppings) {
           await client.query(
@@ -584,14 +668,7 @@ export class PedidosItemsService {
                pedido_id, pedido_item_id, sucursal_id,
                precio_venta, costo_al_momento, margen_porcentaje
              ) VALUES ($1,$2,$3,$4,$5,$6)`,
-            [
-              pedidoId,
-              itemId,
-              sucursalId,
-              precioVenta,
-              costoUnit,
-              margenPct,
-            ],
+            [pedidoId, itemId, sucursalId, precioVenta, costoUnit, margenPct],
           );
         }
       }
@@ -607,7 +684,10 @@ export class PedidosItemsService {
         subtotalNuevo,
         Number(pedido.descuento),
       );
-      const totalNuevo = Math.max(0, subtotalNuevo + costoDomicilio - descuento);
+      const totalNuevo = Math.max(
+        0,
+        subtotalNuevo + costoDomicilio - descuento,
+      );
       const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(
         client,
         sucursalId,
@@ -635,23 +715,16 @@ export class PedidosItemsService {
         pedidoId,
       );
 
-      // VIE-01: ítems nuevos tras listo/pagando vuelven el pedido a cocina
-      let estadoFinal = pedido.estado;
-      if (['listo', 'pagando'].includes(pedido.estado)) {
-        await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
-          pedidoId,
-          sucursalId,
-          nuevoEstado: 'en_cocina',
-          origen: 'sistema',
-          usuarioId: opciones.usuarioId ?? null,
-          motivo: 'Ítems agregados — vuelve a cocina',
-          estadoAnterior: pedido.estado,
-          tipo: pedido.tipo,
-        });
-        estadoFinal = 'en_cocina';
-      }
+      // VIE-01: líneas nuevas tras listo/pagando reabren el pedido en Cocina.
+      const estadoFinal = await this.volverACocinaSiEsNecesario(
+        client,
+        pedido,
+        sucursalId,
+        opciones.usuarioId ?? null,
+        'Ítems agregados — vuelve a cocina',
+      );
 
-      return {
+      const respuesta: ResultadoAgregarItemsPedido = {
         pedido_id: pedidoId,
         numero_pedido: pedido.numero_pedido,
         subtotal: subtotalNuevo,
@@ -661,22 +734,44 @@ export class PedidosItemsService {
         mesa_id: pedido.mesa_id,
         catalogo_cambios: catalogoCambios,
       };
-    });
+      if (idempotencyKey) {
+        await client.query(
+          `INSERT INTO pedidos_items_idempotencia (
+             pedido_id, clave, huella, resultado
+           ) VALUES ($1, $2, $3, $4::jsonb)`,
+          [
+            pedidoId,
+            idempotencyKey,
+            huellaSolicitud,
+            JSON.stringify(respuesta),
+          ],
+        );
+      }
+      return respuesta;
+    };
+    const resultado: ResultadoAgregarItemsPedido = clientTransaccion
+      ? await ejecutar(clientTransaccion)
+      : await this.database.enTransaccion(ejecutar);
 
-    this.soporte.notificarPedidoRealtime(
-      sucursalId,
-      resultado.pedido_id,
-      resultado.estado,
-      resultado.numero_pedido,
-    );
-    this.soporte.notificarCatalogoDisponibilidad(
-      sucursalId,
-      resultado.catalogo_cambios ?? [],
-    );
-    if (resultado.mesa_id) {
-      void this.realtime.mesasActualizadas(sucursalId);
+    if (notificar && !resultado.idempotente) {
+      this.soporte.notificarPedidoRealtime(
+        sucursalId,
+        resultado.pedido_id,
+        resultado.estado,
+        resultado.numero_pedido,
+      );
+      this.soporte.notificarCatalogoDisponibilidad(
+        sucursalId,
+        resultado.catalogo_cambios ?? [],
+      );
+      if (resultado.mesa_id) {
+        void this.realtime.mesasActualizadas(sucursalId);
+      }
+      void this.soporte.notificarCocinasPorPedido(
+        resultado.pedido_id,
+        sucursalId,
+      );
     }
-    void this.soporte.notificarCocinasPorPedido(resultado.pedido_id, sucursalId);
     return resultado;
   }
 
@@ -686,8 +781,11 @@ export class PedidosItemsService {
     sucursalId: string,
     usuarioId: string,
     motivo?: string,
+    clientTransaccion?: PoolClient,
+    notificar = true,
+    diferirControlSaldoPagado = false,
   ) {
-    const result = await this.database.enTransaccion(async (client) => {
+    const ejecutar = async (client: PoolClient) => {
       const pedido = await this.soporte.consultarUnoCliente<{
         id: string;
         estado: string;
@@ -695,6 +793,8 @@ export class PedidosItemsService {
         mesa_id: string | null;
         stock_descontado: boolean;
         subtotal: string;
+        total: string;
+        monto_pagado: string;
         costo_domicilio: string;
         descuento: string;
         numero_pedido: string;
@@ -702,7 +802,8 @@ export class PedidosItemsService {
       }>(
         client,
         `SELECT id, estado, tipo, mesa_id, stock_descontado,
-                subtotal, costo_domicilio, descuento, numero_pedido, promocion_id
+                subtotal, total, COALESCE(monto_pagado, 0)::text AS monto_pagado,
+                costo_domicilio, descuento, numero_pedido, promocion_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
         [pedidoId, sucursalId],
       );
@@ -769,7 +870,9 @@ export class PedidosItemsService {
             item.cantidad,
             motivo ?? `?tem eliminado en cocina (${item.estado_cocina})`,
           );
-        } else {
+        } else if (item.estado_cocina !== 'no_disponible') {
+          // Cocina ya registró la merma al marcar N/D; restaurar aquí
+          // convertiría una línea desperdiciada en stock disponible.
           await this.inventario.restaurarStockLineaProducto(
             client,
             sucursalId,
@@ -831,6 +934,13 @@ export class PedidosItemsService {
         0,
         subtotalNuevo + Number(pedido.costo_domicilio) - descuento,
       );
+      if (!diferirControlSaldoPagado) {
+        this.validarReduccionTotalConSaldo(
+          Number(pedido.total),
+          totalNuevo,
+          Number(pedido.monto_pagado),
+        );
+      }
       const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(
         client,
         sucursalId,
@@ -883,26 +993,180 @@ export class PedidosItemsService {
         cocina_id: item.cocina_id,
         mesa_id: pedido.mesa_id,
       };
+    };
+    const result = clientTransaccion
+      ? await ejecutar(clientTransaccion)
+      : await this.database.enTransaccion(ejecutar);
+
+    if (notificar) {
+      this.soporte.notificarPedidoRealtime(
+        sucursalId,
+        result.pedido_id,
+        result.estado,
+        result.numero_pedido,
+      );
+      if (result.cocina_id) {
+        void this.realtime.cocinaActualizada(result.cocina_id, {
+          pedido_id: result.pedido_id,
+          sucursal_id: sucursalId,
+          accion: 'item_eliminado',
+        });
+      }
+      if (result.mesa_id) {
+        void this.realtime.mesasActualizadas(sucursalId);
+      }
+      void this.soporte.notificarCocinasPorPedido(result.pedido_id, sucursalId);
+    }
+    return result;
+  }
+
+  async reemplazarItemPedido(
+    pedidoId: string,
+    itemId: string,
+    sucursalId: string,
+    usuarioId: string,
+    dto: ReemplazarItemPedidoDto,
+    opciones: OpcionesStaffPedido = {},
+  ) {
+    if (!(dto.items?.length || dto.combos?.length)) {
+      throw new BadRequestException('Debes incluir al menos un ítem o combo');
+    }
+    const idempotencyKey = dto.idempotency_key.trim();
+    const huella = createHash('sha256')
+      .update(
+        JSON.stringify({
+          itemId,
+          items: dto.items ?? [],
+          combos: dto.combos ?? [],
+          motivo: dto.motivo?.trim() ?? null,
+        }),
+      )
+      .digest('hex');
+
+    const resultado = await this.database.enTransaccion(async (client) => {
+      const pedido = await this.soporte.consultarUnoCliente<{ id: string }>(
+        client,
+        `SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
+        [pedidoId, sucursalId],
+      );
+      if (!pedido) throw new NotFoundException('Pedido no encontrado');
+
+      const previo = await this.soporte.consultarUnoCliente<{
+        resultado: ResultadoAgregarItemsPedido;
+        huella: string;
+      }>(
+        client,
+        `SELECT resultado, huella FROM pedidos_items_idempotencia
+         WHERE pedido_id = $1 AND clave = $2`,
+        [pedidoId, idempotencyKey],
+      );
+      if (previo) {
+        if (previo.huella !== huella) {
+          throw new ConflictException({
+            error: 'IDEMPOTENCY_KEY_REUSED',
+            message:
+              'La clave de reintento ya se usó con otro reemplazo para este pedido',
+          });
+        }
+        return { ...previo.resultado, idempotente: true };
+      }
+
+      const lineaOriginal = await this.soporte.consultarUnoCliente<{
+        estado_cobro: string;
+        tiene_pago_asociado: boolean;
+      }>(
+        client,
+        `SELECT pi.estado_cobro,
+                EXISTS (
+                  SELECT 1 FROM pago_pedido_items ppi
+                  WHERE ppi.pedido_item_id = pi.id
+                ) AS tiene_pago_asociado
+         FROM pedido_items pi
+         WHERE pi.id = $1 AND pi.pedido_id = $2`,
+        [itemId, pedidoId],
+      );
+      if (!lineaOriginal)
+        throw new NotFoundException('Ítem de pedido no encontrado');
+      if (
+        lineaOriginal.estado_cobro === 'cobrado' ||
+        lineaOriginal.tiene_pago_asociado
+      ) {
+        throw new ConflictException({
+          error: 'ITEM_REQUIERE_AJUSTE_COBRO',
+          message:
+            'Este producto ya tiene un cobro asignado. Ajusta el cobro o registra el reembolso antes de reemplazarlo.',
+        });
+      }
+
+      const agregado = await this.agregarItems(
+        pedidoId,
+        sucursalId,
+        { items: dto.items, combos: dto.combos },
+        opciones,
+        client,
+        false,
+      );
+      const eliminado = await this.eliminarItemPedido(
+        pedidoId,
+        itemId,
+        sucursalId,
+        usuarioId,
+        dto.motivo,
+        client,
+        false,
+        true,
+      );
+      const respuesta: ResultadoAgregarItemsPedido = {
+        ...agregado,
+        subtotal: eliminado.subtotal,
+        total: eliminado.total,
+        estado: eliminado.estado,
+        idempotente: false,
+      };
+      const saldoPedido = await this.soporte.consultarUnoCliente<{
+        monto_pagado: string;
+      }>(
+        client,
+        `SELECT COALESCE(monto_pagado, 0)::text AS monto_pagado
+         FROM pedidos WHERE id = $1 AND sucursal_id = $2`,
+        [pedidoId, sucursalId],
+      );
+      if (Number(saldoPedido?.monto_pagado ?? 0) > respuesta.total + 0.01) {
+        throw new ConflictException({
+          error: 'REEMPLAZO_REQUIERE_REEMBOLSO',
+          message:
+            'El nuevo total queda por debajo de lo abonado. Registra el reembolso antes de reemplazar este producto.',
+        });
+      }
+      await client.query(
+        `INSERT INTO pedidos_items_idempotencia (
+           pedido_id, clave, huella, resultado
+         ) VALUES ($1, $2, $3, $4::jsonb)`,
+        [pedidoId, idempotencyKey, huella, JSON.stringify(respuesta)],
+      );
+      return respuesta;
     });
 
-    this.soporte.notificarPedidoRealtime(
-      sucursalId,
-      result.pedido_id,
-      result.estado,
-      result.numero_pedido,
-    );
-    if (result.cocina_id) {
-      void this.realtime.cocinaActualizada(result.cocina_id, {
-        pedido_id: result.pedido_id,
-        sucursal_id: sucursalId,
-        accion: 'item_eliminado',
-      });
+    if (!resultado.idempotente) {
+      this.soporte.notificarPedidoRealtime(
+        sucursalId,
+        resultado.pedido_id,
+        resultado.estado,
+        resultado.numero_pedido,
+      );
+      this.soporte.notificarCatalogoDisponibilidad(
+        sucursalId,
+        resultado.catalogo_cambios ?? [],
+      );
+      if (resultado.mesa_id) {
+        void this.realtime.mesasActualizadas(sucursalId);
+      }
+      void this.soporte.notificarCocinasPorPedido(
+        resultado.pedido_id,
+        sucursalId,
+      );
     }
-    if (result.mesa_id) {
-      void this.realtime.mesasActualizadas(sucursalId);
-    }
-    void this.soporte.notificarCocinasPorPedido(result.pedido_id, sucursalId);
-    return result;
+    return resultado;
   }
 
   /**
@@ -931,6 +1195,8 @@ export class PedidosItemsService {
         tipo: string;
         mesa_id: string | null;
         stock_descontado: boolean;
+        total: string;
+        monto_pagado: string;
         costo_domicilio: string;
         descuento: string;
         numero_pedido: string;
@@ -938,6 +1204,7 @@ export class PedidosItemsService {
       }>(
         client,
         `SELECT id, estado, tipo, mesa_id, stock_descontado,
+                total, COALESCE(monto_pagado, 0)::text AS monto_pagado,
                 costo_domicilio, descuento, numero_pedido, promocion_id
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
         [pedidoId, sucursalId],
@@ -980,12 +1247,14 @@ export class PedidosItemsService {
           ? dto.observaciones?.trim() || null
           : item.observaciones;
 
-      let toppingsNuevos: {
-        id: string;
-        nombre: string;
-        precio: number;
-        costo: number;
-      }[] | null = null;
+      let toppingsNuevos:
+        | {
+            id: string;
+            nombre: string;
+            precio: number;
+            costo: number;
+          }[]
+        | null = null;
 
       if (dto.toppings !== undefined) {
         toppingsNuevos = [];
@@ -1012,8 +1281,9 @@ export class PedidosItemsService {
       }
 
       const deltaQty = cantidadNueva - item.cantidad;
+      const cambiaObservaciones = obsNueva !== item.observaciones;
       const cambiaCocina =
-        deltaQty !== 0 || dto.toppings !== undefined;
+        deltaQty !== 0 || dto.toppings !== undefined || cambiaObservaciones;
 
       // VIE-QTY-01 C: no bajar qty si ya en cocina (solo DELETE + motivo)
       if (
@@ -1053,8 +1323,7 @@ export class PedidosItemsService {
               {
                 productoId: item.producto_id,
                 cantidad: deltaQty,
-                precioVentaLinea:
-                  Number(item.precio_unitario) * deltaQty,
+                precioVentaLinea: Number(item.precio_unitario) * deltaQty,
                 nombreProducto: item.nombre_producto,
                 extras,
               },
@@ -1073,9 +1342,7 @@ export class PedidosItemsService {
         }
       }
 
-      const estadoCocinaNuevo = cambiaCocina
-        ? 'pendiente'
-        : item.estado_cocina;
+      const estadoCocinaNuevo = cambiaCocina ? 'pendiente' : item.estado_cocina;
 
       await client.query(
         `UPDATE pedido_items SET
@@ -1103,11 +1370,9 @@ export class PedidosItemsService {
 
       const productoCosto = await this.soporte.consultarUnoCliente<{
         costo_calculado: string | null;
-      }>(
-        client,
-        `SELECT costo_calculado FROM productos WHERE id = $1`,
-        [item.producto_id],
-      );
+      }>(client, `SELECT costo_calculado FROM productos WHERE id = $1`, [
+        item.producto_id,
+      ]);
       const topsCosto = await client.query<{ s: string }>(
         `SELECT COALESCE(SUM(t.costo_calculado), 0)::text AS s
          FROM pedido_item_toppings pit
@@ -1143,9 +1408,7 @@ export class PedidosItemsService {
       const precioVenta = Number(precioLineaRow.rows[0]?.precio ?? 0);
       const costoTotal = costoUnit * cantidadNueva;
       const margenPct =
-        precioVenta > 0
-          ? ((precioVenta - costoTotal) / precioVenta) * 100
-          : 0;
+        precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta) * 100 : 0;
       await client.query(
         `UPDATE margenes_venta
          SET precio_venta = $1,
@@ -1185,6 +1448,11 @@ export class PedidosItemsService {
         0,
         subtotalNuevo + Number(pedido.costo_domicilio) - descuento,
       );
+      this.validarReduccionTotalConSaldo(
+        Number(pedido.total),
+        totalNuevo,
+        Number(pedido.monto_pagado),
+      );
       const iva = await this.facturacion.calcularIvaParaPedidoEnTransaccion(
         client,
         sucursalId,
@@ -1211,6 +1479,17 @@ export class PedidosItemsService {
         pedidoId,
       );
 
+      // Cambiar preparación de una línea lista/cuenta presentada reabre Cocina.
+      const estadoFinal = cambiaCocina
+        ? await this.volverACocinaSiEsNecesario(
+            client,
+            pedido,
+            sucursalId,
+            usuarioId,
+            'Ítem modificado — vuelve a cocina',
+          )
+        : pedido.estado;
+
       await this.auditoria.registrarEnTransaccion(client, {
         sucursalId,
         accion: 'ACTUALIZAR_ITEM_PEDIDO',
@@ -1233,13 +1512,14 @@ export class PedidosItemsService {
       return {
         pedido_id: pedidoId,
         item_id: itemId,
-        estado: pedido.estado,
+        estado: estadoFinal,
         numero_pedido: pedido.numero_pedido,
         subtotal: subtotalNuevo,
         total: totalNuevo,
         cocina_id: item.cocina_id,
         mesa_id: pedido.mesa_id,
-        reimprimir: cambiaCocina ||
+        reimprimir:
+          cambiaCocina ||
           ['en_cocina', 'listo', 'confirmado'].includes(pedido.estado),
       };
     });
@@ -1287,7 +1567,9 @@ export class PedidosItemsService {
     if (!res) {
       throw new NotFoundException('Ítem no encontrado o pedido cerrado');
     }
-    return { item_id: itemId, comensal_etiqueta: comensalEtiqueta?.trim() || null };
+    return {
+      item_id: itemId,
+      comensal_etiqueta: comensalEtiqueta?.trim() || null,
+    };
   }
-
 }

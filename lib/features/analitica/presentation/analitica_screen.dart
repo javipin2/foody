@@ -28,6 +28,7 @@ class AnaliticaScreen extends StatefulWidget {
     this.puedeVerFinanzas = false,
     this.onIrReportes,
     this.tabInicial,
+    this.repository,
   });
 
   final String? sucursalId;
@@ -41,6 +42,7 @@ class AnaliticaScreen extends StatefulWidget {
 
   /// Deep-link desde Finanzas: `rentabilidad`.
   final String? tabInicial;
+  final AnaliticaRepository? repository;
 
   @override
   State<AnaliticaScreen> createState() => _AnaliticaScreenState();
@@ -50,7 +52,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     with SingleTickerProviderStateMixin {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = AnaliticaRepository();
+  late final _repo = widget.repository ?? AnaliticaRepository();
   late TabController _tabs;
 
   String _preset = '7d';
@@ -61,7 +63,11 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
   String? _rangoHasta;
   AnaliticaFiltros _filtros = AnaliticaFiltros();
   bool _cargandoResumen = true;
+  bool _cargandoComplementarios = false;
   String? _error;
+  final _erroresComplementarios = <String, String>{};
+  int _revisionCarga = 0;
+  int _detallesPendientes = 0;
 
   Map<String, dynamic>? _resumen;
   Map<String, dynamic>? _ventasResumen;
@@ -98,6 +104,19 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
   int get _tabComparativaIndex => widget.esCorporativo ? _tabCount - 1 : -1;
   int get _tabRentabilidadIndex => widget.puedeVerFinanzas ? 7 : -1;
   int get _tabRiesgoIndex => widget.puedeVerFinanzas ? 8 : 7;
+
+  List<String> get _tabLabels => [
+        'Resumen',
+        'Ventas',
+        'Productos',
+        'Cocinas',
+        'Inventario',
+        'Domicilios',
+        'Caja',
+        if (widget.puedeVerFinanzas) 'Rentabilidad',
+        'Riesgo',
+        if (widget.esCorporativo) 'Sedes',
+      ];
 
   Map<String, dynamic> get _queryFiltros {
     final q = _filtros.toQuery();
@@ -154,18 +173,27 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
   }
 
   Future<void> _cargarResumen() async {
+    final revision = ++_revisionCarga;
     final sid = widget.sucursalId;
     if (sid == null) {
+      if (!mounted) return;
       setState(() {
         _cargandoResumen = false;
+        _cargandoComplementarios = false;
+        _detallesPendientes = 0;
+        _erroresComplementarios.clear();
         _error = 'Sin sucursal en sesión';
       });
       return;
     }
     setState(() {
       _cargandoResumen = true;
+      _cargandoComplementarios = false;
       _error = null;
+      _erroresComplementarios.clear();
+      _detallesPendientes = 0;
       _cache.clear();
+      _cargandoTab.clear();
       _topProductos = [];
       _menosProductos = [];
       _ventasResumen = null;
@@ -174,81 +202,152 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     });
     try {
       final f = _queryFiltros;
-      final results = await Future.wait([
-        _repo.resumen(
-          sucursalId: sid,
-          preset: _preset,
-          comparar: _comparar,
-          filtros: f,
-        ),
-        _repo.productos(
-          sucursalId: sid,
-          preset: _preset,
-          comparar: _comparar,
-          filtros: f,
-        ),
-        _repo.ventas(
-          sucursalId: sid,
-          preset: _preset,
-          comparar: _comparar,
-          filtros: f,
-        ),
-        _repo.pedidosRecientes(
-          sucursalId: sid,
-          preset: _preset,
-          filtros: f,
-          limite: 15,
-        ),
-        _repo.cocinas(
-          sucursalId: sid,
-          preset: _preset,
-          comparar: _comparar,
-          filtros: f,
-        ),
-      ]);
-      final data = results[0];
-      final prod = results[1];
-      final ventas = results[2];
-      final recientes = results[3];
-      final cocinas = results[4];
-      final ranking = prod['por_cantidad'] as List<dynamic>? ?? [];
-      final sinRot = prod['sin_rotacion'] as List<dynamic>? ?? [];
-      final menos = sinRot.isNotEmpty
-          ? sinRot
-          : (ranking.length > 4
-              ? ranking.reversed.take(6).toList()
-              : <dynamic>[]);
-      if (mounted) {
-        setState(() {
-          _resumen = data;
-          _cache[0] = data;
-          _cache[1] = ventas;
-          _cache[3] = cocinas;
-          _ventasResumen = ventas;
-          _cocinasResumen = cocinas;
-          _topProductos = ranking.take(8).toList();
-          _menosProductos = menos.take(6).toList();
-          _pedidosRecientes = recientes['pedidos'] as List<dynamic>? ?? [];
-          _cargandoResumen = false;
-          _actualizadoEn = DateTime.now();
-        });
-      }
+      final data = await _repo.resumen(
+        sucursalId: sid,
+        preset: _preset,
+        comparar: _comparar,
+        filtros: f,
+      );
+      if (!mounted || revision != _revisionCarga) return;
+      setState(() {
+        _resumen = data;
+        _cache[0] = data;
+        _cargandoResumen = false;
+        _cargandoComplementarios = true;
+        _erroresComplementarios.clear();
+        _detallesPendientes = 4;
+        // Estos endpoints también alimentan pestañas; no volver a solicitarlos
+        // mientras ya estén llegando para el resumen.
+        _cargandoTab[1] = true;
+        _cargandoTab[2] = true;
+        _cargandoTab[3] = true;
+        _actualizadoEn = DateTime.now();
+      });
+      await _cargarComplementarios(revision, sid, f);
     } catch (e) {
-      if (mounted) {
+      if (mounted && revision == _revisionCarga) {
         setState(() {
           _error = mensajeErrorHttp(e, contexto: 'análisis');
           _cargandoResumen = false;
+          _cargandoComplementarios = false;
         });
       }
     }
   }
 
+  Future<void> _cargarComplementarios(
+    int revision,
+    String sucursalId,
+    Map<String, dynamic> filtros,
+  ) async {
+    final preset = _preset;
+    final comparar = _comparar;
+    await Future.wait([
+      _cargarComplementario(
+        revision,
+        'ventas',
+        () => _repo.ventas(
+          sucursalId: sucursalId,
+          preset: preset,
+          comparar: comparar,
+          filtros: filtros,
+        ),
+        (data) {
+          _cache[1] = data;
+          _ventasResumen = data;
+          _cargandoTab[1] = false;
+        },
+      ),
+      _cargarComplementario(
+        revision,
+        'productos',
+        () => _repo.productos(
+          sucursalId: sucursalId,
+          preset: preset,
+          comparar: comparar,
+          filtros: filtros,
+        ),
+        (data) {
+          _cache[2] = data;
+          final ranking = data['por_cantidad'] as List<dynamic>? ?? [];
+          final sinRotacion = data['sin_rotacion'] as List<dynamic>? ?? [];
+          _topProductos = ranking.take(8).toList();
+          _menosProductos = sinRotacion.isNotEmpty
+              ? sinRotacion
+              : (ranking.length > 4
+                  ? ranking.reversed.take(6).toList()
+                  : <dynamic>[]);
+          _cargandoTab[2] = false;
+        },
+      ),
+      _cargarComplementario(
+        revision,
+        'pedidos recientes',
+        () => _repo.pedidosRecientes(
+          sucursalId: sucursalId,
+          preset: preset,
+          filtros: filtros,
+          limite: 15,
+        ),
+        (data) => _pedidosRecientes = data['pedidos'] as List<dynamic>? ?? [],
+      ),
+      _cargarComplementario(
+        revision,
+        'cocinas',
+        () => _repo.cocinas(
+          sucursalId: sucursalId,
+          preset: preset,
+          comparar: comparar,
+          filtros: filtros,
+        ),
+        (data) {
+          _cache[3] = data;
+          _cocinasResumen = data;
+          _cargandoTab[3] = false;
+        },
+      ),
+    ]);
+  }
+
+  Future<void> _cargarComplementario(
+    int revision,
+    String nombre,
+    Future<Map<String, dynamic>> Function() solicitar,
+    void Function(Map<String, dynamic>) aplicar,
+  ) async {
+    try {
+      final data = await solicitar();
+      if (!mounted || revision != _revisionCarga) return;
+      setState(() {
+        aplicar(data);
+        _terminarCargaComplementaria();
+      });
+    } catch (e) {
+      if (!mounted || revision != _revisionCarga) return;
+      setState(() {
+        _erroresComplementarios[nombre] =
+            mensajeErrorHttp(e, contexto: 'análisis');
+        if (nombre == 'ventas') _cargandoTab[1] = false;
+        if (nombre == 'productos') _cargandoTab[2] = false;
+        if (nombre == 'cocinas') _cargandoTab[3] = false;
+        _terminarCargaComplementaria();
+      });
+    }
+  }
+
+  void _terminarCargaComplementaria() {
+    if (_detallesPendientes > 0) _detallesPendientes--;
+    _cargandoComplementarios = _detallesPendientes > 0;
+  }
+
   Future<void> _cargarTab(int index) async {
     if (index == 0 ||
         _cache.containsKey(index) ||
-        _cargandoTab[index] == true) {
+        _cargandoTab[index] == true ||
+        (_cargandoResumen && index <= 3)) {
       return;
     }
+    final revision = _revisionCarga;
     if (index == _tabComparativaIndex) {
       setState(() => _cargandoTab[index] = true);
       try {
@@ -256,14 +355,14 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           preset: _preset,
           filtros: _queryFiltros,
         );
-        if (mounted) {
+        if (mounted && revision == _revisionCarga) {
           setState(() {
             _cache[index] = data;
             _cargandoTab[index] = false;
           });
         }
       } catch (e) {
-        if (mounted) {
+        if (mounted && revision == _revisionCarga) {
           setState(() => _cargandoTab[index] = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'análisis'))),
@@ -338,14 +437,14 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
       } else {
         return;
       }
-      if (mounted) {
+      if (mounted && revision == _revisionCarga) {
         setState(() {
           _cache[index] = data;
           _cargandoTab[index] = false;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && revision == _revisionCarga) {
         setState(() => _cargandoTab[index] = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'análisis'))),
@@ -357,8 +456,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
   Future<void> _recargarTodo() async {
     await _cargarResumen();
     final idx = _tabs.index;
-    if (idx > 0) {
-      _cache.remove(idx);
+    if (idx > 0 && !_cache.containsKey(idx)) {
       await _cargarTab(idx);
     }
   }
@@ -450,15 +548,17 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
         topProductos: _topProductos,
         porTipo: porTipo,
       );
-      await Share.shareXFiles(
-        [
-          XFile.fromData(
-            bytes,
-            mimeType: 'application/pdf',
-            name: 'foody-analitica-$label.pdf',
-          ),
-        ],
-        subject: 'Análisis Foody — $label',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              mimeType: 'application/pdf',
+              name: 'foody-analitica-$label.pdf',
+            ),
+          ],
+          subject: 'Análisis Foody — $label',
+        ),
       );
     } catch (e) {
       if (mounted) {
@@ -479,15 +579,17 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
         comparar: _comparar,
         filtros: _queryFiltros,
       );
-      await Share.shareXFiles(
-        [
-          XFile.fromData(
-            bytes,
-            mimeType: 'text/csv',
-            name: 'foody-analitica-$label.csv',
-          ),
-        ],
-        subject: 'Análisis Foody CSV — $label',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              mimeType: 'text/csv',
+              name: 'foody-analitica-$label.csv',
+            ),
+          ],
+          subject: 'Análisis Foody CSV — $label',
+        ),
       );
     } catch (e) {
       if (mounted) {
@@ -747,47 +849,98 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom:
-                        BorderSide(color: AnaliticaTokens.borderOf(context)),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 720) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                    child: AnimatedBuilder(
+                      animation: _tabs,
+                      builder: (context, _) => Container(
+                        height: 52,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: AnaliticaTokens.surfaceOf(context),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AnaliticaTokens.borderOf(context),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.insights_outlined,
+                              size: 19,
+                              color: AnaliticaTokens.inkMutedOf(context),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<int>(
+                                  value: _tabs.index,
+                                  isExpanded: true,
+                                  borderRadius: BorderRadius.circular(12),
+                                  dropdownColor:
+                                      AnaliticaTokens.surfaceOf(context),
+                                  style: TextStyle(
+                                    color: AnaliticaTokens.inkOf(context),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                  items: [
+                                    for (var i = 0; i < _tabLabels.length; i++)
+                                      DropdownMenuItem(
+                                        value: i,
+                                        child: Text(_tabLabels[i]),
+                                      ),
+                                  ],
+                                  onChanged: (index) {
+                                    if (index != null) _tabs.animateTo(index);
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: AnaliticaTokens.borderOf(context),
+                        ),
+                      ),
+                    ),
+                    child: TabBar(
+                      controller: _tabs,
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      labelColor: AnaliticaTokens.inkOf(context),
+                      unselectedLabelColor: AnaliticaTokens.inkMutedOf(context),
+                      indicatorColor: AnaliticaTokens.inkOf(context),
+                      indicatorWeight: 2,
+                      dividerColor: Colors.transparent,
+                      labelStyle: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12.5,
+                      ),
+                      tabs: [
+                        for (final label in _tabLabels) Tab(text: label),
+                      ],
+                    ),
                   ),
-                ),
-                child: TabBar(
-                  controller: _tabs,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelColor: AnaliticaTokens.inkOf(context),
-                  unselectedLabelColor: AnaliticaTokens.inkMutedOf(context),
-                  indicatorColor: AnaliticaTokens.inkOf(context),
-                  indicatorWeight: 2,
-                  dividerColor: Colors.transparent,
-                  labelStyle: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12.5,
-                  ),
-                  tabs: [
-                    const Tab(text: 'Resumen'),
-                    const Tab(text: 'Ventas'),
-                    const Tab(text: 'Productos'),
-                    const Tab(text: 'Cocinas'),
-                    const Tab(text: 'Inventario'),
-                    const Tab(text: 'Domi'),
-                    const Tab(text: 'Caja'),
-                    if (widget.puedeVerFinanzas)
-                      const Tab(text: 'Rentabilidad'),
-                    const Tab(text: 'Riesgo'),
-                    if (widget.esCorporativo) const Tab(text: 'Sedes'),
-                  ],
-                ),
-              ),
+                );
+              },
             ),
             Expanded(
               child: _cargandoResumen && _tabs.index == 0
@@ -870,7 +1023,6 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
     }
     final data = _cache[index];
     if (data == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _cargarTab(index));
       return AnaliticaSkeleton.tab();
     }
     return builder(data);
@@ -890,6 +1042,11 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
       onIrCaja: () => _tabs.animateTo(6),
       onIrPedidos: () => _tabs.animateTo(1),
       onIrCocinas: () => _tabs.animateTo(3),
+      cargandoComplementarios: _cargandoComplementarios,
+      errorComplementarios: _erroresComplementarios.isEmpty
+          ? null
+          : 'No cargaron: ${_erroresComplementarios.keys.join(', ')}',
+      onReintentarComplementarios: _recargarTodo,
     );
   }
 
@@ -914,7 +1071,10 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                 icono: Icons.schedule_rounded,
                 acento: AnaliticaTokens.ventas,
                 vacio: porHora.isEmpty,
-                child: BarChart(AnaliticaCharts.barrasHora(porHora)),
+                child: BarChart(AnaliticaCharts.barrasHora(
+                  porHora,
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
+                )),
               ),
               AnaliticaChartCard(
                 titulo: 'Tendencia por día',
@@ -922,7 +1082,10 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                 icono: Icons.show_chart_rounded,
                 acento: AnaliticaTokens.alertas,
                 vacio: porDia.length < 2,
-                child: LineChart(AnaliticaCharts.lineaDia(porDia)),
+                child: LineChart(AnaliticaCharts.lineaDia(
+                  porDia,
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
+                )),
               ),
               AnaliticaChartCard(
                 titulo: 'Mix de pago',
@@ -934,7 +1097,10 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                   children: [
                     Expanded(
                       flex: 2,
-                      child: PieChart(AnaliticaCharts.pieMetodo(porMetodo)),
+                      child: PieChart(AnaliticaCharts.pieMetodo(
+                        porMetodo,
+                        oscuro: Theme.of(context).brightness == Brightness.dark,
+                      )),
                     ),
                     Expanded(
                       flex: 3,
@@ -942,6 +1108,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                         porMetodo,
                         'metodo_pago',
                         'total',
+                        oscuro: Theme.of(context).brightness == Brightness.dark,
                       ),
                     ),
                   ],
@@ -959,6 +1126,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                     valorKey: 'ventas',
                     nombreKey: 'nombre',
                     color: AnaliticaTokens.inventario,
+                    oscuro: Theme.of(context).brightness == Brightness.dark,
                   ),
                 ),
               ),
@@ -1098,6 +1266,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
               ranking,
               valorKey: chartValorKey,
               nombreKey: 'nombre',
+              oscuro: Theme.of(context).brightness == Brightness.dark,
             ),
           ),
         ),
@@ -1148,8 +1317,10 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
             side: const BorderSide(color: Color(0xFFE8EAF0)),
           ),
           child: ListTile(
-            leading:
-                Icon(Icons.inventory_2_outlined, color: Colors.grey.shade600),
+            leading: Icon(
+              Icons.inventory_2_outlined,
+              color: SaaSTokens.inkMuted(context),
+            ),
             title: Text(p['nombre'] as String? ?? ''),
           ),
         );
@@ -1181,6 +1352,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                   lista,
                   valorKey: 'tiempo_prep_minutos',
                   nombreKey: 'nombre',
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
                 ),
               ),
             ),
@@ -1191,6 +1363,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                   lista,
                   valorKey: 'unidades',
                   nombreKey: 'nombre',
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
                 ),
               ),
             ),
@@ -1225,7 +1398,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                         Text(
                           'Rango: ${_num(prepMin).toStringAsFixed(1)} – ${_num(prepMax).toStringAsFixed(1)} min',
                           style: TextStyle(
-                            color: Colors.grey.shade700,
+                            color: SaaSTokens.inkMuted(context),
                             fontSize: 13,
                           ),
                         ),
@@ -1477,8 +1650,11 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                 acento: AnaliticaTokens.ventas,
               ),
               AnaliticaKpiCard(
-                etiqueta: 'Mov. caja',
+                etiqueta: 'Mov. caja netos',
                 valor: _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
+                subtitulo: 'Fecha pedido/mov.',
+                tooltip: (cuadre['nota_periodo_caja'] as String?) ??
+                    'En movimientos ligados a pedido se usa su fecha de creación; sin pedido, la fecha del movimiento.',
                 icono: Icons.point_of_sale_outlined,
                 acento: AnaliticaTokens.pedidos,
               ),
@@ -1496,6 +1672,23 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                 icono: Icons.account_balance_wallet_outlined,
                 acento: AnaliticaTokens.alertas,
               ),
+              AnaliticaKpiCard(
+                etiqueta: 'Gastos registrados',
+                valor: _moneda.format(_num(data['gastos_total'])),
+                icono: Icons.receipt_long_outlined,
+                acento: AnaliticaTokens.cancelacion,
+              ),
+              AnaliticaKpiCard(
+                etiqueta: 'Egresos de caja',
+                valor: data['gastos_movimientos_caja'] == null
+                    ? '—'
+                    : _moneda.format(_num(data['gastos_movimientos_caja'])),
+                subtitulo: data['gastos_movimientos_caja'] == null
+                    ? 'Dato no disponible'
+                    : null,
+                icono: Icons.money_off_csred_outlined,
+                acento: AnaliticaTokens.pedidos,
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1503,7 +1696,9 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           if (gastos.isNotEmpty) ...[
             const SizedBox(height: 16),
             AnaliticaChartCard(
-              titulo: 'Gastos por categoría',
+              titulo: 'Gastos registrados por categoría',
+              subtitulo:
+                  'Libro de gastos; puede incluir registros que no afectan el arqueo de caja.',
               icono: Icons.payments_rounded,
               acento: AnaliticaTokens.cancelacion,
               child: BarChart(
@@ -1512,6 +1707,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                   valorKey: 'total',
                   nombreKey: 'categoria',
                   color: AnaliticaTokens.cancelacion,
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
                 ),
               ),
             ),
@@ -1665,6 +1861,12 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
             ],
           ),
           const SizedBox(height: 16),
+          const SaaSInsightCard(
+            texto:
+                'Con filtros predeterminados, incluye pedidos pendientes o impagos; no equivale a cobros en caja.',
+            icono: Icons.info_outline_rounded,
+          ),
+          const SizedBox(height: 12),
           AnaliticaSurface(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1713,6 +1915,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                   valorKey: 'total',
                   nombreKey: 'categoria',
                   color: AnaliticaTokens.cancelacion,
+                  oscuro: Theme.of(context).brightness == Brightness.dark,
                 ),
               ),
             ),
@@ -1817,7 +2020,10 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                   children: [
                     Expanded(
                       flex: 2,
-                      child: PieChart(AnaliticaCharts.donutNiveles(niveles)),
+                      child: PieChart(AnaliticaCharts.donutNiveles(
+                        niveles,
+                        oscuro: Theme.of(context).brightness == Brightness.dark,
+                      )),
                     ),
                     Expanded(
                       flex: 3,
@@ -1825,6 +2031,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                         niveles,
                         'nivel',
                         'total',
+                        oscuro: Theme.of(context).brightness == Brightness.dark,
                       ),
                     ),
                   ],
@@ -1841,6 +2048,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                       valorKey: 'delta_pct',
                       nombreKey: 'nombre',
                       color: AnaliticaTokens.cocina,
+                      oscuro: Theme.of(context).brightness == Brightness.dark,
                     ),
                   ),
                 ),
@@ -1855,6 +2063,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                       valorKey: 'delta_pct',
                       nombreKey: 'nombre',
                       color: AnaliticaTokens.cancelacion,
+                      oscuro: Theme.of(context).brightness == Brightness.dark,
                     ),
                   ),
                 ),

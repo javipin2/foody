@@ -26,6 +26,7 @@ const cambiar_estado_pedido_dto_1 = require("./dto/cambiar-estado-pedido.dto");
 const aplicar_descuento_dto_1 = require("./dto/aplicar-descuento.dto");
 const crear_pedido_dto_1 = require("./dto/crear-pedido.dto");
 const agregar_items_pedido_dto_1 = require("./dto/agregar-items-pedido.dto");
+const reemplazar_item_pedido_dto_1 = require("./dto/reemplazar-item-pedido.dto");
 const motivo_pedido_dto_1 = require("./dto/motivo-pedido.dto");
 const actualizar_item_pedido_dto_1 = require("./dto/actualizar-item-pedido.dto");
 const cobrar_mesa_dto_1 = require("./dto/cobrar-mesa.dto");
@@ -49,6 +50,7 @@ let PedidosController = class PedidosController {
             page: paginar ? query.page : undefined,
             limite: query.limit,
             meseraId: query.mesera_id,
+            busqueda: query.q,
         });
     }
     async listarCerradosHoy(usuario, query) {
@@ -83,6 +85,10 @@ let PedidosController = class PedidosController {
             usuarioId: usuario.sub,
             rol: usuario.rol,
         });
+    }
+    async reemplazarItem(pedidoId, itemId, dto, usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.pedidosService.reemplazarItemPedido(pedidoId, itemId, id, usuario.sub, dto, { creadoPorStaff: true, usuarioId: usuario.sub, rol: usuario.rol });
     }
     async actualizarItem(pedidoId, itemId, dto, usuario, sucursalId) {
         const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
@@ -197,6 +203,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "agregarItems", null);
 __decorate([
+    (0, common_1.Post)(':id/items/:itemId/reemplazar'),
+    (0, permisos_decorator_1.Permisos)('crear_pedido'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('itemId', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(4, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, reemplazar_item_pedido_dto_1.ReemplazarItemPedidoDto,
+        jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "reemplazarItem", null);
+__decorate([
     (0, common_1.Patch)(':id/items/:itemId'),
     (0, permisos_decorator_1.Permisos)('crear_pedido'),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
@@ -224,7 +243,7 @@ __decorate([
 ], PedidosController.prototype, "eliminarItem", null);
 __decorate([
     (0, common_1.Patch)(':id/estado'),
-    (0, permisos_decorator_1.Permisos)('ver_pedidos'),
+    (0, permisos_decorator_1.Permisos)('crear_pedido'),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Body)()),

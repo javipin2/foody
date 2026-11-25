@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 export interface WompiPaymentLinkResponse {
   data: {
@@ -35,18 +36,29 @@ export class WompiService {
   constructor(private readonly config: ConfigService) {}
 
   estaConfigurado(): boolean {
-    return Boolean(this.clavePrivadaOpcional() && this.secretoEventosOpcional());
+    return (
+      !esQaSinEfectosExternos() &&
+      Boolean(this.clavePrivadaOpcional() && this.secretoEventosOpcional())
+    );
   }
 
   clavePublica(): string {
+    if (esQaSinEfectosExternos()) {
+      throw new ServiceUnavailableException(
+        'Wompi desactivado por FOODY_QA_SIN_EFECTOS',
+      );
+    }
     const key = this.config.get<string>('WOMPI_PUBLIC_KEY')?.trim();
     if (!key) {
-      throw new ServiceUnavailableException('Wompi no configurado (falta clave pública)');
+      throw new ServiceUnavailableException(
+        'Wompi no configurado (falta clave pública)',
+      );
     }
     return key;
   }
 
   private clavePrivadaOpcional(): string | undefined {
+    if (esQaSinEfectosExternos()) return undefined;
     return (
       this.config.get<string>('WOMPI_PRIVATE_KEY')?.trim() ||
       this.config.get<string>('WOMPI_SECRET_KEY')?.trim() ||
@@ -57,12 +69,15 @@ export class WompiService {
   private clavePrivada(): string {
     const key = this.clavePrivadaOpcional();
     if (!key) {
-      throw new ServiceUnavailableException('Wompi no configurado (falta clave privada)');
+      throw new ServiceUnavailableException(
+        'Wompi no configurado (falta clave privada)',
+      );
     }
     return key;
   }
 
   private secretoEventosOpcional(): string | undefined {
+    if (esQaSinEfectosExternos()) return undefined;
     return (
       this.config.get<string>('WOMPI_EVENTS_SECRET')?.trim() ||
       this.config.get<string>('WOMPI_EVENT_KEY')?.trim() ||
@@ -73,7 +88,9 @@ export class WompiService {
   private secretoEventos(): string {
     const key = this.secretoEventosOpcional();
     if (!key) {
-      throw new ServiceUnavailableException('Wompi no configurado (falta secreto de eventos)');
+      throw new ServiceUnavailableException(
+        'Wompi no configurado (falta secreto de eventos)',
+      );
     }
     return key;
   }
@@ -126,7 +143,9 @@ export class WompiService {
     if (!resp.ok) {
       const detalle =
         json?.error?.reason ?? json?.error?.type ?? resp.statusText;
-      throw new BadRequestException(`Wompi rechazó el enlace de pago: ${detalle}`);
+      throw new BadRequestException(
+        `Wompi rechazó el enlace de pago: ${detalle}`,
+      );
     }
 
     const data = json.data;
@@ -142,7 +161,7 @@ export class WompiService {
   }
 
   /** Consulta estado de una transacción (llave pública). */
-  async   consultarTransaccion(transaccionId: string): Promise<{
+  async consultarTransaccion(transaccionId: string): Promise<{
     id: string;
     status: string;
     reference: string;
@@ -153,23 +172,30 @@ export class WompiService {
     customer_email: string | null;
   }> {
     const id = transaccionId.trim();
-    const resp = await fetch(`${this.baseUrl()}/transactions/${encodeURIComponent(id)}`, {
-      headers: { Authorization: `Bearer ${this.clavePublica()}` },
-    });
+    const resp = await fetch(
+      `${this.baseUrl()}/transactions/${encodeURIComponent(id)}`,
+      {
+        headers: { Authorization: `Bearer ${this.clavePublica()}` },
+      },
+    );
     const json = (await resp.json()) as {
       data?: Record<string, unknown>;
       error?: { reason?: string };
     };
     if (!resp.ok || !json.data) {
       const detalle = json.error?.reason ?? resp.statusText;
-      throw new BadRequestException(`No se pudo consultar la transacción Wompi: ${detalle}`);
+      throw new BadRequestException(
+        `No se pudo consultar la transacción Wompi: ${detalle}`,
+      );
     }
     const d = json.data;
     return {
       id: String(d['id'] ?? id),
       status: String(d['status'] ?? ''),
       reference: String(d['reference'] ?? ''),
-      payment_link_id: d['payment_link_id'] ? String(d['payment_link_id']) : null,
+      payment_link_id: d['payment_link_id']
+        ? String(d['payment_link_id'])
+        : null,
       payment_source_id: d['payment_source_id']
         ? String(d['payment_source_id'])
         : null,
@@ -182,6 +208,11 @@ export class WompiService {
   }
 
   private secretoIntegridad(): string {
+    if (esQaSinEfectosExternos()) {
+      throw new ServiceUnavailableException(
+        'Wompi desactivado por FOODY_QA_SIN_EFECTOS',
+      );
+    }
     const key =
       this.config.get<string>('WOMPI_INTEGRIDAD')?.trim() ||
       this.config.get<string>('WOMPI_INTEGRITY_SECRET')?.trim();
@@ -295,13 +326,16 @@ export class WompiService {
             last_four: publicData['last_four']
               ? String(publicData['last_four'])
               : undefined,
-            brand: publicData['brand'] ? String(publicData['brand']) : undefined,
+            brand: publicData['brand']
+              ? String(publicData['brand'])
+              : undefined,
           }
         : undefined,
     };
   }
 
   validarFirmaEvento(evento: WompiEvento, checksumHeader?: string): boolean {
+    if (esQaSinEfectosExternos()) return false;
     const checksumEsperado =
       checksumHeader?.trim() || evento.signature?.checksum?.trim();
     if (!checksumEsperado) return false;

@@ -32,6 +32,7 @@ if ([string]::IsNullOrWhiteSpace($UrlEquipo)) {
 $flag = if ($UsarTunel) { 'true' } else { 'false' }
 
 $c = Get-Content $config -Raw -Encoding UTF8
+$cOriginal = $c
 
 if ($c -notmatch 'hostEquipo') {
   # Insertar hostEquipo tras hostApp si falta (migración suave)
@@ -52,12 +53,17 @@ if ($c -match 'puertoWebEquipoDev\s*=') {
 }
 $c = $c -replace 'Generado por scripts \([^)]*\)', "Generado por scripts ($Modo)"
 
-Set-Content -Path $config -Value $c -Encoding UTF8 -NoNewline
-Write-Host "OK Flutter usarTunel=$flag | app=$UrlApp | equipo=$UrlEquipo | api=$UrlApi | sb=$UrlSb" -ForegroundColor Green
+if ($c -cne $cOriginal) {
+  Set-Content -Path $config -Value $c -Encoding UTF8 -NoNewline
+  Write-Host "OK Flutter usarTunel=$flag | app=$UrlApp | equipo=$UrlEquipo | api=$UrlApi | sb=$UrlSb" -ForegroundColor Green
+} else {
+  Write-Host "OK Flutter entorno sin cambios | app=$UrlApp | equipo=$UrlEquipo" -ForegroundColor Green
+}
 
 
 if (Test-Path $backendEnv) {
   $env = Get-Content $backendEnv -Raw -Encoding UTF8
+  $envOriginal = $env
   # Lista canónica (no acumular localhost basura de round-trips / puertos viejos)
   $corsWanted = @(
     $UrlApp,
@@ -90,7 +96,10 @@ if (Test-Path $backendEnv) {
   } else {
     $env = $env.TrimEnd() + "`nWOMPI_EQUIPO_URL=$UrlEquipo`n"
   }
-  Set-Content -Path $backendEnv -Value ($env.TrimEnd() + "`n") -Encoding UTF8 -NoNewline
+  $envNuevo = $env.TrimEnd() + "`n"
+  if ($envNuevo -cne $envOriginal) {
+    Set-Content -Path $backendEnv -Value $envNuevo -Encoding UTF8 -NoNewline
+  }
   Write-Host "OK Backend CLIENT_WEB_URL + CORS ($UrlApp, $UrlEquipo, localhost)" -ForegroundColor Green
   Write-Host '   Reinicia Nest si ya estaba corriendo para aplicar CORS.' -ForegroundColor Yellow
 }

@@ -253,18 +253,21 @@ class AnaliticaInsightsStrip extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Insights',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: AnaliticaTokens.ink,
+            color: AnaliticaTokens.inkOf(context),
           ),
         ),
         const SizedBox(height: 2),
-        const Text(
+        Text(
           'Lecturas a partir de KPIs del periodo',
-          style: TextStyle(fontSize: 12, color: AnaliticaTokens.inkSoft),
+          style: TextStyle(
+            fontSize: 12,
+            color: AnaliticaTokens.inkSoftOf(context),
+          ),
         ),
         const SizedBox(height: 8),
         SizedBox(
@@ -290,12 +293,12 @@ class AnaliticaInsightsStrip extends StatelessWidget {
                             color: insight.color,
                           ),
                           const SizedBox(width: 6),
-                          const Text(
+                          Text(
                             'Insight',
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w500,
-                              color: AnaliticaTokens.inkSoft,
+                              color: AnaliticaTokens.inkSoftOf(context),
                             ),
                           ),
                         ],
@@ -306,11 +309,11 @@ class AnaliticaInsightsStrip extends StatelessWidget {
                           insight.texto,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             height: 1.35,
                             fontWeight: FontWeight.w500,
-                            color: AnaliticaTokens.ink,
+                            color: AnaliticaTokens.inkOf(context),
                           ),
                         ),
                       ),

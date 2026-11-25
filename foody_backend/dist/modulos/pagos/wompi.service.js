@@ -13,15 +13,20 @@ exports.WompiService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const crypto_1 = require("crypto");
+const qa_safety_1 = require("../../core/config/qa-safety");
 let WompiService = class WompiService {
     config;
     constructor(config) {
         this.config = config;
     }
     estaConfigurado() {
-        return Boolean(this.clavePrivadaOpcional() && this.secretoEventosOpcional());
+        return (!(0, qa_safety_1.esQaSinEfectosExternos)() &&
+            Boolean(this.clavePrivadaOpcional() && this.secretoEventosOpcional()));
     }
     clavePublica() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            throw new common_1.ServiceUnavailableException('Wompi desactivado por FOODY_QA_SIN_EFECTOS');
+        }
         const key = this.config.get('WOMPI_PUBLIC_KEY')?.trim();
         if (!key) {
             throw new common_1.ServiceUnavailableException('Wompi no configurado (falta clave pública)');
@@ -29,6 +34,8 @@ let WompiService = class WompiService {
         return key;
     }
     clavePrivadaOpcional() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)())
+            return undefined;
         return (this.config.get('WOMPI_PRIVATE_KEY')?.trim() ||
             this.config.get('WOMPI_SECRET_KEY')?.trim() ||
             undefined);
@@ -41,6 +48,8 @@ let WompiService = class WompiService {
         return key;
     }
     secretoEventosOpcional() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)())
+            return undefined;
         return (this.config.get('WOMPI_EVENTS_SECRET')?.trim() ||
             this.config.get('WOMPI_EVENT_KEY')?.trim() ||
             undefined);
@@ -113,7 +122,9 @@ let WompiService = class WompiService {
             id: String(d['id'] ?? id),
             status: String(d['status'] ?? ''),
             reference: String(d['reference'] ?? ''),
-            payment_link_id: d['payment_link_id'] ? String(d['payment_link_id']) : null,
+            payment_link_id: d['payment_link_id']
+                ? String(d['payment_link_id'])
+                : null,
             payment_source_id: d['payment_source_id']
                 ? String(d['payment_source_id'])
                 : null,
@@ -125,6 +136,9 @@ let WompiService = class WompiService {
         };
     }
     secretoIntegridad() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            throw new common_1.ServiceUnavailableException('Wompi desactivado por FOODY_QA_SIN_EFECTOS');
+        }
         const key = this.config.get('WOMPI_INTEGRIDAD')?.trim() ||
             this.config.get('WOMPI_INTEGRITY_SECRET')?.trim();
         if (!key) {
@@ -191,12 +205,16 @@ let WompiService = class WompiService {
                     last_four: publicData['last_four']
                         ? String(publicData['last_four'])
                         : undefined,
-                    brand: publicData['brand'] ? String(publicData['brand']) : undefined,
+                    brand: publicData['brand']
+                        ? String(publicData['brand'])
+                        : undefined,
                 }
                 : undefined,
         };
     }
     validarFirmaEvento(evento, checksumHeader) {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)())
+            return false;
         const checksumEsperado = checksumHeader?.trim() || evento.signature?.checksum?.trim();
         if (!checksumEsperado)
             return false;

@@ -8,7 +8,8 @@ class DomiciliariosRepository {
 
   final Dio _dio;
 
-  Future<List<Map<String, dynamic>>> listarDisponibles(String sucursalId) async {
+  Future<List<Map<String, dynamic>>> listarDisponibles(
+      String sucursalId) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/domiciliarios-planta/disponibles/$sucursalId',
     );
@@ -21,7 +22,32 @@ class DomiciliariosRepository {
     final r = await _dio.get<Map<String, dynamic>>(
       '/domiciliarios-planta/comisiones-independientes/$sucursalId',
     );
-    return _parsearLista(r.data);
+    return _parsearLista(r.data).map(_normalizarResumenComision).toList();
+  }
+
+  Map<String, dynamic> _normalizarResumenComision(
+    Map<String, dynamic> fila,
+  ) {
+    final normalizada = Map<String, dynamic>.from(fila);
+    for (final campo in const [
+      'total_domicilios',
+      'comision_foody',
+      'ganancia_total',
+      'por_pagar',
+    ]) {
+      final valor = normalizada[campo];
+      if (valor == null || valor is num) continue;
+      if (valor is String) {
+        final numero = num.tryParse(valor);
+        if (numero != null) {
+          normalizada[campo] = numero;
+          continue;
+        }
+      }
+      throw FormatException(
+          'Importe inválido en el resumen de comisiones: $campo');
+    }
+    return normalizada;
   }
 
   Future<Map<String, dynamic>> resumenLiquidacion(String sucursalId) async {

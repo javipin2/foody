@@ -7,11 +7,16 @@ import {
 import { DatabaseService } from '../../core/database/database.service';
 import { FacturacionService } from '../facturacion/facturacion.service';
 import { esAdminRestaurante } from '../../core/auth/roles-food';
-import { AlertasRiesgoService, UMBRALES_ALERTA } from '../alertas/alertas-riesgo.service';
+import {
+  AlertasRiesgoService,
+  UMBRALES_ALERTA,
+} from '../alertas/alertas-riesgo.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
 import { CajaMovimientosService } from '../../core/caja/caja-movimientos.service';
 import { PedidosSoporteService } from './pedidos-soporte.service';
+import { PedidosEstadoCommandService } from './pedidos-estado-command.service';
+import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
 
 /** Subdominio: descuentos manuales en pedidos abiertos. */
 @Injectable()
@@ -23,6 +28,8 @@ export class PedidosDescuentoService {
     private readonly soporte: PedidosSoporteService,
     private readonly auditoria: AuditoriaService,
     private readonly cajaMovimientos: CajaMovimientosService,
+    private readonly estadoCommand: PedidosEstadoCommandService,
+    private readonly cuentaMesa: PedidosCuentaMesaService,
   ) {}
 
   async aplicarDescuento(
@@ -55,23 +62,29 @@ export class PedidosDescuentoService {
         total: string;
         monto_pagado: string;
         numero_pedido: string;
+        tipo: string;
+        mesa_id: string | null;
       }>(
         client,
-        `SELECT id, estado, subtotal, costo_domicilio, descuento, total,
+        `SELECT id, estado, tipo, mesa_id, subtotal, costo_domicilio, descuento, total,
                 COALESCE(monto_pagado, 0) AS monto_pagado, numero_pedido
          FROM pedidos WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
         [pedidoId, sucursalId],
       );
       if (!pedido) throw new NotFoundException('Pedido no encontrado');
 
-      if (['cancelado', 'entregado', 'pagado', 'rechazado'].includes(pedido.estado)) {
-        throw new BadRequestException('No se puede descontar un pedido en este estado');
+      if (
+        ['cancelado', 'entregado', 'pagado', 'rechazado'].includes(
+          pedido.estado,
+        )
+      ) {
+        throw new BadRequestException(
+          'No se puede descontar un pedido en este estado',
+        );
       }
 
-      const base =
-        Number(pedido.subtotal) + Number(pedido.costo_domicilio);
-      let descuento =
-        dto.monto ?? Math.round((base * dto.porcentaje!) / 100);
+      const base = Number(pedido.subtotal) + Number(pedido.costo_domicilio);
+      let descuento = dto.monto ?? Math.round((base * dto.porcentaje!) / 100);
       descuento = Math.min(Math.max(descuento, 0), base);
       const pctBase = base > 0 ? (descuento / base) * 100 : 0;
 
@@ -142,6 +155,36 @@ export class PedidosDescuentoService {
         pedidoId,
       );
 
+      let estadoFinal = pedido.estado;
+      const pagoCompletoTrasDescuento = nuevoPagado >= total - 0.01;
+      const requiereCierreCaja =
+        pedido.tipo !== 'domicilio' &&
+        ['listo', 'pagando'].includes(pedido.estado) &&
+        pagoCompletoTrasDescuento;
+      if (requiereCierreCaja) {
+        const cambio = await this.estadoCommand.aplicarEstadoEnTransaccion(
+          client,
+          {
+            pedidoId,
+            sucursalId,
+            nuevoEstado: 'pagado',
+            origen: 'cobro',
+            usuarioId,
+            motivo: `Cierre por saldo cubierto tras descuento: ${dto.motivo.trim()}`,
+            estadoAnterior: pedido.estado,
+            tipo: pedido.tipo,
+          },
+        );
+        estadoFinal = cambio.nuevo;
+        if (cambio.nuevo === 'pagado' && pedido.mesa_id) {
+          await this.cuentaMesa.liberarMesaSiSinPedidosActivos(
+            client,
+            pedido.mesa_id,
+            sucursalId,
+          );
+        }
+      }
+
       if (pctBase > UMBRALES_ALERTA.descuentoPorcentajeAlto) {
         await this.alertasRiesgo.registrarEnTransaccion(client, {
           sucursalId,
@@ -175,14 +218,23 @@ export class PedidosDescuentoService {
 
       return {
         id: pedidoId,
-        estado: pedido.estado,
+        estado: estadoFinal,
+        mesa_id: pedido.mesa_id,
         descuento,
         porcentaje: Math.round(pctBase * 100) / 100,
         total,
         iva_valor: iva.iva_valor,
       };
     });
-    this.soporte.notificarPedidoRealtime(sucursalId, pedidoId, result.estado);
+    this.soporte.notificarPedidoRealtime(
+      sucursalId,
+      pedidoId,
+      result.estado,
+      undefined,
+      {
+        mesaId: result.mesa_id,
+      },
+    );
     return result;
   }
 }

@@ -4,11 +4,14 @@ import {
   IsBoolean,
   IsDateString,
   IsIn,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PagoLineaDto } from './cobrar-mesa.dto';
@@ -100,12 +103,19 @@ export class CrearPedidoDto {
   @IsString()
   cliente_nombre?: string;
 
-  @IsOptional()
+  @ValidateIf((pedido: CrearPedidoDto) => pedido.tipo === 'domicilio')
   @IsString()
+  @IsNotEmpty({
+    message: 'El teléfono de contacto es obligatorio para domicilios',
+  })
+  @Matches(/^(?=(?:\D*\d){7,15}\D*$)\+?[\d\s().-]+$/, {
+    message: 'Ingresa un teléfono válido de 7 a 15 dígitos',
+  })
   cliente_telefono?: string;
 
-  @IsOptional()
+  @ValidateIf((pedido: CrearPedidoDto) => pedido.tipo === 'domicilio')
   @IsString()
+  @Matches(/\S/, { message: 'La dirección de entrega es obligatoria' })
   direccion_entrega?: string;
 
   @IsOptional()

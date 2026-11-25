@@ -172,3 +172,15 @@
 | **Notas** | Sin cambios backend, base de datos, API ni flujos |
 
 *(El usuario añadirá más peticiones de frontend en conversaciones siguientes. Pegar aquí cada una con INS-XXX.)*
+
+### INS-012 — Continuar rediseño del panel administrativo
+
+| Campo | Detalle |
+|-------|---------|
+| **Fecha** | 2026-11-22 (continuidad 2026-11-23) |
+| **Pedido** | Continuar con el diseño de las vistas restantes, preservando comportamiento y cubriendo el panel de administración completo |
+| **Alcance** | Admin restaurante · responsive, componentes, formularios, estados y consistencia visual |
+| **Derivado a** | `FRONTEND_DESIGN_AUDIT.md` · Fase 6/Fase 10 |
+| **Criterio de hecho** | Vistas pendientes abordadas por grupos; verificación focalizada y pendientes visuales registrados |
+| **Estado** | 🔄 En curso |
+| **Notas** | Vistas abordadas: Inicio, Usuarios, Domiciliarios, Horarios, Sedes, Zonas, Cocinas, Alertas, Finanzas, Promociones, Reportes, Menú (incluido diálogo de precios), Costos, Inventario, Caja, Facturación, Kanban/detalle/asignación de Pedidos, grilla/detalle/diálogos de Mesas y estado vacío/ticket activo KDS. Se corrigió el shell común al hallar conflicto con `LayoutBuilder`; KDS mantiene polling si Realtime no está disponible; el detalle de mesa aplica tokens del tema. Pruebas focalizadas cubren anchos compactos/tablet/escritorio y creación/renombre con teclado simulado. Un test detectó liberación prematura del controlador al cerrar el diálogo, ahora diferida tras la transición. Pendientes: acciones reales autenticadas, KDS con Realtime/datos, formularios/estados secundarios y QA por rol/tema/dispositivo; vistas cliente/repartidor no están cerradas. |

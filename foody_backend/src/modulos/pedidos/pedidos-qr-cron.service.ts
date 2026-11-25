@@ -4,6 +4,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 /** P2-03: recordatorio FCM si QR `pendiente_aprobacion` supera N minutos sin aprobar. */
 @Injectable()
@@ -20,6 +21,10 @@ export class PedidosQrCronService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.logger.warn('Cron QR pausado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     setInterval(
       () =>
         void this.database.intentarAdvisoryLock(

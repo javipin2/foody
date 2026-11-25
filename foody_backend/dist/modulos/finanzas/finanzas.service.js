@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.FinanzasService = void 0;
 const common_1 = require("@nestjs/common");
 const database_service_1 = require("../../core/database/database.service");
+const fecha_negocio_util_1 = require("../../compartido/fecha-negocio.util");
 const CATEGORIAS_VALIDAS = new Set([
     'arriendo',
     'servicios',
@@ -26,7 +27,7 @@ function normalizarCategoria(raw) {
     return CATEGORIAS_VALIDAS.has(c) ? c : 'otros';
 }
 function hoyIso() {
-    return new Date().toISOString().slice(0, 10);
+    return (0, fecha_negocio_util_1.fechaHoyNegocio)();
 }
 let FinanzasService = class FinanzasService {
     database;
@@ -229,8 +230,7 @@ let FinanzasService = class FinanzasService {
             });
         }
         const fecha = dto.fecha ?? hoyIso();
-        const concepto = dto.concepto?.trim() ||
-            `Nómina ${emp.nombre} (${emp.frecuencia_pago})`;
+        const concepto = dto.concepto?.trim() || `Nómina ${emp.nombre} (${emp.frecuencia_pago})`;
         const gasto = await this.database.consultarUno(`INSERT INTO gastos
          (sucursal_id, caja_id, concepto, monto, categoria, usuario_id,
           origen, fecha, empleado_id, periodo_desde, periodo_hasta, registrado_por)
@@ -302,15 +302,20 @@ let FinanzasService = class FinanzasService {
         const [actual, anterior, fijosPend, empPend] = await Promise.all([
             this.snapshotPl(sucursalId, mesDesde, mesHasta),
             this.snapshotPl(sucursalId, antDesde, antHasta),
-            this.database.consultar(`SELECT cf.id, cf.concepto, cf.monto_mensual::text,
+            this.database.consultar(`SELECT cf.id, cf.concepto,
+                GREATEST(cf.monto_mensual - pagos.monto_pagado, 0)::text AS monto_pendiente,
                 COALESCE(cf.categoria, 'otros') AS categoria, cf.dia_pago
          FROM costos_operativos_fijos cf
+         LEFT JOIN LATERAL (
+           SELECT COALESCE(SUM(g.monto), 0) AS monto_pagado
+           FROM gastos g
+           WHERE g.costo_fijo_id = cf.id
+             AND g.sucursal_id = cf.sucursal_id
+             AND g.origen = 'fijo'
+             AND g.fecha >= $2::date AND g.fecha <= $3::date
+         ) pagos ON true
          WHERE cf.sucursal_id = $1 AND cf.activo = true
-           AND NOT EXISTS (
-             SELECT 1 FROM gastos g
-             WHERE g.costo_fijo_id = cf.id
-               AND g.fecha >= $2::date AND g.fecha <= $3::date
-           )
+           AND pagos.monto_pagado < cf.monto_mensual
          ORDER BY COALESCE(cf.dia_pago, 99), cf.concepto`, [sucursalId, mesDesde, mesHasta]),
             this.database.consultar(`SELECT e.id, e.nombre, e.cargo, e.sueldo_base::text, e.frecuencia_pago
          FROM empleados e
@@ -330,7 +335,7 @@ let FinanzasService = class FinanzasService {
                 id: f.id,
                 tipo: 'fijo',
                 concepto: f.concepto,
-                monto: Number(f.monto_mensual),
+                monto: Number(f.monto_pendiente),
                 categoria: f.categoria,
                 dia_pago: dia,
                 urgente: vencido,

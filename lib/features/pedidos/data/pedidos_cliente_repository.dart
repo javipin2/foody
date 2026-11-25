@@ -30,7 +30,9 @@ class PedidosClienteRepository {
     String? idempotencyKey,
     String? fechaEntregaDeseada,
   }) async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final lineasProducto = lineas.where((l) => !l.esCombo).toList();
     final lineasCombo = lineas.where((l) => l.esCombo).toList();
     final payload = <String, dynamic>{
@@ -65,6 +67,7 @@ class PedidosClienteRepository {
 
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/pedidos',
+      options: Options(headers: capabilityHeaders),
       data: payload,
     );
     return _parsearMapa(respuesta.data);
@@ -80,7 +83,9 @@ class PedidosClienteRepository {
     double? lng,
     String? codigoPromocion,
   }) async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final lineasProducto = lineas.where((l) => !l.esCombo).toList();
     final lineasCombo = lineas.where((l) => l.esCombo).toList();
     final payload = <String, dynamic>{
@@ -100,6 +105,7 @@ class PedidosClienteRepository {
     };
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/pedidos/estimar',
+      options: Options(headers: capabilityHeaders),
       data: payload,
     );
     return _parsearMapa(respuesta.data);
@@ -150,6 +156,7 @@ class PedidosClienteRepository {
     String? seguimientoToken,
   }) async {
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final respuesta = await _dio.get<Map<String, dynamic>>(
       '/pedidos/$pedidoId/estado',
       queryParameters: {
@@ -157,6 +164,7 @@ class PedidosClienteRepository {
         if (seguimientoToken != null && seguimientoToken.isNotEmpty)
           'token': seguimientoToken,
       },
+      options: Options(headers: capabilityHeaders),
     );
     return _parsearMapa(respuesta.data);
   }
@@ -166,7 +174,9 @@ class PedidosClienteRepository {
     required int estrellas,
     String? comentario,
   }) async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/pedidos/$pedidoId/calificar',
       data: {
@@ -175,6 +185,7 @@ class PedidosClienteRepository {
         if (comentario != null && comentario.trim().isNotEmpty)
           'comentario': comentario.trim(),
       },
+      options: Options(headers: capabilityHeaders),
     );
     return _parsearMapa(respuesta.data);
   }
@@ -183,13 +194,16 @@ class PedidosClienteRepository {
     required String pedidoId,
     required String motivo,
   }) async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/pedidos/$pedidoId/cancelar',
       data: {
         'device_id': deviceId,
         'motivo': motivo,
       },
+      options: Options(headers: capabilityHeaders),
     );
     return _parsearMapa(respuesta.data);
   }
@@ -198,7 +212,9 @@ class PedidosClienteRepository {
     required String pedidoId,
     String? mensaje,
   }) async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final respuesta = await _dio.post<Map<String, dynamic>>(
       '/pedidos/$pedidoId/llamar-mesera',
       data: {
@@ -206,19 +222,25 @@ class PedidosClienteRepository {
         if (mensaje != null && mensaje.trim().isNotEmpty)
           'mensaje': mensaje.trim(),
       },
+      options: Options(headers: capabilityHeaders),
     );
     return _parsearMapa(respuesta.data);
   }
 
   Future<List<Map<String, dynamic>>> listarMios() async {
+    await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
+    final capabilityHeaders = await DispositivoService.capabilityHeaders();
     final bearer = await SesionClienteService.accessTokenSupabase();
     final respuesta = await _dio.get<Map<String, dynamic>>(
       '/pedidos/mios',
       queryParameters: {'device_id': deviceId},
       options: bearer != null && bearer.isNotEmpty
-          ? Options(headers: {'Authorization': 'Bearer $bearer'})
-          : null,
+          ? Options(headers: {
+              ...capabilityHeaders,
+              'Authorization': 'Bearer $bearer',
+            })
+          : Options(headers: capabilityHeaders),
     );
     if (respuesta.data == null) throw Exception('Respuesta vacía');
     final envoltura = RespuestaApi<List<Map<String, dynamic>>>.fromJson(

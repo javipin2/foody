@@ -8,7 +8,12 @@ export function repartirCobroDomicilio(
   total: number,
   costoDomicilio: number,
   montoPagado: number,
-): { saldo: number; productoPendiente: number; domicilioPendiente: number } {
+): {
+  saldo: number;
+  productoTotal: number;
+  productoPendiente: number;
+  domicilioPendiente: number;
+} {
   const domicilio = Math.max(0, costoDomicilio);
   const saldo = Math.max(0, total - montoPagado);
   const productoTotal = Math.max(0, total - domicilio);
@@ -17,7 +22,7 @@ export function repartirCobroDomicilio(
     Math.min(saldo, productoTotal - montoPagado),
   );
   const domicilioPendiente = Math.max(0, saldo - productoPendiente);
-  return { saldo, productoPendiente, domicilioPendiente };
+  return { saldo, productoTotal, productoPendiente, domicilioPendiente };
 }
 
 /** Monto que debe registrarse en caja al marcar domicilio entregado (Kanban o app). */

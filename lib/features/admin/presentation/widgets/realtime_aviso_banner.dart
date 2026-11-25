@@ -6,7 +6,9 @@ import 'package:reserva_canchas/core/constantes/colores_foody.dart';
 
 /// Banner cuando Supabase Realtime no está operativo (R9).
 class RealtimeAvisoBanner extends StatefulWidget {
-  const RealtimeAvisoBanner({super.key});
+  const RealtimeAvisoBanner({super.key, this.repository});
+
+  final SaludRepository? repository;
 
   @override
   State<RealtimeAvisoBanner> createState() => _RealtimeAvisoBannerState();
@@ -15,7 +17,7 @@ class RealtimeAvisoBanner extends StatefulWidget {
 class _RealtimeAvisoBannerState extends State<RealtimeAvisoBanner> {
   bool _oculto = false;
   bool? _conectado;
-  String? _detalle;
+  bool? _configurado;
   Timer? _reverificacion;
 
   @override
@@ -36,17 +38,17 @@ class _RealtimeAvisoBannerState extends State<RealtimeAvisoBanner> {
 
   Future<void> _verificar() async {
     try {
-      final r = await SaludRepository().verificarRealtime();
+      final r = await (widget.repository ?? SaludRepository()).verificarRealtime();
       if (!mounted) return;
       setState(() {
         _conectado = r.configurado && r.conectado;
-        _detalle = r.detalle;
+        _configurado = r.configurado;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _conectado = false;
-        _detalle = e.toString();
+        _configurado = null;
       });
     }
   }
@@ -55,9 +57,17 @@ class _RealtimeAvisoBannerState extends State<RealtimeAvisoBanner> {
   Widget build(BuildContext context) {
     if (_oculto || _conectado != false) return const SizedBox.shrink();
 
-    final texto = _detalle != null && _detalle!.isNotEmpty
-        ? 'Realtime desactivado: $_detalle. Kanban/mesas/cocina 45–90 s; Inicio ~75 s.'
-        : 'Realtime desactivado. Kanban, mesas y cocina se refrescan cada 45–90 s; Inicio (dashboard) cada ~75 s.';
+    final texto = switch (_configurado) {
+      false => 'Las actualizaciones en vivo no están configuradas. '
+          'Foody seguirá actualizando Kanban, mesas y cocina cada 45–90 s; '
+          'Inicio, cada ~75 s.',
+      true => 'Las actualizaciones en vivo no están disponibles temporalmente. '
+          'Foody seguirá actualizando Kanban, mesas y cocina cada 45–90 s; '
+          'Inicio, cada ~75 s.',
+      _ => 'No se pudo comprobar la conexión en vivo. '
+          'Foody seguirá actualizando Kanban, mesas y cocina cada 45–90 s; '
+          'Inicio, cada ~75 s.',
+    };
 
     return Material(
       color: ColoresFoody.acento.withValues(alpha: 0.95),

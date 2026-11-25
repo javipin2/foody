@@ -24,6 +24,7 @@ import { CambiarEstadoPedidoDto } from './dto/cambiar-estado-pedido.dto';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { AgregarItemsPedidoDto } from './dto/agregar-items-pedido.dto';
+import { ReemplazarItemPedidoDto } from './dto/reemplazar-item-pedido.dto';
 import {
   EliminarItemPedidoDto,
   RechazarPedidoMesaDto,
@@ -63,6 +64,7 @@ export class PedidosController {
       page: paginar ? query.page : undefined,
       limite: query.limit,
       meseraId: query.mesera_id,
+      busqueda: query.q,
     });
   }
 
@@ -157,6 +159,26 @@ export class PedidosController {
     });
   }
 
+  @Post(':id/items/:itemId/reemplazar')
+  @Permisos('crear_pedido')
+  async reemplazarItem(
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: ReemplazarItemPedidoDto,
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.pedidosService.reemplazarItemPedido(
+      pedidoId,
+      itemId,
+      id,
+      usuario.sub,
+      dto,
+      { creadoPorStaff: true, usuarioId: usuario.sub, rol: usuario.rol },
+    );
+  }
+
   @Patch(':id/items/:itemId')
   @Permisos('crear_pedido')
   async actualizarItem(
@@ -196,7 +218,7 @@ export class PedidosController {
   }
 
   @Patch(':id/estado')
-  @Permisos('ver_pedidos')
+  @Permisos('crear_pedido')
   async cambiarEstado(
     @Param('id', ParseUUIDPipe) pedidoId: string,
     @UsuarioActual() usuario: JwtPayload,

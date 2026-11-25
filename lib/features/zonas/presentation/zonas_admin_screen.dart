@@ -19,9 +19,14 @@ import 'package:reserva_canchas/widgets/mapa_seleccion_ubicacion.dart';
 /// UX: mapa + lista en paralelo en escritorio; edición con presets (km/precio);
 /// ubicación sobre el mapa; anillos ordenados por distancia.
 class ZonasAdminScreen extends StatefulWidget {
-  const ZonasAdminScreen({super.key, required this.sucursalId});
+  const ZonasAdminScreen({
+    super.key,
+    required this.sucursalId,
+    this.repository,
+  });
 
   final String? sucursalId;
+  final ZonasRepository? repository;
 
   @override
   State<ZonasAdminScreen> createState() => _ZonasAdminScreenState();
@@ -30,7 +35,7 @@ class ZonasAdminScreen extends StatefulWidget {
 class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
   ColorScheme get _scheme => Theme.of(context).colorScheme;
 
-  final _repo = ZonasRepository();
+  late final ZonasRepository _repo;
   List<Map<String, dynamic>> _zonas = [];
   double? _sucursalLat;
   double? _sucursalLng;
@@ -59,6 +64,7 @@ class _ZonasAdminScreenState extends State<ZonasAdminScreen> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repository ?? ZonasRepository();
     _cargar();
   }
 
@@ -1108,125 +1114,133 @@ class _DialogoAnilloState extends State<_DialogoAnillo> {
 
     return AlertDialog(
       title: Text(_esEdicion ? 'Editar anillo' : 'Nuevo anillo'),
-      content: SizedBox(
-        width: 400,
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.9,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+        ),
         child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _scheme.outlineVariant),
+          child: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _scheme.outlineVariant),
+                  ),
+                  child: Text(
+                    kmPreview > 0 && precioPreview > 0
+                        ? 'Si el cliente está a ≤ ${kmPreview == kmPreview.roundToDouble() ? kmPreview.toInt() : kmPreview} km, '
+                            'paga ${widget.formato.format(precioPreview)} de domicilio '
+                            '(salvo que un anillo más cercano lo cubra).'
+                        : 'Elige radio y precio. El anillo más cercano que '
+                            'cubra la distancia del cliente es el que cobra.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: _scheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
-                child: Text(
-                  kmPreview > 0 && precioPreview > 0
-                      ? 'Si el cliente está a ≤ ${kmPreview == kmPreview.roundToDouble() ? kmPreview.toInt() : kmPreview} km, '
-                          'paga ${widget.formato.format(precioPreview)} de domicilio '
-                          '(salvo que un anillo más cercano lo cubra).'
-                      : 'Elige radio y precio. El anillo más cercano que '
-                          'cubra la distancia del cliente es el que cobra.',
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _nombreCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    hintText: 'ej. Cerca, Medio, Lejos',
+                  ),
+                  textCapitalization: TextCapitalization.sentences,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Radio (km)',
                   style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                     color: _scheme.onSurfaceVariant,
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _nombreCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre',
-                  hintText: 'ej. Cerca, Medio, Lejos',
-                ),
-                textCapitalization: TextCapitalization.sentences,
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Radio (km)',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _scheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final km in widget.presetsKm)
-                    ChoiceChip(
-                      label: Text(
-                        '${km == km.roundToDouble() ? km.toInt() : km} km',
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final km in widget.presetsKm)
+                      ChoiceChip(
+                        label: Text(
+                          '${km == km.roundToDouble() ? km.toInt() : km} km',
+                        ),
+                        selected:
+                            (double.tryParse(_distCtrl.text.trim()) ?? -1) ==
+                                km,
+                        onSelected: (_) => setState(() {
+                          _distCtrl.text = km == km.roundToDouble()
+                              ? '${km.toInt()}'
+                              : '$km';
+                        }),
+                        visualDensity: VisualDensity.compact,
                       ),
-                      selected:
-                          (double.tryParse(_distCtrl.text.trim()) ?? -1) == km,
-                      onSelected: (_) => setState(() {
-                        _distCtrl.text =
-                            km == km.roundToDouble() ? '${km.toInt()}' : '$km';
-                      }),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _distCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+                  ],
                 ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'O escribe el km',
-                  suffixText: 'km',
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _distCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'O escribe el km',
+                    suffixText: 'km',
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                'Precio domicilio',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _scheme.onSurfaceVariant,
+                const SizedBox(height: 14),
+                Text(
+                  'Precio domicilio',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final p in widget.presetsPrecio)
-                    ChoiceChip(
-                      label: Text(widget.formato.format(p)),
-                      selected:
-                          (int.tryParse(_costoCtrl.text.trim()) ?? -1) == p,
-                      onSelected: (_) => setState(() {
-                        _costoCtrl.text = '$p';
-                      }),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _costoCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: 'O escribe el valor',
-                  suffixText: 'COP',
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final p in widget.presetsPrecio)
+                      ChoiceChip(
+                        label: Text(widget.formato.format(p)),
+                        selected:
+                            (int.tryParse(_costoCtrl.text.trim()) ?? -1) == p,
+                        onSelected: (_) => setState(() {
+                          _costoCtrl.text = '$p';
+                        }),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-            ],
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _costoCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'O escribe el valor',
+                    suffixText: 'COP',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+            ),
           ),
         ),
       ),

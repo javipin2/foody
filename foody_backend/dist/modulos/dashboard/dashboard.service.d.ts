@@ -10,6 +10,12 @@ export type ResumenSucursalDashboard = {
     pedidos_pendientes_qr: number;
     pedidos_completados_hoy: number;
     alertas_pendientes: number;
+    domicilios_tardios: Array<{
+        numero: string;
+        detalle: string;
+        minutos: number;
+        severidad: number;
+    }>;
 };
 export declare class DashboardService {
     private readonly database;
@@ -34,6 +40,12 @@ export declare class DashboardService {
         pedidos_pendientes_qr: number;
         pedidos_completados_hoy: number;
         alertas_pendientes: number;
+        domicilios_tardios: {
+            numero: string;
+            detalle: string;
+            minutos: number;
+            severidad: number;
+        }[];
     }>;
     graficos(sucursalId: string): Promise<{
         ventas_7_dias: {

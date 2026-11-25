@@ -22,11 +22,26 @@ let DispositivosController = class DispositivosController {
     constructor(dispositivosService) {
         this.dispositivosService = dispositivosService;
     }
-    registrar(body) {
-        return this.dispositivosService.registrar(body);
+    registrar(body, capability) {
+        if (!capability) {
+            throw new common_1.ForbiddenException({
+                error: 'DISPOSITIVO_NO_AUTORIZADO',
+                message: 'No se pudo comprobar la posesión de este dispositivo.',
+            });
+        }
+        return this.dispositivosService.registrar({
+            ...body,
+            device_capability: capability,
+        });
     }
-    vincularAuth(body) {
-        return this.dispositivosService.vincularAuth(body);
+    vincularAuth(body, capability) {
+        if (!capability) {
+            throw new common_1.ForbiddenException({
+                error: 'DISPOSITIVO_NO_AUTORIZADO',
+                message: 'No se pudo comprobar la posesión de este dispositivo.',
+            });
+        }
+        return this.dispositivosService.vincularAuth(body, capability);
     }
     async anonimizar(deviceId, fcmTokenQuery, body = {}, authorization, fcmHeader) {
         const bearer = body.access_token?.trim() ||
@@ -49,16 +64,18 @@ __decorate([
     (0, common_1.Post)('registrar'),
     (0, rate_limit_guard_1.RateLimitPublico)(30, 60_000),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Headers)('x-foody-device-capability')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dispositivos_dto_1.RegistrarDispositivoDto]),
+    __metadata("design:paramtypes", [dispositivos_dto_1.RegistrarDispositivoDto, String]),
     __metadata("design:returntype", void 0)
 ], DispositivosController.prototype, "registrar", null);
 __decorate([
     (0, common_1.Post)('vincular-auth'),
     (0, rate_limit_guard_1.RateLimitPublico)(20, 60_000),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Headers)('x-foody-device-capability')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dispositivos_dto_1.VincularAuthDispositivoDto]),
+    __metadata("design:paramtypes", [dispositivos_dto_1.VincularAuthDispositivoDto, String]),
     __metadata("design:returntype", void 0)
 ], DispositivosController.prototype, "vincularAuth", null);
 __decorate([

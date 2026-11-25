@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { cert, getApps, initializeApp, ServiceAccount } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { readFileSync } from 'fs';
+import { esQaSinEfectosExternos } from '../../core/config/qa-safety';
 
 @Injectable()
 export class FcmService implements OnModuleInit {
@@ -12,6 +13,10 @@ export class FcmService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit() {
+    if (esQaSinEfectosExternos()) {
+      this.log.warn('Firebase Admin desactivado por FOODY_QA_SIN_EFECTOS');
+      return;
+    }
     if (getApps().length > 0) {
       this.listo = true;
       return;

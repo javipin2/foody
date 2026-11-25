@@ -1,5 +1,20 @@
 # Helpers compartidos para scripts QA Foody (ASCII-only para PowerShell Windows)
-$script:FoodyQaBase = 'http://localhost:3000/api/v1'
+# QA vive separada del servicio usado por el Tunnel (:3000).
+$script:FoodyQaBase = if ([string]::IsNullOrWhiteSpace($env:FOODY_QA_API_BASE)) {
+    'http://127.0.0.1:3001/api/v1'
+} else {
+    $env:FOODY_QA_API_BASE.TrimEnd('/')
+}
+$script:FoodyQaDbContainer = if ([string]::IsNullOrWhiteSpace($env:FOODY_QA_DB_CONTAINER)) {
+    'foody-diseno-qa-db'
+} else {
+    $env:FOODY_QA_DB_CONTAINER
+}
+$script:FoodyQaDatabase = if ([string]::IsNullOrWhiteSpace($env:FOODY_QA_DATABASE)) {
+    'foody_diseno_qa'
+} else {
+    $env:FOODY_QA_DATABASE
+}
 $script:FoodyQaSucursal = 'c0000000-0000-4000-8000-000000000001'
 $script:FoodyQaPass = '123456'
 
@@ -10,6 +25,11 @@ function Invoke-FoodyApi {
         [hashtable]$Headers = @{},
         [object]$Body = $null
     )
+    $qaUri = [Uri]$script:FoodyQaBase
+    $esQaLocal = @('127.0.0.1', 'localhost') -contains $qaUri.Host -and $qaUri.Port -eq 3001
+    if (-not $esQaLocal -and $env:FOODY_E2E_ALLOW_NON_QA -ne '1') {
+        throw "Destino QA bloqueado ($script:FoodyQaBase). Requiere API local :3001 o FOODY_E2E_ALLOW_NON_QA=1 explícito."
+    }
     $params = @{
         Uri             = "$script:FoodyQaBase$Path"
         Method          = $Method
@@ -124,7 +144,7 @@ function Ensure-CajaAbierta {
 
 function Limpiar-AsignacionesDomicilioDemo {
     param([string]$DomiciliarioPlantaId = '92000000-0000-4000-8000-000000000001')
-    $null = docker exec supabase-db psql -U postgres -d postgres -c `
+    $null = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -c `
         "UPDATE asignaciones_domicilio SET estado = 'cancelado'
          WHERE domiciliario_planta_id = '$DomiciliarioPlantaId'
            AND estado IN ('asignado', 'en_camino');" 2>&1
@@ -133,7 +153,7 @@ function Limpiar-AsignacionesDomicilioDemo {
 function Ensure-HorariosDemoAbiertos {
   # ponytail: hora_cierre 23:59:00 excluye 23:59:30 — QA nocturno fallaba RESTAURANTE_CERRADO
     $sid = $script:FoodyQaSucursal
-    $null = docker exec supabase-db psql -U postgres -d postgres -c `
+    $null = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -c `
         "UPDATE horarios_sucursal SET hora_apertura='00:00', hora_cierre='23:59:59', activo=true WHERE sucursal_id='$sid';" 2>&1
 }
 

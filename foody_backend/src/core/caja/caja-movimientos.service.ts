@@ -106,10 +106,10 @@ export class CajaMovimientosService {
     if (!cajaId) {
       if (exigirCaja) {
         throw new BadRequestException({
-        error: 'CAJA_NO_ABIERTA',
-        mensaje:
-          'No hay caja abierta en la sucursal. Abre caja antes de registrar la venta.',
-      });
+          error: 'CAJA_NO_ABIERTA',
+          mensaje:
+            'No hay caja abierta en la sucursal. Abre caja antes de registrar la venta.',
+        });
       }
       this.logger.warn(
         `Venta pedido ${params.pedidoId} no registrada en caja: sin turno abierto (sucursal ${params.sucursalId})`,
@@ -180,34 +180,79 @@ export class CajaMovimientosService {
     motivo?: string,
   ): Promise<ReversaVentasPedidoResultado> {
     const ventas = await client.query<{
-      id: string;
-      monto: string;
-      metodo_pago: string | null;
+      metodo_pago: string;
       caja_id: string;
+      neto: string;
     }>(
-      `SELECT id, monto, metodo_pago, caja_id FROM movimientos_caja
-       WHERE pedido_id = $1 AND tipo = 'venta'`,
+      `SELECT caja_id,
+              COALESCE(metodo_pago, 'sin_metodo') AS metodo_pago,
+              (COALESCE(SUM(monto) FILTER (WHERE tipo = 'venta'), 0) -
+               COALESCE(SUM(monto) FILTER (WHERE tipo = 'devolucion'), 0))::text AS neto
+       FROM movimientos_caja
+       WHERE pedido_id = $1 AND tipo IN ('venta', 'devolucion')
+       GROUP BY caja_id, COALESCE(metodo_pago, 'sin_metodo')
+       HAVING COALESCE(SUM(monto) FILTER (WHERE tipo = 'venta'), 0) > 0
+       ORDER BY caja_id, metodo_pago`,
       [pedidoId],
     );
-    // Neto ya cobrado (ventas menos devoluciones previas): solo revertimos lo que
-    // realmente entró a la caja. Se registra UNA devolución y se conserva la venta
-    // original para no perder el rastro contable (evita la doble resta: borrar la
-    // venta + agregar devolución dejaba la caja con -monto de menos).
-    const neto = await this.netoCobradoPedidoEnCaja(client, pedidoId);
-    if (neto < 0.01) {
+    // Conserva el total neto vigente, pero atribuye la reversa a cada caja y
+    // método de origen. Si un reembolso previo se registró en otro método, se
+    // distribuye el saldo pendiente proporcionalmente entre los saldos positivos.
+    const saldos = ventas.rows.map((fila) => ({
+      cajaId: fila.caja_id,
+      metodoPago: fila.metodo_pago,
+      netoCentavos: Math.round(Number(fila.neto) * 100),
+    }));
+    const netoCentavos = saldos.reduce(
+      (total, saldo) => total + saldo.netoCentavos,
+      0,
+    );
+    if (netoCentavos < 1) {
       return { movimientos: 0, monto_total: 0 };
     }
-    const referencia = ventas.rows[0];
-    await this.insertar(client, {
-      cajaId: referencia.caja_id,
-      sucursalId,
-      pedidoId,
-      tipo: 'devolucion',
-      monto: neto,
-      metodoPago: referencia.metodo_pago,
-      descripcion: motivo?.trim() || 'Reversa venta pedido',
-      usuarioId: usuarioId ?? null,
+    const saldosPositivos = saldos.filter((saldo) => saldo.netoCentavos > 0);
+    const totalPositivo = saldosPositivos.reduce(
+      (total, saldo) => total + saldo.netoCentavos,
+      0,
+    );
+    if (totalPositivo < 1) return { movimientos: 0, monto_total: 0 };
+
+    const asignaciones = saldosPositivos.map((saldo) => {
+      const exacto = (netoCentavos * saldo.netoCentavos) / totalPositivo;
+      return {
+        ...saldo,
+        centavos: Math.floor(exacto),
+        residuo: exacto - Math.floor(exacto),
+      };
     });
-    return { movimientos: 1, monto_total: neto };
+    let centavosSinAsignar =
+      netoCentavos -
+      asignaciones.reduce((total, saldo) => total + saldo.centavos, 0);
+    const porResiduo = [...asignaciones].sort(
+      (a, b) =>
+        b.residuo - a.residuo ||
+        a.cajaId.localeCompare(b.cajaId) ||
+        a.metodoPago.localeCompare(b.metodoPago),
+    );
+    for (let i = 0; centavosSinAsignar > 0; i++, centavosSinAsignar--) {
+      porResiduo[i % porResiduo.length].centavos++;
+    }
+
+    let movimientos = 0;
+    for (const asignacion of asignaciones) {
+      if (asignacion.centavos < 1) continue;
+      await this.insertar(client, {
+        cajaId: asignacion.cajaId,
+        sucursalId,
+        pedidoId,
+        tipo: 'devolucion',
+        monto: asignacion.centavos / 100,
+        metodoPago: asignacion.metodoPago,
+        descripcion: motivo?.trim() || 'Reversa venta pedido',
+        usuarioId: usuarioId ?? null,
+      });
+      movimientos++;
+    }
+    return { movimientos, monto_total: netoCentavos / 100 };
   }
 }

@@ -97,6 +97,7 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: destinoId,
                 decoration: FoodyFormEstilo.campo(
                   label: 'Sucursal destino',
@@ -107,7 +108,10 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
                     .map(
                       (s) => DropdownMenuItem(
                         value: s['sucursal_id'] as String,
-                        child: Text(s['nombre'] as String? ?? 'Sede'),
+                        child: Text(
+                          s['nombre'] as String? ?? 'Sede',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(),
@@ -115,6 +119,7 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: ingredienteId,
                 decoration: FoodyFormEstilo.campo(
                   label: 'Insumo',
@@ -124,7 +129,10 @@ class _InventarioTrasladosPanelState extends State<InventarioTrasladosPanel> {
                     .map(
                       (i) => DropdownMenuItem(
                         value: i['id'] as String,
-                        child: Text(i['nombre'] as String? ?? '—'),
+                        child: Text(
+                          i['nombre'] as String? ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(),

@@ -9,6 +9,7 @@ import { JwtPayload } from '../../core/auth/jwt-payload';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { AgregarItemsPedidoDto } from './dto/agregar-items-pedido.dto';
+import { ReemplazarItemPedidoDto } from './dto/reemplazar-item-pedido.dto';
 import { ActualizarItemPedidoDto } from './dto/actualizar-item-pedido.dto';
 import { CobrarMesaDto } from './dto/cobrar-mesa.dto';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
@@ -46,6 +47,7 @@ export class PedidosService {
       page?: number;
       paginar?: boolean;
       meseraId?: string;
+      busqueda?: string;
     } = {},
   ) {
     const params: unknown[] = [sucursalId];
@@ -60,6 +62,17 @@ export class PedidosService {
         p.mesera_id = $${idx}
         OR m.mesera_asignada_id = $${idx}
         OR (p.tipo = 'mesa' AND p.mesera_id IS NULL AND m.mesera_asignada_id IS NULL)
+      )`;
+    }
+    let filtroBusqueda = '';
+    if (opciones.busqueda) {
+      params.push(`%${opciones.busqueda}%`);
+      const idx = params.length;
+      filtroBusqueda = ` AND (
+        p.numero_pedido::text ILIKE $${idx}
+        OR COALESCE(p.cliente_nombre, '') ILIKE $${idx}
+        OR COALESCE(p.cliente_telefono, '') ILIKE $${idx}
+        OR COALESCE(m.nombre, '') ILIKE $${idx}
       )`;
     }
 
@@ -83,7 +96,7 @@ export class PedidosService {
          ORDER BY fecha DESC
          LIMIT 1
        ) h ON true
-       WHERE p.sucursal_id = $1 ${filtroActivos}${filtroMesera}`;
+       WHERE p.sucursal_id = $1 ${filtroActivos}${filtroMesera}${filtroBusqueda}`;
 
     const selectCols = `SELECT p.id, p.numero_pedido, p.tipo, p.estado, p.cliente_nombre,
               p.cliente_telefono, p.direccion_entrega, p.total,
@@ -219,12 +232,7 @@ export class PedidosService {
     const conItems = await this.adjuntarItemsResumen(
       filas as Array<Record<string, unknown> & { id: string }>,
     );
-    return envolverPaginado(
-      conItems,
-      totalRow?.count ?? 0,
-      page,
-      limit,
-    );
+    return envolverPaginado(conItems, totalRow?.count ?? 0, page, limit);
   }
 
   /** Detalle staff: cabecera + items_resumen (modal kanban). */
@@ -279,7 +287,9 @@ export class PedidosService {
   /** Adjunta preview de ítems para cards/modal (sin precios calculados en cliente). */
   private async adjuntarItemsResumen(
     filas: Array<Record<string, unknown> & { id: string }>,
-  ): Promise<Array<Record<string, unknown> & { id: string; items_resumen: unknown[] }>> {
+  ): Promise<
+    Array<Record<string, unknown> & { id: string; items_resumen: unknown[] }>
+  > {
     if (filas.length === 0) return [];
     const ids = filas.map((f) => f.id);
     const items = await this.database.consultar<{
@@ -398,10 +408,7 @@ export class PedidosService {
     );
   }
 
-  async crear(
-    dto: CrearPedidoDto,
-    opciones: OpcionesStaffPedido = {},
-  ) {
+  async crear(dto: CrearPedidoDto, opciones: OpcionesStaffPedido = {}) {
     return this.crearPedido.crear(dto, opciones);
   }
 
@@ -433,6 +440,24 @@ export class PedidosService {
     return this.items.agregarItems(pedidoId, sucursalId, dto, opciones);
   }
 
+  async reemplazarItemPedido(
+    pedidoId: string,
+    itemId: string,
+    sucursalId: string,
+    usuarioId: string,
+    dto: ReemplazarItemPedidoDto,
+    opciones: OpcionesStaffPedido = {},
+  ) {
+    return this.items.reemplazarItemPedido(
+      pedidoId,
+      itemId,
+      sucursalId,
+      usuarioId,
+      dto,
+      opciones,
+    );
+  }
+
   async actualizarItemPedido(
     pedidoId: string,
     itemId: string,
@@ -457,13 +482,7 @@ export class PedidosService {
     dto: CobrarMesaDto = {},
     rol?: string | null,
   ) {
-    return this.pagos.cobrarCuentaMesa(
-      sucursalId,
-      mesaId,
-      usuarioId,
-      dto,
-      rol,
-    );
+    return this.pagos.cobrarCuentaMesa(sucursalId, mesaId, usuarioId, dto, rol);
   }
 
   async cobrarPedidoCaja(

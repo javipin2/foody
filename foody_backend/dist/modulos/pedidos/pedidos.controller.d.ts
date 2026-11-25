@@ -4,6 +4,7 @@ import { CambiarEstadoPedidoDto } from './dto/cambiar-estado-pedido.dto';
 import { AplicarDescuentoDto } from './dto/aplicar-descuento.dto';
 import { CrearPedidoDto } from './dto/crear-pedido.dto';
 import { AgregarItemsPedidoDto } from './dto/agregar-items-pedido.dto';
+import { ReemplazarItemPedidoDto } from './dto/reemplazar-item-pedido.dto';
 import { EliminarItemPedidoDto, RechazarPedidoMesaDto } from './dto/motivo-pedido.dto';
 import { ActualizarItemPedidoDto } from './dto/actualizar-item-pedido.dto';
 import { CobrarMesaDto } from './dto/cobrar-mesa.dto';
@@ -170,10 +171,25 @@ export declare class PedidosController {
         total: number;
         estado: string;
         mesa_id: string | null;
-        catalogo_cambios: {
+        catalogo_cambios?: {
             producto_id: string;
             disponible: boolean;
         }[];
+        idempotente?: boolean;
+    }>;
+    reemplazarItem(pedidoId: string, itemId: string, dto: ReemplazarItemPedidoDto, usuario: JwtPayload, sucursalId?: string): Promise<{
+        pedido_id: string;
+        numero_pedido: string;
+        subtotal: number;
+        delta_subtotal: number;
+        total: number;
+        estado: string;
+        mesa_id: string | null;
+        catalogo_cambios?: {
+            producto_id: string;
+            disponible: boolean;
+        }[];
+        idempotente?: boolean;
     }>;
     actualizarItem(pedidoId: string, itemId: string, dto: ActualizarItemPedidoDto, usuario: JwtPayload, sucursalId?: string): Promise<{
         pedido_id: string;
@@ -215,6 +231,7 @@ export declare class PedidosController {
     aplicarDescuento(pedidoId: string, usuario: JwtPayload, dto: AplicarDescuentoDto, sucursalId?: string): Promise<{
         id: string;
         estado: string;
+        mesa_id: string | null;
         descuento: number;
         porcentaje: number;
         total: number;

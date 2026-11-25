@@ -16,6 +16,7 @@ class PedidoKanbanCard extends StatelessWidget {
     required this.colorReloj,
     required this.onTap,
     required this.onAccionRapida,
+    this.mostrarAccionRapida = true,
     this.pieExtra,
   });
 
@@ -26,6 +27,7 @@ class PedidoKanbanCard extends StatelessWidget {
   final Color Function(int) colorReloj;
   final VoidCallback onTap;
   final Future<void> Function() onAccionRapida;
+  final bool mostrarAccionRapida;
   final Widget? pieExtra;
 
   Color? get _franjaUrgencia {
@@ -39,7 +41,9 @@ class PedidoKanbanCard extends StatelessWidget {
   String get _tituloPrincipal {
     if (pedido.tipo == 'mesa') {
       final mesa = pedido.mesaNombre?.trim();
-      if (mesa != null && mesa.isNotEmpty) return 'Mesa $mesa';
+      if (mesa != null && mesa.isNotEmpty) {
+        return mesa.toLowerCase().startsWith('mesa ') ? mesa : 'Mesa $mesa';
+      }
       final cli = pedido.clienteNombre?.trim();
       if (cli != null && cli.isNotEmpty) return cli;
       return 'Mesa';
@@ -213,12 +217,16 @@ class PedidoKanbanCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Text(
-                '#${pedido.numeroPedido}',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
+              Expanded(
+                child: Text(
+                  '#${pedido.numeroPedido}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               if (!pedido.esTerminal) ...[
@@ -245,7 +253,7 @@ class PedidoKanbanCard extends StatelessWidget {
               ),
             ],
           ),
-          if (pedido.accionRapida != null) ...[
+          if (pedido.accionRapida != null && mostrarAccionRapida) ...[
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,

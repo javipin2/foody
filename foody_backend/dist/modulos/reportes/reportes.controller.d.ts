@@ -23,6 +23,7 @@ export declare class ReportesController {
             movimientos_venta: number;
             etiqueta_ventas_pedidos: string;
             etiqueta_ventas_caja: string;
+            nota_periodo_caja: string;
             nota_universos: string;
             por_metodo_caja: {
                 metodo_pago: string;

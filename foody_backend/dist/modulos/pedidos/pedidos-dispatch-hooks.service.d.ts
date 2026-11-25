@@ -1,6 +1,7 @@
 export type ResultadoDispatchAuto = {
     iniciado: boolean;
     motivo?: string;
+    mensaje?: string;
 };
 type HandlerDispatchAuto = (pedidoId: string, sucursalId: string) => Promise<ResultadoDispatchAuto>;
 export declare class PedidosDispatchHooksService {

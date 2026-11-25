@@ -45,6 +45,41 @@ function Build-Web([string]$Flavor, [string]$OutDir) {
     -t lib/main.dart `
     -o $OutDir
   if ($LASTEXITCODE -ne 0) { throw "flutter build web $Flavor fallo ($LASTEXITCODE)" }
+
+  # Evita que el navegador conserve el main.dart.js de una publicación anterior.
+  $mainJs = Join-Path $OutDir 'main.dart.js'
+  $bootstrapPath = Join-Path $OutDir 'flutter_bootstrap.js'
+  $indexPath = Join-Path $OutDir 'index.html'
+  # Calcular sin Get-FileHash: este script también se ejecuta con Windows
+  # PowerShell -NoProfile, donde el módulo Utility puede no quedar visible
+  # dentro de funciones anidadas aunque se importe en el ámbito del script.
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  $hashStream = [System.IO.File]::OpenRead($mainJs)
+  try {
+    $hashBytes = $sha256.ComputeHash($hashStream)
+    $cacheVersion = [BitConverter]::ToString($hashBytes).Replace('-', '').ToLowerInvariant()
+  } finally {
+    $hashStream.Dispose()
+    $sha256.Dispose()
+  }
+  $bootstrap = [IO.File]::ReadAllText($bootstrapPath)
+  $index = [IO.File]::ReadAllText($indexPath)
+  $mainJsPath = '"mainJsPath":"main.dart.js"'
+  $bootstrapScript = 'flutter_bootstrap.js'
+  if (-not $bootstrap.Contains($mainJsPath) -or -not $index.Contains($bootstrapScript)) {
+    throw "No pude versionar el cache del flavor $Flavor; revisa los artefactos Flutter."
+  }
+  $bootstrap = $bootstrap.Replace(
+    $mainJsPath,
+    ('"mainJsPath":"main.dart.js?v=' + $cacheVersion + '"')
+  )
+  $index = $index.Replace(
+    'flutter_bootstrap.js',
+    ('flutter_bootstrap.js?v=' + $cacheVersion)
+  )
+  [IO.File]::WriteAllText($bootstrapPath, $bootstrap, [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($indexPath, $index, [Text.UTF8Encoding]::new($false))
+  Write-Host "Cache web versionado por SHA-256 ($Flavor): $cacheVersion" -ForegroundColor DarkGray
 }
 
 function Start-SpaServidor {
@@ -108,12 +143,40 @@ $outEquipo = Join-Path $raiz 'build\web_equipo'
 $pCli = $FoodyPuertoCliente
 $pEq = $FoodyPuertoEquipo
 
-if (-not $SkipBuild) {
-  Build-Web 'cliente' $outCliente
-  Build-Web 'equipo' $outEquipo
-} else {
-  if (-not (Test-Path (Join-Path $outCliente 'index.html'))) { throw "Falta $outCliente - quita -SkipBuild" }
-  if (-not (Test-Path (Join-Path $outEquipo 'index.html'))) { throw "Falta $outEquipo - quita -SkipBuild" }
+$tieneCliente = Test-Path (Join-Path $outCliente 'index.html')
+$tieneEquipo = Test-Path (Join-Path $outEquipo 'index.html')
+# -SkipBuild omite Flutter solo si el artefacto existe y está al día.
+# Un build viejo servía silenciosamente una UI anterior por el túnel.
+$rutasFuente = @('lib', 'web', 'assets')
+$archivosFuente = @('pubspec.yaml', 'pubspec.lock')
+$cambiosFuente = @()
+foreach ($ruta in $rutasFuente) {
+  if (Test-Path $ruta -PathType Container) {
+    $cambiosFuente += Get-ChildItem $ruta -File -Recurse -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty LastWriteTimeUtc
+  }
+}
+foreach ($ruta in $archivosFuente) {
+  if (Test-Path $ruta -PathType Leaf) {
+    $cambiosFuente += (Get-Item $ruta).LastWriteTimeUtc
+  }
+}
+$ultimoCambioFuente = if ($cambiosFuente.Count -gt 0) { ($cambiosFuente | Measure-Object -Maximum).Maximum } else { [DateTime]::MinValue }
+
+function Build-Desactualizado([string]$Directorio, [bool]$Existe) {
+  if (-not $Existe) { return $true }
+  $index = Get-Item (Join-Path $Directorio 'index.html')
+  return $index.LastWriteTimeUtc -lt $ultimoCambioFuente
+}
+
+$buildClientePendiente = (-not $SkipBuild) -or (Build-Desactualizado $outCliente $tieneCliente)
+$buildEquipoPendiente = (-not $SkipBuild) -or (Build-Desactualizado $outEquipo $tieneEquipo)
+if ($buildClientePendiente -or $buildEquipoPendiente) {
+  if ($SkipBuild) {
+    Write-Host 'AVISO: builds web faltantes o desactualizados; compilando los flavors necesarios...' -ForegroundColor Yellow
+  }
+  if ($buildClientePendiente) { Build-Web 'cliente' $outCliente }
+  if ($buildEquipoPendiente) { Build-Web 'equipo' $outEquipo }
 }
 
 Write-Host ''

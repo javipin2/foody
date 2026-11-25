@@ -18,6 +18,7 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const ws_1 = __importDefault(require("ws"));
 const database_service_1 = require("../database/database.service");
+const qa_safety_1 = require("../config/qa-safety");
 const MAX_INTENTOS_JOB = 10;
 const INTERVALO_COLA_MS = 5000;
 let ImpresionService = ImpresionService_1 = class ImpresionService {
@@ -31,6 +32,10 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
         this.config = config;
     }
     onModuleInit() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Cola de impresión pausada por FOODY_QA_SIN_EFECTOS');
+            return;
+        }
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_IMPRESION_COLA, () => this.procesarCola()), INTERVALO_COLA_MS);
     }
     async reimprimirPedido(pedidoId, sucursalId) {
@@ -108,6 +113,13 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
     }
     async verificarAgente() {
         const url = this.config.get('FOODY_PRINTER_WS') ?? 'ws://127.0.0.1:8765';
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            return {
+                conectado: false,
+                url,
+                mensaje: 'Agente de impresión desactivado en QA aislada',
+            };
+        }
         try {
             const r = await this.enviarWs({ accion: 'ping' }, 3000);
             if (r.exito) {
@@ -196,6 +208,10 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
         void this.procesarCola();
     }
     async procesarCola() {
+        if ((0, qa_safety_1.esQaSinEfectosExternos)()) {
+            this.logger.warn('Procesamiento de impresión bloqueado en QA aislada');
+            return;
+        }
         if (this.procesando)
             return;
         this.procesando = true;
