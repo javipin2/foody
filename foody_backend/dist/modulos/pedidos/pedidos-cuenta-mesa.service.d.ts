@@ -23,6 +23,7 @@ export declare class PedidosCuentaMesaService {
             monto: number;
             propina: number;
             metodo_pago: string;
+            numero_pedido: string | null;
             created_at: Date;
             referencia: string | null;
             responsable_nombre: string | null;

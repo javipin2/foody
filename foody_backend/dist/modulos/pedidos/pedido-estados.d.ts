@@ -14,6 +14,7 @@ export declare function pedidoTerminalOperativo(pedido: {
     monto_pagado?: number | string | null;
 }): boolean;
 export declare const SQL_WHERE_PEDIDO_OPERACION_ABIERTA = "\n  estado IN (\n    'pendiente_aprobacion', 'pendiente', 'confirmado',\n    'en_cocina', 'listo', 'pagando', 'asignado', 'en_camino'\n  )\n  AND COALESCE(monto_pagado, 0) < total - 0.01\n";
+export declare function sqlWherePedidoAbiertoOperativo(alias?: string): string;
 export declare const SQL_WHERE_DOMICILIO_ENTREGADO_IMPAGO = "\n  estado = 'entregado'\n  AND COALESCE(monto_pagado, 0) < total - 0.01\n";
 export declare const SQL_WHERE_PEDIDO_COMPLETADO = "\n  (\n    estado = 'pagado'\n    OR (\n      tipo = 'domicilio'\n      AND estado = 'entregado'\n      AND COALESCE(monto_pagado, 0) >= total - 0.01\n    )\n  )\n";
 export declare const ESTADOS_COCINA_RESUELTOS: readonly ["listo", "no_disponible"];
@@ -27,3 +28,10 @@ export declare function pedidoCocinaCompleta(client: {
         }>;
     }>;
 }, pedidoId: string): Promise<boolean>;
+export declare function puedeAvanzarCocinaPedidoPagado(params: {
+    estadoPedido: string;
+    total: number | string;
+    montoPagado: number | string;
+    estadoItem: string | null | undefined;
+    nuevoEstadoItem: string;
+}): boolean;

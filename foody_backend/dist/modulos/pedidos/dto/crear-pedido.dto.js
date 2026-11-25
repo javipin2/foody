@@ -114,6 +114,7 @@ __decorate([
 class CrearPedidoDto {
     sucursal_id;
     mesa_id;
+    qr_token;
     device_id;
     tipo;
     cliente_nombre;
@@ -146,6 +147,11 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "mesa_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CrearPedidoDto.prototype, "qr_token", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)

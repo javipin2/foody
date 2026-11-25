@@ -36,6 +36,12 @@ let PedidosPublicController = class PedidosPublicController {
     }
     async crear(dto, capability) {
         await this.verificarDevice(dto.device_id, capability);
+        if (dto.pagos?.length) {
+            throw new common_1.BadRequestException({
+                error: 'PAGO_CLIENTE_NO_CONFIRMADO',
+                message: 'El checkout público no puede registrar pagos; el cobro debe confirmarlo el establecimiento.',
+            });
+        }
         return this.pedidosService.crear(dto);
     }
     async estimar(dto, capability) {

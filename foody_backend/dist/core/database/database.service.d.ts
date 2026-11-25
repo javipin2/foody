@@ -3,6 +3,7 @@ import { QueryResultRow } from 'pg';
 import { TransactionHooksService } from './transaction-hooks.service';
 export declare class DatabaseService implements OnModuleDestroy {
     private readonly transactionHooks;
+    private static readonly connectTimeoutMsDefault;
     private readonly pool;
     constructor(transactionHooks: TransactionHooksService);
     consultar<T extends QueryResultRow = QueryResultRow>(sql: string, parametros?: unknown[]): Promise<T[]>;

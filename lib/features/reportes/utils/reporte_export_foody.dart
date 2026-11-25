@@ -1,13 +1,13 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 const _notaPeriodoMovimientosCaja =
-    'En movimientos ligados a un pedido se usa la fecha de creación del pedido; si no tienen pedido, la fecha del movimiento.';
+    'Los movimientos ligados a pedidos usan la fecha del pedido, aunque el cobro ocurra después del rango. Los cobros posteriores pueden cambiar el saldo; no representa el efectivo recibido en el rango ni el descuadre físico de un turno.';
 
 /// Export PDF/CSV de reportes admin (P2-16). Solo formatea datos del API.
 class ReporteExportFoody {
@@ -30,7 +30,12 @@ class ReporteExportFoody {
     required Map<String, dynamic>? pedidos,
     String? tituloSucursal,
   }) async {
-    final doc = pw.Document();
+    final temaPdf = pw.ThemeData.withFont(
+      base:
+          pw.Font.ttf(await rootBundle.load('assets/fonts/roboto-regular.ttf')),
+      bold: pw.Font.ttf(await rootBundle.load('assets/fonts/roboto-bold.ttf')),
+    );
+    final doc = pw.Document(theme: temaPdf);
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -72,6 +77,7 @@ class ReporteExportFoody {
     }
     final r = data['resumen'] as Map<String, dynamic>? ?? {};
     final cuadre = data['cuadre_caja'] as Map<String, dynamic>? ?? {};
+    final recaudoPeriodo = data['recaudo_periodo'] as Map<String, dynamic>?;
     final porTipo = data['por_tipo'] as List<dynamic>? ?? [];
     final porMetodo = cuadre['por_metodo_caja'] as List<dynamic>? ?? [];
 
@@ -89,12 +95,14 @@ class ReporteExportFoody {
           ['Ticket promedio', _fmt(r['ticket_promedio'])],
           ['Domicilios', _fmt(r['costo_domicilio'])],
           ['Descuentos', _fmt(r['descuentos'])],
-          ['Tickets (pedidos)', _fmt(cuadre['ventas_pedidos'])],
-          [
-            'Movimientos netos de caja',
-            _fmt(cuadre['ventas_movimientos_caja'])
-          ],
-          ['Diferencia cuadre', _fmt(cuadre['diferencia'])],
+          ['Ventas de pedidos', _fmt(cuadre['ventas_pedidos'])],
+          ['Cobros netos asociados', _fmt(cuadre['ventas_movimientos_caja'])],
+          ['Ventas menos cobros', _fmt(cuadre['diferencia'])],
+          if (recaudoPeriodo != null)
+            [
+              'Recaudo neto del rango (fecha de movimiento)',
+              _fmt(recaudoPeriodo['total_neto']),
+            ],
         ],
         headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
         cellAlignment: pw.Alignment.centerLeft,
@@ -106,6 +114,14 @@ class ReporteExportFoody {
           style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
         ),
       ),
+      if (recaudoPeriodo?['nota'] != null)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 4),
+          child: pw.Text(
+            recaudoPeriodo!['nota'].toString(),
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        ),
       if (cuadre['nota_universos'] != null)
         pw.Padding(
           padding: const pw.EdgeInsets.only(top: 4),
@@ -116,7 +132,7 @@ class ReporteExportFoody {
         ),
       if (porMetodo.isNotEmpty) ...[
         pw.SizedBox(height: 8),
-        pw.Text('Caja por método',
+        pw.Text('Cobros asociados por método',
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
           headers: ['Método', 'Total'],
@@ -241,6 +257,8 @@ class ReporteExportFoody {
     if (financiero != null) {
       final r = financiero['resumen'] as Map<String, dynamic>? ?? {};
       final cuadre = financiero['cuadre_caja'] as Map<String, dynamic>? ?? {};
+      final recaudoPeriodo =
+          financiero['recaudo_periodo'] as Map<String, dynamic>?;
       bloque('Financiero - resumen', [
         ['metrica', 'valor'],
         ['ventas_total', _num(r['ventas_total'])],
@@ -248,9 +266,13 @@ class ReporteExportFoody {
         ['ticket_promedio', _num(r['ticket_promedio'])],
         ['costo_domicilio', _num(r['costo_domicilio'])],
         ['descuentos', _num(r['descuentos'])],
-        ['ventas_pedidos', _num(cuadre['ventas_pedidos'])],
-        ['movimientos_netos_caja', _num(cuadre['ventas_movimientos_caja'])],
-        ['diferencia_cuadre', _num(cuadre['diferencia'])],
+        ['ventas_de_pedidos', _num(cuadre['ventas_pedidos'])],
+        ['cobros_netos_asociados', _num(cuadre['ventas_movimientos_caja'])],
+        ['ventas_menos_cobros', _num(cuadre['diferencia'])],
+        if (recaudoPeriodo != null) ...[
+          ['recaudo_neto_rango', _num(recaudoPeriodo['total_neto'])],
+          ['nota_recaudo_rango', recaudoPeriodo['nota']],
+        ],
         [
           'nota_periodo_caja',
           cuadre['nota_periodo_caja'] ?? _notaPeriodoMovimientosCaja,

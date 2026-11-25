@@ -1,4 +1,4 @@
-# Cancela pedidos activos demo y deja mesas listas para QA aislada (:3001 + foody_diseno_qa)
+# Cancela pedidos activos demo y deja mesas listas para QA aislada (:3001 + BD QA)
 # Uso: .\scripts\limpiar-demo-qa.ps1
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\qa-helpers.ps1"
@@ -6,10 +6,7 @@ $ErrorActionPreference = 'Stop'
 Write-Host '=== Limpiar demo QA ===' -ForegroundColor Cyan
 try {
     $qaUri = [Uri]$script:FoodyQaBase
-    $esHostQa = @('127.0.0.1', 'localhost') -contains $qaUri.Host -and $qaUri.Port -eq 3001
-    if (-not $esHostQa -or $script:FoodyQaDbContainer -ne 'foody-diseno-qa-db' -or $script:FoodyQaDatabase -ne 'foody_diseno_qa') {
-        throw 'La limpieza solo puede apuntar a localhost:3001 + foody-diseno-qa-db/foody_diseno_qa'
-    }
+    Assert-FoodyQaDisposable
 } catch {
     Write-Host "BLOQUEADO: $($_.Exception.Message)" -ForegroundColor Yellow
     exit 2
@@ -35,6 +32,7 @@ catch {
 $admin = Get-FoodyToken 'admin@foody.demo'
 $n = Limpiar-PedidosActivosDemo -Headers $admin.headers
 Restaurar-InventarioDemo -Headers $admin.headers
+Ensure-HorariosDemoAbiertos
 $sid = $script:FoodyQaSucursal
 $jobsBorrados = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc `
     "DELETE FROM impresion_cocina_jobs WHERE sucursal_id = '$sid' AND estado IN ('error','pendiente') RETURNING 1;" 2>$null

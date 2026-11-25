@@ -97,6 +97,21 @@ export async function login(email: string): Promise<TokenBundle> {
   return { token, auth: { Authorization: `Bearer ${token}` } };
 }
 
+export async function loginDomiciliarioIndependiente(
+  email = 'repartidor@foody.demo',
+): Promise<TokenBundle> {
+  const r = await api()
+    .post('/api/v1/auth/login-domiciliario')
+    .send({ email, contrasena: PASS });
+  if (!r.body?.exito || !r.body?.datos?.token) {
+    throw new Error(
+      `Login domiciliario independiente ${email}: ${r.body?.mensaje || r.status}`,
+    );
+  }
+  const token = r.body.datos.token as string;
+  return { token, auth: { Authorization: `Bearer ${token}` } };
+}
+
 export async function limpiarPedidosActivos(
   auth: TokenBundle['auth'],
 ): Promise<number> {

@@ -2,6 +2,7 @@
 # Uso: .\scripts\verificar-inventario-menu.ps1
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
 
 $fallos = 0
 function Assert($c, $m) { if (-not (Assert-Qa $c $m)) { $script:fallos++ } }

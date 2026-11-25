@@ -6,6 +6,7 @@ import {
   assertApiViva,
   COCINA_ID,
   crearPedidoStaff,
+  detallePedido,
   ensureCajaAbierta,
   itemBody,
   limpiarPedidosActivos,
@@ -128,6 +129,56 @@ describe('E2E cocina KDS', () => {
       .get(`/api/v1/pedidos/${id}/detalle?sucursal_id=${SID}`)
       .set(admin.auth);
     expect(detalle.body.datos.estado).toBe('en_cocina');
+  });
+
+  it('bloquea cambios de ítems cuando el pedido ya está en cobro', async () => {
+    const crear = await crearPedidoStaff(cajero.auth, {
+      sucursal_id: SID,
+      tipo: 'para_llevar',
+      device_id: `jest-kds-inmutable-${Date.now()}`,
+      metodo_pago: 'pendiente',
+      items: [itemBody()],
+    });
+    expect(crear.body.exito).toBe(true);
+    const id = pedidoId(crear);
+
+    const tickets = await api()
+      .get(`/api/v1/cocina/tickets/${cocinaId}`)
+      .set(cocina.auth);
+    const ticket = (
+      tickets.body.datos as Array<{
+        pedido_id: string;
+        items: Array<{ item_id?: string; id?: string }>;
+      }>
+    ).find((row) => row.pedido_id === id);
+    expect(ticket?.items.length).toBeGreaterThan(0);
+    const itemId = ticket!.items[0].item_id || ticket!.items[0].id!;
+
+    const preparando = await api()
+      .patch(`/api/v1/cocina/items/${itemId}/estado`)
+      .set(cocina.auth)
+      .send({ estado_cocina: 'preparando' });
+    expect(preparando.body.exito).toBe(true);
+
+    const cuenta = await setEstado(admin.auth, id, 'pagando');
+    expect(cuenta.body.exito).toBe(true);
+
+    const cambioTardio = await api()
+      .patch(`/api/v1/cocina/items/${itemId}/estado`)
+      .set(cocina.auth)
+      .send({
+        estado_cocina: 'no_disponible',
+        motivo: 'No debe mutar una línea cuyo pedido ya está en cobro',
+      });
+    expect(cambioTardio.status).toBe(409);
+    expect(cambioTardio.body.error).toBe('PEDIDO_COCINA_CERRADO');
+
+    const detalle = await detallePedido(admin.auth, id);
+    expect(
+      detalle.body.datos.items_resumen.find(
+        (item: { item_id: string }) => item.item_id === itemId,
+      )?.estado_cocina,
+    ).toBe('preparando');
   });
 
   it('COC-DISPATCH-INCOMPLETE-01: no asigna ni oferta un domicilio con Cocina pendiente', async () => {
@@ -267,6 +318,16 @@ describe('E2E cocina KDS', () => {
         motivo: 'QA verifica barrera de despacho',
       });
     expect(reportarFaltante.body.exito).toBe(true);
+
+    const seguimiento = await api().get(
+      `/api/v1/pedidos/${id}/estado?token=${encodeURIComponent(crear.body.datos.seguimiento_token)}`,
+    );
+    expect(seguimiento.body.datos.items_no_disponibles).toHaveLength(1);
+    expect(seguimiento.body.datos.items_no_disponibles[0]).toMatchObject({
+      cantidad: 1,
+    });
+    expect(seguimiento.body.datos.items_no_disponibles[0].nombre).toBeTruthy();
+
     const completarCocina = await api()
       .patch(`/api/v1/cocina/items/${itemListo}/estado`)
       .set(cocina.auth)

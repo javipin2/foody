@@ -19,6 +19,7 @@ const pedidos_descuento_service_1 = require("./pedidos-descuento.service");
 const pedidos_estado_service_1 = require("./pedidos-estado.service");
 const pedidos_items_service_1 = require("./pedidos-items.service");
 const pedidos_pagos_service_1 = require("./pedidos-pagos.service");
+const pedido_estados_1 = require("./pedido-estados");
 const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 let PedidosService = class PedidosService {
     database;
@@ -42,7 +43,7 @@ let PedidosService = class PedidosService {
     async listarPorSucursal(sucursalId, opciones = {}) {
         const params = [sucursalId];
         const filtroActivos = opciones.soloActivos
-            ? `AND p.estado IN ('pendiente', 'pendiente_aprobacion', 'confirmado', 'en_cocina', 'listo', 'pagando', 'asignado', 'en_camino')`
+            ? `AND ${(0, pedido_estados_1.sqlWherePedidoAbiertoOperativo)('p')}`
             : '';
         let filtroMesera = '';
         if (opciones.meseraId) {
@@ -127,7 +128,13 @@ let PedidosService = class PedidosService {
             filtroMesera = ` AND p.mesera_id = $${idx}`;
         }
         const where = `WHERE p.sucursal_id = $1
-         AND p.estado IN ('pagado', 'entregado', 'cancelado', 'rechazado')
+         AND (
+           p.estado IN ('pagado', 'cancelado', 'rechazado')
+           OR (
+             p.estado = 'entregado'
+             AND COALESCE(p.monto_pagado, 0) >= p.total - 0.01
+           )
+         )
          AND p.created_at >= date_trunc('day', NOW())
          ${filtroMesera}`;
         const fromJoin = `FROM pedidos p
@@ -170,6 +177,8 @@ let PedidosService = class PedidosService {
         const fila = await this.database.consultarUno(`SELECT p.id, p.numero_pedido, p.tipo, p.estado, p.cliente_nombre,
               p.cliente_telefono, p.direccion_entrega, p.total,
               COALESCE(p.monto_pagado, 0) AS monto_pagado, p.metodo_pago,
+              COALESCE(pagos.resumen, '[]'::jsonb) AS pagos_resumen,
+              COALESCE(pagos.propina, 0) AS propina_recibida,
               p.created_at, p.mesa_id, p.observaciones,
               p.mesera_id, u_mesera.nombre AS mesera_nombre,
               m.nombre AS mesa_nombre,
@@ -184,6 +193,19 @@ let PedidosService = class PedidosService {
          WHERE pedido_id = p.id AND estado_nuevo = p.estado
          ORDER BY fecha DESC LIMIT 1
        ) h ON true
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(jsonb_build_object(
+           'metodo_pago', pagos.metodo_pago,
+           'monto', pagos.monto
+         ) ORDER BY pagos.metodo_pago) AS resumen,
+         SUM(pagos.propina) AS propina
+         FROM (
+           SELECT metodo_pago, SUM(monto) AS monto, SUM(propina) AS propina
+           FROM pagos_pedido
+           WHERE pedido_id = p.id AND sucursal_id = p.sucursal_id
+           GROUP BY metodo_pago
+         ) pagos
+       ) pagos ON true
        WHERE p.id = $1 AND p.sucursal_id = $2`, [pedidoId, sucursalId]);
         if (!fila)
             throw new common_1.NotFoundException('Pedido no encontrado');
@@ -273,7 +295,12 @@ let PedidosService = class PedidosService {
         if (!sucursalId) {
             throw new common_1.BadRequestException('sucursal_id es obligatorio');
         }
-        return this.crear({ ...dto, sucursal_id: sucursalId }, { creadoPorStaff: true, usuarioId: usuario.sub, rol: usuario.rol });
+        return this.crear({ ...dto, sucursal_id: sucursalId }, {
+            creadoPorStaff: true,
+            usuarioId: usuario.sub,
+            rol: usuario.rol,
+            puedeCobrar: usuario.permisos.includes('cobrar_pedido'),
+        });
     }
     async estimar(dto) {
         return this.crearPedido.crear(dto, { soloEstimar: true });
@@ -313,7 +340,22 @@ let PedidosService = class PedidosService {
         const pedido = await this.database.consultarUno(`SELECT id, numero_pedido, estado, total, tipo, mesa_id, device_id,
               seguimiento_token::text AS seguimiento_token,
               lat, lng, direccion_entrega,
-              tiempo_estimado_minutos, created_at
+              tiempo_estimado_minutos, created_at,
+              (
+                SELECT COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'nombre', COALESCE(pr.nombre, 'Producto'),
+                      'cantidad', pi.cantidad
+                    ) ORDER BY pi.created_at
+                  ),
+                  '[]'::json
+                )
+                FROM pedido_items pi
+                LEFT JOIN productos pr ON pr.id = pi.producto_id
+                WHERE pi.pedido_id = pedidos.id
+                  AND pi.estado_cocina = 'no_disponible'
+              ) AS items_no_disponibles
        FROM pedidos WHERE id = $1`, [pedidoId]);
         if (!pedido)
             throw new common_1.NotFoundException('Pedido no encontrado');
@@ -365,6 +407,7 @@ let PedidosService = class PedidosService {
             direccion_entrega: pedido.direccion_entrega,
             tiempo_estimado_minutos: pedido.tiempo_estimado_minutos,
             created_at: pedido.created_at,
+            items_no_disponibles: pedido.items_no_disponibles ?? [],
             historial: historial.map((h) => ({
                 estado: h.estado_nuevo,
                 fecha: h.fecha,

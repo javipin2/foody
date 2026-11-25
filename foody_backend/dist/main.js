@@ -36,6 +36,7 @@ async function bootstrap() {
     app.enableCors({
         origin: parseCorsOrigen(process.env.CORS_ORIGEN),
         credentials: true,
+        maxAge: 300,
     });
     app.use((req, res, next) => {
         res.setHeader('Access-Control-Allow-Private-Network', 'true');

@@ -27,6 +27,7 @@ import { CrearCuentaPorCobrarDto } from './dto/crear-cuenta-por-cobrar.dto';
 import { PagarCuentaPorCobrarDto } from './dto/pagar-cuenta-por-cobrar.dto';
 import { RetiroCajaDto } from './dto/retiro-caja.dto';
 import { DevolucionCajaDto } from './dto/devolucion-caja.dto';
+import { CajaMovimientosPedidoQueryDto } from './dto/caja-movimientos-pedido-query.dto';
 import { PaginacionQueryDto } from '../../compartido/dto/paginacion.dto';
 
 @Controller('caja')
@@ -104,7 +105,7 @@ export class CajaController {
   }
 
   @Post('cuentas-por-cobrar')
-  @Permisos('ver_caja')
+  @Permisos('gestionar_caja')
   async crearFiado(
     @Body() dto: CrearCuentaPorCobrarDto,
     @UsuarioActual() usuario: JwtPayload,
@@ -120,7 +121,7 @@ export class CajaController {
   }
 
   @Patch('cuentas-por-cobrar/:id/pagar')
-  @Permisos('ver_caja')
+  @Permisos('gestionar_caja')
   async pagarFiado(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PagarCuentaPorCobrarDto,
@@ -161,14 +162,12 @@ export class CajaController {
   @Permisos('ver_caja')
   async movimientosPedido(
     @Param('pedido_id', ParseUUIDPipe) pedidoId: string,
-    @Query() query: PaginacionQueryDto,
-    @Query('sucursal_id', new ParseUUIDPipe({ optional: true }))
-    sucursalSolicitada: string | undefined,
+    @Query() query: CajaMovimientosPedidoQueryDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
     const sucursalId = await this.sucursalScope.resolverLecturaOperativa(
       usuario,
-      sucursalSolicitada ?? usuario.sucursal_id,
+      query.sucursal_id ?? usuario.sucursal_id,
     );
     return this.cajaService.listarMovimientosPedido(
       pedidoId,
@@ -192,7 +191,7 @@ export class CajaController {
   }
 
   @Post('devolucion')
-  @Permisos('ver_caja')
+  @Permisos('gestionar_caja')
   async devolucion(
     @Body() dto: DevolucionCajaDto,
     @UsuarioActual() usuario: JwtPayload,
@@ -208,7 +207,7 @@ export class CajaController {
   }
 
   @Post('gastos')
-  @Permisos('ver_caja')
+  @Permisos('gestionar_caja')
   async gasto(@Body() dto: GastoCajaDto, @UsuarioActual() usuario: JwtPayload) {
     const sucursalId = await this.sucursalScope.resolverEscritura(
       usuario,

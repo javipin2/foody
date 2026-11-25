@@ -107,5 +107,8 @@ export declare class CatalogoService {
     private asegurarProductoEspejoBebida;
     private sincronizarProductoEspejoBebida;
     private asegurarCategoriaPorNombres;
+    private exigirCategoriaActiva;
+    private resolverCocinaActiva;
+    private errorCocinaRequerida;
     private exigirProducto;
 }

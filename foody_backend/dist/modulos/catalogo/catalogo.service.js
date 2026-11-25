@@ -103,8 +103,11 @@ let CatalogoService = class CatalogoService {
         if (restauranteId) {
             await this.planFeatures.assertLimiteProductos(restauranteId, dto.sucursal_id);
         }
-        const cocinaId = dto.cocina_id ??
-            (await this.database.consultarUno(`SELECT id FROM cocinas WHERE sucursal_id = $1 AND activa = true LIMIT 1`, [dto.sucursal_id]))?.id;
+        await this.exigirCategoriaActiva(dto.categoria_id, dto.sucursal_id);
+        const cocinaId = await this.resolverCocinaActiva(dto.sucursal_id, dto.cocina_id);
+        if ((dto.disponible ?? true) && !cocinaId) {
+            throw this.errorCocinaRequerida();
+        }
         const fila = await this.database.consultarUno(`INSERT INTO productos (
          sucursal_id, categoria_id, cocina_id, nombre, descripcion,
          precio, precio_para_llevar, imagen_url, disponible, orden
@@ -125,7 +128,26 @@ let CatalogoService = class CatalogoService {
         return fila;
     }
     async actualizarProducto(id, sucursalId, dto) {
-        await this.exigirProducto(id, sucursalId);
+        const producto = await this.exigirProducto(id, sucursalId);
+        if (dto.categoria_id !== undefined) {
+            if (!dto.categoria_id) {
+                throw new common_1.BadRequestException('La categoría no es válida para esta sede');
+            }
+            await this.exigirCategoriaActiva(dto.categoria_id, sucursalId);
+        }
+        let cocinaFinal = producto.cocina_id;
+        if (dto.cocina_id !== undefined) {
+            cocinaFinal = dto.cocina_id
+                ? await this.resolverCocinaActiva(sucursalId, dto.cocina_id)
+                : null;
+        }
+        else if (dto.disponible === true && cocinaFinal) {
+            cocinaFinal = await this.resolverCocinaActiva(sucursalId, cocinaFinal);
+        }
+        const disponibleFinal = dto.disponible ?? producto.disponible;
+        if (disponibleFinal && !cocinaFinal) {
+            throw this.errorCocinaRequerida();
+        }
         const campos = [];
         const valores = [];
         let i = 1;
@@ -160,7 +182,12 @@ let CatalogoService = class CatalogoService {
         return { id };
     }
     async cambiarDisponibilidad(id, sucursalId, disponible) {
-        await this.exigirProducto(id, sucursalId);
+        const producto = await this.exigirProducto(id, sucursalId);
+        if (disponible) {
+            if (!producto.cocina_id)
+                throw this.errorCocinaRequerida();
+            await this.resolverCocinaActiva(sucursalId, producto.cocina_id);
+        }
         await this.database.consultarUno(`UPDATE productos SET disponible = $1 WHERE id = $2 AND sucursal_id = $3`, [disponible, id, sucursalId]);
         void this.realtime.catalogoDisponibilidad(sucursalId, {
             producto_ids: [id],
@@ -220,17 +247,39 @@ let CatalogoService = class CatalogoService {
        LIMIT $2`, [sucursalId, paginacion_dto_1.LIMITE_LISTADO_SIN_PAGINA]);
     }
     async crearBebida(dto) {
+        const cocinaId = await this.resolverCocinaActiva(dto.sucursal_id);
+        if (!cocinaId)
+            throw this.errorCocinaRequerida();
         const fila = await this.database.consultarUno(`INSERT INTO bebidas (sucursal_id, nombre, precio, disponible)
        VALUES ($1,$2,$3,true)
        RETURNING id, nombre, precio, disponible`, [dto.sucursal_id, dto.nombre, dto.precio]);
         if (fila) {
-            await this.asegurarProductoEspejoBebida(dto.sucursal_id, fila);
+            await this.asegurarProductoEspejoBebida(dto.sucursal_id, fila, cocinaId);
         }
         this.invalidarMenu(dto.sucursal_id);
         return fila;
     }
     async actualizarBebida(id, sucursalId, datos) {
         await this.exigirBebida(id, sucursalId);
+        const bebidaActual = await this.database.consultarUno(`SELECT disponible FROM bebidas WHERE id = $1 AND sucursal_id = $2`, [
+            id,
+            sucursalId,
+        ]);
+        const disponibleFinal = datos.disponible ?? bebidaActual?.disponible ?? false;
+        if (disponibleFinal) {
+            const espejo = await this.database.consultarUno(`SELECT id, cocina_id FROM productos
+         WHERE sucursal_id = $1 AND bebida_origen_id = $2`, [sucursalId, id]);
+            if (espejo) {
+                if (!espejo.cocina_id)
+                    throw this.errorCocinaRequerida();
+                await this.resolverCocinaActiva(sucursalId, espejo.cocina_id);
+            }
+            else {
+                const cocinaId = await this.resolverCocinaActiva(sucursalId);
+                if (!cocinaId)
+                    throw this.errorCocinaRequerida();
+            }
+        }
         const campos = [];
         const valores = [];
         let i = 1;
@@ -409,12 +458,7 @@ let CatalogoService = class CatalogoService {
             for (const item of items) {
                 await client.query(`INSERT INTO producto_items_incluidos (
              sucursal_id, producto_id, producto_incluido_id, cantidad
-           ) VALUES ($1,$2,$3,$4)`, [
-                    sucursalId,
-                    productoId,
-                    item.producto_incluido_id,
-                    item.cantidad,
-                ]);
+           ) VALUES ($1,$2,$3,$4)`, [sucursalId, productoId, item.producto_incluido_id, item.cantidad]);
             }
         });
         await this.costeo.recalcularProductoPorId(productoId, sucursalId);
@@ -446,7 +490,9 @@ let CatalogoService = class CatalogoService {
                 }
             }
             const mapTop = new Map();
-            const tops = await client.query(`SELECT id, nombre, precio FROM toppings WHERE sucursal_id = $1`, [sucursalOrigenId]);
+            const tops = await client.query(`SELECT id, nombre, precio FROM toppings WHERE sucursal_id = $1`, [
+                sucursalOrigenId,
+            ]);
             for (const t of tops.rows) {
                 const exist = await client.query(`SELECT id FROM toppings
            WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`, [sucursalDestinoId, t.nombre]);
@@ -460,7 +506,9 @@ let CatalogoService = class CatalogoService {
                 }
             }
             const mapBeb = new Map();
-            const bebs = await client.query(`SELECT id, nombre, precio FROM bebidas WHERE sucursal_id = $1`, [sucursalOrigenId]);
+            const bebs = await client.query(`SELECT id, nombre, precio FROM bebidas WHERE sucursal_id = $1`, [
+                sucursalOrigenId,
+            ]);
             for (const b of bebs.rows) {
                 const exist = await client.query(`SELECT id FROM bebidas
            WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`, [sucursalDestinoId, b.nombre]);
@@ -477,7 +525,8 @@ let CatalogoService = class CatalogoService {
             const cocinasOrig = await client.query(`SELECT id, nombre FROM cocinas WHERE sucursal_id = $1 AND activa = true`, [sucursalOrigenId]);
             for (const co of cocinasOrig.rows) {
                 const dest = await client.query(`SELECT id FROM cocinas
-           WHERE sucursal_id = $1 AND LOWER(nombre) = LOWER($2) LIMIT 1`, [sucursalDestinoId, co.nombre]);
+           WHERE sucursal_id = $1 AND activa = true
+             AND LOWER(nombre) = LOWER($2) LIMIT 1`, [sucursalDestinoId, co.nombre]);
                 if (dest.rows[0])
                     mapCocina.set(co.id, dest.rows[0].id);
             }
@@ -501,6 +550,12 @@ let CatalogoService = class CatalogoService {
                 const cocinaId = p.cocina_id
                     ? (mapCocina.get(p.cocina_id) ?? cocinaFallback)
                     : cocinaFallback;
+                if (p.disponible && !cocinaId) {
+                    throw new common_1.BadRequestException({
+                        error: 'COCINA_DESTINO_NO_CONFIGURADA',
+                        message: 'Configura una cocina activa en la sede destino antes de copiar productos disponibles.',
+                    });
+                }
                 const ins = await client.query(`INSERT INTO productos (
              sucursal_id, categoria_id, cocina_id, nombre, descripcion,
              precio, precio_para_llevar, imagen_url, disponible, orden
@@ -587,12 +642,22 @@ let CatalogoService = class CatalogoService {
             }
         }
     }
-    async asegurarProductoEspejoBebida(sucursalId, bebida) {
-        const existente = await this.database.consultarUno(`SELECT id FROM productos WHERE sucursal_id = $1 AND bebida_origen_id = $2`, [sucursalId, bebida.id]);
-        if (existente)
+    async asegurarProductoEspejoBebida(sucursalId, bebida, cocinaAsignada) {
+        const existente = await this.database.consultarUno(`SELECT id, cocina_id, disponible FROM productos
+       WHERE sucursal_id = $1 AND bebida_origen_id = $2`, [sucursalId, bebida.id]);
+        if (existente) {
+            if (existente.disponible && !existente.cocina_id) {
+                throw this.errorCocinaRequerida();
+            }
+            if (existente.disponible && existente.cocina_id) {
+                await this.resolverCocinaActiva(sucursalId, existente.cocina_id);
+            }
             return existente;
+        }
         const catId = await this.asegurarCategoriaPorNombres(sucursalId, ['Bebidas'], null, 80, '(bebida|jugo)');
-        const cocinaId = (await this.database.consultarUno(`SELECT id FROM cocinas WHERE sucursal_id = $1 AND activa = true LIMIT 1`, [sucursalId]))?.id;
+        const cocinaId = cocinaAsignada ?? (await this.resolverCocinaActiva(sucursalId));
+        if (bebida.disponible && !cocinaId)
+            throw this.errorCocinaRequerida();
         return this.database.consultarUno(`INSERT INTO productos (
          sucursal_id, categoria_id, cocina_id, nombre, descripcion, precio,
          disponible, orden, bebida_origen_id
@@ -664,10 +729,43 @@ let CatalogoService = class CatalogoService {
             throw new common_1.BadRequestException('No se pudo crear categoría');
         return creada.id;
     }
+    async exigirCategoriaActiva(categoriaId, sucursalId) {
+        const categoria = await this.database.consultarUno(`SELECT id FROM categorias
+       WHERE id = $1 AND sucursal_id = $2 AND activa = true`, [categoriaId, sucursalId]);
+        if (!categoria) {
+            throw new common_1.BadRequestException({
+                error: 'CATEGORIA_NO_DISPONIBLE',
+                message: 'Selecciona una categoría activa de esta sede.',
+            });
+        }
+    }
+    async resolverCocinaActiva(sucursalId, cocinaId) {
+        const cocina = cocinaId
+            ? await this.database.consultarUno(`SELECT id FROM cocinas
+           WHERE id = $1 AND sucursal_id = $2 AND activa = true`, [cocinaId, sucursalId])
+            : await this.database.consultarUno(`SELECT id FROM cocinas
+           WHERE sucursal_id = $1 AND activa = true
+           ORDER BY nombre ASC LIMIT 1`, [sucursalId]);
+        if (cocinaId && !cocina) {
+            throw new common_1.BadRequestException({
+                error: 'COCINA_NO_DISPONIBLE',
+                message: 'Selecciona una cocina activa de esta sede.',
+            });
+        }
+        return cocina?.id ?? null;
+    }
+    errorCocinaRequerida() {
+        return new common_1.BadRequestException({
+            error: 'COCINA_REQUERIDA',
+            message: 'Asigna una cocina activa de esta sede antes de ofrecer el producto a los clientes.',
+        });
+    }
     async exigirProducto(id, sucursalId) {
-        const p = await this.database.consultarUno(`SELECT id FROM productos WHERE id = $1 AND sucursal_id = $2`, [id, sucursalId]);
+        const p = await this.database.consultarUno(`SELECT id, disponible, cocina_id FROM productos
+       WHERE id = $1 AND sucursal_id = $2`, [id, sucursalId]);
         if (!p)
             throw new common_1.NotFoundException('Producto no encontrado');
+        return p;
     }
 };
 exports.CatalogoService = CatalogoService;

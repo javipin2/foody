@@ -28,6 +28,16 @@ class SpaHandler(SimpleHTTPRequestHandler):
                 return super().do_GET()
         if os.path.isfile(path):
             return super().do_GET()
+        # Never return index.html for a missing asset. Browsers expect scripts,
+        # manifests and JSON resources to be their real type; HTML fallback here
+        # hides deployment errors and causes opaque JSON/parser failures.
+        suffix = Path(path).suffix.lower()
+        if suffix in {
+            ".css", ".html", ".ico", ".jpeg", ".jpg", ".js", ".json",
+            ".map", ".mjs", ".png", ".svg", ".ttf", ".wasm", ".webp",
+            ".woff", ".woff2", ".xml",
+        }:
+            return self.send_error(404, "Static asset not found")
         # SPA fallback
         self.path = "/index.html"
         return super().do_GET()

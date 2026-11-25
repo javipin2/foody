@@ -23,6 +23,8 @@ class _PedidosRepositoryFake extends PedidosRepository {
   int fallosCreacion = 0;
   final List<String?> clavesIdempotencia = [];
   final List<String?> metodosPago = [];
+  final List<double?> propinasRecibidas = [];
+  final List<List<Map<String, dynamic>>?> pagosRecibidos = [];
 
   @override
   Future<Map<String, dynamic>> crearPedidoStaff({
@@ -47,6 +49,8 @@ class _PedidosRepositoryFake extends PedidosRepository {
     reemplazos.add(itemIdReemplazar);
     clavesIdempotencia.add(idempotencyKey);
     metodosPago.add(metodoPago);
+    propinasRecibidas.add(propina);
+    pagosRecibidos.add(pagos);
     if (fallosCreacion > 0) {
       fallosCreacion--;
       throw Exception('Respuesta perdida');
@@ -196,6 +200,60 @@ void main() {
 
     expect(pedidos.creaciones, 1);
     expect(pedidos.metodosPago.single, 'pendiente');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('POS no conserva propina al diferir el cobro', (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final pedidos = _PedidosRepositoryFake();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PedidoCajeroScreen(
+            sucursalId: 'sucursal-prueba',
+            menuRepository: _MenuRepositoryFake(conProductos: true),
+            mesasRepository: _MesasRepositoryFake(),
+            cajaRepository: _CajaRepositoryFake(),
+            pedidosRepository: pedidos,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Arepa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Agregar ·'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    final propina = find.widgetWithText(TextField, 'Propina voluntaria');
+    await tester.ensureVisible(propina);
+    await tester.enterText(propina, '2500');
+    await tester.tap(find.byKey(const ValueKey<String>('pos-metodo-pago')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pendiente').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Propina voluntaria'), findsNothing);
+    final confirmar = find.widgetWithText(
+      FilledButton,
+      'Confirmar pedido →',
+    );
+    expect(tester.widget<FilledButton>(confirmar).onPressed, isNotNull);
+    await tester.ensureVisible(confirmar);
+    await tester.pumpAndSettle();
+    await tester.tap(confirmar);
+    await tester.pumpAndSettle();
+
+    expect(pedidos.creaciones, 1);
+    expect(pedidos.metodosPago.single, 'pendiente');
+    expect(pedidos.propinasRecibidas.single, isNull);
+    expect(pedidos.pagosRecibidos.single, isNull);
     expect(tester.takeException(), isNull);
   });
 
@@ -488,6 +546,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Cobro ahora'), findsOneWidget);
+    expect(find.text('Propina voluntaria'), findsOneWidget);
+    expect(find.text('Aparte del total del pedido'), findsOneWidget);
     expect(
       find.text('El cobro se registra en Caja al confirmar el pedido.'),
       findsOneWidget,
@@ -741,6 +801,42 @@ void main() {
     );
     expect(confirmar.onPressed, isNull);
     expect(tester.takeException(), isNull);
+
+    final monto2 = find.byKey(const ValueKey<String>('pos-monto-mixto-2'));
+    await tester.ensureVisible(monto1);
+    await tester.enterText(monto1, '6000');
+    await tester.ensureVisible(monto2);
+    await tester.enterText(monto2, '4000');
+    await tester.pumpAndSettle();
+
+    final propina = find.widgetWithText(TextField, 'Propina voluntaria');
+    await tester.ensureVisible(propina);
+    await tester.enterText(propina, '2500');
+    await tester.pumpAndSettle();
+    final confirmarValido = find.widgetWithText(
+      FilledButton,
+      'Confirmar pedido →',
+    );
+    expect(tester.widget<FilledButton>(confirmarValido).onPressed, isNotNull);
+    await tester.ensureVisible(confirmarValido);
+    await tester.pumpAndSettle();
+    await tester.tap(confirmarValido);
+    await tester.pumpAndSettle();
+
+    expect(pedidos.creaciones, 1);
+    expect(pedidos.propinasRecibidas.single, 2500);
+    expect(pedidos.pagosRecibidos.single, [
+      {'metodo_pago': 'efectivo', 'monto': 6000.0},
+      {'metodo_pago': 'tarjeta', 'monto': 4000.0},
+    ]);
+    expect(
+      (pedidos.pagosRecibidos.single!).fold<double>(
+        0,
+        (sum, pago) => sum + (pago['monto'] as num).toDouble(),
+      ),
+      10000,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('POS inicia menú, mesas y caja en paralelo', (tester) async {
@@ -828,17 +924,8 @@ void main() {
     await tester.pumpAndSettle();
     final confirmar = find.widgetWithText(FilledButton, 'Confirmar pedido →');
     expect(find.text('1 producto'), findsOneWidget);
-    final carritoScrollable = find
-        .ancestor(
-          of: find.text('1 producto'),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    await tester.scrollUntilVisible(
-      find.text('Confirmar pedido →'),
-      140,
-      scrollable: carritoScrollable,
-    );
+    await tester.drag(find.text('1 producto'), const Offset(0, -500));
+    await tester.pumpAndSettle();
     expect(confirmar, findsOneWidget);
     await tester.ensureVisible(confirmar);
     await tester.pumpAndSettle();

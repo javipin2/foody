@@ -1545,7 +1545,8 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
                       controller: _propinaCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Propina (opcional)',
+                        labelText: 'Propina voluntaria',
+                        helperText: 'Aparte del total del pedido',
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),

@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Permisos } from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
 import { JwtPayload } from '../../core/auth/jwt-payload';
@@ -26,7 +36,13 @@ import {
 } from './dto/independiente.dto';
 
 @Controller('domiciliarios-planta')
-@UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, PlanFeaturesGuard, RolGuard)
+@UseGuards(
+  JwtAuthGuard,
+  UsuarioActivoGuard,
+  SuscripcionActivaGuard,
+  PlanFeaturesGuard,
+  RolGuard,
+)
 @RequiereModulo('domiciliarios')
 export class DomiciliariosPlantaController {
   constructor(
@@ -75,9 +91,10 @@ export class DomiciliariosPlantaController {
   }
 
   @Post('liquidar/:domiciliario_planta_id')
-  @Permisos('gestionar_domiciliarios', 'ver_caja')
+  @Permisos('gestionar_domiciliarios', 'gestionar_caja')
   async liquidar(
-    @Param('domiciliario_planta_id', ParseUUIDPipe) domiciliarioPlantaId: string,
+    @Param('domiciliario_planta_id', ParseUUIDPipe)
+    domiciliarioPlantaId: string,
     @UsuarioActual() usuario: JwtPayload,
     @Query('sucursal_id') sucursalId?: string,
   ) {
@@ -165,7 +182,13 @@ export class DomiciliariosPlantaController {
 }
 
 @Controller('domiciliario')
-@UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, PlanFeaturesGuard, RolGuard)
+@UseGuards(
+  JwtAuthGuard,
+  UsuarioActivoGuard,
+  SuscripcionActivaGuard,
+  PlanFeaturesGuard,
+  RolGuard,
+)
 @RequiereModulo('domiciliarios')
 export class DomiciliarioPlantaController {
   constructor(private readonly domiciliariosService: DomiciliariosService) {}
@@ -192,7 +215,11 @@ export class DomiciliarioPlantaController {
     @Body() dto: ConfirmarEntregaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
-    return this.domiciliariosService.confirmarEntrega(pedidoId, usuario.sub, dto);
+    return this.domiciliariosService.confirmarEntrega(
+      pedidoId,
+      usuario.sub,
+      dto,
+    );
   }
 
   @Post('ubicacion')
@@ -201,7 +228,10 @@ export class DomiciliarioPlantaController {
     @Body() dto: UbicacionEntregaDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
-    return this.domiciliariosService.registrarUbicacionEntrega(usuario.sub, dto);
+    return this.domiciliariosService.registrarUbicacionEntrega(
+      usuario.sub,
+      dto,
+    );
   }
 
   @Get('historial')
@@ -232,7 +262,12 @@ export class DomiciliarioPlantaController {
 }
 
 @Controller('domiciliarios')
-@UseGuards(JwtAuthGuard, UsuarioActivoGuard, DomiciliarioIndependienteGuard, RolGuard)
+@UseGuards(
+  JwtAuthGuard,
+  UsuarioActivoGuard,
+  DomiciliarioIndependienteGuard,
+  RolGuard,
+)
 export class DomiciliariosIndependientesController {
   constructor(
     private readonly independientesService: DomiciliariosIndependientesService,

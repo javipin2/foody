@@ -243,13 +243,28 @@ class PedidoKanbanCard extends StatelessWidget {
                 ),
               ],
               const Spacer(),
-              Text(
-                formatoMoneda.format(pedido.total),
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: scheme.onSurface,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    formatoMoneda.format(pedido.total),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  if (pedido.requiereCobroCaja)
+                    Text(
+                      'Por cobrar: ${formatoMoneda.format(pedido.saldoPendiente)}',
+                      key: const ValueKey<String>('pedido-saldo-por-cobrar'),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: AnaliticaTokens.alertas,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),

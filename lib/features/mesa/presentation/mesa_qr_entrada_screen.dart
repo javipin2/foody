@@ -63,10 +63,14 @@ class _MesaQrEntradaScreenState extends State<MesaQrEntradaScreen> {
 
       if (!mounted) return;
       context.go(
-        '/menu/${r.menu.sucursal.id}'
-        '?nombre=${Uri.encodeComponent(r.menu.sucursal.nombre)}'
-        '&mesa_id=${r.mesaId}'
-        '&mesa_nombre=${Uri.encodeComponent(r.mesaNombre)}',
+        MesaSesion(
+          mesaId: r.mesaId,
+          mesaNombre: r.mesaNombre,
+          sucursalId: r.menu.sucursal.id,
+          sucursalNombre: r.menu.sucursal.nombre,
+          qrToken: widget.qrToken,
+          pedidosActivos: r.pedidosActivos,
+        ).rutaMenu,
       );
     } catch (e) {
       if (mounted) {

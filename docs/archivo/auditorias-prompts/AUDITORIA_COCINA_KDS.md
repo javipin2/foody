@@ -1,5 +1,41 @@
 # Auditoría — Cocina / KDS (Prompt 12)
 
+## Antigüedad de pedidos listos — 2026-11-25
+
+La consulta de tickets del KDS incluye `pedidos.created_at`, pero la tarjeta “Listos” solo mostraba un check. La inspección visual del Tunnel encontró seis tarjetas listas sin antigüedad visible; el Centro de operación a la misma hora mostraba pedidos operativos de 113 días. Lectura directa filtrada por Sede principal dentro de `BEGIN READ ONLY`/`ROLLBACK` confirmó que los seis tickets mostrados tienen más de 30 días de antigüedad (creación UTC entre 2026-07-02 y 2026-08-04). No se seleccionaron datos de clientes y no se actualizó ninguna fila. La vista no permitía distinguir a simple vista un ticket reciente de un pedido antiguo por retirar.
+
+**Corrección UX:** la tarjeta lista muestra `Pedido <antigüedad>` usando exclusivamente `pedidos.created_at`, con tooltip que aclara que es la antigüedad desde creación y no el tiempo desde que quedó listo. Después de 24 h destaca en ámbar y después de 30 días en rojo; el tooltip pide verificar el pedido antes de reimprimir o retornarlo a cocina. Si la respuesta no trae fecha, conserva el check anterior. No cambia transiciones, cobro, cocina ni impresión.
+
+**Verificación:** `flutter test --no-pub test/kds_screen_test.dart` 17/17 (incluye 320/390/820/1440 px, ámbar a 27 h y rojo a 113 d 9 h); `dart analyze` focalizado sin incidencias. Se generó build release candidato `build/web_equipo_kds_candidate` con flavor Equipo (main JS 6.96 MB, SHA-256 `ab700bb24fdae4dfc8f1740b7fdb152086abfc7a13acd071dfcf80fd4e120001`), copiando recursos `web/` y aplicando cache bust por hash. Compilación JS exitosa; el dry-run WASM reporta incompatibilidad heredada de `dart:html`/USB, sin bloquear el build JS. La acción de publicación local que detenía el proceso Python en :8080 y reemplazaba el directorio fue rechazada por revisión automática; no se intentó otro método. Comprobación posterior: :8080 200, :8081 200, `equipo.foodyy.store/admin/panel` 200; Cloudflared PID 8940 sigue activo. El bundle publicado sigue siendo anterior; ni CORS/WOMPI ni OAuth se tocaron.
+
+## Validación de conectividad runtime — RT + impresión (2026-11-25)
+
+Lectura inicial de `GET /api/v1/health`, `/health/realtime` y `/health/impresion` en API activa `:3000` (PID 20152): Postgres y Realtime respondían, pero `ws://127.0.0.1:8765` inicialmente daba `ECONNREFUSED`. Tras iniciar el agente Python configurado en modo `archivo`, una nueva lectura confirmó `conectado=true`. Health global sigue `degradado` por 0 pendientes, **317 jobs `error`** y 0 enviados últimas 24 h.
+
+Las 317 filas no se reintentaron ni limpiaron. El worker consulta solo `estado='pendiente'`; los estados `error` no se reproducen automáticamente. `POST /impresion/procesar-cola` tampoco recupera esos estados; `reimprimirPedido` genera un trabajo nuevo. No hay forma de saber por la health si las comandas anteriores ya salieron en papel antes de quedar en error; replay masivo podría duplicarlas. Para no ocultar pedidos perdidos ni duplicar comandas, falta clasificar por sede/fecha/último error y decidir una recuperación individual confirmada por operador.
+
+**Verificación local:** Nest unitarias de aislamiento de impresión y broadcast Realtime 3/3. El agente Python se probó de forma aislada en `127.0.0.1:18765`, `modo=archivo`, con ping y ticket sintético; proceso y temporal se retiraron. Luego, para restaurar el endpoint local configurado, se inició el agente real en `127.0.0.1:8765` en modo `archivo`; health de Nest confirmó conexión. El directorio configurado contiene 246 archivos preexistentes, así que no se escribió allí otro ticket sintético. No hubo escrituras a `impresion_cocina_jobs`, replays ni impresión física; la cola histórica permanece intacta. Tunnel y API :3000 no se reiniciaron. El agente actual permite guardar tickets nuevos como archivo, no confirma salida por hardware.
+
+## COC-PAID-KDS-01 — Cocina bloqueada tras cobro excepcional (2026-11-25)
+
+El flujo VIE-05/13 permite a admin/gerente completar el cobro con motivo aunque haya líneas de Cocina pendientes. `listarTickets()` incluía esos tickets pagados con líneas no resueltas, pero `cambiarEstadoItem()` los rechazaba porque `pagado` era inmutable; el pedido permanecía visible en Cocina, sin poder terminarse. El E2E existente ya cubría el cobro excepcional, pero no el paso posterior de Cocina.
+
+**Corrección en fuente:** el guard de Cocina ahora permite avanzar exclusivamente líneas existentes `pendiente`/`preparando` de un pedido `pagado` cuyo `monto_pagado` cubra el total. Permite estados destino `preparando`, `listo` o `no_disponible`; no permite volver una línea lista/no disponible a pendiente, ni actuar con pedido cancelado o saldo incompleto. Al concluir, el estado global sigue `pagado` y no se altera caja/pago. Las líneas no disponibles siguen los efectos existentes de alerta, merma y desactivación de catálogo; su ajuste económico continúa abierto en COC-NODISP-COMMERCE-01.
+
+**UX y verificación local:** KDS ya rendereaba el chip «Cobrado» y acciones para líneas no resueltas; se añadió test del caso. `flutter test --no-pub test/kds_screen_test.dart`: 15/15; analyzer KDS limpio. Nest `pedido-estados.cocina-completa.spec.ts`: 7/7; `npm run build` OK. El E2E focalizado `VIE-05/13 [C]` ahora pasó (1 prueba; 8 omitidas por el filtro) contra API Nest temporal `:3001` conectada a un clon descartable `foody_diseno_qa_codex_kds_20261125`, no el QA compartido: abono parcial no cierra, intento de cajero se rechaza, admin con motivo cobra, KDS todavía lista el ticket y Cocina completa la línea manteniendo `pagado`. `FOODY_QA_SIN_EFECTOS=1` pausó integraciones, cron, realtime e impresión. API temporal detenida; clon descartado; QA original conserva 4 sedes; API :3000 PID 20152 y salud local intactos. Tunnel no se modificó. La activación nueva en :3000 sigue pendiente; no cerrar antes de revisión controlada del runtime.
+
+| ID | Estado | Sev | Hallazgo / corrección | Evidencia |
+|---|---|---|---|---|
+| **COC-PAID-KDS-01** | 🟡 Fuente + `dist` QA verificados; activación :3000 pendiente | Alta | Cobro admin/gerente con motivo podía cerrar el estado global y dejar Cocina bloqueada. Se permite solo avance de líneas existentes totalmente pagadas, conservando estado `pagado`. | Nest build + unitarias; KDS 15/15; E2E focalizado 1/1 sobre clon descartable de QA; API :3000 sigue con PID anterior |
+
+## Complemento — COC-NODISP-CUSTOMER-01 (2026-11-25)
+
+El cierre de cocina consideraba `no_disponible` como resuelto para calcular el estado general. En domicilio, ese pedido podía aparecer `listo` mientras la barrera de despacho bloqueaba asignación/oferta. El endpoint público `GET /pedidos/:id/estado` devolvía estado, total e historial, sin líneas no disponibles; Seguimiento solo mostraba el estado global.
+
+**Corrección:** después de autorizar por token de seguimiento o capability, el API añade `items_no_disponibles` con nombre y cantidad. La pantalla cliente muestra un aviso y aclara que el total todavía no se ha ajustado. El cambio no altera precio, estados, cobros, despacho ni permisos y no expone el motivo interno de Cocina.
+
+**Verificación:** E2E Cocina→estado público con token dentro de `verificar-e2e-jest.ps1`, 8/8 suites y 37/37; Nest unitario 50/50 suites, 127/127, build OK; widget del aviso 5/5 en anchos 320/390/820/1440 y analyzer focalizado limpio. QA aislada limpiada; Nest QA temporal detenido. El backend `:3000` sigue anterior al build y el cambio todavía no está activo por Tunnel.
+
 ## Actualización integral — 2026-11-24
 
 La inspección actual contrastó API, KDS Flutter, reglas de estado, impresión, permisos, alertas, inventario y despacho. El estado de abajo reemplaza las conclusiones históricas donde se indique; las secciones originales sirven como registro de hallazgos y ya no deben leerse como estado vigente.
@@ -182,6 +218,14 @@ Launcher `scripts/iniciar1/iniciar-foody-subdominios.bat`: builds Cliente/Equipo
 **Evidencia:** `test/kds_screen_test.dart` 11/11, incluye fallo en segundo ítem y valida detenerse, recargar, informar y conservar pendiente; `flutter analyze --fatal-infos lib/features/cocinas/presentation/kds_screen.dart test/kds_screen_test.dart` limpio; Flutter global 210 aprobadas/5 omitidas/0 fallidas. Builds release Cliente/Equipo completados con `scripts/iniciar1/iniciar-foody-subdominios.bat`; Cliente, Equipo y API salud local/público HTTP 200; API :3000 PID 7564 y Tunnel activo.
 
 **Alcance y pendientes:** solo Flutter/prueba; no cambia contrato ni reglas del servidor. Esta secuencia permite resultado parcial y recuperación, no ofrece atomicidad global; evaluar endpoint transaccional si la operación comercial requiere todo-o-nada. Falta QA autenticada, interacción física KDS e impresión térmica. Build mostró avisos Wasm/dependencias web y fuente CupertinoIcons no incluida; no impidieron compilar.
+
+### COC-KDS-IMMUTABLE-01 — bloquear mutaciones tardías en pedido cerrado/transferido (2026-11-25)
+
+**Hallazgo:** `CocinasService.cambiarEstadoItem()` actualizaba `pedido_items.estado_cocina` antes de comprobar si el pedido estaba en `pagando`, `asignado`, `en_camino`, `entregado` o terminal. Preservaba el estado global del pedido, pero aun podía cambiar la línea y, si se solicitaba `no_disponible`, generar alerta, merma, trabajo de impresión y desactivar el producto.
+
+**Corrección:** con el pedido bloqueado bajo `FOR UPDATE`, Nest comprueba `ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA` antes de la primera escritura. Responde HTTP 409 `PEDIDO_COCINA_CERRADO`; no cambia el ítem ni produce efectos derivados. La regla coincide con el comentario existente de que Cocina no modifica pedidos en cobro, ruta o estado terminal. No se endureció la FSM de líneas para estados operativos: permitir volver de Listo a Preparando sigue siendo una corrección soportada.
+
+**Verificación:** E2E Cocina+caja+QR 24/24 en clon PostgreSQL limpio; el caso crea pedido, fija línea `preparando`, presenta cuenta y trata de marcarla N/D; recibe 409 y la lectura de detalle confirma que sigue `preparando`. Regresión Nest 51 suites/128 unitarias y build OK. Clon QA/API :3001 temporales retirados; `foody_diseno_qa` y Cloudflare quedaron intactos. El API de trabajo se reinició con PID 20152 y el túnel se revalidó al publicar. Pendiente click-through KDS autenticado y QA visual de rol cocina; no se cambió producto/catálogo ni hubo merma en el escenario rechazado.
 ### COC-CANCEL-NODISP-MERMA-01 — merma duplicada al cancelar pedido con línea N/D (2026-11-24)
 
 Al marcar un ítem `no_disponible`, `CocinasService.actualizarEstadoItem()` ya registra la merma de esa línea si el pedido descontó stock. Luego, al cancelar el pedido todavía en `en_cocina`, `PedidosEstadoService` llama a `registrarMermaPedidoCompleto()`, que antes incluía todas las líneas y volvía a insertar la merma de la misma línea N/D.
@@ -189,3 +233,8 @@ Al marcar un ítem `no_disponible`, `CocinasService.actualizarEstadoItem()` ya r
 **Corrección en fuente:** `registrarMermaPedidoCompleto()` ahora lee `estado_cocina` y omite las filas `no_disponible`; conserva la merma para las demás líneas según la regla actual. No restaura inventario ni cambia importe/pago. Unitaria nueva verifica omisión de N/D y permanencia de las demás líneas. E2E nueva cancela un pedido de dos líneas y comprueba que la cantidad de mermas se duplica solo por la segunda línea. Unitarias inventario/Caja 4/4, build Nest OK y TypeScript del spec E2E sin errores. La E2E no se ejecutó por falta de API QA :3001; el control automático también rechazó reiniciar :3000, de modo que el runtime no contiene todavía el fix.
 
 **Pendiente de política/validación:** la decisión existente considera merma todas las otras líneas si el estado general anterior era `en_cocina`, aunque su estado individual sea `pendiente`. No cambié esa regla; confirmar si entrar a la cola KDS equivale a iniciar preparación o si la merma debe basarse solo en el estado de cada línea.
+# Complemento 2026-11-25 — confirmación de reimpresión
+
+La acción del KDS `Reimprimir` crea copias físicas adicionales, incrementa `pedidos.comanda_copia` y encola el ticket. Antes se disparaba inmediatamente al tocar el botón. Ahora aparece una confirmación que advierte sobre una copia adicional y recuerda comprobar que la impresión anterior no esté en proceso. Cancelar no invoca el repositorio; confirmar hace exactamente una solicitud.
+
+Verificación: `flutter test --no-pub test/kds_screen_test.dart` 16/16, incluyendo 320/390/820/1440 y un caso que confirma cancelar sin efecto y reimprimir con una llamada. `flutter analyze --no-pub` en KDS/test: limpio. Sin prueba en térmica física ni escritura en DB real.

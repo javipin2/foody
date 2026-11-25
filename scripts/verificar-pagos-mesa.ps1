@@ -2,6 +2,7 @@
 # Uso: .\scripts\verificar-pagos-mesa.ps1
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
 
 Write-Host '=== Verificar pagos mesa / caja (F-17 split) ===' -ForegroundColor Cyan
 

@@ -8,6 +8,7 @@ export type OpcionesStaffPedido = {
     creadoPorStaff?: boolean;
     usuarioId?: string;
     rol?: string;
+    puedeCobrar?: boolean;
     soloEstimar?: boolean;
 };
 export declare class PedidosSoporteService {
@@ -42,7 +43,7 @@ export declare class PedidosSoporteService {
         estado: string;
     }): void;
     notificarLlamadaMesera(sucursalId: string, pedidoId: string, numeroPedido: string, mesaId: string | null, mesaNombre?: string | null, mensajeCliente?: string): void;
-    notificarDesasignacionesDomicilio(usuarioIds: string[], pedidoId: string): void;
+    notificarDesasignacionesDomicilio(usuarioIds: string[], pedidoId: string, independientesIds?: string[]): void;
     notificarPedidoRealtime(sucursalId: string, pedidoId: string, estado: string, numeroPedido?: string, opciones?: {
         mesaId?: string | null;
         creadoAt?: Date | string;

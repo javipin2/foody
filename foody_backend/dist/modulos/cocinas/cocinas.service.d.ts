@@ -74,6 +74,7 @@ export declare class CocinasService {
         observaciones: string;
     }>;
     private exigirCocina;
+    private exigirCocinaSinOperacionPendiente;
     private exigirImpresora;
 }
 export {};

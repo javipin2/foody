@@ -1,8 +1,28 @@
 # Foody — Roadmap Frontend (documento maestro)
 
-### 2026-11-24 — AR-17 navegación Pedido → Caja
+### 2026-11-25 — RBAC-CAJA-WRITE-01 · acciones según permiso
 
-El detalle transmite el ID del pedido a Caja y actualiza el deep link. Caja consulta el historial del pedido de forma separada al turno activo y muestra pagos aunque sean de turnos cerrados o no exista caja abierta. Nest valida permiso/sucursal y evita revelar pedidos de otra sucursal; migración 093 añade índice parcial y se aplicó solo a QA. Widget de Caja cubre 320/390/820/1440; análisis focalizado limpio; global Flutter 269 aprobadas/5 omitidas/0 fallidas; Nest 49 suites/125 pruebas y build OK. El caso E2E de caja cerrada está escrito pero :3001 no escucha, por lo que sigue sin ejecutar. El candidato Equipo Release compiló pero no se publicó: la nueva ruta responde 404 en :3000/Tunnel (el proceso arrancó antes del build actual). La verificación autenticada queda pendiente de activación coordinada.
+Caja recibe los permisos efectivos de sesión: `ver_caja` conserva consulta, `gestionar_caja` habilita CxC/gasto/devolución, y apertura/cierre/retiro usan sus permisos propios. Las acciones no autorizadas se ocultan; quien no puede abrir turno ve un aviso claro. Widget responsive Caja 17/17 y `dart analyze` de Caja, shells Admin/Cajero, Usuarios y test sin incidencias. Publicación y verificación autenticada esperan aplicar migración 094 y activar API.
+
+### 2026-11-25 — DOM-ESTIMATE-LABEL-01 · saldos estimados de independientes
+
+El KPI y las filas de Domiciliarios dejan de llamar “Por pagar” a saldos estimados al aceptar ofertas. La ayuda aclara que pueden incluir pedidos cancelados y no confirman entrega ni pago. Sin cambio de cálculos ni API. Test de Domiciliarios 8/8 en 320/390/820/1440; analyzer limpio. Pendiente publicar y revisar en navegador.
+
+### 2026-11-25 — DASH-STATUS-UX-01 · frescura del Centro de operación
+
+Se reemplazó la línea ambigua «no en vivo» por un estado compacto con hora de captura, actualización parcial o carga en curso e intervalo automático (75 s). Transición con movimiento reducido, tokens existentes y anuncio accesible. Tests dashboard 9/9 (320/390/820/1440 y estados); `dart analyze` focalizado limpio. No cambia consultas ni datos. Queda pendiente QA visual autenticada.
+
+### 2026-11-25 — FIN-GASTO-DATE-01 · Análisis de Caja
+
+Analítica Caja separa “Gastos registrados” de “Egresos de caja”; se aclaró que el libro se filtra por fecha de registro y Rentabilidad/P&L por fecha del gasto. La interfaz explica por qué pueden diferir y advierte que gastos manuales no siempre afectan arqueo. Fórmulas y contratos Nest sin cambio. `analitica_caja_screen_test.dart` 5/5 en 320/390/820/1440; analyzer focalizado limpio. Falta decisión contable sobre conservar ambas fechas o unificarlas; QA visual autenticada general permanece pendiente.
+
+### 2026-11-25 — COC-NODISP-CUSTOMER-01 · Seguimiento de pedido
+
+El flujo Cliente muestra las líneas que Cocina marcó como no disponibles, su cantidad y que el total todavía no se ajusta. Widget responsive 5/5 en 320/390/820/1440 y analyzer focalizado sin incidencias; E2E QA previo Cocina→Seguimiento 8/8 suites, 37/37. Revalidación actual: `cocina.e2e-spec.ts` 7/7 en QA incluye payload con token, nombre/cantidad y bloqueo de despacho; fixture limpiado. API activa PID 10208; Cliente/Equipo/API local/Tunnel HTTP 200 y ambos bundles JS verificados por SHA-256. No altera cobros, catálogo ni estados. Decisión de sustitución/ajuste/reembolso sigue en COC-NODISP-COMMERCE-01, además de la aceptación visual autenticada.
+
+### 2026-11-25 — AR-17 navegación Pedido → Caja
+
+El detalle transmite el ID del pedido a Caja y actualiza el deep link. Caja consulta su historial aunque el turno esté cerrado o no haya turno abierto. Nest valida `ver_caja` y sucursal; el DTO permite combinar `sucursal_id` con paginación; índice parcial 093 instalado solo en QA. Focalizados 320/390/820/1440, analyzer limpio; Flutter global 269 aprobadas/5 omitidas; Nest 50 suites/127 unitarias y build OK; E2E QA 8/8 suites y 37/37 pruebas incluye pago→cierre→consulta histórica. Runtime actual PID 10208; sin sesión, la ruta responde 401 `NO_AUTORIZADO` (registrada y protegida), mientras aceptación autenticada desde Cliente/Equipo y verificación de scope siguen pendientes. El Tunnel permanece activo.
 
 ### 2026-11-24 — regresión global y ciclo de vida de vistas
 
@@ -294,7 +314,7 @@ Ver lista completa: **[FRONTEND_ACCESOS_RAPIDOS.md](FRONTEND_ACCESOS_RAPIDOS.md)
 
 | ID | Tarea | Estado | Doc |
 |----|-------|--------|-----|
-| F10-01 | Dashboard gerente command center (KPIs clicables) | ⏳ | PR-01…05 |
+| F10-01 | Dashboard gerente command center (KPIs clicables) | 🟡 | KPIs y enlaces ya existen; DASH-STATUS-UX-01 clarifica frescura/error parcial. Falta priorización contextual por rol y QA visual autenticada. |
 | F10-02 | Búsqueda global ⌘K + favoritos sidebar | ✅ | PR-14, AR-28/29 |
 | F10-03 | `FoodyEmptyState` + copy por contexto | ⏳ | PR + DS-06 |
 | F10-04 | `FoodyInsightCard` (tarjetas métricas) | ⏳ | PR-04 |
@@ -445,3 +465,5 @@ Añadir en **[FRONTEND_INSTRUCCIONES.md](FRONTEND_INSTRUCCIONES.md)** cada nueva
 ### 2026-11-24 — navegación compacta de Inventario validada
 
 Inventario ya presenta selector emergente con icono, sección activa y progreso «Sección n de 5» en compactos; escritorio conserva navegación visible para Mercado, Movimientos, Subrecetas, Conteo y Traslados. `inventario_seccion_selector_test.dart` 6/6 (320/390 claro y oscuro, 820/1440) y analyzer focalizado limpio. F4-02 queda cerrado como subnavegación responsive; la agrupación conceptual de entidades queda como decisión aparte si cambian módulos.
+
+**2026-11-25 — publicación web verificada:** resolución de recursos estáticos FCM y 404 para assets inexistentes está documentada en docs/archivo/auditorias-prompts/AUDITORIA_ARRANQUE_WEB.md; panel Equipo volvió a renderizar tras recarga del Tunnel. Cache edge antigua de la URL FCM puede persistir hasta su TTL.

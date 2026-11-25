@@ -18,11 +18,11 @@ class MesaSesion {
   final String? qrToken;
   final int pedidosActivos;
 
-  String get rutaMenu =>
-      '/menu/$sucursalId'
+  String get rutaMenu => '/menu/$sucursalId'
       '?nombre=${Uri.encodeComponent(sucursalNombre)}'
       '&mesa_id=$mesaId'
-      '&mesa_nombre=${Uri.encodeComponent(mesaNombre)}';
+      '&mesa_nombre=${Uri.encodeComponent(mesaNombre)}'
+      '${qrToken == null || qrToken!.isEmpty ? '' : '&qr_token=${Uri.encodeComponent(qrToken!)}'}';
 }
 
 /// Persiste la sesión de mesa QR para no pedir ciudad/sucursal de nuevo.

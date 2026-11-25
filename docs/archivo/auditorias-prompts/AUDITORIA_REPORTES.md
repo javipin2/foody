@@ -1,5 +1,15 @@
 # Auditoría — Reportes y analítica (Prompt 20)
 
+## Revalidación DOM-INDEP-SETTLE-01 — dirección y evidencia del dinero (2026-11-25)
+
+La comisión del servicio de domiciliario independiente no es una suscripción de Foody ni una comisión sobre el valor de los productos: `DispatchService.calcularGanancias(costo_domicilio)` aplica `comision_domiciliario_porcentaje` (configuración global, fallback 15%) al costo del domicilio y deja el remanente como `ganancia_domiciliario`. `DomiciliariosIndependientesService.responderOferta()` registra ambos importes cuando se acepta la oferta, antes de entrega, con `pagado` en su default `false`.
+
+La lectura de ganancias del independiente (`GET .../ganancias`) y el resumen administrativo no tienen operación complementaria de pago. En la revisión de fuentes no hay `UPDATE ganancias_domiciliario.pagado`, inserción de gasto/egreso, comprobante ni endpoint para liquidar independiente. En cambio, `POST /domiciliarios-planta/liquidar/:domiciliario_planta_id` liquida cuentas por cobrar de un domiciliario de planta: marca las CxC pagadas e inserta `pagos_pedido`/movimiento `venta` en efectivo, es decir, registra una entrada a Caja del negocio. No representa el pago que Foody/restaurante tendría que hacer al independiente.
+
+**Coherencia de reportes:** `SuperAdminService.estadisticas()` suma `ganancias_domiciliario.comision_foody` creadas hoy y las expone con el nombre legacy `ingresos_foody_hoy`; el evento es aceptar oferta, no cobrar la comisión. La UI ya evita presentar esto como ingreso: el KPI se titula “Comisión estimada hoy” y aclara que no confirma recaudo. El resumen de sede suma `por_pagar` de filas `pagado=false` sin filtrar el estado de la asignación, de modo que cancelaciones pueden continuar en el saldo estimado. Ninguna cifra acredita por sí sola que se haya cobrado una comisión o pagado una ganancia.
+
+**Decisión comercial/contable pendiente:** definir quién contrata y paga al independiente, origen de fondos, momento de devengo (aceptación/entrega/recaudo), regla de cancelación antes/después de desplazamiento, pagos parciales, medio y soporte, y cuentas/impacto en Caja/P&L. No cambiar el cálculo ni crear liquidación hasta resolverlo. La etiqueta `Liquidar` de UI es explícitamente de fiados de planta; no hay evidencia de E2E payout para independientes. Se verificó estáticamente el source; no se hicieron escrituras ni cambios de dinero.
+
 ## Complemento — REP-DEFAULT-DATE-TZ-01 (2026-11-24)
 
 `ReportesService.resolverRango()` usaba `new Date().toISOString().slice(0, 10)` para el rango predeterminado. Con el host en `America/Bogota`, entre 19:00 y 23:59 locales ya es el día siguiente en UTC; “hoy” quedaba adelantado, aunque los filtros SQL interpretan días del negocio en `America/Bogota`.
@@ -28,6 +38,26 @@ Leyenda: 🟣 abierto · 🟡 aceptado/parcial · ✅ cerrado / comprobado OK
 La revisión de `AnaliticaService.inicio()` y `clausulasPedidos()` confirmó que el COGS del período actual ya excluye cancelados/rechazados por defecto mediante `extraM`, igual que la consulta de ventas netas. Si se solicita un filtro explícito de estados, ambos caminos lo respetan. Por tanto, no había defecto de producción que corregir; añadir una exclusión fija habría contradicho filtros legítimos de estado. Se retiró esa adición y quedó `analitica-rentabilidad-cancelados.spec.ts` para proteger ambos contratos.
 
 **Verificación:** prueba focalizada 2/2; Nest build y suite unitaria 29 suites/65 pruebas. Flutter global 219 aprobadas/5 omitidas, sin fallos; analyzer global sin errores/warnings, 36 infos existentes. API :3000 sincronizada con build actual, PID 17080; salud local/pública HTTP 200, Tunnel PID 11112 y `.env` sin cambios. No se modificaron cálculos ni datos del negocio.
+
+## Complemento — ANA-CASH-COHORT-UX-01: diferenciar saldo de pedidos de descuadre de turno
+
+Las pestañas Caja de Analítica y Reportes comparan el valor de pedidos creados en el rango con movimientos de venta/devolución ligados a esos pedidos, atribuidos por `pedidos.created_at`; los movimientos sin pedido usan su propia fecha. Es un saldo de la cohorte de pedidos consultada y puede cambiar cuando se registren cobros posteriores. No es el descuadre físico del cajón ni el efectivo recibido dentro del rango. El descuadre real del turno es `cajas.diferencia` al cerrar. Se aclararon títulos, subtítulos y tooltips en ambas pantallas y el API explica la semántica; en Análisis se quitó el acento de alerta asociado a `descuadre_relevante`. Se conservan cálculos y contratos numéricos.
+
+**Verificación:** widgets de Reportes, Análisis y exportación 13/13; Caja de Análisis cubre 320, 390, 820 y 1440 px. Nest `reportes-periodo-caja.spec.ts` + `analitica-caja-gastos.spec.ts` 3/3 comprueban SQL/metadata; `npm run build` OK; Flutter analyzer limpio. PDF/CSV usan “Ventas de pedidos”, “Cobros netos asociados” y “Ventas menos cobros”; no se cambiaron datos ni transacciones. No se reinició el proceso :3000, por lo que la metadata backend nueva queda compilada pero requiere activación para verse en runtime.
+
+### Complemento — FIN-DATE-01: doble lectura de cohorte y recaudo (2026-11-25)
+
+Reportes conserva ventas y cobros asociados a pedidos creados en el rango, y añade `recaudo_periodo`: suma ventas menos devoluciones cuya fecha real de movimiento (`movimientos_caja.created_at`) cae en el rango local de `America/Bogota`. Este segundo dato puede contener pedidos creados antes del rango. Así se exponen ambos universos sin reemplazar uno por otro ni llamar “descuadre” a su diferencia; el arqueo físico continúa en `cajas.diferencia`. La nueva lectura usa un rango sobre timestamp de movimientos; no toca datos ni transacciones. Las propinas siguen separadas y excluidas de ambos importes. Análisis no presenta el nuevo recaudo porque sus filtros de producto/estado pueden implicar una asignación que el movimiento de pago no contiene.
+
+**Verificación:** helper de rango y contrato Nest 6/6; Reportes responsive 8/8; exportación PDF/CSV 2/2; analyzer focalizado limpio y `npm run build` OK. FIN-DATE-01 queda parcialmente resuelto en Reportes; sigue pendiente decidir cuál de las dos fechas debe ser la vista predeterminada para conciliación y si Análisis debe exponer un flujo general cuando no haya filtros de ítem.
+
+## Complemento — FIN-TIP-REPORT-01, propinas fuera de ventas y utilidad
+
+La caja informa `propinas_turno` por separado del saldo esperado de venta. En el código revisado, analítica y reportes calculan ventas desde `pedidos.total` o las líneas de `pedido_items`; no suman `pagos_pedido.propina` a ventas netas, ingresos de producto o utilidad. Esto es coherente con la regla confirmada por el usuario: el pedido se cobra completo y la propina es voluntaria y aparte. No presentar la propina como venta ni ingreso de Foody. Aún no existe un reporte consolidado para seguimiento/liquidación de propinas, ni una política contable confirmada sobre su beneficiario, retención o tratamiento en cancelaciones. La propina en cobros unificados de mesa puede quedar asociada a un pedido representativo; resolver el modelo de asignación antes de ofrecer análisis por pedido. Evidencia: SQL de `AnaliticaService`, consultas de reportes y cierre `CajaService.cerrar()`.
+
+## Complemento — ANA-FILT-PROD-01, ventas por producto
+
+La afirmación histórica de que el filtro `producto_ids` sumaba el ticket entero quedó obsoleta. El código actual detecta filtros de ítem, agrupa la consulta sobre `pedido_items`, aplica `pi.producto_id = ANY(...)` y suma `SQL_VENTA_LINEA_ITEM`; el header sin filtros de ítem conserva `SUM(pedidos.total)`. Se agregó una prueba SQL de regresión que verifica este contrato. Así, la métrica filtrada representa las líneas de producto coincidentes (incluidos extras según la expresión de ventas por línea), no el total del ticket. Revalidar si se modifica el universo de ventas o la semántica de filtros.
 
 ## Complemento — CAJ-REFUND-TRACE-01, efecto en P&L
 
@@ -65,7 +95,7 @@ Periodo demo 7d, sede `c0000000-…0001`:
 |------------|--------|-------|
 | KPI header / financiero | `SUM(pedidos.total)` | Ticket completo |
 | Ranking productos / margen | `SQL_VENTA_LINEA_ITEM` (línea + extras) | Puede divergir del header si se suman rankings vs KPI |
-| Filtro `producto_ids` en resumen | `EXISTS` ítem + **`SUM(p.total)` del pedido entero** | Sobre-atribuye ventas al producto (ticket completo) |
+| Filtro `producto_ids` en resumen | Consulta `pedido_items` + `SQL_VENTA_LINEA_ITEM` con `pi.producto_id` | Suma líneas filtradas; prueba de regresión agregada en `analitica-filtro-producto.spec.ts` |
 
 ---
 
@@ -300,6 +330,6 @@ También `responderOferta()` incrementa `domiciliarios_independientes.total_entr
 
 **Verificación:** test de Analítica Caja comprueba los límites generados para gastos y cierres; suite analítica/reportes/finanzas + helper compartido: 6 suites/11 pruebas; `npm run build` exitoso. PostgreSQL QA en `TimeZone=UTC` confirmó para el 1 de marzo: `04:59:59Z` excluido, `05:00:00Z` incluido, `04:59:59Z` del día siguiente incluido y `05:00:00Z` del siguiente excluido. Solo CTE/SELECT, sin mutaciones persistentes.
 
-**Decisión separada pendiente:** Analítica Caja agrupa gastos por `gastos.created_at` (fecha de registro), mientras el P&L de Finanzas agrupa por `gastos.fecha` (fecha operativa seleccionada). Una creación retroactiva puede caer en periodos diferentes. Debe definirse si la comparación financiera usa fecha de registro o fecha del gasto; no se cambió esa semántica. No confundir este pendiente con FIN-DATE-01, que trata cobros/devoluciones de pedidos frente a fecha de cohorte del pedido.
+**FIN-GASTO-DATE-01 — semántica aclarada en UI; política contable abierta:** Analítica Caja agrupa gastos del libro por `gastos.created_at` (momento de registro), mientras Rentabilidad/P&L usa `gastos.fecha` (fecha operativa seleccionada). Los egresos de caja son una tercera cifra, proveniente de `movimientos_caja`; los gastos manuales retroactivos no crean movimiento de caja. Por eso los tres totales pueden diferir sin que la suma esté duplicada. `AnaliticaScreen` ahora identifica el KPI como “Fecha de registro” y aclara que Rentabilidad usa la fecha del gasto; también advierte que algunos gastos no afectan el arqueo. Prueba responsive de Caja 5/5 en 320/390/820/1440 y analyzer focalizado limpio. No se cambió cálculo ni contrato. Falta decidir si el producto debe conservar ambas fechas de análisis o unificar los reportes en una sola fecha de negocio. No confundir con FIN-DATE-01 (fecha de pedido frente a movimiento de venta/devolución).
 
 **Actualización de transparencia UI (2026-11-24):** el resumen del repartidor independiente ya no presenta importes de `ganancias_domiciliario` como “ganancia neta” ni las filas como entregas. La etiqueta “Ganancia estimada” avisa que se crea al aceptar la oferta, puede incluir asignaciones canceladas y no demuestra pago. `GET /ganancias` ahora incluye `estado_asignacion` por fila para mostrar la situación actual. Se conservaron `comision_foody`, `ganancia_domiciliario`, `pagado`, filtros y agregados. Widget 8/8 en cuatro anchos y ambos temas; admin domiciliarios 14/14; análisis Flutter focalizado limpio. No se publicó Equipo ni se cambió regla contable; payout, derecho por cancelación y devengo siguen abiertos.

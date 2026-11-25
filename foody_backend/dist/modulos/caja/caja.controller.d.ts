@@ -8,6 +8,7 @@ import { CrearCuentaPorCobrarDto } from './dto/crear-cuenta-por-cobrar.dto';
 import { PagarCuentaPorCobrarDto } from './dto/pagar-cuenta-por-cobrar.dto';
 import { RetiroCajaDto } from './dto/retiro-caja.dto';
 import { DevolucionCajaDto } from './dto/devolucion-caja.dto';
+import { CajaMovimientosPedidoQueryDto } from './dto/caja-movimientos-pedido-query.dto';
 import { PaginacionQueryDto } from '../../compartido/dto/paginacion.dto';
 export declare class CajaController {
     private readonly cajaService;
@@ -56,7 +57,7 @@ export declare class CajaController {
         caja_registrada: boolean;
     }>;
     movimientos(cajaId: string, query: PaginacionQueryDto, usuario: JwtPayload): Promise<import("../../compartido/dto/paginacion.dto").ResultadoPaginado<Record<string, unknown>>>;
-    movimientosPedido(pedidoId: string, query: PaginacionQueryDto, sucursalSolicitada: string | undefined, usuario: JwtPayload): Promise<import("../../compartido/dto/paginacion.dto").ResultadoPaginado<Record<string, unknown>>>;
+    movimientosPedido(pedidoId: string, query: CajaMovimientosPedidoQueryDto, usuario: JwtPayload): Promise<import("../../compartido/dto/paginacion.dto").ResultadoPaginado<Record<string, unknown>>>;
     retiro(dto: RetiroCajaDto, usuario: JwtPayload): Promise<{
         ok: boolean;
     }>;

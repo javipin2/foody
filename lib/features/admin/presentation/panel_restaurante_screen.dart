@@ -576,6 +576,7 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
       case 'caja':
         return CajaAdminScreen(
           sucursalId: sucursalId,
+          permisos: _sesion?.permisos ?? const [],
           pedidoIdInicial: _pedidoCajaIdPendiente,
           onPedidoInicialUsado: () {
             if (mounted && _pedidoCajaIdPendiente != null) {

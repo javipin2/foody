@@ -1644,27 +1644,29 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           AnaliticaKpiGrid(
             children: [
               AnaliticaKpiCard(
-                etiqueta: 'Ventas pedidos',
+                etiqueta: 'Ventas de pedidos',
                 valor: _moneda.format(_num(cuadre['ventas_pedidos'])),
+                subtitulo: 'Pedidos creados en el rango',
                 icono: Icons.receipt_long_outlined,
                 acento: AnaliticaTokens.ventas,
               ),
               AnaliticaKpiCard(
-                etiqueta: 'Mov. caja netos',
+                etiqueta: 'Cobros netos asociados',
                 valor: _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
-                subtitulo: 'Fecha pedido/mov.',
+                subtitulo: 'De pedidos creados en el rango',
                 tooltip: (cuadre['nota_periodo_caja'] as String?) ??
-                    'En movimientos ligados a pedido se usa su fecha de creación; sin pedido, la fecha del movimiento.',
+                    'Compara cobros netos asociados a pedidos creados en el rango. Los cobros posteriores pueden cambiar este importe; no es el descuadre físico de un turno.',
                 icono: Icons.point_of_sale_outlined,
                 acento: AnaliticaTokens.pedidos,
               ),
               AnaliticaKpiCard(
-                etiqueta: 'Diferencia',
+                etiqueta: 'Ventas menos cobros',
                 valor: _moneda.format(diff),
+                subtitulo: 'Saldo de la cohorte de pedidos',
+                tooltip: (cuadre['nota_periodo_caja'] as String?) ??
+                    'Saldo actual entre ventas y cobros asociados a pedidos del rango. No equivale al descuadre físico de Caja.',
                 icono: Icons.balance_outlined,
-                acento: cuadre['descuadre_relevante'] == true
-                    ? AnaliticaTokens.cancelacion
-                    : AnaliticaTokens.margen,
+                acento: AnaliticaTokens.margen,
               ),
               AnaliticaKpiCard(
                 etiqueta: 'CxC pendiente',
@@ -1675,6 +1677,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
               AnaliticaKpiCard(
                 etiqueta: 'Gastos registrados',
                 valor: _moneda.format(_num(data['gastos_total'])),
+                subtitulo: 'Fecha de registro',
                 icono: Icons.receipt_long_outlined,
                 acento: AnaliticaTokens.cancelacion,
               ),
@@ -1698,7 +1701,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
             AnaliticaChartCard(
               titulo: 'Gastos registrados por categoría',
               subtitulo:
-                  'Libro de gastos; puede incluir registros que no afectan el arqueo de caja.',
+                  'Por fecha de registro. Rentabilidad usa la fecha del gasto; algunos registros no afectan el arqueo.',
               icono: Icons.payments_rounded,
               acento: AnaliticaTokens.cancelacion,
               child: BarChart(

@@ -196,9 +196,15 @@ let PedidosSoporteService = class PedidosSoporteService {
             numero_pedido: numeroPedido,
         });
     }
-    notificarDesasignacionesDomicilio(usuarioIds, pedidoId) {
+    notificarDesasignacionesDomicilio(usuarioIds, pedidoId, independientesIds = []) {
         for (const usuarioId of usuarioIds) {
             void this.realtime.pedidoDesasignado(usuarioId, {
+                pedido_id: pedidoId,
+                accion: 'cancelado',
+            });
+        }
+        for (const domiciliarioId of independientesIds) {
+            void this.realtime.pedidoDesasignadoIndep(domiciliarioId, {
                 pedido_id: pedidoId,
                 accion: 'cancelado',
             });

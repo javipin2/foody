@@ -18,6 +18,24 @@ $script:FoodyQaDatabase = if ([string]::IsNullOrWhiteSpace($env:FOODY_QA_DATABAS
 $script:FoodyQaSucursal = 'c0000000-0000-4000-8000-000000000001'
 $script:FoodyQaPass = '123456'
 
+function Assert-FoodyQaDisposable {
+    $qaUri = [Uri]$script:FoodyQaBase
+    $esApiQa = @('127.0.0.1', 'localhost') -contains $qaUri.Host -and $qaUri.Port -eq 3001
+    $esClon = $script:FoodyQaDatabase -match '^foody_diseno_qa_codex_[a-zA-Z0-9_]+$'
+    if (-not $esApiQa -or $script:FoodyQaDbContainer -ne 'foody-diseno-qa-db' -or -not $esClon) {
+        throw "Escritura QA bloqueada: requiere API localhost:3001, contenedor foody-diseno-qa-db y clon foody_diseno_qa_codex_* (actual: $($script:FoodyQaBase), $($script:FoodyQaDbContainer)/$($script:FoodyQaDatabase))."
+    }
+    $containerActivo = docker inspect --format '{{.State.Running}}' $script:FoodyQaDbContainer 2>$null
+    if ($LASTEXITCODE -ne 0 -or $containerActivo.Trim() -ne 'true') {
+        throw "Contenedor QA '$($script:FoodyQaDbContainer)' no está ejecutándose."
+    }
+    $dbExiste = docker exec $script:FoodyQaDbContainer psql -U postgres -d postgres -Atc `
+        "SELECT 1 FROM pg_database WHERE datname='$($script:FoodyQaDatabase)';" 2>$null
+    if ($LASTEXITCODE -ne 0 -or $dbExiste.Trim() -ne '1') {
+        throw "El clon QA '$($script:FoodyQaDatabase)' no existe en '$($script:FoodyQaDbContainer)'."
+    }
+}
+
 function Invoke-FoodyApi {
     param(
         [string]$Method = 'GET',
@@ -25,6 +43,11 @@ function Invoke-FoodyApi {
         [hashtable]$Headers = @{},
         [object]$Body = $null
     )
+    $metodoNormalizado = $Method.ToUpperInvariant()
+    $esLogin = $Path -match '^/auth/login(?:-domiciliario)?(?:\?|$)'
+    if ($metodoNormalizado -notin @('GET', 'HEAD', 'OPTIONS') -and -not $esLogin) {
+        Assert-FoodyQaDisposable
+    }
     $qaUri = [Uri]$script:FoodyQaBase
     $esQaLocal = @('127.0.0.1', 'localhost') -contains $qaUri.Host -and $qaUri.Port -eq 3001
     if (-not $esQaLocal -and $env:FOODY_E2E_ALLOW_NON_QA -ne '1') {
@@ -144,6 +167,7 @@ function Ensure-CajaAbierta {
 
 function Limpiar-AsignacionesDomicilioDemo {
     param([string]$DomiciliarioPlantaId = '92000000-0000-4000-8000-000000000001')
+    Assert-FoodyQaDisposable
     $null = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -c `
         "UPDATE asignaciones_domicilio SET estado = 'cancelado'
          WHERE domiciliario_planta_id = '$DomiciliarioPlantaId'
@@ -152,6 +176,7 @@ function Limpiar-AsignacionesDomicilioDemo {
 
 function Ensure-HorariosDemoAbiertos {
   # ponytail: hora_cierre 23:59:00 excluye 23:59:30 — QA nocturno fallaba RESTAURANTE_CERRADO
+    Assert-FoodyQaDisposable
     $sid = $script:FoodyQaSucursal
     $null = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -c `
         "UPDATE horarios_sucursal SET hora_apertura='00:00', hora_cierre='23:59:59', activo=true WHERE sucursal_id='$sid';" 2>&1

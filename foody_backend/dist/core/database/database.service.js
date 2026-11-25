@@ -8,13 +8,16 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var DatabaseService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DatabaseService = void 0;
 const common_1 = require("@nestjs/common");
 const pg_1 = require("pg");
 const transaction_hooks_service_1 = require("./transaction-hooks.service");
 let DatabaseService = class DatabaseService {
+    static { DatabaseService_1 = this; }
     transactionHooks;
+    static connectTimeoutMsDefault = 5000;
     pool;
     constructor(transactionHooks) {
         this.transactionHooks = transactionHooks;
@@ -22,9 +25,13 @@ let DatabaseService = class DatabaseService {
         if (!connectionString) {
             throw new Error('DATABASE_URL no está definida en .env');
         }
+        const connectTimeoutMs = Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS);
         this.pool = new pg_1.Pool({
             connectionString,
             max: Number(process.env.DB_POOL_MAX) || 10,
+            connectionTimeoutMillis: Number.isFinite(connectTimeoutMs) && connectTimeoutMs > 0
+                ? connectTimeoutMs
+                : DatabaseService_1.connectTimeoutMsDefault,
         });
         this.pool.on('error', (err) => {
             console.error('[DatabaseService] Error en cliente idle del pool:', err.message);
@@ -72,7 +79,9 @@ let DatabaseService = class DatabaseService {
         finally {
             if (adquirio) {
                 try {
-                    await client.query(`SELECT pg_advisory_unlock($1::bigint)`, [lockKey]);
+                    await client.query(`SELECT pg_advisory_unlock($1::bigint)`, [
+                        lockKey,
+                    ]);
                 }
                 catch {
                 }
@@ -82,7 +91,7 @@ let DatabaseService = class DatabaseService {
     }
 };
 exports.DatabaseService = DatabaseService;
-exports.DatabaseService = DatabaseService = __decorate([
+exports.DatabaseService = DatabaseService = DatabaseService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [transaction_hooks_service_1.TransactionHooksService])
 ], DatabaseService);

@@ -194,6 +194,7 @@ class _UsuariosAdminScreenState extends State<UsuariosAdminScreen> {
       'editar_productos': 'Crear/editar productos',
       'editar_stock': 'Editar stock',
       'gestionar_domiciliarios': 'Asignar domiciliarios',
+      'gestionar_caja': 'Registrar operaciones de caja',
       'gestionar_facturacion': 'Gestionar facturación',
       'gestionar_mesas': 'Gestionar mesas',
       'gestionar_sucursales': 'Gestionar sucursales',

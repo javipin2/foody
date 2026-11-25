@@ -82,6 +82,10 @@ export declare class DomiciliariosIndependientesService {
         total: string;
         monto_pagado: string;
         metodo_pago: string | null;
+        pagos_resumen: Array<{
+            metodo_pago: string;
+            monto: string | number;
+        }>;
         costo_domicilio: string;
         lat: string | null;
         lng: string | null;

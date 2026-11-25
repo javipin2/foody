@@ -40,11 +40,14 @@ describe('AnaliticaService caja: gastos contables vs movimientos', () => {
       gastos_total: 100,
       gastos_movimientos_caja: 100,
       cuadre: {
-        etiqueta_ventas_caja: 'Movimientos netos de caja',
+        etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
         nota_periodo_caja:
-          'Para movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
+          'Compara ventas de pedidos creados en el rango con cobros netos asociados a esos pedidos. Los movimientos vinculados usan la fecha del pedido, aunque el pago ocurra después del rango; por eso esta diferencia puede cambiar con cobros posteriores y no representa el descuadre físico de un turno.',
       },
     });
+
+    const sqlMovimientos = database.consultarUno.mock.calls[0][0] as string;
+    expect(sqlMovimientos).toContain('COALESCE(p.created_at, m.created_at)');
 
     const consultasFecha = database.consultar.mock.calls.map(
       ([sql]) => sql as string,

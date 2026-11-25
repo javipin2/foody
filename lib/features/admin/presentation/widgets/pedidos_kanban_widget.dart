@@ -632,6 +632,10 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       _mostrarAcciones(pedido);
       return;
     }
+    if (accion == 'cobrar') {
+      await _cobrarParaLlevar(pedido);
+      return;
+    }
     if (accion == 'aprobar') {
       await _aprobarMesa(pedido);
       return;
@@ -644,6 +648,9 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     if (accion == null) return false;
     if (accion == 'aprobar') {
       return _permisos.contains('aprobar_pedido_mesa');
+    }
+    if (accion == 'cobrar') {
+      return _permisos.contains('cobrar_pedido');
     }
     return _permisos.contains('crear_pedido');
   }
@@ -848,7 +855,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
               controller: propinaCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Propina (opcional)',
+                labelText: 'Propina voluntaria · aparte del total',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -1333,7 +1340,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                         children: [
                           if (!widget.modoMesero) ...[
                             _KpiPedidosChip(
-                              etiqueta: 'Activos',
+                              etiqueta: 'Abiertos',
                               valor: '$_totalActivos',
                             ),
                             _KpiPedidosChip(
@@ -1342,8 +1349,8 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                                   : 'Valor en pedidos',
                               valor: _formatoMoneda.format(valorPedidosActivos),
                               ayuda: _hayMasActivos
-                                  ? 'Suma del valor de los pedidos cargados. Hay más pedidos activos por cargar; no equivale a dinero cobrado.'
-                                  : 'Suma del valor total de pedidos activos; no equivale a dinero cobrado.',
+                                  ? 'Suma del valor de los pedidos abiertos cargados. Hay más por cargar; no equivale a dinero cobrado.'
+                                  : 'Suma del valor de los pedidos abiertos; no equivale a dinero cobrado.',
                             ),
                           ],
                           OperacionBusqueda(
@@ -1673,7 +1680,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                   ],
                   if (!esTabCerrados && _totalActivos > 0) ...[
                     Text(
-                      'Mostrando $activosCargados de $_totalActivos pedidos activos',
+                      'Mostrando $activosCargados de $_totalActivos pedidos abiertos',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
@@ -1801,7 +1808,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                   spacing: 8,
                   children: [
                     Text(
-                      'Mostrando $activosCargados de $_totalActivos pedidos activos',
+                      'Mostrando $activosCargados de $_totalActivos pedidos abiertos',
                       style: TextStyle(
                         fontSize: 12,
                         color: _scheme.onSurfaceVariant,

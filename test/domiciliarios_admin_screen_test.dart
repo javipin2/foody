@@ -144,6 +144,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('si falla un resumen no oculta la regla que sí cargó',
+      (tester) async {
+    final repository = _LecturasParalelas();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TemaFoody.claro(),
+        home: Scaffold(
+          body: DomiciliariosAdminScreen(
+            sucursalId: 'sucursal-prueba',
+            repository: repository,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    repository.liquidacion.complete({
+      'permite_fiado_domiciliario': true,
+      'domiciliarios': <Map<String, dynamic>>[
+        {
+          'domiciliario_planta_id': 'domi-planta-1',
+          'nombre': 'Repartidor con deuda',
+          'total_pendiente': '12500',
+          'pedidos': '2',
+        },
+      ],
+    });
+    repository.domicilios.completeError(Exception('Fallo de red simulado'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reglas de cobro'), findsOneWidget);
+    expect(find.text('Fiados de planta por cobrar'), findsOneWidget);
+    expect(find.text('Repartidor con deuda'), findsOneWidget);
+    expect(find.byType(Switch), findsOneWidget);
+    expect(find.text('—'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('error de liquidación no se presenta como saldo cero',
+      (tester) async {
+    final repository = _LecturasParalelas();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TemaFoody.claro(),
+        home: Scaffold(
+          body: DomiciliariosAdminScreen(
+            sucursalId: 'sucursal-prueba',
+            repository: repository,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    repository.liquidacion.completeError(Exception('Fallo de red simulado'));
+    repository.domicilios.complete({
+      'domicilio_ingresa_a_caja': true,
+      'domiciliarios': <Map<String, dynamic>>[],
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fiado por cobrar'), findsOneWidget);
+    expect(find.text('—'), findsNWidgets(2));
+    expect(
+        find.text(
+            'Fiado apagado. Actívalo arriba si quieres que lleven pedidos a crédito.'),
+        findsNothing);
+    expect(find.byType(Switch), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in const [
     Size(320, 640),
     Size(390, 844),
@@ -171,7 +242,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Fiado por cobrar'), findsOneWidget);
-      expect(find.text('Pago a independientes'), findsOneWidget);
+      expect(find.text('Ganancias estimadas'), findsOneWidget);
       final resumen = find.text('Resumen de independientes');
       await tester.scrollUntilVisible(
         resumen,
@@ -185,11 +256,11 @@ void main() {
       expect(find.textContaining('4 asignaciones'), findsOneWidget);
       expect(
         find.text(
-          'Saldos registrados al aceptar ofertas; no confirman entregas ni pagos.',
+          'Estimaciones al aceptar ofertas; pueden incluir pedidos cancelados. Aún no confirman entrega ni pago.',
         ),
         findsOneWidget,
       );
-      expect(find.text('Por pagar'), findsOneWidget);
+      expect(find.text('Estimado'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

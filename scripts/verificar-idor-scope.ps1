@@ -10,6 +10,24 @@ $hoy = (Get-Date).ToString('yyyy-MM-dd')
 
 Write-Host '=== Verificar IDOR / SucursalScope ===' -ForegroundColor Cyan
 
+$tenantBEmail = $env:FOODY_QA_CROSS_TENANT_ADMIN
+$tenantBRama = $env:FOODY_QA_CROSS_TENANT_BRANCH
+if (($tenantBEmail -and -not $tenantBRama) -or (-not $tenantBEmail -and $tenantBRama)) {
+    throw 'Cross-tenant requiere FOODY_QA_CROSS_TENANT_ADMIN y FOODY_QA_CROSS_TENANT_BRANCH juntos.'
+}
+if ($tenantBEmail -and $tenantBRama) {
+    if ($script:FoodyQaDatabase -notmatch '^foody_diseno_qa_codex_rbac_[a-zA-Z0-9_]+$') {
+        throw "Cross-tenant bloqueado: la base '$script:FoodyQaDatabase' no parece un clon RBAC desechable."
+    }
+    if ($tenantBRama -notmatch '^[0-9a-fA-F-]{36}$') { throw 'FOODY_QA_CROSS_TENANT_BRANCH debe ser un UUID.' }
+    if ($tenantBEmail -notmatch '^[a-zA-Z0-9._+-]+@qa\.example$') { throw 'El admin sintético cross-tenant debe usar un correo @qa.example.' }
+    $mismoTenant = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc `
+        "SELECT CASE WHEN u.restaurante_id = s.restaurante_id THEN 'same' ELSE 'cross' END FROM usuarios u JOIN sucursales s ON s.id='$tenantBRama' WHERE u.email='admin@foody.demo';"
+    if ($LASTEXITCODE -ne 0 -or $mismoTenant.Trim() -ne 'cross') {
+        throw "Cross-tenant bloqueado: la sucursal no es de un restaurante distinto al admin principal (resultado='$mismoTenant')."
+    }
+}
+
 $gerente = Get-FoodyToken 'gerente@foody.demo'
 $hGerente = $gerente.headers
 
@@ -95,5 +113,60 @@ Assert-403 -Nombre 'cerrar caja otra sede (RBAC-TENANT-01)' -Method POST `
         caja_id             = $cajaNorteId
         monto_final_contado = 50000
     }
+
+# La denegacion debe ocurrir antes de cualquier efecto: confirmar que la misma
+# caja sigue abierta tras el 403 (el helper bloquea destinos distintos a QA :3001).
+$cajaDespues = Invoke-FoodyApi -Method GET `
+    -Path "/caja/activa/$sidNorte" `
+    -Headers $admin.headers
+if (-not ($cajaDespues.ok -and $cajaDespues.json.exito) -or
+    $cajaDespues.json.datos.id -ne $cajaNorteId -or
+    $cajaDespues.json.datos.estado -ne 'abierta') {
+    throw "RBAC-TENANT-01: el rechazo altero la caja. status=$($cajaDespues.status), id=$($cajaDespues.json.datos.id), estado=$($cajaDespues.json.datos.estado)"
+}
+Write-Host 'OK  caja ajena permanece abierta tras el 403' -ForegroundColor Green
+
+# Modo optativo cross-tenant. Requiere un clon desechable; el admin sintético
+# se crea dentro de ese clon y evita mutaciones en la QA persistente.
+if ($tenantBEmail -and $tenantBRama) {
+    $emailSql = $tenantBEmail.Replace("'", "''")
+    $sembrarAdminB = "INSERT INTO usuarios(id,sucursal_id,restaurante_id,nombre,email,rol,activo,hash_contrasena,proveedor_auth,email_verificado,token_version) SELECT gen_random_uuid(),s.id,s.restaurante_id,'Admin QA sintético B','$emailSql','admin',true,a.hash_contrasena,'correo',true,1 FROM sucursales s CROSS JOIN usuarios a WHERE s.id='$tenantBRama' AND a.email='admin@foody.demo' AND NOT EXISTS (SELECT 1 FROM usuarios WHERE email='$emailSql');"
+    $seedAdmin = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -v ON_ERROR_STOP=1 -tAc $sembrarAdminB
+    if ($LASTEXITCODE -ne 0) {
+        throw 'No se pudo crear admin sintético B dentro del clon QA.'
+    }
+
+    $tenantB = Get-FoodyToken $tenantBEmail
+    $abrirTenantB = Invoke-FoodyApi -Method POST -Path "/caja/abrir?sucursal_id=$tenantBRama" `
+        -Headers $tenantB.headers -Body @{ sucursal_id = $tenantBRama; monto_inicial = 50000 }
+    $cajaTenantBId = $null
+    if ($abrirTenantB.json -and $abrirTenantB.json.exito) {
+        $cajaTenantBId = $abrirTenantB.json.datos.id
+        if (-not $cajaTenantBId) { $cajaTenantBId = $abrirTenantB.json.datos.caja_id }
+    }
+    if (-not $cajaTenantBId) {
+        $activaTenantB = Invoke-FoodyApi -Method GET -Path "/caja/activa/$tenantBRama" -Headers $tenantB.headers
+        if ($activaTenantB.json -and $activaTenantB.json.exito -and $activaTenantB.json.datos) {
+            $cajaTenantBId = $activaTenantB.json.datos.id
+        }
+    }
+    if (-not $cajaTenantBId) {
+        throw "No se pudo abrir caja sintética tenant B: HTTP $($abrirTenantB.status) $($abrirTenantB.json.mensaje)"
+    }
+
+    Assert-403 -Nombre 'cerrar caja de otro tenant (RBAC-TENANT-01)' -Method POST `
+        -Path '/caja/cerrar' -Headers $admin.headers -Body @{
+            caja_id = $cajaTenantBId
+            monto_final_contado = 50000
+        }
+
+    $cajaTenantBDespues = Invoke-FoodyApi -Method GET -Path "/caja/activa/$tenantBRama" -Headers $tenantB.headers
+    if (-not ($cajaTenantBDespues.ok -and $cajaTenantBDespues.json.exito) -or
+        $cajaTenantBDespues.json.datos.id -ne $cajaTenantBId -or
+        $cajaTenantBDespues.json.datos.estado -ne 'abierta') {
+        throw "RBAC-TENANT-01 cross-tenant: la caja cambió tras el 403. status=$($cajaTenantBDespues.status), estado=$($cajaTenantBDespues.json.datos.estado)"
+    }
+    Write-Host 'OK  caja de otro tenant permanece abierta tras el 403' -ForegroundColor Green
+}
 
 Write-Host 'IDOR scope: OK' -ForegroundColor Green

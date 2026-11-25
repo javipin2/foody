@@ -29,7 +29,8 @@ describe('ReportesService — atribución de fechas de caja', () => {
           pedidos: '1',
           ticket_promedio: '1200',
         })
-        .mockResolvedValueOnce({ ventas_caja: '900', movimientos: '2' }),
+        .mockResolvedValueOnce({ ventas_caja: '900', movimientos: '2' })
+        .mockResolvedValueOnce({ total_neto: '950', movimientos_venta: '2' }),
       consultar: jest.fn().mockResolvedValue([]),
     };
     const service = new ReportesService(database as unknown as DatabaseService);
@@ -40,13 +41,22 @@ describe('ReportesService — atribución de fechas de caja', () => {
     });
 
     expect(resultado.cuadre_caja).toMatchObject({
-      etiqueta_ventas_caja: 'Movimientos netos de caja',
+      etiqueta_ventas_pedidos: 'Ventas de pedidos creados en el rango',
+      etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
       nota_periodo_caja:
-        'Para movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
+        'Los movimientos ligados a pedidos se atribuyen por fecha de creación del pedido, aunque el cobro ocurra después del rango; los movimientos sin pedido usan su propia fecha.',
     });
     expect(resultado.cuadre_caja.nota_universos).toContain(
-      'no representa necesariamente el efectivo recibido en el rango',
+      'No representa el efectivo recibido en el rango ni el descuadre físico de un turno.',
     );
     expect(database.consultarUno.mock.calls[1][0]).toContain('p.created_at');
+    expect(resultado.recaudo_periodo).toMatchObject({
+      total_neto: 950,
+      movimientos_venta: 2,
+      etiqueta: 'Recaudo neto por fecha de movimiento',
+    });
+    expect(database.consultarUno.mock.calls[2][0]).toContain(
+      'm.created_at >= ($2::date::timestamp AT TIME ZONE',
+    );
   });
 });

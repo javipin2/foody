@@ -46,6 +46,9 @@ async function bootstrap() {
   app.enableCors({
     origin: parseCorsOrigen(process.env.CORS_ORIGEN),
     credentials: true,
+    // Evita repetir OPTIONS en cada lectura desde el panel web. La API sigue
+    // validando CORS en cada respuesta; esto solo cachea el permiso previo.
+    maxAge: 300,
   });
 
   // Chrome (Flutter web en localhost) exige este header para llamar a IP LAN / WSL.

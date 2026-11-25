@@ -1,5 +1,13 @@
 # Auditoría — Pedidos ciclo de vida (Prompt 11)
 
+## Validación integrada de canales y módulos — 2026-11-25
+
+En un clon descartable de `foody_diseno_qa`, API Nest temporal `:3001` y `FOODY_QA_SIN_EFECTOS=1`, pasaron **6 suites / 44 pruebas**: `mesa`, `qr`, `domicilio`, `cocina`, `caja` y `casos-limite-28-30`. Cubren pedido público QR y protección de precio/mesa/pago, permisos de mesero, POS/caja, contactos y estados de domicilio, cierre de Cocina, protección despacho con líneas pendientes/no disponibles, cobro/devolución, cierre financiero y conciliación tickets/Caja/Analítica.
+
+Se añadieron dos E2E staff: (1) dos solicitudes concurrentes a `POST /pedidos/staff` con igual clave crean un pedido y un solo recaudo (`saldo_sistema` sube una sola vez); reutilizarla con un payload distinto responde 409 `IDEMPOTENCY_KEY_REUSED`; (2) repetir la creación no duplica la línea ni el ticket de Cocina. El caso COC-PAID-KDS-01 también se incluyó en el lote: cobro excepcional con motivo, ticket visible, cierre posterior de Cocina y estado financiero `pagado`.
+
+**Resultado:** 6 suites / 44 pruebas aprobadas; adicionalmente `pedidos-numeracion-concurrente.e2e-spec.ts` pasó 1/1: cuatro pedidos públicos simultáneos reciben números distintos. Cada lote corrió contra su clon descartable, que fue eliminado; QA original conservó 4 sedes. `:3001` quedó detenido; `:3000` PID 20152 sigue respondiendo y no se reinició; Tunnel/OAuth no cambiaron. La bandera de QA pausa Realtime, notificaciones, impresión y jobs; estos resultados prueban contrato y persistencia entre módulos, pero no entregabilidad de eventos, impresión física ni proveedores externos. Las pruebas manuales del flujo visual/autenticado del panel quedan pendientes.
+
 ## CLIENT-DOM-CONTACT-01 / E2E-CLEAN-TERMINAL-01 — contacto y limpieza QA (2026-11-24)
 
 - **Hallazgo:** el checkout público admitía domicilio sin teléfono; Nest persistía `cliente_telefono = null`, aunque despacho necesita llamar al cliente. El nombre sí puede permanecer opcional para compra invitada.
@@ -44,10 +52,10 @@
 ## Revisión de canales de entrada — 2026-11-24
 
 - **Cliente/QR:** `POST /pedidos` es público con limitación de frecuencia; QR carga `GET /menu/mesa/:token` y crea una orden `mesa` en `pendiente_aprobacion`. El backend recalcula precio desde catálogo; E2E QR 2/2 (creación pendiente de aprobación + intento de precio manipulado).
-- **Checkout cliente:** `POST /pedidos/estimar` devuelve importes autoritativos antes de crear; el checkout envía `device_id`, canal, ítems/opciones, método de pago, y según canal contacto/dirección/ubicación/factura/encargo. DTO obliga dirección no vacía para domicilio, pero nombre y teléfono son opcionales; lat/lng también son opcionales. La estimación sin ubicación se identifica como estimada.
+- **Checkout cliente:** `POST /pedidos/estimar` devuelve importes autoritativos antes de crear; checkout envía `device_id`, canal, ítems/opciones, preferencia de pago y, según canal, contacto/dirección/ubicación/factura/encargo. Para domicilio exige dirección no vacía y teléfono válido de 7–15 dígitos; nombre es opcional y se admiten direcciones manuales sin lat/lng. Sin ubicación, la tarifa se identifica como estimada. El DTO Nest aplica la misma exigencia de dirección y teléfono.
 - **Equipo/administrador/mesero:** `POST /pedidos/staff` requiere `crear_pedido` y usa la sucursal resuelta del JWT. El mesero recibe turno de mesa y puede presentar cuenta (`pagando`) o cancelar; no puede marcar listo ni cobrar. E2E Mesa 2/2 en QA crea una cuenta mesero temporal, confirma alta/estado y rechaza esas dos acciones indebidas; usuario QA queda inactivo y pedido de prueba limpiado. POS separa domicilios con pago pendiente al recibir; recoger/mostrador admite pago mixto, validado contra cotización de Nest. Acciones de edición de líneas y estado vuelven a exigir permiso y sucursal; cobro y descuentos tienen permisos separados.
 - **Cocina y siguientes módulos:** estado inicial decide descuento de stock y entrada a cocina; el servicio calcula subtotal/promoción/domicilio/IVA en transacción, crea líneas con cocina asignada, genera historial y luego notifica/encola impresión. Cocina puede devolverlo a listo; despacho domicilio espera cocina resuelta y línea disponible; caja registra al cobrar/entregar según tipo. Rutas y efectos están descritos en la matriz de esta auditoría y en `AUDITORIA_COCINA_KDS.md`.
-- **Decisión funcional abierta `CLIENT-DOM-CONTACT-01`:** nombre/teléfono no se exigen en checkout público ni DTO para domicilio, aunque el POS pide ambos y el teléfono permite coordinar entrega. Recomendación: requerir un teléfono de contacto en pedido público `domicilio`, dejando nombre opcional por privacidad/compra de invitado; alinear Flutter y Nest. No se cambió el contrato porque es una regla de producto y checkout guest debe seguir siendo posible.
+- **Resolución `CLIENT-DOM-CONTACT-01` (2026-11-24):** el teléfono válido es obligatorio en Checkout público y en el DTO Nest solo para tipo `domicilio`; nombre permanece opcional para preservar compra invitada. El POS solicita nombre, teléfono y dirección como campos obligatorios de esa pantalla. Flutter validator 3/3 y Nest DTO 8/8; E2E QR/domicio 4/4 en PostgreSQL QA aislada comprobó rechazo del teléfono omitido y persistencia de número internacional formateado con nombre null. La API :3000 requiere activar el build que contiene la regla; no asumirlo por la salud del proceso.
 - **Cobertura de esta ejecución:** `test/flujos/qr.e2e-spec.ts` 2/2 y `test/flujos/mesa.e2e-spec.ts` 2/2 contra API :3001 + PostgreSQL `foody_diseno_qa`; E2E Cocina 3/3 y KDS widget/analyzer registrados en `AUDITORIA_COCINA_KDS.md`. Horario QA restaurado a 08:00–22:00. Nota: una reejecución posterior omitió `E2E_HOST` y tocó solo el API principal para crear/desactivar un usuario sintético; no se insertaron pedidos ni caja ni se cancelaron órdenes según lectura de historial. Incidente `QA-HOST-01` en MASTER/AVANCE. API :3000/Tunnel siguen arriba.
 
 ## PED-STAFF-IDEM-01 — reintento de creación desde POS (2026-11-24)
@@ -55,6 +63,7 @@
 - **Hallazgo comprobado:** Nest ya admite `idempotency_key` en `POST /pedidos/staff` mediante lock transaccional y tabla `pedidos_idempotencia`. El checkout cliente enviaba una clave estable por intento; `PedidosRepository.crearPedidoStaff` no la enviaba. Si commit terminaba y la respuesta se perdía por red/Tunnel, reintentar POS podía duplicar pedido y sus efectos en cocina/stock/caja.
 - **Corrección:** POS mantiene una clave UUID mientras el intento de pedido nuevo no haya respondido exitosamente, la reusa al reintentar y la limpia tras éxito. Se reaprovecha el contrato existente, sin migración ni cambios comerciales. El endpoint específico de agregar líneas a un pedido no recibe esta clave.
 - **Regresión:** `flutter test test/pedido_cajero_screen_test.dart` 13/13; el nuevo caso simula respuesta perdida y verifica que el reintento reusa la misma clave. Formateo Dart limpio. QA visual/autenticada pendiente.
+- **Revalidación (2026-11-25):** el repositorio sí incluye `idempotency_key` en `POST /pedidos/staff`; el POS conserva la clave ante fallo, la rota si cambia el payload, y Nest la limita por `(sucursal_id, clave)` y compara huella antes de replay. Se agregó una prueba de transporte al repositorio. Flutter `pedidos_repository_test.dart` + `pedido_cajero_screen_test.dart`: 24/24; prueba focalizada de la huella Nest: 1 suite/2 pruebas; Prettier limpio. No se ejecutó E2E staff en este turno; la mutación integrada debe seguir corriéndose solo contra QA aislada.
 - **Cerrado — PED-ITEM-IDEM-01 (2026-11-24):** `AgregarItemsPedidoDto` acepta `idempotency_key`; Nest persiste huella y resultado en `pedidos_items_idempotencia` dentro de la misma transacción que inserta ítems, y POS envía una clave estable por intento. Repetir payload retorna el resultado guardado sin duplicar ítems ni notificaciones; reutilizar clave con payload distinto responde 409. E2E en `casos-limite-28-30.e2e-spec.ts`; la clave de creación de pedidos entre sucursales/tenants se cubre por separado con `PED-KEY-SCOPE-01` y migración 091. Ver evidencia posterior de `PED-ITEM-IDEM-01`.
 
 > **Fecha:** 2026-08-06  
@@ -63,6 +72,13 @@
 > Spec viva: [`FLUJO_ESTADOS_PEDIDOS.md`](FLUJO_ESTADOS_PEDIDOS.md) · Código: `pedido-estados.ts`, `pedidos-estado-command.service.ts`.
 
 Leyenda: 🟣 abierto · 🟡 aceptado/parcial · ✅ cerrado / comprobado OK
+
+## QR-SESSION-BIND-01 — vínculo entre QR de mesa y pedido público (2026-11-25)
+
+- **Hallazgo:** `MesaQrEntradaScreen` iniciaba la sesión con token QR, pero navegaba a `/menu` sin ese dato. `MenuScreenFoody` volvía a activar la sesión con token nulo y `MesaSesionService.activar` podía borrar el valor persistido. A la vez, `PedidosClienteRepository` enviaba `mesa_id` sin `qr_token`, y el alta pública solo confirmaba que la mesa era de la sucursal; un cliente podía cambiar el ID y el backend no detectaba que no correspondía al QR escaneado.
+- **Corrección:** la ruta del menú conserva token QR; menú restaura la sesión con el mismo token; el repositorio exige una sesión QR consistente para pedidos `mesa` y envía el token. Nest compara el token con la mesa dentro de la sucursal y rechaza discrepancias (`QR_MESA_NO_COINCIDE`). Staff mantiene su flujo autenticado. Cotización no exige token porque no crea pedido ni reserva mesa.
+- **Verificación:** `qr.e2e-spec.ts` 6/6 en Nest :3001 con una base PostgreSQL clonada y descartable: incluye QR correcto, ID de mesa alterado rechazado y estimación sin token permitida. `mesa_sesion_service_test.dart` 1/1; `flutter analyze` focalizado sin issues; `npm run build` OK. Clon eliminado y base QA de origen intacta.
+- **Activación y regresión:** Nest PID 10208; Cliente/Equipo Release publicados en :8081/:8080. Bundle cliente con guarda QR y API/sitios local+Tunnel HTTP 200; SHA-256 remoto/local coincide para `main.dart.js` en ambos flavors; Cloudflare PID 8940 activo. Regresión Nest completa 8/41 E2E y 51/128 unitarias; Flutter 276 aprobadas/5 omitidas y analyzer focalizado limpio. No se ejecutó pedido con mesa real en la base del negocio; queda aceptación visual/autenticada usando un QR de prueba.
 
 ---
 
@@ -269,6 +285,8 @@ Cobertura: ciclo mesa completo · 6+ transiciones inválidas · cobro salto · p
 
 **Observación runtime previa:** Chrome mostró 105 tickets retrasados y varios temporizadores >3.790 h con estado global “Cobrado”. No se modificó pedido, ítem ni alerta deliberadamente. Como GET tenía efecto lateral, pudo haberse insertado una alerta si faltaba deduplicación; no se puede determinar el delta sin consultar BD/auditoría y no se intentará limpieza por conjetura. El SQL conserva pedidos globales `pagado` si aún quedan ítems de cocina sin resolver, regla que puede ser válida con prepago; clasificar los registros históricos antes de archivar/excluirlos.
 
+**Aclaración de comparación de tenants (2026-11-25):** la cifra 105/117 se volvió a obtener usando la cuenta `cocina@foody.demo`, que consulta `Sede Centro`; no corresponde a la sesión autenticada de Chrome, que mostró `Sede principal` con `Cocina 0 / Listos 6`. Una consulta SQL de solo lectura encontró una sede principal con 6 pedidos y 20/20 líneas resueltas, y otras sedes con tickets en cocina. Por ello la discrepancia visual/API inicial fue una comparación de contextos distintos, no evidencia de conteo incorrecto del KDS. No se deben mezclar métricas entre tenants; cualquier conciliación de estados históricos debe filtrar explícitamente el tenant y sucursal exactos.
+
 **Comportamiento a revisar:** una alerta que se marque revisada puede generarse de nuevo en el siguiente ciclo si el ítem permanece atrasado; esto respeta la deduplicación anterior (sólo pendientes), pero ahora el ritmo es de cinco minutos incluso si nadie abre el KDS. Definir cooldown/una-alerta-por-demora si el operador considera ruidosa la repetición. No se archivan alertas ni pedidos.
 
 ### Hallazgo corregido — `PED-ORIGIN-DOM-01`
@@ -300,7 +318,7 @@ Finanzas y Centro de Análisis muestran una tarjeta informativa que aclara que e
 - **Decisión comercial pendiente:** confirmar si la comisión configurable sobre domicilio se mantiene en el modelo Free→Pro y quién soporta el cargo (cliente, establecimiento o repartidor). No confundirla con comisión sobre ventas ni con la suscripción mensual. Un cambio altera precio de checkout, margen y liquidación.
 - **Decisión contable pendiente (`FIN-REC-OPEN-01`):** definir cuándo se reconoce una venta y el costo del servicio de domicilio en Rentabilidad: pedido confirmado, preparado, entregado o efectivamente pagado; definir tratamiento de abonos, impagos, devoluciones y saldo del domiciliario. Mantener métricas separadas de valor ordenado, ingreso cobrado y utilidad reconocida hasta tomar esa decisión.
 - **Decisión de política pendiente (`DOM-CANCEL-PAYOUT-01`):** decidir compensación al domiciliario y comisión Foody cuando la oferta ya fue aceptada y el pedido se cancela antes/después de iniciar ruta. La implementación actual conserva la ganancia como pendiente.
-- **Contacto del domicilio (`CLIENT-DOM-CONTACT-01`):** Checkout público permite crear domicilio sin nombre ni teléfono; POS exige ambos. DTO/backend también los permite ausentes y el despacho consulta el teléfono del cliente para que el repartidor lo contacte. Esto puede dejar una entrega sin forma directa de coordinarse. Definir si nombre/teléfono son obligatorios para el cliente público, y reflejar el mismo contrato en UI y DTO.
+- **Contacto del domicilio (`CLIENT-DOM-CONTACT-01`, resuelto en fuente):** Checkout público exige teléfono de contacto válido y Nest vuelve a validarlo; nombre es opcional. El POS requiere nombre/teléfono/dirección en su formulario. La activación del DTO en el proceso `:3000` se controla por separado; ver `MASTER_STATUS.md`.
 
 ### `DOM-PAY-BALANCE-01` — abono parcial y saldo al entregar
 
@@ -345,11 +363,11 @@ La tarjeta de planta mostraba `subtotal` como “Producto” y el `total` comple
 
 ### Contrato de contacto por origen — verificación adicional
 
-- Checkout público valida dirección para domicilio y construye `cliente_nombre` / `cliente_telefono` como opcionales (`null` si vacíos). No fuerza mapa ni coordenadas, ya que la dirección textual está admitida y la tarifa puede cotizarse como estimada.
+- Checkout público valida dirección y teléfono para domicilio; el nombre se serializa como `null` si queda vacío. No fuerza mapa ni coordenadas, ya que la dirección textual está admitida y la tarifa puede cotizarse como estimada.
 - POS solicita nombre, teléfono y dirección con `*` y bloquea el envío si alguno está vacío.
-- El DTO Nest valida dirección no vacía en domicilios, pero `cliente_nombre` y `cliente_telefono` siguen siendo opcionales en el contrato compartido por público y staff. Por tanto, una llamada directa al API puede omitir datos que el POS solicita; y el Checkout permite lo que POS bloquea.
-- Riesgo operativo: la consulta/llamada del domiciliario puede carecer de un teléfono de contacto. Esto no demuestra que un nombre/teléfono deba ser obligatorio para toda modalidad o sector; resolver la regla de producto/privacidad y luego compartirla entre UI pública, POS, DTO y escenarios de pedido QR.
-- No se modificó el contrato mientras la decisión siga abierta (`CLIENT-DOM-CONTACT-01`). Se ejecutaron pruebas Flutter con repositorios simulados: KDS, domicilio administrativo, POS y detalle/cobro de mesa, **25/25 aprobadas**, en anchos de 320/390/820/1440 px donde aplica. Estas pruebas no validan persistencia API ni navegación autenticada en una BD.
+- El DTO Nest exige dirección no vacía y teléfono de 7–15 dígitos para domicilios; nombre es opcional. La validación se vuelve a aplicar en el límite HTTP, además de la validación visual de Flutter.
+- La diferencia deliberada es que el formulario POS pide también un nombre, mientras que el canal público conserva el modo invitado. No se fuerza ubicación: la dirección manual continúa permitida y el precio de domicilio se comunica como estimado cuando no hay coordenadas.
+- La regla quedó implementada y probada como `CLIENT-DOM-CONTACT-01`; Flutter 3/3, DTO Nest 8/8 y E2E en QA aislada 4/4. Estas pruebas no equivalen a revisar visualmente una sesión real ni acreditan que el proceso actualmente activo en `:3000` haya cargado el DTO nuevo.
 
 ### POS — pago mixto y total autoritativo (2026-11-23)
 
@@ -417,7 +435,7 @@ En el POS staff, el mismo campo de método de pago aparecía para mesa, domicili
 
 **Evidencia:** nuevo caso E2E en `foody_backend/test/flujos/caja.e2e-spec.ts` crea dos pedidos en una mesa, los lleva por cocina, paga efectivo y tarjeta, y valida que cada ticket tenga un movimiento por su total y método. Antes del fix la aserción no encontraba venta para uno de los tickets; después: E2E de Caja 4/4 y E2E completa 8/8 suites/20/20 sobre `foody_diseno_qa`; con la protección añadida, las 26 suites/57 pruebas unitarias y el E2E de Caja 4/4 vuelven a pasar; Nest `dist` inicia correctamente. Fixture QA restaurada a horario 08:00–22:00, ingrediente demo 10.000 g y producto disponible; API temporal :3001 detenida. El `:3000` aún no carga el cambio.
 
-**Decisión contable pendiente FIN-TIP-01:** `propina` aumenta `pagos_pedido` y `propina_acumulada`, pero el movimiento de Caja recibe solo el monto del pedido. Definir si el efectivo esperado de Caja incluye propinas y si estas se registran como pasivo por pagar al personal o como ingreso; no ajustar cifras hasta resolver la política.
+**FIN-TIP-01 — atribución corregida; decisión contable pendiente:** `propina` se registra en `pagos_pedido` y `propina_acumulada`, pero el movimiento de Caja recibe solo el monto de la venta. `CajaService.cerrar()` ahora calcula `propinas_turno` desde los pagos efectivamente registrados entre la apertura y el cierre del turno, en vez de usar la fecha de creación del pedido. El total sigue separado y no se suma al saldo de sistema ni al cuadre. E2E Caja en clon desechable pasó 8/8; la regresión creó el pedido antes de abrir la caja nueva, abonó $4.000 mediante efectivo/tarjeta con $600 de propina y pagó el saldo por transferencia con $800 de propina; cierre `propinas_turno=1400`, diferencia de caja cero. Falta definir si el efectivo esperado incluye propinas y si son pasivo por pagar, entrega directa o reparto por turno/persona; siguen pendientes pagos en turnos distintos y liquidación al personal.
 
 ### PED-POS-CAJA-GATE-01 — caja abierta como precondición del POS (2026-11-24)
 
@@ -504,6 +522,29 @@ La UI POS conserva la clave ante un error si el payload es el mismo, pero rota l
 **No se cambia sin decisión comercial/contable:** decidir entre sustitución autorizada por cliente, eliminar/anular la línea con saldo actualizado, o conservar cobro y registrar compensación/devolución; precisar comportamiento para pedido ya pagado/abonado y para línea preparada que se desperdició. Implicaciones: Caja y pagos por ticket, factura/impuestos, inventario/merma, reportes de ventas/utilidad y app cliente. Mientras se define, el despacho de domicilio ya se bloquea, pero el cobro del canal mesa/recogida no tiene conciliación específica.
 
 **Estado de datos:** se registró únicamente evidencia del código y suite QA; no se ejecutó mutación manual sobre datos de negocio. No se inventó una regla para el cobro o reembolso.
+
+## PED-PAY-TRUST-01 / PED-STAFF-CASH-RBAC-01 — confirmar cobros en el servidor (2026-11-25)
+
+### Hallazgo y reproducción
+
+El endpoint público `POST /pedidos` recibía el mismo `CrearPedidoDto` que el POS, incluyendo `pagos[]`. Para un cliente esto permitía declarar un pago que no estaba respaldado por Wompi ni por confirmación del establecimiento. En pedidos `para_llevar`, el método (`efectivo`, `tarjeta` o `nequi`) también se usaba como si fuera un cobro: el servicio podía registrar el movimiento en Caja y marcar `monto_pagado=total`. En QR de mesa `pagos[]` podía actualizar pagos/saldo aunque el estado inicial fuera `pendiente_aprobacion` y por tanto no generaba el correspondiente movimiento de Caja.
+
+En POS, `POST /pedidos/staff` solo exigía `crear_pedido`; la rama de `pagos[]` marcaba saldo pagado sin validar permiso de cobro. Además, un pedido `para_llevar` creado con un único método y propina caía en la rama que solo guardaba `propina_acumulada`, saltándose el movimiento de venta y el abono. La prueba roja E2E en la base clonada reprodujo HTTP 201 al intentar enviar `pagos[]` desde checkout y `monto_pagado=0` para la creación POS con propina.
+
+### Corrección
+
+- `PedidosPublicController.crear()` rechaza `pagos[]` con `PAGO_CLIENTE_NO_CONFIRMADO`; el método seleccionado por cliente queda como preferencia y no dispara caja ni marca recaudo.
+- `PedidosController.crearStaff()` rechaza `pagos[]` si el JWT no incluye `cobrar_pedido`. `PedidosService` transporta el permiso al contexto del alta; el servicio solo registra un cobro implícito en la creación staff cuando el operador tiene ese permiso.
+- `pagos[]` al crear se limita a `para_llevar` (mostrador/recogida), acorde al contrato documentado del DTO. El cobro POS de un solo método también registra `pagos_pedido`, usuario, propina y movimiento de Caja dentro de la transacción.
+- El filtro HTTP preserva mensajes específicos para los dos rechazos de negocio.
+
+### Verificación
+
+Pruebas rojas previas: Checkout público con `pagos[]` recibió 201 (esperado 400); POS `para_llevar` con método efectivo + propina obtuvo `monto_pagado=0` (esperado total). Regresión verde en clon temporal `foody_diseno_qa_codex_public_payment`, Nest `:3001` con `FOODY_QA_SIN_EFECTOS=1`: E2E completo 8/8 suites y 40/40 pruebas; cubre rechazo de pago declarado, cliente con método elegido sin abono/movimiento, mesero sin `cobrar_pedido` sin cobro (y pago explícito 403), pago POS con propina $900, cierre `propinas_turno=900` y diferencia cero. `npm test -- --runInBand`: 51 suites/128 pruebas. `npm run build`: OK. Clon eliminado y QA persistente intacta. No se tocó :3000, Tunnel, OAuth, credenciales ni datos de negocio.
+
+### PED-TIP-REQUEST-01 — Checkout desacoplado del recaudo (corregido; liquidación pendiente)
+
+**Actualización 2026-11-25 — FIN-TIP-CHECKOUT-01:** decisión confirmada por el usuario: en Colombia la propina es voluntaria, no se agrega al total de productos y se mantiene separada; el monto digitado antes de crear un pedido era solo una sugerencia y no debía conservarse. Checkout retiró el campo previo a la creación y muestra una nota informativa; el repositorio cliente ya no envía `propina`. En Nest, para mantener compatibilidad con versiones anteriores, el pedido público ignora `dto.propina`; creación staff sigue guardando propina solo cuando acompaña un cobro confirmado. E2E QA envió deliberadamente `propina=2500` desde cliente: 2 pedidos sintéticos terminaron con `propina_acumulada=0`, `monto_pagado=0` y sin filas en `pagos_pedido`; cobros reales siguen guardando `pagos_pedido.propina` por separado de `movimientos_caja` y del total de venta. No se hizo migración ni se reescribieron pedidos históricos, porque `propina_acumulada` no permite distinguir solicitud antigua de propina ya cobrada. Queda pendiente definir beneficiario/reparto/liquidación, manejo cuando se entrega directamente a un domiciliario y la visualización del detalle de propinas reales.
 
 ### PED-DELETE-NODISP-STOCK-01 — no reponer stock de una línea con merma — ✅ corregido (2026-11-24)
 
@@ -675,3 +716,10 @@ La base usada fue únicamente `foody_diseno_qa`; Wompi tenía cero fuentes activ
 #### Addendum — bloqueo de integraciones externas (2026-11-24)
 
 La auditoría del aislamiento encontró tres integraciones invocables por endpoint además de los cron: Google mediante Supabase Auth, Wompi y geocodificación Photon. Con `FOODY_QA_SIN_EFECTOS=1`, `SupabaseAuthService` no lee URL/llave ni construye cliente, Wompi rechaza antes de `fetch` aun si las claves están en `.env`, y Geografía falla cerrado sin consultar Photon. Unitarias de contrato cubren Wompi/Auth; build OK; **42/104 unitarias**, **8/32 E2E PostgreSQL**, **9/9 scripts funcionales**. Los destinos locales y públicos del Tunnel verificaron 6/6 HTTP 200 al finalizar; :3000 no se reinició.
+
+
+### COC-NODISP-CUSTOMER-01 — informar al cliente (2026-11-25)
+
+`PedidosService.obtenerEstadoPublico()` solo devolvía estado general, total e historial. Cuando Cocina marcaba una línea `no_disponible`, el cliente podía ver el pedido como `listo` sin saber qué producto no se iba a servir; en domicilio, además, el despacho quedaba bloqueado. El detalle interno ya advertía al personal que el importe seguía incluyendo la línea, pero ese dato no llegaba a Seguimiento.
+
+Nest devuelve los nombres y cantidades no disponibles dentro de la consulta ya autorizada por token/capability; Flutter informa el faltante y que el total aún no se ha ajustado. Evidencia original: E2E Cocina token válido→línea/cantidad, Nest build + 50 suites/127 pruebas, Flutter aviso 5/5 responsive y analyzer focalizado limpio. Revalidación 2026-11-25: `cocina.e2e-spec.ts` 7/7 en Nest temporal :3001 + `foody_diseno_qa`; incluye el pedido end-to-end, GET por token y rechazo de despacho. Se limpió el fixture y se cerró QA. API :3000 PID 10208 registró la ruta (GET de ID inexistente responde error de dominio `NO_ENCONTRADO`); no se mutó dinero ni datos comerciales. La decisión de sustitución/eliminación/reembolso permanece en COC-NODISP-COMMERCE-01.

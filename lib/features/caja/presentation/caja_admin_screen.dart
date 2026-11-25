@@ -33,6 +33,7 @@ class CajaAdminScreen extends ConsumerStatefulWidget {
     this.onCajaEstadoCambiado,
     this.ocultarCabecera = false,
     this.permitirArqueoCiego = true,
+    this.permisos = const [],
     this.repository,
   });
 
@@ -52,6 +53,7 @@ class CajaAdminScreen extends ConsumerStatefulWidget {
 
   /// NAV-CJ-14: el cajero no debería auto-activar arqueo ciego.
   final bool permitirArqueoCiego;
+  final List<String> permisos;
   final CajaRepository? repository;
 
   @override
@@ -325,13 +327,13 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                 ),
               Text(
                 arqueoCiego
-                    ? 'Contado: ${_moneda.format(res['monto_final_contado'])}\n'
+                    ? 'Efectivo contado: ${_moneda.format(res['monto_final_contado'])}\n'
                         'Diferencia: ${_moneda.format(res['diferencia'])}\n'
-                        '(Arqueo ciego — saldo sistema oculto)'
-                    : 'Sistema: ${_moneda.format(res['monto_final_sistema'])}\n'
-                        'Contado: ${_moneda.format(res['monto_final_contado'])}\n'
+                        '(Arqueo ciego — efectivo esperado oculto)'
+                    : 'Efectivo esperado: ${_moneda.format(res['monto_final_sistema'])}\n'
+                        'Efectivo contado: ${_moneda.format(res['monto_final_contado'])}\n'
                         'Diferencia: ${_moneda.format(res['diferencia'])}\n'
-                        'Propinas turno: ${_moneda.format(res['propinas_turno'] ?? 0)}',
+                        'Propinas voluntarias del turno (aparte): ${_moneda.format(res['propinas_turno'] ?? 0)}',
               ),
             ],
           ),
@@ -968,7 +970,7 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
           children: [
             Expanded(
               child: OperacionMetricCard(
-                etiqueta: 'Saldo sistema',
+                etiqueta: 'Efectivo esperado',
                 valor: ciego ? '—' : _moneda.format(saldo),
               ),
             ),
@@ -1069,222 +1071,251 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
     );
   }
 
+  Widget _avisoPermisoCaja(String mensaje) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Icon(Icons.lock_outline, color: _scheme.onSurfaceVariant),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    mensaje,
+                    style: TextStyle(color: _scheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _panelLateralCaja({bool scrollPropio = true}) {
     final kids = <Widget>[
       _seccionFiados(),
       const SizedBox(height: 10),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _decoTarjeta(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Registrar gasto',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: _scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _conceptoGasto,
-              decoration: InputDecoration(
-                hintText: 'Concepto',
-                filled: true,
-                fillColor: _scheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
+      if (widget.permisos.contains('gestionar_caja'))
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: _decoTarjeta(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Registrar gasto',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _scheme.onSurface,
                 ),
-                isDense: true,
               ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _montoGasto,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: 'Monto',
-                filled: true,
-                fillColor: _scheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
+              const SizedBox(height: 8),
+              TextField(
+                controller: _conceptoGasto,
+                decoration: InputDecoration(
+                  hintText: 'Concepto',
+                  filled: true,
+                  fillColor: _scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
                 ),
-                isDense: true,
               ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _gasto,
-              style: FilledButton.styleFrom(
-                  backgroundColor: _scheme.primary,
-                  foregroundColor: _scheme.onPrimary),
-              child: const Text('Guardar gasto'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              TextField(
+                controller: _montoGasto,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Monto',
+                  filled: true,
+                  fillColor: _scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: _gasto,
+                style: FilledButton.styleFrom(
+                    backgroundColor: _scheme.primary,
+                    foregroundColor: _scheme.onPrimary),
+                child: const Text('Guardar gasto'),
+              ),
+            ],
+          ),
         ),
-      ),
       const SizedBox(height: 10),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _decoTarjeta(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Retiro parcial',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: _scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _montoRetiro,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: 'Monto retiro',
-                filled: true,
-                fillColor: _scheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
+      if (widget.permisos.contains('hacer_retiro_parcial'))
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: _decoTarjeta(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Retiro parcial',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _scheme.onSurface,
                 ),
-                isDense: true,
               ),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _retiroParcial,
-              child: const Text('Registrar retiro'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              TextField(
+                controller: _montoRetiro,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Monto retiro',
+                  filled: true,
+                  fillColor: _scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: _retiroParcial,
+                child: const Text('Registrar retiro'),
+              ),
+            ],
+          ),
         ),
-      ),
       const SizedBox(height: 10),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _decoTarjeta(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Devolución',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: _scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Solo efectivo ya cobrado en este turno. Cancelar pedido no cobrado no requiere esto.',
-              style: TextStyle(fontSize: 11, color: _scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _montoDevolucion,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: 'Monto',
-                filled: true,
-                fillColor: _scheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
+      if (widget.permisos.contains('gestionar_caja'))
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: _decoTarjeta(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Devolución',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _scheme.onSurface,
                 ),
-                isDense: true,
               ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _motivoDevolucion,
-              decoration: InputDecoration(
-                hintText: 'Motivo',
-                filled: true,
-                fillColor: _scheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
+              const SizedBox(height: 4),
+              Text(
+                'Solo efectivo ya cobrado en este turno. Cancelar pedido no cobrado no requiere esto.',
+                style: TextStyle(fontSize: 11, color: _scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _montoDevolucion,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: 'Monto',
+                  filled: true,
+                  fillColor: _scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
                 ),
-                isDense: true,
               ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _devolucion,
-              style: FilledButton.styleFrom(
-                  backgroundColor: AnaliticaTokens.inventario),
-              child: const Text('Registrar devolución'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              TextField(
+                controller: _motivoDevolucion,
+                decoration: InputDecoration(
+                  hintText: 'Motivo',
+                  filled: true,
+                  fillColor: _scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: _devolucion,
+                style: FilledButton.styleFrom(
+                    backgroundColor: AnaliticaTokens.inventario),
+                child: const Text('Registrar devolución'),
+              ),
+            ],
+          ),
         ),
-      ),
       const SizedBox(height: 10),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _decoTarjeta(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Cerrar turno',
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: _scheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _montoCierre,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Monto contado',
-                prefixText: r'$ ',
-                filled: true,
-                fillColor: _scheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide.none,
+      if (widget.permisos.contains('cerrar_caja'))
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: _decoTarjeta(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Cerrar turno',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: _scheme.onSurface,
                 ),
-                isDense: true,
               ),
-            ),
-            const SizedBox(height: 8),
-            Material(
-              color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              child: InkWell(
-                onTap: _cerrar,
+              const SizedBox(height: 8),
+              TextField(
+                controller: _montoCierre,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Efectivo contado',
+                  prefixText: r'$ ',
+                  filled: true,
+                  fillColor: _scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Material(
+                color: AnaliticaTokens.alertas.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AnaliticaTokens.alertas.withValues(alpha: 0.35),
+                child: InkWell(
+                  onTap: _cerrar,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AnaliticaTokens.alertas.withValues(alpha: 0.35),
+                      ),
                     ),
-                  ),
-                  child: const Text(
-                    'Cerrar caja',
-                    style: TextStyle(
-                      color: AnaliticaTokens.alertas,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                    child: const Text(
+                      'Cerrar caja',
+                      style: TextStyle(
+                        color: AnaliticaTokens.alertas,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
     ];
     if (!scrollPropio) {
       return Column(
@@ -1447,122 +1478,125 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
           ),
           const SizedBox(height: 20),
         ],
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Container(
-              padding: const EdgeInsets.all(22),
-              decoration: _decoTarjeta(),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.point_of_sale,
-                      size: 26,
-                      color: _scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    'Abrir turno de caja',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: _scheme.onSurface,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Indica el monto inicial en efectivo para comenzar.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.35,
-                      color: _scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  if (widget.permitirArqueoCiego)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'Arqueo ciego',
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: _scheme.onSurface,
-                        ),
+        if (!widget.permisos.contains('abrir_caja'))
+          _avisoPermisoCaja('No tienes permiso para abrir este turno de caja.')
+        else
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: _decoTarjeta(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      subtitle: Text(
-                        'El cajero no verá el saldo del sistema',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      activeTrackColor: _scheme.primary,
-                      value: _arqueoCiego,
-                      onChanged: (v) => setState(() => _arqueoCiego = v),
-                    ),
-                  if (widget.permitirArqueoCiego) const SizedBox(height: 8),
-                  TextField(
-                    controller: _montoApertura,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: _scheme.onSurface),
-                    decoration: InputDecoration(
-                      labelText: 'Monto inicial',
-                      labelStyle: TextStyle(
+                      child: Icon(
+                        Icons.point_of_sale,
+                        size: 26,
                         color: _scheme.onSurfaceVariant,
                       ),
-                      prefixText: r'$ ',
-                      filled: true,
-                      fillColor: _scheme.surfaceContainerHighest,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: _scheme.outlineVariant,
-                        ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Abrir turno de caja',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: _scheme.onSurface,
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: _scheme.outlineVariant,
-                        ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Indica el monto inicial en efectivo para comenzar.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.35,
+                        color: _scheme.onSurfaceVariant,
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide(
-                          color: _scheme.onSurface,
-                          width: 1.2,
+                    ),
+                    const SizedBox(height: 18),
+                    if (widget.permitirArqueoCiego)
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          'Arqueo ciego',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: _scheme.onSurface,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'El cajero no verá el saldo del sistema',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        activeTrackColor: _scheme.primary,
+                        value: _arqueoCiego,
+                        onChanged: (v) => setState(() => _arqueoCiego = v),
+                      ),
+                    if (widget.permitirArqueoCiego) const SizedBox(height: 8),
+                    TextField(
+                      controller: _montoApertura,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(color: _scheme.onSurface),
+                      decoration: InputDecoration(
+                        labelText: 'Monto inicial',
+                        labelStyle: TextStyle(
+                          color: _scheme.onSurfaceVariant,
+                        ),
+                        prefixText: r'$ ',
+                        filled: true,
+                        fillColor: _scheme.surfaceContainerHighest,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: _scheme.outlineVariant,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: _scheme.outlineVariant,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(
+                            color: _scheme.onSurface,
+                            width: 1.2,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed: _abrir,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _scheme.primary,
-                      foregroundColor: _scheme.onPrimary,
-                      minimumSize: const Size.fromHeight(48),
+                    const SizedBox(height: 18),
+                    FilledButton(
+                      onPressed: _abrir,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _scheme.primary,
+                        foregroundColor: _scheme.onPrimary,
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      child: const Text('Abrir caja'),
                     ),
-                    child: const Text('Abrir caja'),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -1594,12 +1628,13 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                   ),
                 ),
               ),
-              IconButton(
-                onPressed: _nuevoFiado,
-                tooltip: 'Registrar fiado',
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.add, color: _scheme.onSurfaceVariant),
-              ),
+              if (widget.permisos.contains('gestionar_caja'))
+                IconButton(
+                  onPressed: _nuevoFiado,
+                  tooltip: 'Registrar fiado',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.add, color: _scheme.onSurfaceVariant),
+                ),
             ],
           ),
           if (resumen != null) ...[
@@ -1774,7 +1809,8 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                           : _scheme.onSurfaceVariant,
                     ),
                   ),
-                  if (f['estado'] == 'pendiente') ...[
+                  if (f['estado'] == 'pendiente' &&
+                      widget.permisos.contains('gestionar_caja')) ...[
                     const SizedBox(height: 6),
                     Align(
                       alignment: Alignment.centerLeft,

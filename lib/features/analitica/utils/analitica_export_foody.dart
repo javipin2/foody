@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -28,7 +27,12 @@ class AnaliticaExportFoody {
     final comp = resumen?['comparativa'] as Map<String, dynamic>?;
     final delta = comp?['delta'] as Map<String, dynamic>?;
 
-    final doc = pw.Document();
+    final temaPdf = pw.ThemeData.withFont(
+      base:
+          pw.Font.ttf(await rootBundle.load('assets/fonts/roboto-regular.ttf')),
+      bold: pw.Font.ttf(await rootBundle.load('assets/fonts/roboto-bold.ttf')),
+    );
+    final doc = pw.Document(theme: temaPdf);
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -52,7 +56,7 @@ class AnaliticaExportFoody {
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 6),
-          pw.Table.fromTextArray(
+          pw.TableHelper.fromTextArray(
             headers: ['Métrica', 'Valor'],
             data: [
               ['Ventas netas', _fmt(kpis['ventas_netas'])],
@@ -62,7 +66,10 @@ class AnaliticaExportFoody {
                 'Margen bruto',
                 '${_fmt(kpis['margen_bruto_estimado'])} (${_num(kpis['margen_bruto_pct']).toStringAsFixed(1)}%)',
               ],
-              ['Cancelación', '${_num(kpis['pct_cancelacion']).toStringAsFixed(1)}%'],
+              [
+                'Cancelación',
+                '${_num(kpis['pct_cancelacion']).toStringAsFixed(1)}%'
+              ],
               ['Alertas abiertas', '${kpis['alertas_abiertas'] ?? 0}'],
             ],
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
@@ -81,7 +88,7 @@ class AnaliticaExportFoody {
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 6),
-            pw.Table.fromTextArray(
+            pw.TableHelper.fromTextArray(
               headers: ['#', 'Producto', 'Cantidad', 'Ventas'],
               data: [
                 for (var i = 0; i < topProductos.length; i++)
@@ -104,14 +111,12 @@ class AnaliticaExportFoody {
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 6),
-            pw.Table.fromTextArray(
+            pw.TableHelper.fromTextArray(
               headers: ['Tipo', 'Pedidos', 'Ventas'],
-              data: porTipo
-                  .map((e) {
-                    final m = e as Map<String, dynamic>;
-                    return ['${m['tipo']}', '${m['pedidos']}', _fmt(m['ventas'])];
-                  })
-                  .toList(),
+              data: porTipo.map((e) {
+                final m = e as Map<String, dynamic>;
+                return ['${m['tipo']}', '${m['pedidos']}', _fmt(m['ventas'])];
+              }).toList(),
             ),
           ],
           pw.SizedBox(height: 24),

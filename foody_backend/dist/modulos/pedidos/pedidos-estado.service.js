@@ -200,9 +200,10 @@ let PedidosEstadoService = class PedidosEstadoService {
             if (nuevoEstado === 'cancelado') {
                 const reversa = await this.cajaAuditoria.revertirVentasPedido(client, pedidoId, sucursalId, usuarioId, motivo ?? 'Pedido cancelado');
                 await client.query(`UPDATE pedidos SET monto_pagado = 0 WHERE id = $1`, [pedidoId]);
-                const domiciliariosDesasignados = await client.query(`SELECT dp.usuario_id
+                const domiciliariosDesasignados = await client.query(`SELECT DISTINCT dp.usuario_id,
+                  ad.domiciliario_independiente_id AS independiente_id
            FROM asignaciones_domicilio ad
-           INNER JOIN domiciliarios_planta dp ON dp.id = ad.domiciliario_planta_id
+           LEFT JOIN domiciliarios_planta dp ON dp.id = ad.domiciliario_planta_id
            WHERE ad.pedido_id = $1
              AND ad.estado IN ('asignado', 'en_camino')`, [pedidoId]);
                 await client.query(`UPDATE asignaciones_domicilio SET estado = 'cancelado'
@@ -210,7 +211,12 @@ let PedidosEstadoService = class PedidosEstadoService {
                 await client.query(`UPDATE ofertas_pedido SET estado = 'cancelada'
            WHERE pedido_id = $1 AND estado = 'activa'`, [pedidoId]);
                 await client.query(`UPDATE domiciliarios_sesiones ds
-           SET disponible = true
+           SET disponible = NOT EXISTS (
+             SELECT 1 FROM asignaciones_domicilio activas
+             WHERE activas.domiciliario_independiente_id = ad.domiciliario_independiente_id
+               AND activas.estado IN ('asignado', 'en_camino')
+               AND activas.pedido_id <> $1
+           )
            FROM asignaciones_domicilio ad
            WHERE ad.pedido_id = $1
              AND ad.tipo_domiciliario = 'independiente'
@@ -227,7 +233,12 @@ let PedidosEstadoService = class PedidosEstadoService {
                         devolucion_automatica: reversa.monto_total,
                         ventas_revertidas: reversa.movimientos,
                     },
-                    domiciliarios_desasignados: domiciliariosDesasignados.rows.map((r) => r.usuario_id),
+                    domiciliarios_desasignados: domiciliariosDesasignados.rows
+                        .map((r) => r.usuario_id)
+                        .filter((id) => Boolean(id)),
+                    domiciliarios_independientes_desasignados: domiciliariosDesasignados.rows
+                        .map((r) => r.independiente_id)
+                        .filter((id) => Boolean(id)),
                 };
             }
             return {
@@ -298,11 +309,12 @@ let PedidosEstadoService = class PedidosEstadoService {
                 },
             });
         }
-        const { tipo: _tipo, domiciliarios_desasignados: _domiOff, mesera_id: _mesera, numero_pedido: _num, ...respuesta } = result;
+        const { tipo: _tipo, domiciliarios_desasignados: _domiOff, domiciliarios_independientes_desasignados: _domiIndepOff, mesera_id: _mesera, numero_pedido: _num, ...respuesta } = result;
         this.soporte.notificarPedidoRealtime(sucursalId, pedidoId, nuevoEstado);
         this.soporte.notificarCatalogoDisponibilidad(sucursalId, catalogoCambios);
-        if (nuevoEstado === 'cancelado' && _domiOff?.length) {
-            this.soporte.notificarDesasignacionesDomicilio(_domiOff, pedidoId);
+        if (nuevoEstado === 'cancelado' &&
+            (_domiOff?.length || _domiIndepOff?.length)) {
+            this.soporte.notificarDesasignacionesDomicilio(_domiOff ?? [], pedidoId, _domiIndepOff ?? []);
         }
         return respuesta;
     }

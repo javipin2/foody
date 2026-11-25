@@ -328,6 +328,27 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   Future<void> _reimprimir(Map<String, dynamic> ticket) async {
     final pedidoId = ticket['pedido_id'] as String?;
     if (pedidoId == null || pedidoId.isEmpty) return;
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Reimprimir esta comanda?'),
+        content: const Text(
+          'Se enviará una copia física adicional a cocina. Verifica que la '
+          'impresión anterior no esté en proceso para evitar duplicados.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reimprimir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
     try {
       await _repo.reimprimirPedido(
         pedidoId: pedidoId,
@@ -1164,8 +1185,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           if (modoListos)
-                            const Icon(Icons.check_circle,
-                                color: _verde, size: 20)
+                            _badgeAntiguedadPedido(t)
                           else
                             _badgeTiempo(minutos, demorado: demorado),
                         ],
@@ -1291,6 +1311,54 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
           fontWeight: FontWeight.w800,
           fontFamily: 'monospace',
           color: demorado ? _rojo : _scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _badgeAntiguedadPedido(Map<String, dynamic> ticket) {
+    final creado = DateTime.tryParse('${ticket['created_at']}');
+    if (creado == null) {
+      return const Icon(Icons.check_circle, color: _verde, size: 20);
+    }
+    final minutos = DateTime.now().difference(creado.toLocal()).inMinutes;
+    final revisar = minutos >= 24 * 60;
+    final muyAntiguo = minutos >= 30 * 24 * 60;
+    final color = muyAntiguo ? _rojo : (revisar ? _amber : _verde);
+    final etiqueta = 'Pedido ${_fmtMinutos(minutos)}';
+    final pedidoKey = ticket['numero_pedido']?.toString() ??
+        ticket['pedido_id']?.toString() ??
+        'sin-id';
+    return Tooltip(
+      message: revisar
+          ? 'Antigüedad desde la creación; no indica cuánto lleva listo. Verifica el estado del pedido antes de reimprimir o devolverlo a cocina.'
+          : 'Antigüedad desde la creación del pedido; no indica cuánto lleva listo.',
+      child: Container(
+        key: ValueKey<String>('kds-ready-order-age-$pedidoKey'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              revisar ? Icons.schedule : Icons.check_circle,
+              color: color,
+              size: 16,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              etiqueta,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );

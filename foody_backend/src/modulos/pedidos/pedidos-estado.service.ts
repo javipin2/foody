@@ -352,11 +352,13 @@ export class PedidosEstadoService {
           [pedidoId],
         );
         const domiciliariosDesasignados = await client.query<{
-          usuario_id: string;
+          usuario_id: string | null;
+          independiente_id: string | null;
         }>(
-          `SELECT dp.usuario_id
+          `SELECT DISTINCT dp.usuario_id,
+                  ad.domiciliario_independiente_id AS independiente_id
            FROM asignaciones_domicilio ad
-           INNER JOIN domiciliarios_planta dp ON dp.id = ad.domiciliario_planta_id
+           LEFT JOIN domiciliarios_planta dp ON dp.id = ad.domiciliario_planta_id
            WHERE ad.pedido_id = $1
              AND ad.estado IN ('asignado', 'en_camino')`,
           [pedidoId],
@@ -373,7 +375,12 @@ export class PedidosEstadoService {
         );
         await client.query(
           `UPDATE domiciliarios_sesiones ds
-           SET disponible = true
+           SET disponible = NOT EXISTS (
+             SELECT 1 FROM asignaciones_domicilio activas
+             WHERE activas.domiciliario_independiente_id = ad.domiciliario_independiente_id
+               AND activas.estado IN ('asignado', 'en_camino')
+               AND activas.pedido_id <> $1
+           )
            FROM asignaciones_domicilio ad
            WHERE ad.pedido_id = $1
              AND ad.tipo_domiciliario = 'independiente'
@@ -397,9 +404,13 @@ export class PedidosEstadoService {
             devolucion_automatica: reversa.monto_total,
             ventas_revertidas: reversa.movimientos,
           },
-          domiciliarios_desasignados: domiciliariosDesasignados.rows.map(
-            (r) => r.usuario_id,
-          ),
+          domiciliarios_desasignados: domiciliariosDesasignados.rows
+            .map((r) => r.usuario_id)
+            .filter((id): id is string => Boolean(id)),
+          domiciliarios_independientes_desasignados:
+            domiciliariosDesasignados.rows
+              .map((r) => r.independiente_id)
+              .filter((id): id is string => Boolean(id)),
         };
       }
 
@@ -486,18 +497,27 @@ export class PedidosEstadoService {
     const {
       tipo: _tipo,
       domiciliarios_desasignados: _domiOff,
+      domiciliarios_independientes_desasignados: _domiIndepOff,
       mesera_id: _mesera,
       numero_pedido: _num,
       ...respuesta
     } = result as typeof result & {
       domiciliarios_desasignados?: string[];
+      domiciliarios_independientes_desasignados?: string[];
       mesera_id?: string | null;
       numero_pedido?: string;
     };
     this.soporte.notificarPedidoRealtime(sucursalId, pedidoId, nuevoEstado);
     this.soporte.notificarCatalogoDisponibilidad(sucursalId, catalogoCambios);
-    if (nuevoEstado === 'cancelado' && _domiOff?.length) {
-      this.soporte.notificarDesasignacionesDomicilio(_domiOff, pedidoId);
+    if (
+      nuevoEstado === 'cancelado' &&
+      (_domiOff?.length || _domiIndepOff?.length)
+    ) {
+      this.soporte.notificarDesasignacionesDomicilio(
+        _domiOff ?? [],
+        pedidoId,
+        _domiIndepOff ?? [],
+      );
     }
     return respuesta;
   }

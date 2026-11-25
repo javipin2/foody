@@ -119,6 +119,10 @@ export declare class DomiciliarioPlantaController {
         total: string;
         monto_pagado: string;
         metodo_pago: string | null;
+        pagos_resumen: {
+            metodo_pago: string;
+            monto: string | number;
+        }[];
         created_at: string;
         estado_asignacion: string;
         asignado_at: string;
@@ -222,6 +226,10 @@ export declare class DomiciliariosIndependientesController {
         total: string;
         monto_pagado: string;
         metodo_pago: string | null;
+        pagos_resumen: {
+            metodo_pago: string;
+            monto: string | number;
+        }[];
         costo_domicilio: string;
         lat: string | null;
         lng: string | null;

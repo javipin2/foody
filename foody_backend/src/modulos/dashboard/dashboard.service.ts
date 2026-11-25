@@ -6,24 +6,17 @@ import { JwtPayload } from '../../core/auth/jwt-payload';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import {
   SQL_DIA_LOCAL,
+  SQL_HOY_LOCAL,
   SQL_PEDIDOS_VALIDOS,
   SQL_PEDIDOS_VALIDOS_P,
   SQL_PEDIDO_DESDE_7D,
   SQL_PEDIDO_DESDE_7D_P,
   SQL_PEDIDO_ES_HOY,
 } from '../../compartido/sql/ventas-metricas.sql';
-import { SQL_WHERE_PEDIDO_COMPLETADO } from '../pedidos/pedido-estados';
-
-const ESTADOS_PEDIDO_ACTIVO = [
-  'pendiente_aprobacion',
-  'pendiente',
-  'confirmado',
-  'en_cocina',
-  'listo',
-  'pagando',
-  'asignado',
-  'en_camino',
-] as const;
+import {
+  SQL_WHERE_PEDIDO_COMPLETADO,
+  sqlWherePedidoAbiertoOperativo,
+} from '../pedidos/pedido-estados';
 
 /** PERF-CACHE-03: resumen dashboard TTL corto (sigue “casi vivo”). */
 const TTL_RESUMEN_MS = 30_000;
@@ -82,15 +75,28 @@ export class DashboardService {
       pedidos: string;
       ventas: string;
     }>(
-      `SELECT ${SQL_DIA_LOCAL}::text AS dia,
-              COUNT(*)::text AS pedidos,
-              COALESCE(SUM(total), 0)::text AS ventas
-       FROM pedidos
-       WHERE sucursal_id = $1
-         AND ${SQL_PEDIDO_DESDE_7D}
-         AND ${SQL_PEDIDOS_VALIDOS}
-       GROUP BY ${SQL_DIA_LOCAL}
-       ORDER BY dia ASC`,
+      `WITH dias AS (
+         SELECT generate_series(
+           (${SQL_HOY_LOCAL} - 6)::timestamp,
+           ${SQL_HOY_LOCAL}::timestamp,
+           interval '1 day'
+         )::date AS dia
+       ), ventas AS (
+         SELECT ${SQL_DIA_LOCAL} AS dia,
+                COUNT(*) AS pedidos,
+                COALESCE(SUM(total), 0) AS ventas
+         FROM pedidos
+         WHERE sucursal_id = $1
+           AND ${SQL_PEDIDO_DESDE_7D}
+           AND ${SQL_PEDIDOS_VALIDOS}
+         GROUP BY ${SQL_DIA_LOCAL}
+       )
+       SELECT dias.dia::text AS dia,
+              COALESCE(ventas.pedidos, 0)::text AS pedidos,
+              COALESCE(ventas.ventas, 0)::text AS ventas
+       FROM dias
+       LEFT JOIN ventas USING (dia)
+       ORDER BY dias.dia ASC`,
       [sucursalId],
     );
 
@@ -258,7 +264,7 @@ export class DashboardService {
            SELECT COUNT(*)
            FROM pedidos
            WHERE sucursal_id = $1
-             AND estado = ANY($2::text[])
+             AND ${sqlWherePedidoAbiertoOperativo()}
          ), 0)::text AS pedidos_activos,
          COALESCE((
            SELECT COUNT(*)
@@ -335,7 +341,7 @@ export class DashboardService {
              LIMIT 8
            ) demoras
          ), '[]'::json) AS domicilios_tardios`,
-      [sucursalId, ESTADOS_PEDIDO_ACTIVO],
+      [sucursalId],
     );
 
     if (!fila) return null;

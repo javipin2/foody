@@ -8,9 +8,11 @@ exports.puedeMarcarPagando = puedeMarcarPagando;
 exports.saldoPendientePedido = saldoPendientePedido;
 exports.pedidoCobradoCompletamente = pedidoCobradoCompletamente;
 exports.pedidoTerminalOperativo = pedidoTerminalOperativo;
+exports.sqlWherePedidoAbiertoOperativo = sqlWherePedidoAbiertoOperativo;
 exports.esEstadoCocinaResuelto = esEstadoCocinaResuelto;
 exports.puedeForzarPagadoSinCocinaCompleta = puedeForzarPagadoSinCocinaCompleta;
 exports.pedidoCocinaCompleta = pedidoCocinaCompleta;
+exports.puedeAvanzarCocinaPedidoPagado = puedeAvanzarCocinaPedidoPagado;
 exports.TRANSICIONES_PEDIDO = {
     pendiente_aprobacion: ['en_cocina', 'rechazado', 'cancelado'],
     pendiente: ['en_cocina', 'cancelado'],
@@ -101,6 +103,20 @@ exports.SQL_WHERE_PEDIDO_OPERACION_ABIERTA = `
   )
   AND COALESCE(monto_pagado, 0) < total - 0.01
 `;
+function sqlWherePedidoAbiertoOperativo(alias = '') {
+    const p = alias ? `${alias}.` : '';
+    return `(
+    ${p}estado IN (
+      'pendiente_aprobacion', 'pendiente', 'confirmado',
+      'en_cocina', 'listo', 'pagando', 'asignado', 'en_camino'
+    )
+    OR (
+      ${p}tipo = 'domicilio'
+      AND ${p}estado = 'entregado'
+      AND COALESCE(${p}monto_pagado, 0) < ${p}total - 0.01
+    )
+  )`;
+}
 exports.SQL_WHERE_DOMICILIO_ENTREGADO_IMPAGO = `
   estado = 'entregado'
   AND COALESCE(monto_pagado, 0) < total - 0.01
@@ -135,5 +151,17 @@ async function pedidoCocinaCompleta(client, pedidoId) {
     const n = Number(r.rows[0]?.n ?? 0);
     const incompletos = Number(r.rows[0]?.incompletos ?? 0);
     return n > 0 && incompletos === 0;
+}
+function puedeAvanzarCocinaPedidoPagado(params) {
+    const total = Number(params.total);
+    const montoPagado = Number(params.montoPagado);
+    if (params.estadoPedido !== 'pagado' ||
+        !Number.isFinite(total) ||
+        !Number.isFinite(montoPagado) ||
+        montoPagado < total - 0.01 ||
+        ![null, undefined, 'pendiente', 'preparando'].includes(params.estadoItem)) {
+        return false;
+    }
+    return ['preparando', 'listo', 'no_disponible'].includes(params.nuevoEstadoItem);
 }
 //# sourceMappingURL=pedido-estados.js.map

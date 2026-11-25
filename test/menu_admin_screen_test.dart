@@ -72,6 +72,12 @@ class _CocinasRepositoryFake extends CocinasRepository {
       ];
 }
 
+class _CocinasVaciasFake extends CocinasRepository {
+  @override
+  Future<List<Map<String, dynamic>>> listarCocinas(String sucursalId) async =>
+      [];
+}
+
 class _CosteoRepositoryFake extends CosteoRepository {
   @override
   Future<Map<String, dynamic>> resumen(String sucursalId) async => {};
@@ -217,6 +223,38 @@ void main() {
 
     expect(find.text('Precios'), findsOneWidget);
     expect(find.text('Canales de venta'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('impide crear un producto disponible sin cocina asignable',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MenuAdminScreen(
+            sucursalId: 's1',
+            repository: _CatalogoRepositoryFake(),
+            cocinasRepository: _CocinasVaciasFake(),
+            costeoRepository: _CosteoRepositoryFake(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Acciones del menú'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nuevo producto'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Crea una cocina primero'), findsOneWidget);
+    expect(find.text('Precio y categoría del plato que ve el cliente.'),
+        findsNothing);
     expect(tester.takeException(), isNull);
   });
 

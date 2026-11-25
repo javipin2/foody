@@ -3,7 +3,9 @@
 # Requiere: API QA en :3001, PostgreSQL QA foody_diseno_qa y seed demo
 
 $ErrorActionPreference = 'Stop'
-$base = 'http://127.0.0.1:3001/api/v1'
+. "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
+$base = $script:FoodyQaBase
 
 function Login-Staff {
   param([string]$Email, [string]$Pass = '123456')
@@ -37,9 +39,9 @@ function Invoke-Api {
   } catch {
     if ($_.Exception.Response) {
       $response = $_.Exception.Response
-      if ($response -is [System.Net.Http.HttpResponseMessage]) {
+      if ($response.GetType().FullName -eq 'System.Net.Http.HttpResponseMessage') {
         $status = [int]$response.StatusCode
-        $raw = $_.ErrorDetails.Message
+        $raw = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
       } else {
         $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
         $raw = $reader.ReadToEnd()

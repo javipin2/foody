@@ -1,5 +1,10 @@
 import { randomUUID } from 'crypto';
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   createClient,
@@ -160,7 +165,10 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     payload: Record<string, unknown>,
   ) {
     await this.enviarBroadcast(
-      RealtimeBroadcastService.canalPedidoSeguimiento(pedidoId, seguimientoToken),
+      RealtimeBroadcastService.canalPedidoSeguimiento(
+        pedidoId,
+        seguimientoToken,
+      ),
       'estado_actualizado',
       payload,
     );
@@ -174,14 +182,15 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async cocinaActualizada(
-    cocinaId: string,
-    payload: Record<string, unknown>,
-  ) {
-    await this.enviarBroadcast(this.topicCocina(cocinaId), 'cocina_actualizada', {
-      cocina_id: cocinaId,
-      ...payload,
-    });
+  async cocinaActualizada(cocinaId: string, payload: Record<string, unknown>) {
+    await this.enviarBroadcast(
+      this.topicCocina(cocinaId),
+      'cocina_actualizada',
+      {
+        cocina_id: cocinaId,
+        ...payload,
+      },
+    );
   }
 
   /** Domiciliario de planta (JWT sub = usuario_id). */
@@ -208,11 +217,18 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async cajaMovimiento(sucursalId: string, payload: Record<string, unknown> = {}) {
-    await this.enviarBroadcast(this.topicSucursal(sucursalId), 'caja_movimiento', {
-      sucursal_id: sucursalId,
-      ...payload,
-    });
+  async cajaMovimiento(
+    sucursalId: string,
+    payload: Record<string, unknown> = {},
+  ) {
+    await this.enviarBroadcast(
+      this.topicSucursal(sucursalId),
+      'caja_movimiento',
+      {
+        sucursal_id: sucursalId,
+        ...payload,
+      },
+    );
   }
 
   async alertaNueva(sucursalId: string, payload: Record<string, unknown> = {}) {
@@ -298,10 +314,14 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
       numero_pedido?: string;
     },
   ) {
-    await this.enviarBroadcast(this.topicSucursal(sucursalId), 'llamar_mesera', {
-      sucursal_id: sucursalId,
-      ...payload,
-    });
+    await this.enviarBroadcast(
+      this.topicSucursal(sucursalId),
+      'llamar_mesera',
+      {
+        sucursal_id: sucursalId,
+        ...payload,
+      },
+    );
   }
 
   /** GPS repartidor — separado de cambio de estado del pedido. */
@@ -311,7 +331,10 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     payload: Record<string, unknown>,
   ) {
     await this.enviarBroadcast(
-      RealtimeBroadcastService.canalPedidoSeguimiento(pedidoId, seguimientoToken),
+      RealtimeBroadcastService.canalPedidoSeguimiento(
+        pedidoId,
+        seguimientoToken,
+      ),
       'ubicacion_repartidor',
       {
         pedido_id: pedidoId,
@@ -321,7 +344,10 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Oferta independiente venció (60 s). */
-  async ofertaExpirada(domiciliarioId: string, payload: Record<string, unknown>) {
+  async ofertaExpirada(
+    domiciliarioId: string,
+    payload: Record<string, unknown>,
+  ) {
     await this.enviarBroadcast(
       this.topicDomiciliarioIndep(domiciliarioId),
       'oferta_expirada',
@@ -341,6 +367,18 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /** Pedido cancelado — domiciliario independiente debe retirar el pedido activo. */
+  async pedidoDesasignadoIndep(
+    domiciliarioId: string,
+    payload: Record<string, unknown>,
+  ) {
+    await this.enviarBroadcast(
+      this.topicDomiciliarioIndep(domiciliarioId),
+      'pedido_desasignado',
+      { domiciliario_id: domiciliarioId, ...payload },
+    );
+  }
+
   private async obtenerCanal(nombre: string): Promise<RealtimeChannel | null> {
     if (!this.cliente) return null;
     const existente = this.canales.get(nombre);
@@ -351,7 +389,10 @@ export class RealtimeBroadcastService implements OnModuleInit, OnModuleDestroy {
     });
 
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timeout suscripción Realtime')), 8000);
+      const timeout = setTimeout(
+        () => reject(new Error('Timeout suscripción Realtime')),
+        8000,
+      );
       ch.subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           clearTimeout(timeout);

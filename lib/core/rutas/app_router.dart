@@ -204,7 +204,8 @@ class AppRouter {
       ),
       GoRoute(
         path: '/domiciliario/login',
-        builder: (context, state) => const DomiciliarioIndependienteLoginScreen(),
+        builder: (context, state) =>
+            const DomiciliarioIndependienteLoginScreen(),
       ),
       GoRoute(
         path: '/domiciliario/registro',
@@ -228,15 +229,15 @@ class AppRouter {
         builder: (context, state) {
           final slug = state.pathParameters['slug']!;
           final nombre = state.uri.queryParameters['nombre'] ?? slug;
-          return RestaurantesScreenFoody(ciudadSlug: slug, ciudadNombre: nombre);
+          return RestaurantesScreenFoody(
+              ciudadSlug: slug, ciudadNombre: nombre);
         },
       ),
       GoRoute(
         path: '/restaurantes/:id/sucursales',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          final nombre =
-              state.uri.queryParameters['nombre'] ?? 'Restaurante';
+          final nombre = state.uri.queryParameters['nombre'] ?? 'Restaurante';
           return SucursalesScreenFoody(
             restauranteId: id,
             restauranteNombre: nombre,
@@ -257,12 +258,14 @@ class AppRouter {
           final nombre = state.uri.queryParameters['nombre'] ?? 'Menú';
           final mesaId = state.uri.queryParameters['mesa_id'];
           final mesaNombre = state.uri.queryParameters['mesa_nombre'];
+          final qrToken = state.uri.queryParameters['qr_token'];
           final productoId = state.uri.queryParameters['producto_id'];
           return MenuScreenFoody(
             sucursalId: sucursalId,
             sucursalNombre: nombre,
             mesaId: mesaId,
             mesaNombre: mesaNombre,
+            qrToken: qrToken,
             productoIdDestino: productoId,
           );
         },

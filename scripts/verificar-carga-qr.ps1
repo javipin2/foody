@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\qa-helpers.ps1')
+Assert-FoodyQaDisposable
 $base = $script:FoodyQaBase
 
 function Get-Seed {
@@ -28,11 +29,11 @@ function Get-Mesa {
     if (-not $r.exito) { throw $r.mensaje }
     return $r.datos
   }
-  # ponytail: mesa demo seed (012_seed_demo.sql)
-  return @{
-    id     = '30000000-0000-4000-8000-000000000001'
-    nombre = 'Mesa 1'
-  }
+  $raw = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc `
+    "SELECT id || '|' || nombre || '|' || qr_token FROM mesas WHERE sucursal_id='$($script:SucursalId)' AND activa=true ORDER BY nombre LIMIT 1;" 2>&1
+  if ($LASTEXITCODE -ne 0 -or -not $raw) { throw "No se pudo resolver mesa QR del clon: $raw" }
+  $partes = $raw.ToString().Trim().Split('|')
+  return @{ id = $partes[0]; nombre = $partes[1]; qr_token = $partes[2] }
 }
 
 Write-Host "=== Carga QR ($Pedidos pedidos) ===" -ForegroundColor Cyan
@@ -56,9 +57,23 @@ $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
 for ($i = 1; $i -le $Pedidos; $i++) {
   $deviceId = "loadtest-qr-$i-$(Get-Random)"
+  $bytesCapability = New-Object byte[] 32
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  $rng.GetBytes($bytesCapability)
+  $capability = [BitConverter]::ToString($bytesCapability).Replace('-', '').ToLowerInvariant()
+  $bytesFcm = New-Object byte[] 32
+  $rng.GetBytes($bytesFcm)
+  $rng.Dispose()
+  $fcmToken = [Convert]::ToBase64String($bytesFcm).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+  $registration = Invoke-RestMethod -Uri "$base/dispositivos/registrar" -Method POST `
+    -Headers @{ 'X-Foody-Device-Capability' = $capability } `
+    -Body (@{ device_id = $deviceId; fcm_token = $fcmToken; plataforma = 'web' } | ConvertTo-Json) `
+    -ContentType 'application/json' -TimeoutSec 15
+  if (-not $registration.exito) { throw "No se pudo registrar dispositivo sintético $i" }
   $body = @{
     sucursal_id = $SucursalId
     mesa_id     = $mesa.id
+    qr_token    = $mesa.qr_token
     device_id   = $deviceId
     tipo        = 'mesa'
     metodo_pago = 'pendiente'
@@ -73,14 +88,18 @@ for ($i = 1; $i -le $Pedidos; $i++) {
   } | ConvertTo-Json -Depth 5
 
   $jobs += Start-Job -ScriptBlock {
-    param($Uri, $Json)
+    param($Uri, $Json, $DeviceCapability)
     try {
-      $r = Invoke-RestMethod -Uri $Uri -Method POST -Body $Json -ContentType 'application/json' -TimeoutSec 30
+      $r = Invoke-RestMethod -Uri $Uri -Method POST -Body $Json `
+        -Headers @{ 'X-Foody-Device-Capability' = $DeviceCapability } `
+        -ContentType 'application/json' -TimeoutSec 30
       return @{ ok = $r.exito; estado = $r.datos.estado; id = $r.datos.pedido_id }
     } catch {
-      return @{ ok = $false; error = $_.Exception.Message }
+      $detalle = $_.ErrorDetails.Message
+      if (-not $detalle) { $detalle = $_.Exception.Message }
+      return @{ ok = $false; error = $detalle }
     }
-  } -ArgumentList $postUri, $body
+  } -ArgumentList $postUri, $body, $capability
 }
 
 $results = $jobs | Wait-Job | Receive-Job

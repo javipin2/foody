@@ -28,6 +28,11 @@ class PedidoColumnasPorCanal {
     PedidoColumnaDef(clave: 'listo', titulo: 'Listos'),
     PedidoColumnaDef(clave: 'asignado', titulo: 'Asignados'),
     PedidoColumnaDef(clave: 'en_camino', titulo: 'En camino'),
+    PedidoColumnaDef(
+      clave: 'por_cobrar',
+      titulo: 'Entregados · por cobrar',
+      estados: ['entregado'],
+    ),
   ];
 
   /// Vista «Todos»: pestañas compactas.
@@ -43,6 +48,11 @@ class PedidoColumnasPorCanal {
       clave: 'cobro_ruta',
       titulo: 'Cobro / Ruta',
       estados: ['pagando', 'asignado', 'en_camino'],
+    ),
+    PedidoColumnaDef(
+      clave: 'por_cobrar',
+      titulo: 'Por cobrar',
+      estados: ['entregado'],
     ),
   ];
 

@@ -37,6 +37,18 @@ Para llevar prepago con método de caja: venta y saldo se registran al crear; pe
 ---
 
 ## Hallazgos
+### FIN-TIP-01 — atribución de propinas al turno (cálculo corregido; liquidación pendiente)
+
+La propina se guarda en `pagos_pedido.propina` y se acumula en `pedidos.propina_acumulada`; `PedidosPagosService` pasa a `registrarVentaEnCaja()` solo `pago.monto`. Por tanto, `movimientos_caja` y `monto_final_sistema` excluyen la propina. `CajaService.cerrar()` devuelve `propinas_turno` por separado y ahora suma `pagos_pedido.propina` por `sucursal_id` y `created_at` entre la apertura del turno y el instante del cierre. Antes usaba la propina acumulada por pedido y `pedidos.created_at`, atribuyendo incorrectamente pagos de pedidos que cruzaban turnos.
+
+**Consecuencia comprobable:** el arqueo compara el efectivo contado con un saldo de sistema que excluye propinas. Si el negocio deja propinas en el cajón, aparecerán como diferencia positiva; si las retira para entregarlas al equipo, el saldo de ventas puede cuadrar, pero el backend no registra ese retiro como liquidación de propinas. `propinas_turno` ahora refleja pagos recibidos durante el turno, incluyendo todos los métodos; no existe relación de pago directa con una caja y no separa efectivo de medios electrónicos.
+
+**Decisión del usuario (2026-11-25):** Checkout no cobra ni conserva una propina previa al pago; cualquier propina es voluntaria, separada del total de productos. Un cobro real registra la propina en `pagos_pedido.propina`; movimientos de venta y saldo de Caja excluyen ese valor y el cierre la reporta en `propinas_turno`. La política de destinatario, reparto, retención y liquidación aún no está decidida; tampoco se captura una propina entregada directamente a un domiciliario. Esta corrección no altera ventas ni datos históricos. Un E2E en clon desechable verificó pedido creado antes de abrir caja y pagado durante el nuevo turno mediante un abono mixto con $600 de propina y un pago final por transferencia con $800: `propinas_turno=1400`, diferencia cero; suite Caja 8/8. Falta E2E con pagos parciales en distintos turnos y una decisión/flujo de liquidación al personal.
+
+**Aclaración del usuario (2026-11-25):** el cliente paga el valor completo del pedido; la propina no forma parte del cobro obligatorio y se mantiene como importe voluntario separado. La interfaz debe distinguir claramente el valor del pedido del valor de propina.
+
+**FIN-TIP-CANCEL-01 — propina tras cancelar pedido (decisión pendiente):** la cancelación automática llama a `CajaMovimientosService.revertirVentasPedido()`, que revierte los movimientos `venta` menos devoluciones previas por caja y método. No consulta ni revierte `pagos_pedido.propina`, ni reduce `pedidos.propina_acumulada`. Por ello el cierre sigue incluyendo la propina pagada en `propinas_turno`, incluso si después se cancela el pedido y se devuelve el valor de la venta. Esto mantiene un registro del dinero de propina efectivamente recibido, pero no demuestra si se devolvió al cliente o ya se liquidó al personal. Antes de automatizar el tratamiento debe definirse si una cancelación devuelve también la propina, si la decisión depende de si ya se entregó/liquidó, y cómo registrar esa salida sin mezclarla con una devolución de venta. No se alteró el código ni datos por esta observación.
+
 
 | ID | Estado | Sev | Hallazgo | Evidencia |
 |----|--------|-----|----------|-----------|
@@ -48,7 +60,7 @@ Para llevar prepago con método de caja: venta y saldo se registran al crear; pe
 | **CAJ-REP-01** | ✅ | — | Cancelados fuera de filtros reportes/analítica pedidos | `estado NOT IN (cancelado,rechazado)` |
 | **CAJ-CIERRE-01** | ✅ | — | Doble apertura `CAJA_YA_ABIERTA`; cierre con abiertos `CAJA_CIERRE_OPERACION_ABIERTA`; cuadre + alerta diferencia | Script E |
 | **CAJ-CIEGO-01** | ✅ | — | `arqueo_ciego`: cajero no ve `saldo_sistema` | Script E visible=False |
-| **CAJ-DOM-IMPAGO-01** | 🟡 | Media | Domicilio `entregado` con `monto_pagado < total` **bloquea cierre** (by design). Demo tenía 7 pedidos históricos → cierre imposible hasta liquidar | SQL + cierre |
+| **CAJ-DOM-IMPAGO-01** | 🟡 | Media | Domicilio `entregado` con `monto_pagado < total` bloquea cierre hasta registrar el saldo. Antes quedaba fuera de la lista activa y del acceso de cobro. Ahora el backend lo incluye como abierto, Kanban lo agrupa en “Entregados · por cobrar”, muestra el saldo y ofrece el cobro existente si el usuario tiene `cobrar_pedido`; los cierres excluyen impagos de “Cerrados hoy”. Cierre sigue protegido; runtime/UI pendiente | `pedido-estados.ts`, `pedidos.service.ts`, `dashboard.service.ts`, modelo/tarjeta Kanban; unit/widgets |
 | **CAJ-MSG-01** | 🟡 | Baja | Filter aplana `CAJA_CIERRE_OPERACION_ABIERTA` a mensaje genérico (pierde detalle cocina/mesas/domi) | `http-exception.filter.ts` MENSAJES_NEGOCIO |
 | **CAJ-TURNO-01** | ✅ | Baja | `horas_abierta` + alerta `caja_turno_longevo` (umbral 12 h). Sin auto-cierre | `caja.service` GET activa |
 | **PED-PREPAGO-01** | ✅ | — | Prepago permanece `en_cocina` hasta terminar preparación, pero `SQL_WHERE_PEDIDO_OPERACION_ABIERTA` excluye el saldo cero; cocina lo transiciona a `pagado` al terminar | Cross-ref actualizado 2026-11-24 |
@@ -97,7 +109,7 @@ Caja en reportes financieros usa `movimientos_caja` (ventas − devoluciones), n
 
 1. **CAJ-FIX-01** — Preservar mensaje detallado de `CAJA_CIERRE_OPERACION_ABIERTA` (no aplanar a genérico).
 2. **CAJ-FIX-02** — Alertar / forzar cierre de turnos abiertos >N horas (ops).
-3. **CAJ-FIX-03** — UI listado “domicilios entregados impagos” que bloquean cierre (ya hay CxC; enlace desde error de cierre).
+3. **CAJ-FIX-03** — Implementado en fuente: listado Kanban “Entregados · por cobrar”, saldo por tarjeta y cobro con permiso existente. Por verificar en builds/runtime; aún no hay enlace directo desde el mensaje de cierre a la columna.
 4. Cross: **PED-FIX-01** prepago excluido de bloqueo de caja con saldo cero; mantiene estado cocina hasta terminar.
 
 ---
@@ -126,6 +138,8 @@ La cuenta de mesa marcaba saldo pagado por ticket, pero antes de la corrección 
 **Decisión de modelo pendiente:** decidir si el cobro de mesa es una transacción de nivel mesa con asignaciones (`pago_id → pedido_id, monto, propina`) o si deben persistirse líneas de pago por ticket con un `id_transaccion` común. La primera opción conserva una transacción del cliente y permite distribuir reembolsos; la segunda simplifica recibos por ticket, pero exige agrupar métodos/propinas para reconstruir el cobro original. No se recomienda derivar la mezcla desde `pedidos.metodo_pago`. No se modificó esquema ni datos.
 
 **Evidencia:** `foody_backend/src/modulos/pedidos/pedidos-pagos.service.ts` (`cobrarCuentaMesa`, asignación `pedidoRef`, `metodoPrincipal`); `foody_backend/src/modulos/pedidos/pedidos-cuenta-mesa.service.ts` (historial consultado por `mesa_id`); `movimientos_caja` se genera con asignación por ticket. La brecha queda pendiente de prueba de contrato de recibo/reembolso multi-ticket después de decidir el modelo.
+
+**Hallazgo relacionado — propina incluida en el vínculo incompleto:** dentro de `cobrarCuentaMesa()`, `fraccionPropina` se distribuye por ticket y se suma a `pedidos.propina_acumulada`; luego cada fila de `pagos_pedido` asigna su porción de propina al único `pedidoRef`. Si un cobro de mesa cubre varios tickets, la propina agregada por pedido y su atribución en el libro de pagos describen distribuciones distintas. El total de propina y el efectivo registrado no cambian, pero una consulta por pedido puede atribuir la propina completa al ticket representativo. Esto refuerza la decisión de modelo pendiente (transacción de mesa con asignaciones de propina a tickets, o líneas por ticket bajo una transacción común); no puede corregirse solo cambiando `pedido_id` sin definir distribución y soporte de devoluciones parciales.
 
 ### CAJ-REFUND-TRACE-01 — devolución manual sin pedido ni medio reembolsado (2026-11-24)
 

@@ -53,6 +53,15 @@ let PedidosCrearService = class PedidosCrearService {
     async crear(dto, opciones = {}) {
         const items = dto.items ?? [];
         const combos = dto.combos ?? [];
+        if (dto.pagos?.length && opciones.puedeCobrar !== true) {
+            throw new common_1.ForbiddenException('No tienes permiso para cobrar pedidos');
+        }
+        if (dto.pagos?.length && dto.tipo !== 'para_llevar') {
+            throw new common_1.BadRequestException({
+                error: 'PAGO_MIXTO_SOLO_PARA_LLEVAR',
+                message: 'El pago mixto al crear solo está disponible para pedidos para llevar',
+            });
+        }
         if (!items.length && !combos.length) {
             throw new common_1.BadRequestException('El pedido debe incluir al menos un ?tem');
         }
@@ -188,12 +197,21 @@ let PedidosCrearService = class PedidosCrearService {
             let mesaNombre = null;
             if (dto.mesa_id) {
                 const mesa = await this.soporte.consultarUnoCliente(client, opciones.soloEstimar
-                    ? `SELECT id, nombre, estado_operativo FROM mesas
+                    ? `SELECT id, nombre, estado_operativo, qr_token FROM mesas
                WHERE id = $1 AND sucursal_id = $2 AND activa = true`
-                    : `SELECT id, nombre, estado_operativo FROM mesas
+                    : `SELECT id, nombre, estado_operativo, qr_token FROM mesas
                WHERE id = $1 AND sucursal_id = $2 AND activa = true FOR UPDATE`, [dto.mesa_id, dto.sucursal_id]);
                 if (!mesa) {
                     throw new common_1.BadRequestException('MESA_NO_ENCONTRADA');
+                }
+                if (!opciones.creadoPorStaff &&
+                    !opciones.soloEstimar &&
+                    dto.tipo === 'mesa' &&
+                    (!dto.qr_token || dto.qr_token !== mesa.qr_token)) {
+                    throw new common_1.BadRequestException({
+                        error: 'QR_MESA_NO_COINCIDE',
+                        message: 'El código QR no corresponde a esta mesa. Escanea nuevamente el código.',
+                    });
                 }
                 if (!opciones.creadoPorStaff && mesa.estado_operativo === 'reservada') {
                     throw new common_1.BadRequestException({
@@ -212,11 +230,76 @@ let PedidosCrearService = class PedidosCrearService {
             const lineasInventario = [];
             const lineasPreparadas = [];
             const combosPreparados = [];
-            for (const item of items) {
-                const producto = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, precio_para_llevar, disponible, cocina_id,
+            const normalizarId = (id) => id.toLowerCase();
+            const idsCombos = [
+                ...new Set(combos.map((combo) => normalizarId(combo.combo_id))),
+            ];
+            const combosCatalogo = new Map();
+            const itemsPorCombo = new Map();
+            if (idsCombos.length) {
+                const resultadoCombos = await client.query(`SELECT id, nombre, precio_fijo, disponible FROM combos
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`, [idsCombos, dto.sucursal_id]);
+                for (const fila of resultadoCombos.rows) {
+                    combosCatalogo.set(normalizarId(fila.id), fila);
+                }
+                const resultadoItems = await client.query(`SELECT combo_id, tipo_item, item_id, cantidad FROM combo_items
+           WHERE combo_id = ANY($1::uuid[])`, [idsCombos]);
+                for (const fila of resultadoItems.rows) {
+                    const comboId = normalizarId(fila.combo_id);
+                    const lista = itemsPorCombo.get(comboId) ?? [];
+                    lista.push(fila);
+                    itemsPorCombo.set(comboId, lista);
+                }
+            }
+            const idsProductos = [
+                ...new Set([
+                    ...items.map((item) => normalizarId(item.producto_id)),
+                    ...[...itemsPorCombo.values()]
+                        .flat()
+                        .filter((item) => item.tipo_item === 'producto')
+                        .map((item) => normalizarId(item.item_id)),
+                ]),
+            ];
+            const productos = new Map();
+            if (idsProductos.length) {
+                const resultado = await client.query(`SELECT id, nombre, precio, precio_para_llevar, disponible, cocina_id,
                   costo_calculado, es_encargo
            FROM productos
-           WHERE id = $1 AND sucursal_id = $2`, [item.producto_id, dto.sucursal_id]);
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`, [idsProductos, dto.sucursal_id]);
+                for (const fila of resultado.rows) {
+                    productos.set(normalizarId(fila.id), fila);
+                }
+            }
+            const idsToppings = [
+                ...new Set([
+                    ...items.flatMap((item) => (item.toppings ?? []).map((t) => normalizarId(t.topping_id))),
+                    ...combos.flatMap((combo) => (combo.toppings ?? []).map((t) => normalizarId(t.topping_id))),
+                ]),
+            ];
+            const toppingsCatalogo = new Map();
+            if (idsToppings.length) {
+                const resultado = await client.query(`SELECT id, nombre, precio, costo_calculado FROM toppings
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2 AND disponible = true`, [idsToppings, dto.sucursal_id]);
+                for (const fila of resultado.rows) {
+                    toppingsCatalogo.set(normalizarId(fila.id), fila);
+                }
+            }
+            const idsBebidas = [
+                ...new Set([
+                    ...items.flatMap((item) => (item.bebidas ?? []).map((b) => normalizarId(b.bebida_id))),
+                    ...combos.flatMap((combo) => (combo.bebidas ?? []).map((b) => normalizarId(b.bebida_id))),
+                ]),
+            ];
+            const bebidasCatalogo = new Map();
+            if (idsBebidas.length) {
+                const resultado = await client.query(`SELECT id, nombre, precio, costo_calculado FROM bebidas
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2 AND disponible = true`, [idsBebidas, dto.sucursal_id]);
+                for (const fila of resultado.rows) {
+                    bebidasCatalogo.set(normalizarId(fila.id), fila);
+                }
+            }
+            for (const item of items) {
+                const producto = productos.get(normalizarId(item.producto_id));
                 if (!producto?.disponible) {
                     throw new common_1.BadRequestException('PRODUCTO_NO_DISPONIBLE');
                 }
@@ -230,8 +313,7 @@ let PedidosCrearService = class PedidosCrearService {
                 let lineaTotal = precioUnit * item.cantidad;
                 const toppings = [];
                 for (const t of item.toppings ?? []) {
-                    const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM toppings
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [t.topping_id, dto.sucursal_id]);
+                    const top = toppingsCatalogo.get(normalizarId(t.topping_id));
                     if (!top)
                         throw new common_1.BadRequestException('TOPPING_NO_DISPONIBLE');
                     const p = Number(top.precio);
@@ -245,8 +327,7 @@ let PedidosCrearService = class PedidosCrearService {
                 }
                 const bebidas = [];
                 for (const b of item.bebidas ?? []) {
-                    const beb = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM bebidas
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [b.bebida_id, dto.sucursal_id]);
+                    const beb = bebidasCatalogo.get(normalizarId(b.bebida_id));
                     if (!beb)
                         throw new common_1.BadRequestException('BEBIDA_NO_DISPONIBLE');
                     const p = Number(beb.precio);
@@ -295,29 +376,26 @@ let PedidosCrearService = class PedidosCrearService {
                 });
             }
             for (const comboDto of combos) {
-                const combo = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio_fijo, disponible FROM combos
-           WHERE id = $1 AND sucursal_id = $2`, [comboDto.combo_id, dto.sucursal_id]);
+                const combo = combosCatalogo.get(normalizarId(comboDto.combo_id));
                 if (!combo?.disponible) {
                     throw new common_1.BadRequestException('COMBO_NO_DISPONIBLE');
                 }
                 const precioFijo = Number(combo.precio_fijo);
-                const comboItems = await client.query(`SELECT tipo_item, item_id, cantidad FROM combo_items WHERE combo_id = $1`, [combo.id]);
-                const productoItem = comboItems.rows.find((ci) => ci.tipo_item === 'producto');
+                const comboItems = itemsPorCombo.get(normalizarId(combo.id)) ?? [];
+                const productoItem = comboItems.find((ci) => ci.tipo_item === 'producto');
                 if (!productoItem) {
                     throw new common_1.BadRequestException('COMBO_SIN_PRODUCTO');
                 }
-                const producto = await this.soporte.consultarUnoCliente(client, `SELECT id, cocina_id, costo_calculado FROM productos
-           WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [productoItem.item_id, dto.sucursal_id]);
-                if (!producto) {
+                const producto = productos.get(normalizarId(productoItem.item_id));
+                if (!producto?.disponible) {
                     throw new common_1.BadRequestException('PRODUCTO_NO_DISPONIBLE');
                 }
-                const productosCombo = comboItems.rows
+                const productosCombo = comboItems
                     .filter((ci) => ci.tipo_item === 'producto')
                     .map((ci) => ({ productoId: ci.item_id, cantidad: ci.cantidad }));
                 const toppings = [];
                 for (const t of comboDto.toppings ?? []) {
-                    const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM toppings
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [t.topping_id, dto.sucursal_id]);
+                    const top = toppingsCatalogo.get(normalizarId(t.topping_id));
                     if (!top)
                         throw new common_1.BadRequestException('TOPPING_NO_DISPONIBLE');
                     toppings.push({
@@ -329,8 +407,7 @@ let PedidosCrearService = class PedidosCrearService {
                 }
                 const bebidas = [];
                 for (const b of comboDto.bebidas ?? []) {
-                    const beb = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM bebidas
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [b.bebida_id, dto.sucursal_id]);
+                    const beb = bebidasCatalogo.get(normalizarId(b.bebida_id));
                     if (!beb)
                         throw new common_1.BadRequestException('BEBIDA_NO_DISPONIBLE');
                     bebidas.push({
@@ -579,7 +656,9 @@ let PedidosCrearService = class PedidosCrearService {
                 }
             }
             const metodoCajaRef = dto.pagos?.[0]?.metodo_pago ?? metodoPago;
-            const registrarCajaAlCrear = this.cajaAuditoria.debeRegistrarVentaAlCrear(estadoInicial, dto.tipo, dto.mesa_id, metodoCajaRef);
+            const registrarCajaAlCrear = opciones.creadoPorStaff === true &&
+                opciones.puedeCobrar === true &&
+                this.cajaAuditoria.debeRegistrarVentaAlCrear(estadoInicial, dto.tipo, dto.mesa_id, metodoCajaRef);
             if (dto.pagos?.length) {
                 const sumaPagos = dto.pagos.reduce((s, p) => s + p.monto, 0);
                 if (Math.abs(sumaPagos - total) > 0.01) {
@@ -610,16 +689,24 @@ let PedidosCrearService = class PedidosCrearService {
                 }
                 await client.query(`UPDATE pedidos SET monto_pagado = $2, propina_acumulada = $3, metodo_pago = $4 WHERE id = $1`, [pedidoId, total, propinaCaja, dto.pagos[0].metodo_pago]);
             }
-            else if (dto.propina != null && dto.propina > 0) {
-                await client.query(`UPDATE pedidos SET propina_acumulada = $2 WHERE id = $1`, [pedidoId, dto.propina]);
-            }
             else if (registrarCajaAlCrear) {
                 await this.cajaAuditoria.registrarVentaEnCaja(client, dto.sucursal_id, pedidoId, total, metodoPago, {
                     exigirCaja: true,
                     descripcion: `Venta ${numeroPedido}`,
                     usuarioId: opciones.usuarioId,
                 });
-                await client.query(`UPDATE pedidos SET monto_pagado = $2, metodo_pago = $3 WHERE id = $1`, [pedidoId, total, metodoPago]);
+                await client.query(`INSERT INTO pagos_pedido (
+             sucursal_id, pedido_id, monto, propina, metodo_pago, usuario_id, referencia
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [
+                    dto.sucursal_id,
+                    pedidoId,
+                    total,
+                    dto.propina ?? 0,
+                    metodoPago,
+                    opciones.usuarioId ?? null,
+                    'Cobro al crear pedido',
+                ]);
+                await client.query(`UPDATE pedidos SET monto_pagado = $2, propina_acumulada = $3, metodo_pago = $4 WHERE id = $1`, [pedidoId, total, dto.propina ?? 0, metodoPago]);
             }
             await this.cajaAuditoria.registrarAuditoria(client, dto.sucursal_id, pedidoId, {
                 numero_pedido: numeroPedido,
@@ -685,7 +772,9 @@ let PedidosCrearService = class PedidosCrearService {
             if ((0, pedido_estados_1.estadoActivaCocina)(creado.estado)) {
                 void this.soporte.notificarCocinasPorPedido(creado.pedido_id, dto.sucursal_id);
             }
-            if (this.cajaAuditoria.debeRegistrarVentaAlCrear(creado.estado, dto.tipo, dto.mesa_id, dto.metodo_pago ?? 'pendiente')) {
+            if (opciones.creadoPorStaff === true &&
+                opciones.puedeCobrar === true &&
+                this.cajaAuditoria.debeRegistrarVentaAlCrear(creado.estado, dto.tipo, dto.mesa_id, dto.metodo_pago ?? 'pendiente')) {
                 void this.realtime.cajaMovimiento(dto.sucursal_id, {
                     pedido_id: creado.pedido_id,
                 });

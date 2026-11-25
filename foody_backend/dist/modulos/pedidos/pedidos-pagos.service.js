@@ -58,6 +58,9 @@ let PedidosPagosService = class PedidosPagosService {
                 : null;
             if (montosItems)
                 this.validarSaldoItems(pedidos, montosItems);
+            const itemsSplitPorPedido = itemIds?.length
+                ? await this.obtenerItemsSplitPorPedido(client, itemIds, sucursalId)
+                : new Map();
             const montoObjetivo = this.calcularMontoObjetivo(dto, pedidos, montosItems);
             const pagos = this.normalizarPagos(dto, montoObjetivo);
             const montoCobrar = pagos.reduce((s, p) => s + p.monto, 0);
@@ -67,6 +70,7 @@ let PedidosPagosService = class PedidosPagosService {
                 pedido.id,
                 montosPorPedido.get(pedido.id) ?? 0,
             ]));
+            const pagosAsignados = this.distribuirPagosPorPedido(pagos, pedidos, saldoCajaPorPedido);
             const cobrados = [];
             let totalCobrado = 0;
             for (const p of pedidos) {
@@ -125,51 +129,33 @@ let PedidosPagosService = class PedidosPagosService {
                     await client.query(`UPDATE pedido_items SET estado_cobro = 'cobrado' WHERE id = $1`, [itemId]);
                 }
             }
-            const pedidoRef = cobrados[0]?.id ??
-                pedidos.find((p) => (montosPorPedido.get(p.id) ?? 0) > 0)?.id ??
-                pedidos[0]?.id;
-            for (const pago of pagos) {
+            for (const pago of pagosAsignados) {
                 const pagoRow = await client.query(`INSERT INTO pagos_pedido (
              sucursal_id, pedido_id, mesa_id, monto, propina, metodo_pago, usuario_id, referencia
            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
            RETURNING id`, [
                     sucursalId,
-                    pedidoRef ?? null,
+                    pago.pedidoId,
                     mesaId,
                     pago.monto,
                     montoCobrar > 0 ? propina * (pago.monto / montoCobrar) : 0,
-                    pago.metodo_pago,
+                    pago.metodoPago,
                     usuarioId,
                     dto.motivo?.trim() || null,
                 ]);
                 if (itemIds?.length && pagos.length === 1) {
-                    for (const itemId of itemIds) {
+                    for (const itemId of itemsSplitPorPedido.get(pago.pedidoId) ?? []) {
                         await client.query(`INSERT INTO pago_pedido_items (pago_id, pedido_item_id) VALUES ($1,$2)`, [pagoRow.rows[0].id, itemId]);
                     }
                 }
-                let restantePago = pago.monto;
-                for (const pedido of pedidos) {
-                    const saldoPedido = saldoCajaPorPedido.get(pedido.id) ?? 0;
-                    const asignado = Math.min(restantePago, saldoPedido);
-                    if (asignado <= 0.01)
-                        continue;
-                    const registrado = await this.cajaAuditoria.registrarVentaEnCaja(client, sucursalId, pedido.id, asignado, pago.metodo_pago, {
-                        exigirCaja: true,
-                        descripcion: `Cobro mesa ${mesa.nombre}`,
-                    });
-                    if (!registrado) {
-                        throw new common_1.BadRequestException({
-                            error: 'MOVIMIENTO_CAJA_NO_REGISTRADO',
-                            message: `No se pudo registrar en Caja el pago del pedido ${pedido.numero_pedido}`,
-                        });
-                    }
-                    saldoCajaPorPedido.set(pedido.id, saldoPedido - asignado);
-                    restantePago -= asignado;
-                }
-                if (restantePago > 0.01) {
+                const registrado = await this.cajaAuditoria.registrarVentaEnCaja(client, sucursalId, pago.pedidoId, pago.monto, pago.metodoPago, {
+                    exigirCaja: true,
+                    descripcion: `Cobro mesa ${mesa.nombre}`,
+                });
+                if (!registrado) {
                     throw new common_1.BadRequestException({
-                        error: 'DISTRIBUCION_COBRO_INVALIDA',
-                        message: 'No se pudo distribuir el pago entre los pedidos de la mesa',
+                        error: 'MOVIMIENTO_CAJA_NO_REGISTRADO',
+                        message: `No se pudo registrar en Caja el pago del pedido ${pago.numeroPedido}`,
                     });
                 }
             }
@@ -436,6 +422,47 @@ let PedidosPagosService = class PedidosPagosService {
             });
         }
         return itemIds;
+    }
+    async obtenerItemsSplitPorPedido(client, itemIds, sucursalId) {
+        const res = await client.query(`SELECT pi.id::text AS id, pi.pedido_id::text AS pedido_id
+       FROM pedido_items pi
+       JOIN pedidos p ON p.id = pi.pedido_id
+       WHERE pi.id = ANY($1::uuid[]) AND p.sucursal_id = $2`, [itemIds, sucursalId]);
+        const porPedido = new Map();
+        for (const fila of res.rows) {
+            const ids = porPedido.get(fila.pedido_id) ?? [];
+            ids.push(fila.id);
+            porPedido.set(fila.pedido_id, ids);
+        }
+        return porPedido;
+    }
+    distribuirPagosPorPedido(pagos, pedidos, saldosIniciales) {
+        const saldos = new Map(saldosIniciales);
+        const asignaciones = [];
+        for (const pago of pagos) {
+            let restante = pago.monto;
+            for (const pedido of pedidos) {
+                const saldo = saldos.get(pedido.id) ?? 0;
+                const monto = Math.min(restante, saldo);
+                if (monto <= 0.01)
+                    continue;
+                asignaciones.push({
+                    pedidoId: pedido.id,
+                    numeroPedido: pedido.numero_pedido,
+                    metodoPago: pago.metodo_pago,
+                    monto,
+                });
+                saldos.set(pedido.id, saldo - monto);
+                restante -= monto;
+            }
+            if (restante > 0.01) {
+                throw new common_1.BadRequestException({
+                    error: 'DISTRIBUCION_COBRO_INVALIDA',
+                    message: 'No se pudo distribuir el pago entre los pedidos de la mesa',
+                });
+            }
+        }
+        return asignaciones;
     }
     async calcularMontosItems(client, itemIds) {
         const res = await client.query(`SELECT pi.pedido_id,

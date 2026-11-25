@@ -62,6 +62,7 @@ export declare class RealtimeBroadcastService implements OnModuleInit, OnModuleD
     ubicacionRepartidor(pedidoId: string, seguimientoToken: string, payload: Record<string, unknown>): Promise<void>;
     ofertaExpirada(domiciliarioId: string, payload: Record<string, unknown>): Promise<void>;
     pedidoDesasignado(usuarioId: string, payload: Record<string, unknown>): Promise<void>;
+    pedidoDesasignadoIndep(domiciliarioId: string, payload: Record<string, unknown>): Promise<void>;
     private obtenerCanal;
     private enviarBroadcast;
 }

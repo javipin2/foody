@@ -1,6 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -18,11 +17,13 @@ const String androidChannelIdPromociones = 'promociones';
 const String androidChannelIdStaffReservas = 'reservas_staff_pendientes';
 
 /// VAPID key para FCM web (desde Firebase Console → Cloud Messaging → Web Push certificates).
-const String _vapidKeyWeb = 'BLvpYxLqgXyrlHcfAtaWjXYP7SJn4ws5K3h6e7Mh3X4hJVdbHzYal5SW3jB2jcd8GTgQUKnT9mgjQzaF5cbZrmk';
+const String _vapidKeyWeb =
+    'BLvpYxLqgXyrlHcfAtaWjXYP7SJn4ws5K3h6e7Mh3X4hJVdbHzYal5SW3jB2jcd8GTgQUKnT9mgjQzaF5cbZrmk';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('PushNotificationService: background message ${message.messageId}');
+  debugPrint(
+      'PushNotificationService: background message ${message.messageId}');
 }
 
 /// Servicio de notificaciones push por ciudad.
@@ -80,7 +81,8 @@ class PushNotificationService {
       if (FirebaseAuth.instance.currentUser != null) {
         const msg =
             'No se pudieron sincronizar las notificaciones. Revisa conexión y permisos.';
-        debugPrint('PushNotificationService: fallo FCM con sesión iniciada → aviso');
+        debugPrint(
+            'PushNotificationService: fallo FCM con sesión iniciada → aviso');
         _notifyRegistrationError(msg);
         return;
       }
@@ -102,7 +104,8 @@ class PushNotificationService {
     try {
       await guestRepickCiudadForPushCallback?.call();
     } catch (e) {
-      debugPrint('PushNotificationService: callback recuperación ciudad error: $e');
+      debugPrint(
+          'PushNotificationService: callback recuperación ciudad error: $e');
     }
   }
 
@@ -125,7 +128,8 @@ class PushNotificationService {
     });
     _initialized = true;
     await registerTokenWithCurrentCiudad();
-    debugPrint('PushNotificationService: initialized (notificaciones por ciudad)');
+    debugPrint(
+        'PushNotificationService: initialized (notificaciones por ciudad)');
   }
 
   Future<void> _requestPermissionIfNeeded() async {
@@ -187,8 +191,8 @@ class PushNotificationService {
         importance: Importance.high,
         playSound: true,
       );
-      final androidPlugin = _localNotifications
-          .resolvePlatformSpecificImplementation<
+      final androidPlugin =
+          _localNotifications.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
       await androidPlugin?.createNotificationChannel(channelPromos);
       await androidPlugin?.createNotificationChannel(channelStaff);
@@ -230,7 +234,8 @@ class PushNotificationService {
           const msg =
               'Para recibir promociones, permite notificaciones en la configuración del sitio '
               '(icono de candado en la barra de direcciones → Notificaciones → Permitir).';
-          debugPrint('PushNotificationService: permiso denegado o bloqueado. $msg');
+          debugPrint(
+              'PushNotificationService: permiso denegado o bloqueado. $msg');
           _notifyPermissionDenied(msg);
           return null;
         }
@@ -243,13 +248,15 @@ class PushNotificationService {
       }
       return await _messaging.getToken();
     } on FirebaseException catch (e) {
-      if (e.code == 'permission-blocked' || e.message?.contains('permission') == true) {
+      if (e.code == 'permission-blocked' ||
+          e.message?.contains('permission') == true) {
         const msg =
             'Notificaciones bloqueadas. Actívalas en la configuración del sitio para recibir promociones.';
         debugPrint('PushNotificationService: $msg');
         _notifyPermissionDenied(msg);
       } else {
-        debugPrint('PushNotificationService: getToken error ${e.code} ${e.message}');
+        debugPrint(
+            'PushNotificationService: getToken error ${e.code} ${e.message}');
       }
       return null;
     } catch (e) {
@@ -270,7 +277,8 @@ class PushNotificationService {
   Future<void> registerTokenWithCurrentCiudad() async {
     final ciudad = await CiudadPreferenceService.getSelectedCiudad();
     if (ciudad == null) {
-      debugPrint('PushNotificationService: sin ciudad seleccionada, no se registra token');
+      debugPrint(
+          'PushNotificationService: sin ciudad seleccionada, no se registra token');
       return;
     }
     await updateCiudadForNotifications(ciudad.id);
@@ -298,7 +306,8 @@ class PushNotificationService {
       return;
     }
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable('registerFcmToken');
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('registerFcmToken');
       await callable.call({
         'token': token,
         'ciudadId': ciudadId,
@@ -327,20 +336,23 @@ class PushNotificationService {
       token = await _getToken();
     }
     if (token == null) {
-      debugPrint('PushNotificationService: no token, no se registra reservas pendientes');
+      debugPrint(
+          'PushNotificationService: no token, no se registra reservas pendientes');
       return;
     }
     try {
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('registerFcmTokenStaffPendingReservas');
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('registerFcmTokenStaffPendingReservas');
       await callable.call({
         'token': token,
         'lugarId': lugarId,
         'platform': _platform,
       });
-      debugPrint('PushNotificationService: registrado reservas pendientes, lugar $lugarId');
+      debugPrint(
+          'PushNotificationService: registrado reservas pendientes, lugar $lugarId');
     } catch (e) {
-      debugPrint('PushNotificationService: registerFcmTokenStaffPendingReservas error $e');
+      debugPrint(
+          'PushNotificationService: registerFcmTokenStaffPendingReservas error $e');
     }
   }
 
@@ -350,8 +362,8 @@ class PushNotificationService {
     token ??= await _messaging.getToken();
     if (token == null || token.isEmpty) return;
     try {
-      final callable =
-          FirebaseFunctions.instance.httpsCallable('unregisterFcmTokenStaffPendingReservas');
+      final callable = FirebaseFunctions.instance
+          .httpsCallable('unregisterFcmTokenStaffPendingReservas');
       await callable.call({'token': token});
       debugPrint('PushNotificationService: desregistrado reservas pendientes');
     } catch (e) {
@@ -368,17 +380,20 @@ class PushNotificationService {
       token = await _getToken();
     }
     if (token == null) {
-      debugPrint('PushNotificationService: no token, no se registra alertas de auditoría');
+      debugPrint(
+          'PushNotificationService: no token, no se registra alertas de auditoría');
       return;
     }
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable('registerFcmTokenAudit');
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('registerFcmTokenAudit');
       await callable.call({
         'token': token,
         'lugarId': lugarId,
         'platform': _platform,
       });
-      debugPrint('PushNotificationService: registrado para alertas de auditoría, lugar $lugarId');
+      debugPrint(
+          'PushNotificationService: registrado para alertas de auditoría, lugar $lugarId');
     } catch (e) {
       debugPrint('PushNotificationService: registerFcmTokenAudit error $e');
     }
@@ -386,7 +401,8 @@ class PushNotificationService {
 
   void _setupMessageHandlers() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('PushNotificationService: foreground message ${message.messageId}');
+      debugPrint(
+          'PushNotificationService: foreground message ${message.messageId}');
       final notification = message.notification;
       if (notification != null) {
         final data = message.data;
@@ -413,7 +429,8 @@ class PushNotificationService {
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint('PushNotificationService: opened from message ${message.messageId}');
+      debugPrint(
+          'PushNotificationService: opened from message ${message.messageId}');
       _handleNotificationTap(message);
     });
 
@@ -426,11 +443,14 @@ class PushNotificationService {
     final data = message.data;
     final type = data['type'];
     if (type == 'promocion') {
-      debugPrint('PushNotificationService: open promocion ${data['promocionId']}');
+      debugPrint(
+          'PushNotificationService: open promocion ${data['promocionId']}');
     } else if (type == 'auditoria') {
-      debugPrint('PushNotificationService: open auditoría ${data['auditId']} lugar ${data['lugarId']}');
+      debugPrint(
+          'PushNotificationService: open auditoría ${data['auditId']} lugar ${data['lugarId']}');
     } else if (type == 'reserva_pendiente') {
-      debugPrint('PushNotificationService: open reservas pendientes ${data['reservaId']}');
+      debugPrint(
+          'PushNotificationService: open reservas pendientes ${data['reservaId']}');
       onNavigateToReservasPendientes?.call();
     }
   }

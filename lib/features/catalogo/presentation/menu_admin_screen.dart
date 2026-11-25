@@ -398,6 +398,12 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
       );
       return;
     }
+    if (_cocinas.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Crea una cocina primero')),
+      );
+      return;
+    }
     final nombreCtrl = TextEditingController();
     final precioCtrl = TextEditingController();
     String? catId = _categorias.first['id'] as String?;

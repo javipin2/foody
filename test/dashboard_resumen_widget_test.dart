@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reserva_canchas/features/admin/data/dashboard_repository.dart';
@@ -7,6 +9,53 @@ import 'package:reserva_canchas/features/admin/presentation/widgets/dashboard_re
 import 'package:reserva_canchas/features/alertas/data/alertas_repository.dart';
 import 'package:reserva_canchas/features/inventario/data/inventario_repository.dart';
 import 'package:reserva_canchas/features/mesa/data/mesas_repository.dart';
+
+class _DashboardRepositoryBloqueado extends DashboardRepository {
+  final respuesta = Completer<Map<String, dynamic>>();
+  bool iniciado = false;
+
+  @override
+  Future<Map<String, dynamic>> resumen({String? sucursalId}) {
+    iniciado = true;
+    return respuesta.future;
+  }
+}
+
+class _MesasRepositoryBloqueado extends MesasRepository {
+  final respuesta = Completer<List<Map<String, dynamic>>>();
+  bool iniciado = false;
+
+  @override
+  Future<List<Map<String, dynamic>>> listar(String sucursalId) {
+    iniciado = true;
+    return respuesta.future;
+  }
+}
+
+class _AlertasRepositoryBloqueado extends AlertasRepository {
+  final respuesta = Completer<List<Map<String, dynamic>>>();
+  bool iniciado = false;
+
+  @override
+  Future<List<Map<String, dynamic>>> listar(
+    String sucursalId, {
+    bool soloPendientes = true,
+  }) {
+    iniciado = true;
+    return respuesta.future;
+  }
+}
+
+class _InventarioRepositoryBloqueado extends InventarioRepository {
+  final respuesta = Completer<List<Map<String, dynamic>>>();
+  bool iniciado = false;
+
+  @override
+  Future<List<Map<String, dynamic>>> ingredientes(String sucursalId) {
+    iniciado = true;
+    return respuesta.future;
+  }
+}
 
 class _DashboardRepositoryFake extends DashboardRepository {
   @override
@@ -110,6 +159,52 @@ class _InventarioRepositoryFake extends InventarioRepository {
 }
 
 void main() {
+  testWidgets('inicia fuentes independientes del dashboard en paralelo', (
+    tester,
+  ) async {
+    final dashboard = _DashboardRepositoryBloqueado();
+    final mesas = _MesasRepositoryBloqueado();
+    final alertas = _AlertasRepositoryBloqueado();
+    final inventario = _InventarioRepositoryBloqueado();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DashboardResumenWidget(
+              sucursalId: 'sucursal-prueba',
+              dashboardRepository: dashboard,
+              mesasRepository: mesas,
+              pedidosRepository: _PedidosRepositoryFake(),
+              alertasRepository: alertas,
+              inventarioRepository: inventario,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(dashboard.iniciado, isTrue);
+    expect(mesas.iniciado, isTrue);
+    expect(alertas.iniciado, isTrue);
+    expect(inventario.iniciado, isTrue);
+
+    dashboard.respuesta.complete({
+      'ventas_hoy': 0,
+      'pedidos_activos': 0,
+      'pedidos_completados_hoy': 0,
+      'pedidos_pendientes_qr': 0,
+      'alertas_pendientes': 0,
+      'domicilios_tardios': <Map<String, dynamic>>[],
+    });
+    mesas.respuesta.complete([]);
+    alertas.respuesta.complete([]);
+    inventario.respuesta.complete([]);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dashboard usa domicilios tardíos del resumen del servidor', (
     tester,
   ) async {
@@ -201,12 +296,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Centro de operación'), findsOneWidget);
+      expect(find.textContaining('cada 75s'), findsOneWidget);
       expect(find.text('Ventas hoy'), findsOneWidget);
       final alerta = tester.getSize(
         find.byKey(const ValueKey<String>('dashboard-kpi-Alertas')),
       );
       final activa = tester.getSize(
-        find.byKey(const ValueKey<String>('dashboard-kpi-Activos')),
+        find.byKey(const ValueKey<String>('dashboard-kpi-Abiertos')),
       );
       if (size.width <= 390) {
         expect(alerta.width, size.width - 32);
@@ -258,6 +354,7 @@ void main() {
         find.text(
             'No se actualizaron: mesas. Los valores visibles pueden estar desactualizados.'),
         findsOneWidget);
+    expect(find.textContaining('Actualización parcial'), findsOneWidget);
     expect(find.text('No se pudieron consultar las mesas.'), findsOneWidget);
     expect(find.text('Ninguna mesa demorada ahora'), findsNothing);
     expect(tester.takeException(), isNull);

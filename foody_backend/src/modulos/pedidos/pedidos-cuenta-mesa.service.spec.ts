@@ -88,6 +88,7 @@ describe('PedidosCuentaMesaService', () => {
           monto: '5000',
           propina: '0',
           metodo_pago: 'efectivo',
+          numero_pedido: 'P-1',
           created_at: new Date('2026-01-01T12:01:00Z'),
           referencia: null,
           responsable_nombre: 'Caja',
@@ -110,6 +111,7 @@ describe('PedidosCuentaMesaService', () => {
     expect(cuenta.cuenta.cantidad_tickets).toBe(1);
     expect(cuenta.pedidos).toHaveLength(1);
     expect(cuenta.pagos_abonos).toHaveLength(1);
+    expect(cuenta.pagos_abonos[0].numero_pedido).toBe('P-1');
     expect(consultar.mock.calls[1][0]).toContain('p.mesa_id = ANY($2::uuid[])');
     expect(consultar.mock.calls[1][1]).toEqual([
       'sucursal-1',
@@ -117,6 +119,9 @@ describe('PedidosCuentaMesaService', () => {
     ]);
     expect(consultar.mock.calls[2][0]).toContain(
       'pp.mesa_id = ANY($1::uuid[])',
+    );
+    expect(consultar.mock.calls[2][0]).toContain(
+      'p.sucursal_id = pp.sucursal_id',
     );
     expect(consultar.mock.calls[2][1]).toEqual([
       ['mesa-principal', 'mesa-secundaria'],

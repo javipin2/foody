@@ -74,7 +74,7 @@ class _AnaliticaCajaFake extends AnaliticaRepository {
         'diferencia': 100,
         'descuadre_relevante': false,
         'nota_periodo_caja':
-            'En movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
+            'Compara ventas de pedidos creados en el rango con cobros netos asociados a esos pedidos. Los movimientos vinculados usan la fecha del pedido, aunque el pago ocurra después del rango; por eso esta diferencia puede cambiar con cobros posteriores y no representa el descuadre físico de un turno.',
       },
       'gastos_total': 100,
       'gastos_por_categoria': [
@@ -117,15 +117,26 @@ void main() {
         await tester.tap(find.text('Caja').first);
       }
       await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -1000));
+      await tester.pumpAndSettle();
 
       expect(find.text('Gastos registrados'), findsOneWidget);
-      expect(find.text('Egresos de caja'), findsOneWidget);
-      expect(find.text('Mov. caja netos'), findsOneWidget);
+      expect(find.text('Fecha de registro'), findsOneWidget);
       expect(
-        find.byTooltip(
-          'En movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
+        find.text(
+          'Por fecha de registro. Rentabilidad usa la fecha del gasto; algunos registros no afectan el arqueo.',
         ),
         findsOneWidget,
+      );
+      expect(find.text('Egresos de caja'), findsOneWidget);
+      expect(find.text('Ventas de pedidos'), findsOneWidget);
+      expect(find.text('Cobros netos asociados'), findsOneWidget);
+      expect(find.text('Ventas menos cobros'), findsOneWidget);
+      expect(
+        find.byTooltip(
+          'Compara ventas de pedidos creados en el rango con cobros netos asociados a esos pedidos. Los movimientos vinculados usan la fecha del pedido, aunque el pago ocurra después del rango; por eso esta diferencia puede cambiar con cobros posteriores y no representa el descuadre físico de un turno.',
+        ),
+        findsNWidgets(2),
       );
       expect(tester.takeException(), isNull);
     });

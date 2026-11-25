@@ -23,7 +23,17 @@ class _PedidosRepositoryFake extends PedidosRepository {
       {
         'total_acumulado': 50000,
         'saldo_pendiente': 50000,
-        'pagos_abonos': [],
+        'pagos_abonos': const [
+          {
+            'id': 'abono-1',
+            'monto': 2500,
+            'propina': 0,
+            'metodo_pago': 'efectivo',
+            'numero_pedido': 'P-0002',
+            'created_at': '2026-11-25T12:01:00.000Z',
+            'responsable_nombre': 'Caja',
+          },
+        ],
         'pedidos': [
           {
             'id': 'pedido-1',
@@ -98,6 +108,17 @@ void main() {
 
         expect(find.text('Mesa principal con nombre amplio'), findsOneWidget);
         expect(find.text('P-0001'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.textContaining('Pedido P-0002'),
+          160,
+          scrollable: find
+              .descendant(
+                of: find.byType(MesaPedidosSheet),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        expect(find.textContaining('Pedido P-0002'), findsOneWidget);
         expect(find.text('Listo para cobrar (avisar caja)'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
@@ -180,6 +201,8 @@ void main() {
 
       expect(find.text('Cobrar cuenta'), findsOneWidget);
       expect(find.textContaining('Total pendiente'), findsOneWidget);
+      expect(find.text('Propina voluntaria'), findsOneWidget);
+      expect(find.text('Aparte del total del pedido'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(AlertDialog),

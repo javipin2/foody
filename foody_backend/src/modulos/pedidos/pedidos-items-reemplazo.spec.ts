@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { PedidosItemsService } from './pedidos-items.service';
 import { DatabaseService } from '../../core/database/database.service';
+import { ReemplazarItemPedidoDto } from './dto/reemplazar-item-pedido.dto';
 
 describe('reemplazo transaccional de ítem de pedido', () => {
   const dto = {
     idempotency_key: 'replace-req-1',
     items: [{ producto_id: 'producto-2', cantidad: 1 }],
     motivo: 'Cambio de producto',
-  } as never;
+  } as ReemplazarItemPedidoDto;
 
   function crearServicio(
     resultadosPrevios: unknown[] = [

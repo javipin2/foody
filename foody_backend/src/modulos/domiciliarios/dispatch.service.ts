@@ -289,7 +289,7 @@ export class DispatchService implements OnModuleInit {
                AND p.estado NOT IN ('cancelado', 'rechazado', 'entregado', 'pagado')
            )
          ORDER BY u.nombre
-         LIMIT 1`,
+         LIMIT 1 FOR UPDATE OF dp SKIP LOCKED`,
         [sucursalId],
       );
       const dom = planta.rows[0];

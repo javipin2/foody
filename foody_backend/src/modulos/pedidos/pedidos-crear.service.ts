@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
 } from '@nestjs/common';
 import { DatabaseService } from '../../core/database/database.service';
@@ -45,6 +46,16 @@ export class PedidosCrearService {
   async crear(dto: CrearPedidoDto, opciones: OpcionesStaffPedido = {}) {
     const items = dto.items ?? [];
     const combos = dto.combos ?? [];
+    if (dto.pagos?.length && opciones.puedeCobrar !== true) {
+      throw new ForbiddenException('No tienes permiso para cobrar pedidos');
+    }
+    if (dto.pagos?.length && dto.tipo !== 'para_llevar') {
+      throw new BadRequestException({
+        error: 'PAGO_MIXTO_SOLO_PARA_LLEVAR',
+        message:
+          'El pago mixto al crear solo está disponible para pedidos para llevar',
+      });
+    }
     if (!items.length && !combos.length) {
       throw new BadRequestException('El pedido debe incluir al menos un ?tem');
     }
@@ -243,17 +254,30 @@ export class PedidosCrearService {
           id: string;
           nombre: string;
           estado_operativo: string;
+          qr_token: string;
         }>(
           client,
           opciones.soloEstimar
-            ? `SELECT id, nombre, estado_operativo FROM mesas
+            ? `SELECT id, nombre, estado_operativo, qr_token FROM mesas
                WHERE id = $1 AND sucursal_id = $2 AND activa = true`
-            : `SELECT id, nombre, estado_operativo FROM mesas
+            : `SELECT id, nombre, estado_operativo, qr_token FROM mesas
                WHERE id = $1 AND sucursal_id = $2 AND activa = true FOR UPDATE`,
           [dto.mesa_id, dto.sucursal_id],
         );
         if (!mesa) {
           throw new BadRequestException('MESA_NO_ENCONTRADA');
+        }
+        if (
+          !opciones.creadoPorStaff &&
+          !opciones.soloEstimar &&
+          dto.tipo === 'mesa' &&
+          (!dto.qr_token || dto.qr_token !== mesa.qr_token)
+        ) {
+          throw new BadRequestException({
+            error: 'QR_MESA_NO_COINCIDE',
+            message:
+              'El código QR no corresponde a esta mesa. Escanea nuevamente el código.',
+          });
         }
         if (!opciones.creadoPorStaff && mesa.estado_operativo === 'reservada') {
           throw new BadRequestException({
@@ -337,24 +361,131 @@ export class PedidosCrearService {
         extrasUnitario: number;
       }[] = [];
 
-      for (const item of items) {
-        const producto = await this.soporte.consultarUnoCliente<{
-          id: string;
-          nombre: string;
-          precio: string;
-          precio_para_llevar: string | null;
-          disponible: boolean;
-          cocina_id: string | null;
-          costo_calculado: string | null;
-          es_encargo: boolean;
-        }>(
-          client,
+      // La ruta común (productos directos) valida el mismo catálogo de la
+      // sucursal con lecturas por lote, en vez de una ronda SQL por línea y
+      // por extra. Las listas que se arman abajo conservan el orden del DTO.
+      type ProductoCatalogo = {
+        id: string;
+        nombre: string;
+        precio: string;
+        precio_para_llevar: string | null;
+        disponible: boolean;
+        cocina_id: string | null;
+        costo_calculado: string | null;
+        es_encargo: boolean;
+      };
+      type ExtraCatalogo = {
+        id: string;
+        nombre: string;
+        precio: string;
+        costo_calculado: string | null;
+      };
+      type ComboCatalogo = {
+        id: string;
+        nombre: string;
+        precio_fijo: string;
+        disponible: boolean;
+      };
+      type ItemComboCatalogo = {
+        combo_id: string;
+        tipo_item: string;
+        item_id: string;
+        cantidad: number;
+      };
+      const normalizarId = (id: string) => id.toLowerCase();
+      const idsCombos = [
+        ...new Set(combos.map((combo) => normalizarId(combo.combo_id))),
+      ];
+      const combosCatalogo = new Map<string, ComboCatalogo>();
+      const itemsPorCombo = new Map<string, ItemComboCatalogo[]>();
+      if (idsCombos.length) {
+        const resultadoCombos = await client.query<ComboCatalogo>(
+          `SELECT id, nombre, precio_fijo, disponible FROM combos
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`,
+          [idsCombos, dto.sucursal_id],
+        );
+        for (const fila of resultadoCombos.rows) {
+          combosCatalogo.set(normalizarId(fila.id), fila);
+        }
+        const resultadoItems = await client.query<ItemComboCatalogo>(
+          `SELECT combo_id, tipo_item, item_id, cantidad FROM combo_items
+           WHERE combo_id = ANY($1::uuid[])`,
+          [idsCombos],
+        );
+        for (const fila of resultadoItems.rows) {
+          const comboId = normalizarId(fila.combo_id);
+          const lista = itemsPorCombo.get(comboId) ?? [];
+          lista.push(fila);
+          itemsPorCombo.set(comboId, lista);
+        }
+      }
+      const idsProductos = [
+        ...new Set([
+          ...items.map((item) => normalizarId(item.producto_id)),
+          ...[...itemsPorCombo.values()]
+            .flat()
+            .filter((item) => item.tipo_item === 'producto')
+            .map((item) => normalizarId(item.item_id)),
+        ]),
+      ];
+      const productos = new Map<string, ProductoCatalogo>();
+      if (idsProductos.length) {
+        const resultado = await client.query<ProductoCatalogo>(
           `SELECT id, nombre, precio, precio_para_llevar, disponible, cocina_id,
                   costo_calculado, es_encargo
            FROM productos
-           WHERE id = $1 AND sucursal_id = $2`,
-          [item.producto_id, dto.sucursal_id],
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`,
+          [idsProductos, dto.sucursal_id],
         );
+        for (const fila of resultado.rows) {
+          productos.set(normalizarId(fila.id), fila);
+        }
+      }
+      const idsToppings = [
+        ...new Set([
+          ...items.flatMap((item) =>
+            (item.toppings ?? []).map((t) => normalizarId(t.topping_id)),
+          ),
+          ...combos.flatMap((combo) =>
+            (combo.toppings ?? []).map((t) => normalizarId(t.topping_id)),
+          ),
+        ]),
+      ];
+      const toppingsCatalogo = new Map<string, ExtraCatalogo>();
+      if (idsToppings.length) {
+        const resultado = await client.query<ExtraCatalogo>(
+          `SELECT id, nombre, precio, costo_calculado FROM toppings
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2 AND disponible = true`,
+          [idsToppings, dto.sucursal_id],
+        );
+        for (const fila of resultado.rows) {
+          toppingsCatalogo.set(normalizarId(fila.id), fila);
+        }
+      }
+      const idsBebidas = [
+        ...new Set([
+          ...items.flatMap((item) =>
+            (item.bebidas ?? []).map((b) => normalizarId(b.bebida_id)),
+          ),
+          ...combos.flatMap((combo) =>
+            (combo.bebidas ?? []).map((b) => normalizarId(b.bebida_id)),
+          ),
+        ]),
+      ];
+      const bebidasCatalogo = new Map<string, ExtraCatalogo>();
+      if (idsBebidas.length) {
+        const resultado = await client.query<ExtraCatalogo>(
+          `SELECT id, nombre, precio, costo_calculado FROM bebidas
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2 AND disponible = true`,
+          [idsBebidas, dto.sucursal_id],
+        );
+        for (const fila of resultado.rows) {
+          bebidasCatalogo.set(normalizarId(fila.id), fila);
+        }
+      }
+
+      for (const item of items) {
+        const producto = productos.get(normalizarId(item.producto_id));
         if (!producto?.disponible) {
           throw new BadRequestException('PRODUCTO_NO_DISPONIBLE');
         }
@@ -375,17 +506,7 @@ export class PedidosCrearService {
           costo: number;
         }[] = [];
         for (const t of item.toppings ?? []) {
-          const top = await this.soporte.consultarUnoCliente<{
-            id: string;
-            nombre: string;
-            precio: string;
-            costo_calculado: string | null;
-          }>(
-            client,
-            `SELECT id, nombre, precio, costo_calculado FROM toppings
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
-            [t.topping_id, dto.sucursal_id],
-          );
+          const top = toppingsCatalogo.get(normalizarId(t.topping_id));
           if (!top) throw new BadRequestException('TOPPING_NO_DISPONIBLE');
           const p = Number(top.precio);
           toppings.push({
@@ -405,17 +526,7 @@ export class PedidosCrearService {
           costo: number;
         }[] = [];
         for (const b of item.bebidas ?? []) {
-          const beb = await this.soporte.consultarUnoCliente<{
-            id: string;
-            nombre: string;
-            precio: string;
-            costo_calculado: string | null;
-          }>(
-            client,
-            `SELECT id, nombre, precio, costo_calculado FROM bebidas
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
-            [b.bebida_id, dto.sucursal_id],
-          );
+          const beb = bebidasCatalogo.get(normalizarId(b.bebida_id));
           if (!beb) throw new BadRequestException('BEBIDA_NO_DISPONIBLE');
           const p = Number(beb.precio);
           bebidas.push({
@@ -467,52 +578,26 @@ export class PedidosCrearService {
       }
 
       for (const comboDto of combos) {
-        const combo = await this.soporte.consultarUnoCliente<{
-          id: string;
-          nombre: string;
-          precio_fijo: string;
-          disponible: boolean;
-        }>(
-          client,
-          `SELECT id, nombre, precio_fijo, disponible FROM combos
-           WHERE id = $1 AND sucursal_id = $2`,
-          [comboDto.combo_id, dto.sucursal_id],
-        );
+        const combo = combosCatalogo.get(normalizarId(comboDto.combo_id));
         if (!combo?.disponible) {
           throw new BadRequestException('COMBO_NO_DISPONIBLE');
         }
         const precioFijo = Number(combo.precio_fijo);
 
-        const comboItems = await client.query<{
-          tipo_item: string;
-          item_id: string;
-          cantidad: number;
-        }>(
-          `SELECT tipo_item, item_id, cantidad FROM combo_items WHERE combo_id = $1`,
-          [combo.id],
-        );
-        const productoItem = comboItems.rows.find(
+        const comboItems = itemsPorCombo.get(normalizarId(combo.id)) ?? [];
+        const productoItem = comboItems.find(
           (ci) => ci.tipo_item === 'producto',
         );
         if (!productoItem) {
           throw new BadRequestException('COMBO_SIN_PRODUCTO');
         }
 
-        const producto = await this.soporte.consultarUnoCliente<{
-          id: string;
-          cocina_id: string | null;
-          costo_calculado: string | null;
-        }>(
-          client,
-          `SELECT id, cocina_id, costo_calculado FROM productos
-           WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
-          [productoItem.item_id, dto.sucursal_id],
-        );
-        if (!producto) {
+        const producto = productos.get(normalizarId(productoItem.item_id));
+        if (!producto?.disponible) {
           throw new BadRequestException('PRODUCTO_NO_DISPONIBLE');
         }
 
-        const productosCombo = comboItems.rows
+        const productosCombo = comboItems
           .filter((ci) => ci.tipo_item === 'producto')
           .map((ci) => ({ productoId: ci.item_id, cantidad: ci.cantidad }));
 
@@ -523,17 +608,7 @@ export class PedidosCrearService {
           costo: number;
         }[] = [];
         for (const t of comboDto.toppings ?? []) {
-          const top = await this.soporte.consultarUnoCliente<{
-            id: string;
-            nombre: string;
-            precio: string;
-            costo_calculado: string | null;
-          }>(
-            client,
-            `SELECT id, nombre, precio, costo_calculado FROM toppings
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
-            [t.topping_id, dto.sucursal_id],
-          );
+          const top = toppingsCatalogo.get(normalizarId(t.topping_id));
           if (!top) throw new BadRequestException('TOPPING_NO_DISPONIBLE');
           toppings.push({
             id: top.id,
@@ -550,17 +625,7 @@ export class PedidosCrearService {
           costo: number;
         }[] = [];
         for (const b of comboDto.bebidas ?? []) {
-          const beb = await this.soporte.consultarUnoCliente<{
-            id: string;
-            nombre: string;
-            precio: string;
-            costo_calculado: string | null;
-          }>(
-            client,
-            `SELECT id, nombre, precio, costo_calculado FROM bebidas
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
-            [b.bebida_id, dto.sucursal_id],
-          );
+          const beb = bebidasCatalogo.get(normalizarId(b.bebida_id));
           if (!beb) throw new BadRequestException('BEBIDA_NO_DISPONIBLE');
           bebidas.push({
             id: beb.id,
@@ -919,12 +984,15 @@ export class PedidosCrearService {
       }
 
       const metodoCajaRef = dto.pagos?.[0]?.metodo_pago ?? metodoPago;
-      const registrarCajaAlCrear = this.cajaAuditoria.debeRegistrarVentaAlCrear(
-        estadoInicial,
-        dto.tipo,
-        dto.mesa_id,
-        metodoCajaRef,
-      );
+      const registrarCajaAlCrear =
+        opciones.creadoPorStaff === true &&
+        opciones.puedeCobrar === true &&
+        this.cajaAuditoria.debeRegistrarVentaAlCrear(
+          estadoInicial,
+          dto.tipo,
+          dto.mesa_id,
+          metodoCajaRef,
+        );
 
       if (dto.pagos?.length) {
         const sumaPagos = dto.pagos.reduce((s, p) => s + p.monto, 0);
@@ -968,11 +1036,6 @@ export class PedidosCrearService {
           `UPDATE pedidos SET monto_pagado = $2, propina_acumulada = $3, metodo_pago = $4 WHERE id = $1`,
           [pedidoId, total, propinaCaja, dto.pagos[0].metodo_pago],
         );
-      } else if (dto.propina != null && dto.propina > 0) {
-        await client.query(
-          `UPDATE pedidos SET propina_acumulada = $2 WHERE id = $1`,
-          [pedidoId, dto.propina],
-        );
       } else if (registrarCajaAlCrear) {
         await this.cajaAuditoria.registrarVentaEnCaja(
           client,
@@ -987,8 +1050,22 @@ export class PedidosCrearService {
           },
         );
         await client.query(
-          `UPDATE pedidos SET monto_pagado = $2, metodo_pago = $3 WHERE id = $1`,
-          [pedidoId, total, metodoPago],
+          `INSERT INTO pagos_pedido (
+             sucursal_id, pedido_id, monto, propina, metodo_pago, usuario_id, referencia
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            dto.sucursal_id,
+            pedidoId,
+            total,
+            dto.propina ?? 0,
+            metodoPago,
+            opciones.usuarioId ?? null,
+            'Cobro al crear pedido',
+          ],
+        );
+        await client.query(
+          `UPDATE pedidos SET monto_pagado = $2, propina_acumulada = $3, metodo_pago = $4 WHERE id = $1`,
+          [pedidoId, total, dto.propina ?? 0, metodoPago],
         );
       }
 
@@ -1106,6 +1183,8 @@ export class PedidosCrearService {
         );
       }
       if (
+        opciones.creadoPorStaff === true &&
+        opciones.puedeCobrar === true &&
         this.cajaAuditoria.debeRegistrarVentaAlCrear(
           creado.estado,
           dto.tipo,

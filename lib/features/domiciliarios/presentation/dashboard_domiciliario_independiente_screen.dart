@@ -100,6 +100,7 @@ class _DashboardDomiciliarioIndependienteScreenState
         _domiciliarioId!,
         onActualizado: () => _cargar(silencioso: true),
         onOfertaExpirada: () => _cargar(silencioso: true),
+        onPedidoDesasignado: () => _cargar(silencioso: true),
       );
     }
     await _actualizarMiUbicacion();

@@ -30,6 +30,7 @@ const crear_cuenta_por_cobrar_dto_1 = require("./dto/crear-cuenta-por-cobrar.dto
 const pagar_cuenta_por_cobrar_dto_1 = require("./dto/pagar-cuenta-por-cobrar.dto");
 const retiro_caja_dto_1 = require("./dto/retiro-caja.dto");
 const devolucion_caja_dto_1 = require("./dto/devolucion-caja.dto");
+const caja_movimientos_pedido_query_dto_1 = require("./dto/caja-movimientos-pedido-query.dto");
 const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 let CajaController = class CajaController {
     cajaService;
@@ -71,8 +72,8 @@ let CajaController = class CajaController {
         const sucursalId = await this.sucursalScope.resolverLecturaOperativa(usuario, usuario.sucursal_id);
         return this.cajaService.listarMovimientos(cajaId, sucursalId, query.page, query.limit);
     }
-    async movimientosPedido(pedidoId, query, sucursalSolicitada, usuario) {
-        const sucursalId = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalSolicitada ?? usuario.sucursal_id);
+    async movimientosPedido(pedidoId, query, usuario) {
+        const sucursalId = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id ?? usuario.sucursal_id);
         return this.cajaService.listarMovimientosPedido(pedidoId, sucursalId, query.page, query.limit);
     }
     async retiro(dto, usuario) {
@@ -139,7 +140,7 @@ __decorate([
 ], CajaController.prototype, "listarFiados", null);
 __decorate([
     (0, common_1.Post)('cuentas-por-cobrar'),
-    (0, permisos_decorator_1.Permisos)('ver_caja'),
+    (0, permisos_decorator_1.Permisos)('gestionar_caja'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -149,7 +150,7 @@ __decorate([
 ], CajaController.prototype, "crearFiado", null);
 __decorate([
     (0, common_1.Patch)('cuentas-por-cobrar/:id/pagar'),
-    (0, permisos_decorator_1.Permisos)('ver_caja'),
+    (0, permisos_decorator_1.Permisos)('gestionar_caja'),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
@@ -174,10 +175,10 @@ __decorate([
     (0, permisos_decorator_1.Permisos)('ver_caja'),
     __param(0, (0, common_1.Param)('pedido_id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Query)()),
-    __param(2, (0, common_1.Query)('sucursal_id', new common_1.ParseUUIDPipe({ optional: true }))),
-    __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, paginacion_dto_1.PaginacionQueryDto, Object, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [String, caja_movimientos_pedido_query_dto_1.CajaMovimientosPedidoQueryDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CajaController.prototype, "movimientosPedido", null);
 __decorate([
@@ -192,7 +193,7 @@ __decorate([
 ], CajaController.prototype, "retiro", null);
 __decorate([
     (0, common_1.Post)('devolucion'),
-    (0, permisos_decorator_1.Permisos)('ver_caja'),
+    (0, permisos_decorator_1.Permisos)('gestionar_caja'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
@@ -202,7 +203,7 @@ __decorate([
 ], CajaController.prototype, "devolucion", null);
 __decorate([
     (0, common_1.Post)('gastos'),
-    (0, permisos_decorator_1.Permisos)('ver_caja'),
+    (0, permisos_decorator_1.Permisos)('gestionar_caja'),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),

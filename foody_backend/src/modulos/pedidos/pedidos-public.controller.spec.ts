@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PedidosPublicController } from './pedidos-public.controller';
 
 describe('PedidosPublicController capability invitado', () => {
@@ -43,6 +43,19 @@ describe('PedidosPublicController capability invitado', () => {
     await expect(
       controller.crear({ device_id: 'device-1' } as never),
     ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(pedidos.crear).not.toHaveBeenCalled();
+  });
+
+  it('no permite que Checkout público declare pagos o propinas cobradas', async () => {
+    dispositivos.exigirCapability.mockResolvedValueOnce(undefined);
+
+    await expect(
+      controller.crear({
+        device_id: 'device-1',
+        propina: 3000,
+        pagos: [{ metodo_pago: 'efectivo', monto: 30000 }],
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(pedidos.crear).not.toHaveBeenCalled();
   });
 

@@ -568,7 +568,8 @@ class _MesaPedidosSheetState extends State<MesaPedidosSheet>
                       controller: propinaCtrl,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Propina (opcional)',
+                        labelText: 'Propina voluntaria',
+                        helperText: 'Aparte del total del pedido',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -1536,9 +1537,6 @@ class _MesaPedidosSheetState extends State<MesaPedidosSheet>
                         : _listaPedidos(scrollController),
               ),
               if (_datos != null &&
-                  (_datos!['pagos_abonos'] as List<dynamic>? ?? []).isNotEmpty)
-                _historialAbonos(),
-              if (_datos != null &&
                   (_datos!['pedidos'] as List<dynamic>? ?? []).isNotEmpty)
                 SafeArea(
                   top: false,
@@ -1739,18 +1737,31 @@ class _MesaPedidosSheetState extends State<MesaPedidosSheet>
   Widget _listaPedidos(ScrollController scrollController) {
     final pedidos = (_datos!['pedidos'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
-    if (pedidos.isEmpty) {
+    final tieneAbonos =
+        (_datos!['pagos_abonos'] as List<dynamic>? ?? []).isNotEmpty;
+    final cantidad = pedidos.length + (tieneAbonos ? 1 : 0);
+    if (cantidad == 0) {
       return const Center(child: Text('Sin pedidos activos en esta mesa'));
     }
 
     return RefreshIndicator(
       onRefresh: _cargar,
-      child: ListView.separated(
+      child: ListView.builder(
         controller: scrollController,
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        itemCount: pedidos.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (_, i) => _tarjetaPedido(pedidos[i]),
+        itemCount: cantidad,
+        itemBuilder: (_, i) {
+          if (i < pedidos.length) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _tarjetaPedido(pedidos[i]),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: _historialAbonos(),
+          );
+        },
       ),
     );
   }
@@ -2030,14 +2041,16 @@ class _MesaPedidosSheetState extends State<MesaPedidosSheet>
             ),
           ),
           const SizedBox(height: 4),
-          ...abonos.take(5).map(
-                (a) => Text(
-                  '${_moneda.format(a['monto'])} · ${a['metodo_pago']}'
-                  '${(a['responsable_nombre'] as String?)?.trim().isNotEmpty == true ? ' · ${a['responsable_nombre']}' : ''}'
-                  ' · ${DateFormat('HH:mm').format(DateTime.parse(a['created_at'].toString()).toLocal())}',
-                  style: TextStyle(fontSize: 12, color: _inkMuted),
-                ),
-              ),
+          ...abonos.take(5).map((a) {
+            final numeroPedido = a['numero_pedido']?.toString().trim();
+            return Text(
+              '${_moneda.format(a['monto'])} · ${a['metodo_pago']}'
+              '${numeroPedido?.isNotEmpty == true ? ' · Pedido $numeroPedido' : ''}'
+              '${(a['responsable_nombre'] as String?)?.trim().isNotEmpty == true ? ' · ${a['responsable_nombre']}' : ''}'
+              ' · ${DateFormat('HH:mm').format(DateTime.parse(a['created_at'].toString()).toLocal())}',
+              style: TextStyle(fontSize: 12, color: _inkMuted),
+            );
+          }),
           const SizedBox(height: 4),
           Text(
             'Tras un abono sin ítems, los platos se marcan en orden. '

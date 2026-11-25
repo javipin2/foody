@@ -13,11 +13,13 @@ class DashboardGraficosWidget extends StatefulWidget {
   const DashboardGraficosWidget({
     super.key,
     this.sucursalId,
+    this.repository,
     this.onIrReportes,
     this.onIrAnalitica,
   });
 
   final String? sucursalId;
+  final DashboardRepository? repository;
   final VoidCallback? onIrReportes;
   final VoidCallback? onIrAnalitica;
 
@@ -52,7 +54,8 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
 
   void _recargar() {
     setState(() {
-      _future = _repo.graficos(sucursalId: widget.sucursalId);
+      _future =
+          (widget.repository ?? _repo).graficos(sucursalId: widget.sucursalId);
     });
   }
 
@@ -167,6 +170,8 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
             final porTipo = d['pedidos_por_tipo_hoy'] as List<dynamic>? ?? [];
             final top = d['top_productos_7d'] as List<dynamic>? ?? [];
             final mix = _mixCanal(porTipo);
+            final hayVentas = porDia.any((raw) =>
+                raw is Map && AnaliticaCharts.numOf(raw['ventas']) > 0);
 
             return AnaliticaChartsGrid(
               columnsDesktop: 2,
@@ -175,8 +180,9 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                   titulo: 'Ventas — últimos 7 días',
                   subtitulo: 'Serie temporal',
                   icono: Icons.timeline,
-                  vacio: porDia.isEmpty,
+                  vacio: !hayVentas,
                   mensajeVacio: 'Sin ventas en la semana',
+                  altura: hayVentas ? 200 : 82,
                   child: LineChart(AnaliticaCharts.lineaDia(porDia)),
                 ),
                 AnaliticaChartCard(
@@ -185,6 +191,7 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                   icono: Icons.pie_chart_outline,
                   vacio: mix.isEmpty,
                   mensajeVacio: 'Sin pedidos hoy',
+                  altura: mix.isEmpty ? 82 : 200,
                   child: Row(
                     children: [
                       Expanded(
@@ -204,7 +211,7 @@ class _DashboardGraficosWidgetState extends State<DashboardGraficosWidget> {
                   icono: Icons.bar_chart,
                   vacio: top.isEmpty,
                   mensajeVacio: 'Sin productos vendidos',
-                  altura: 200,
+                  altura: top.isEmpty ? 82 : 200,
                   child: BarChart(
                     AnaliticaCharts.barrasHorizontales(
                       top,

@@ -33,6 +33,12 @@ export const SQL_FECHA_PEDIDOS_P_P2_P3 = sqlFechaRango(
   '$2',
   '$3',
 );
+/** Recaudos por fecha de registro del movimiento, no por fecha de pedido. */
+export const SQL_FECHA_MOVIMIENTOS_CAJA_P2_P3 = sqlFechaRango(
+  'm.created_at',
+  '$2',
+  '$3',
+);
 
 export const SQL_FECHA_CAJA_COALESCED_P2_P3 =
   `( (p.created_at IS NOT NULL AND p.created_at >= ($2::date::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}') AND p.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}'))` +
@@ -52,5 +58,8 @@ export const SQL_HOY_LOCAL = `(NOW() AT TIME ZONE '${SQL_TZ_NEGOCIO}')::date`;
 //   inicio_hoy_local <= created_at < inicio_hoy_local + 1 día
 export const SQL_INICIO_HOY_LOCAL = `((${SQL_HOY_LOCAL})::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}')`;
 export const SQL_PEDIDO_ES_HOY = `created_at >= ${SQL_INICIO_HOY_LOCAL} AND created_at < (${SQL_INICIO_HOY_LOCAL} + interval '1 day')`;
-export const SQL_PEDIDO_DESDE_7D = `created_at >= ${SQL_HOY_LOCAL} - interval '6 days'`;
-export const SQL_PEDIDO_DESDE_7D_P = `p.created_at >= ${SQL_HOY_LOCAL} - interval '6 days'`;
+/** Inicio local (incluyente) de los 7 días calendario que terminan hoy. */
+export const SQL_INICIO_7D_LOCAL = `(((${SQL_HOY_LOCAL}) - 6)::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}')`;
+export const SQL_FIN_7D_LOCAL = `(((${SQL_HOY_LOCAL}) + 1)::timestamp AT TIME ZONE '${SQL_TZ_NEGOCIO}')`;
+export const SQL_PEDIDO_DESDE_7D = `created_at >= ${SQL_INICIO_7D_LOCAL} AND created_at < ${SQL_FIN_7D_LOCAL}`;
+export const SQL_PEDIDO_DESDE_7D_P = `p.created_at >= ${SQL_INICIO_7D_LOCAL} AND p.created_at < ${SQL_FIN_7D_LOCAL}`;

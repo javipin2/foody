@@ -24,6 +24,7 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
   it('excluye cancelados/rechazados por defecto en el costo de ventas', async () => {
     const { database, service } = crearServicio();
     const result = await service.rentabilidad('sucursal-1', {
+      preset: 'personalizado',
       desde: '2026-11-01',
       hasta: '2026-11-24',
       label: 'Periodo',
@@ -44,7 +45,12 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
     const { database, service } = crearServicio();
     await service.rentabilidad(
       'sucursal-1',
-      { desde: '2026-11-01', hasta: '2026-11-24', label: 'Periodo' },
+      {
+        preset: 'personalizado',
+        desde: '2026-11-01',
+        hasta: '2026-11-24',
+        label: 'Periodo',
+      },
       { estados: ['cancelado'] } as never,
     );
 

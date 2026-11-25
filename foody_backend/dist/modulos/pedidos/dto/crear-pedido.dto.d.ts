@@ -24,6 +24,7 @@ export declare class ComboPedidoDto {
 export declare class CrearPedidoDto {
     sucursal_id: string;
     mesa_id?: string;
+    qr_token?: string;
     device_id: string;
     tipo: string;
     cliente_nombre?: string;

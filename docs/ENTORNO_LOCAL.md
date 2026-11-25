@@ -99,7 +99,7 @@ WSL **no** hay que “abrirlo” como programa: se usa solo cuando ejecutas un s
 | Paso | Qué hacer |
 |------|-----------|
 | 1 | Encender **Docker Desktop** (Supabase en verde) |
-| 2 | Doble clic en `scripts/iniciar-backend-wsl.bat` — **Node en Windows** (deja esa ventana abierta; no ejecutes otros comandos ahí) |
+| 2 | Doble clic en `scripts/iniciar-backend-wsl.bat` — **Node en Windows** (deja esa ventana abierta; no ejecutes otros comandos ahí). Si la API responde pero el build (`dist/main.js`) es más nuevo que el proceso, el launcher lo reporta y pide cerrar normalmente la ventana anterior antes de reintentar; no detiene un API saludable por su cuenta. |
 | 3 | Doble clic en `scripts/iniciar-flutter-web.bat` **o** `scripts/iniciar-foody-dev.bat` (abre backend + Flutter) |
 
 Atajo todo-en-uno: **`scripts/iniciar-foody-dev.bat`** (backend en ventana aparte, luego Flutter).
@@ -171,6 +171,8 @@ chmod +x scripts/setup-ubuntu-vps.sh
 | `foody_backend/.env` | NestJS (no commitear) |
 | `foody_backend/.env.example` | Plantilla |
 | `lib/core/constantes/configuracion.dart` | URLs Flutter (no commitear secretos) |
+
+`DB_POOL_CONNECT_TIMEOUT_MS` limita en milisegundos cuánto espera `pg.Pool` para abrir/adquirir una conexión (default 5000). No limita la ejecución de consultas SQL; no cambiar `DB_POOL_MAX` sin contrastar conexiones PostgreSQL, instancias Nest y pooler.
 
 ## Cursor
 

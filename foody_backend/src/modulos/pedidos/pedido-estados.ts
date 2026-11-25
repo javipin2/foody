@@ -156,6 +156,26 @@ export const SQL_WHERE_PEDIDO_OPERACION_ABIERTA = `
   AND COALESCE(monto_pagado, 0) < total - 0.01
 `;
 
+/**
+ * Pedidos abiertos para la lista operativa: además de los estados en curso,
+ * incluye domicilios entregados cuyo saldo todavía no se ha registrado como
+ * cobrado. El prefijo evita ambigüedad al usarlo en joins.
+ */
+export function sqlWherePedidoAbiertoOperativo(alias = ''): string {
+  const p = alias ? `${alias}.` : '';
+  return `(
+    ${p}estado IN (
+      'pendiente_aprobacion', 'pendiente', 'confirmado',
+      'en_cocina', 'listo', 'pagando', 'asignado', 'en_camino'
+    )
+    OR (
+      ${p}tipo = 'domicilio'
+      AND ${p}estado = 'entregado'
+      AND COALESCE(${p}monto_pagado, 0) < ${p}total - 0.01
+    )
+  )`;
+}
+
 /** Domicilio entregado sin cobro completo (F-10 / A-04). */
 export const SQL_WHERE_DOMICILIO_ENTREGADO_IMPAGO = `
   estado = 'entregado'
@@ -217,4 +237,32 @@ export async function pedidoCocinaCompleta(
   const n = Number(r.rows[0]?.n ?? 0);
   const incompletos = Number(r.rows[0]?.incompletos ?? 0);
   return n > 0 && incompletos === 0;
+}
+
+/**
+ * Un cierre excepcional de caja puede dejar líneas de Cocina por resolver.
+ * En ese caso se permite avanzar las líneas existentes sin reabrir el pedido
+ * pagado ni admitir regresiones de estado.
+ */
+export function puedeAvanzarCocinaPedidoPagado(params: {
+  estadoPedido: string;
+  total: number | string;
+  montoPagado: number | string;
+  estadoItem: string | null | undefined;
+  nuevoEstadoItem: string;
+}): boolean {
+  const total = Number(params.total);
+  const montoPagado = Number(params.montoPagado);
+  if (
+    params.estadoPedido !== 'pagado' ||
+    !Number.isFinite(total) ||
+    !Number.isFinite(montoPagado) ||
+    montoPagado < total - 0.01 ||
+    ![null, undefined, 'pendiente', 'preparando'].includes(params.estadoItem)
+  ) {
+    return false;
+  }
+  return ['preparando', 'listo', 'no_disponible'].includes(
+    params.nuevoEstadoItem,
+  );
 }

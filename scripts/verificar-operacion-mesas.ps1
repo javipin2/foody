@@ -1,6 +1,8 @@
 # Foody - QA operacion mesas: cajero (sin turno) + mesero (con turno)
 # Uso: powershell -File scripts/verificar-operacion-mesas.ps1
 $ErrorActionPreference = "Continue"
+. "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
 
 & "$PSScriptRoot\verificar-cajero-mesas.ps1"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -9,14 +11,14 @@ Write-Host ""
 Write-Host "=== QA Mesero con turno de mesas ==="
 Write-Host ""
 
-$Base = "http://localhost:3000/api/v1"
+$Base = $script:FoodyQaBase
 $Sucursal = "c0000000-0000-4000-8000-000000000001"
-$MesaMesero = "7170df60-ca76-4049-9248-8c6f1f799a42"
+$MesaMesero = $null
 $Producto = "f0000000-0000-4000-8000-000000000002"
 $Precio = 8000
 $Pass = "123456"
 $MeseroEmail = "mesero@foody.com"
-$MeseroId = "a70e5bd3-a027-4038-86dc-c8f86f683fbd"
+$MeseroId = "90000000-0000-4000-8000-000000000003"
 $CajeroId = "c622aeff-518d-4453-bfa5-930f70aec41d"
 
 function Invoke-Api {
@@ -63,6 +65,10 @@ $adminLogin = Invoke-Api -Method POST -Path "/auth/login" -Body @{
 Assert ($adminLogin.ok -and $adminLogin.json.exito) "Login admin para asignar turno"
 if (-not ($adminLogin.ok -and $adminLogin.json.exito)) { exit 1 }
 $hAdmin = @{ Authorization = "Bearer $($adminLogin.json.datos.token)" }
+$mesasAdmin = Invoke-Api -Path "/mesas/$Sucursal" -Headers $hAdmin
+$MesaMesero = @($mesasAdmin.json.datos | Where-Object { $_.activa -ne $false -and $_.estado_operativo -eq 'libre' } | Select-Object -First 1).id
+Assert ([bool]$MesaMesero) "Hay mesa libre para probar turno de mesero"
+if (-not $MesaMesero) { exit 1 }
 
 $turno = Invoke-Api -Method POST -Path "/mesas/asignar-turno" -Headers $hAdmin -Body @{
     sucursal_id = $Sucursal
@@ -102,7 +108,7 @@ Assert ($mesa2.mesera_asignada_id -eq $MeseroId) "Tras pedido mesero, mesa sigue
 
 if ($pedidoId) {
     $sql = "SELECT mesera_id FROM pedidos WHERE id = '$pedidoId'"
-    $meseraPedido = (docker exec supabase-db psql -U postgres -d postgres -tAc $sql 2>&1).ToString().Trim()
+    $meseraPedido = (docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc $sql 2>&1).ToString().Trim()
     Assert ($meseraPedido -eq $MeseroId) "pedidos.mesera_id = mesero tras crear pedido"
 }
 

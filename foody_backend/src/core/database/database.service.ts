@@ -4,6 +4,7 @@ import { TransactionHooksService } from './transaction-hooks.service';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
+  private static readonly connectTimeoutMsDefault = 5000;
   private readonly pool: Pool;
 
   constructor(private readonly transactionHooks: TransactionHooksService) {
@@ -11,13 +12,21 @@ export class DatabaseService implements OnModuleDestroy {
     if (!connectionString) {
       throw new Error('DATABASE_URL no está definida en .env');
     }
+    const connectTimeoutMs = Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS);
     this.pool = new Pool({
       connectionString,
       max: Number(process.env.DB_POOL_MAX) || 10,
+      connectionTimeoutMillis:
+        Number.isFinite(connectTimeoutMs) && connectTimeoutMs > 0
+          ? connectTimeoutMs
+          : DatabaseService.connectTimeoutMsDefault,
     });
     // Sin esto, un cliente idle que muere (p. ej. tras SQL fatal) tumba todo Node.
     this.pool.on('error', (err) => {
-      console.error('[DatabaseService] Error en cliente idle del pool:', err.message);
+      console.error(
+        '[DatabaseService] Error en cliente idle del pool:',
+        err.message,
+      );
     });
   }
 
@@ -37,7 +46,9 @@ export class DatabaseService implements OnModuleDestroy {
     return filas[0] ?? null;
   }
 
-  async enTransaccion<T>(fn: (client: import('pg').PoolClient) => Promise<T>): Promise<T> {
+  async enTransaccion<T>(
+    fn: (client: import('pg').PoolClient) => Promise<T>,
+  ): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -79,10 +90,9 @@ export class DatabaseService implements OnModuleDestroy {
     } finally {
       if (adquirio) {
         try {
-          await client.query(
-            `SELECT pg_advisory_unlock($1::bigint)`,
-            [lockKey],
-          );
+          await client.query(`SELECT pg_advisory_unlock($1::bigint)`, [
+            lockKey,
+          ]);
         } catch {
           // Si unlock falla, el lock expira al terminar la sesión del client.
         }

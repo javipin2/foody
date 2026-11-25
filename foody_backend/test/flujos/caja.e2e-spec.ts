@@ -69,6 +69,175 @@ describe('E2E caja', () => {
     expect(estado).toBe('pagado');
   });
 
+  it('POS registra venta y propina al crear para llevar con cobro confirmado', async () => {
+    const cajaAnterior = await api()
+      .get(`/api/v1/caja/activa/${SID}`)
+      .set(cajero.auth);
+    expect(cajaAnterior.body.exito).toBe(true);
+    const cerrarAnterior = await api()
+      .post('/api/v1/caja/cerrar')
+      .set(cajero.auth)
+      .send({
+        caja_id: cajaAnterior.body.datos.id,
+        monto_final_contado: Number(cajaAnterior.body.datos.saldo_sistema),
+      });
+    expect(cerrarAnterior.body.exito).toBe(true);
+
+    const abrir = await api()
+      .post(`/api/v1/caja/abrir?sucursal_id=${SID}`)
+      .set(cajero.auth)
+      .send({ sucursal_id: SID, monto_inicial: 0 });
+    expect(abrir.body.exito).toBe(true);
+
+    const crear = await crearPedidoStaff(cajero.auth, {
+      sucursal_id: SID,
+      tipo: 'para_llevar',
+      device_id: `jest-pos-tip-${Date.now()}`,
+      metodo_pago: 'efectivo',
+      propina: 900,
+      items: [itemBody()],
+    });
+    expect(crear.body.exito).toBe(true);
+    const id = pedidoId(crear);
+    const total = Number(crear.body.datos?.total);
+    const detalle = await detallePedido(cajero.auth, id);
+    const pedido = detalle.body.datos?.pedido ?? detalle.body.datos;
+    expect(Number(pedido.monto_pagado)).toBeCloseTo(total, 2);
+
+    await marcarItemsCocinaListos(cocina.auth, id, cajero.auth);
+    const detalleListo = await detallePedido(cajero.auth, id);
+    expect(
+      detalleListo.body.datos?.estado ??
+        detalleListo.body.datos?.pedido?.estado,
+    ).toBe('pagado');
+
+    const cajaNueva = await api()
+      .get(`/api/v1/caja/activa/${SID}`)
+      .set(cajero.auth);
+    const cierre = await api()
+      .post('/api/v1/caja/cerrar')
+      .set(cajero.auth)
+      .send({
+        caja_id: cajaNueva.body.datos.id,
+        monto_final_contado: Number(cajaNueva.body.datos.saldo_sistema),
+      });
+    expect(cierre.body.exito).toBe(true);
+    expect(Number(cierre.body.datos.propinas_turno)).toBe(900);
+    expect(Number(cierre.body.datos.diferencia)).toBe(0);
+  });
+
+  it('no registra propina de Checkout/POS si el pedido aún no se cobra', async () => {
+    const crear = await crearPedidoStaff(cajero.auth, {
+      sucursal_id: SID,
+      tipo: 'para_llevar',
+      device_id: `jest-propina-no-cobrada-${Date.now()}`,
+      cliente_nombre: 'QA propina sin cobro',
+      cliente_telefono: '3000000087',
+      metodo_pago: 'pendiente',
+      propina: 900,
+      items: [itemBody()],
+    });
+    expect(crear.body.exito).toBe(true);
+    const id = pedidoId(crear);
+    const pedido = await detallePedido(cajero.auth, id);
+    expect(Number(pedido.body.datos?.monto_pagado ?? 0)).toBe(0);
+
+    const movimientos = await api()
+      .get(`/api/v1/caja/pedidos/${id}/movimientos?sucursal_id=${SID}`)
+      .set(cajero.auth);
+    expect(movimientos.body.exito).toBe(true);
+    expect(movimientos.body.datos?.items ?? []).toHaveLength(0);
+  });
+
+  it('atribuye al turno del pago la propina de un pedido creado antes de abrir caja', async () => {
+    const cajaAnterior = await api()
+      .get(`/api/v1/caja/activa/${SID}`)
+      .set(cajero.auth);
+    expect(cajaAnterior.body.exito).toBe(true);
+    const cerrarAnterior = await api()
+      .post('/api/v1/caja/cerrar')
+      .set(cajero.auth)
+      .send({
+        caja_id: cajaAnterior.body.datos.id,
+        monto_final_contado: Number(cajaAnterior.body.datos.saldo_sistema),
+      });
+    expect(cerrarAnterior.body.exito).toBe(true);
+
+    const mesa = await mesaLibre(cajero.auth);
+    const crear = await crearPedidoStaff(cajero.auth, {
+      sucursal_id: SID,
+      mesa_id: mesa,
+      tipo: 'mesa',
+      device_id: `jest-propina-turno-${Date.now()}`,
+      metodo_pago: 'pendiente',
+      items: [itemBody()],
+    });
+    expect(crear.body.exito).toBe(true);
+    const id = pedidoId(crear);
+
+    const abrirNuevo = await api()
+      .post(`/api/v1/caja/abrir?sucursal_id=${SID}`)
+      .set(cajero.auth)
+      .send({ sucursal_id: SID, monto_inicial: 50000 });
+    expect(abrirNuevo.body.exito).toBe(true);
+
+    await marcarItemsCocinaListos(cocina.auth, id, cajero.auth);
+    expect((await setEstado(cajero.auth, id, 'listo')).body.exito).toBe(true);
+    expect((await setEstado(cajero.auth, id, 'pagando')).body.exito).toBe(true);
+    const abonoMixto = await api()
+      .post(`/api/v1/pedidos/${id}/cobrar?sucursal_id=${SID}`)
+      .set(cajero.auth)
+      .send({
+        monto_parcial: 4000,
+        pagos: [
+          { metodo_pago: 'efectivo', monto: 2500 },
+          { metodo_pago: 'tarjeta', monto: 1500 },
+        ],
+        propina: 600,
+      });
+    expect(abonoMixto.body.exito).toBe(true);
+    const detalleAbonoMixto = await detallePedido(cajero.auth, id);
+    expect(Number(detalleAbonoMixto.body.datos.total)).toBe(8000);
+    expect(Number(detalleAbonoMixto.body.datos.monto_pagado)).toBe(4000);
+    expect(detalleAbonoMixto.body.datos.pagos_resumen).toEqual([
+      { metodo_pago: 'efectivo', monto: 2500 },
+      { metodo_pago: 'tarjeta', monto: 1500 },
+    ]);
+    expect(Number(detalleAbonoMixto.body.datos.propina_recibida)).toBe(600);
+    const pagoFinal = await api()
+      .post(`/api/v1/pedidos/${id}/cobrar?sucursal_id=${SID}`)
+      .set(cajero.auth)
+      .send({
+        monto_parcial: 4000,
+        metodo_pago: 'transferencia',
+        propina: 800,
+      });
+    expect(pagoFinal.body.exito).toBe(true);
+    const detallePagoCompleto = await detallePedido(cajero.auth, id);
+    expect(Number(detallePagoCompleto.body.datos.total)).toBe(8000);
+    expect(Number(detallePagoCompleto.body.datos.monto_pagado)).toBe(8000);
+    expect(detallePagoCompleto.body.datos.pagos_resumen).toEqual([
+      { metodo_pago: 'efectivo', monto: 2500 },
+      { metodo_pago: 'tarjeta', monto: 1500 },
+      { metodo_pago: 'transferencia', monto: 4000 },
+    ]);
+    expect(Number(detallePagoCompleto.body.datos.propina_recibida)).toBe(1400);
+
+    const cajaNueva = await api()
+      .get(`/api/v1/caja/activa/${SID}`)
+      .set(cajero.auth);
+    const cierre = await api()
+      .post('/api/v1/caja/cerrar')
+      .set(cajero.auth)
+      .send({
+        caja_id: cajaNueva.body.datos.id,
+        monto_final_contado: Number(cajaNueva.body.datos.saldo_sistema),
+      });
+    expect(cierre.body.exito).toBe(true);
+    expect(Number(cierre.body.datos.propinas_turno)).toBe(1400);
+    expect(Number(cierre.body.datos.diferencia)).toBe(0);
+  });
+
   it('consulta el movimiento de un pedido aunque su caja ya cerró', async () => {
     const mesa = await mesaLibre(cajero.auth);
     const crear = await crearPedidoStaff(cajero.auth, {
@@ -248,16 +417,44 @@ describe('E2E caja', () => {
     const items = movimientos.body.datos.items as Array<
       Record<string, unknown>
     >;
-    for (const ticket of tickets) {
+    for (const [index, ticket] of tickets.entries()) {
       const venta = items.find(
         (movimiento) =>
           movimiento.pedido_id === ticket.id && movimiento.tipo === 'venta',
       );
       expect(venta).toBeTruthy();
       expect(Number(venta?.monto)).toBeCloseTo(ticket.total, 2);
-      expect(venta?.metodo_pago).toBe(
-        ticket === tickets[0] ? 'efectivo' : 'tarjeta',
+      expect(venta?.metodo_pago).toBe(index === 0 ? 'efectivo' : 'tarjeta');
+      const detalle = await detallePedido(cajero.auth, ticket.id);
+      expect(Number(detalle.body.datos.total)).toBeCloseTo(ticket.total, 2);
+      expect(Number(detalle.body.datos.monto_pagado)).toBeCloseTo(
+        ticket.total,
+        2,
       );
+      expect(detalle.body.datos.pagos_resumen).toEqual([
+        {
+          metodo_pago: index === 0 ? 'efectivo' : 'tarjeta',
+          monto: ticket.total,
+        },
+      ]);
+      expect(Number(detalle.body.datos.propina_recibida)).toBe(0);
+    }
+    const cuentaActualizada = await api()
+      .get(`/api/v1/pedidos/mesa/${mesa}?sucursal_id=${SID}`)
+      .set(cajero.auth);
+    expect(cuentaActualizada.body.exito).toBe(true);
+    const historialAbonos = cuentaActualizada.body.datos.pagos_abonos as Array<
+      Record<string, unknown>
+    >;
+    for (const [index, ticket] of tickets.entries()) {
+      const detalle = await detallePedido(cajero.auth, ticket.id);
+      const fila = historialAbonos.find(
+        (abono) =>
+          abono.numero_pedido === detalle.body.datos.numero_pedido &&
+          abono.metodo_pago === (index === 0 ? 'efectivo' : 'tarjeta'),
+      );
+      expect(fila).toBeTruthy();
+      expect(Number(fila?.monto)).toBeCloseTo(ticket.total, 2);
     }
   });
 
@@ -337,6 +534,14 @@ describe('E2E caja', () => {
       segundo.total,
       2,
     );
+    const detalleSegundo = await detallePedido(cajero.auth, segundo.id);
+    expect(Number(detalleSegundo.body.datos.monto_pagado)).toBeCloseTo(
+      segundo.total,
+      2,
+    );
+    expect(detalleSegundo.body.datos.pagos_resumen).toEqual([
+      { metodo_pago: 'tarjeta', monto: segundo.total },
+    ]);
 
     // El primer ticket quedó con 4.000 COP pendientes tras el abono.
     const cierre = await api()
@@ -345,6 +550,14 @@ describe('E2E caja', () => {
       .send({ monto_parcial: primero.total - 4000, metodo_pago: 'efectivo' });
     expect(cierre.body.exito).toBe(true);
     expect(Number(cierre.body.datos.saldo_restante)).toBeCloseTo(0, 2);
+    const detallePrimero = await detallePedido(cajero.auth, primero.id);
+    expect(Number(detallePrimero.body.datos.monto_pagado)).toBeCloseTo(
+      primero.total,
+      2,
+    );
+    expect(detallePrimero.body.datos.pagos_resumen).toEqual([
+      { metodo_pago: 'efectivo', monto: primero.total },
+    ]);
     expect(saldoAntesRechazo).toBeCloseTo(
       primero.total + segundo.total - 4000,
       2,

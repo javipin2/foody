@@ -42,6 +42,16 @@ Ejecuta: `verificar-paso0` + `verificar-rls` + `verificar-salud` + `verificar-p2
 
 ### Ejecución integral de auditoría (2026-11-24)
 
+### COC-NODISP-CUSTOMER-01 (2026-11-25)
+
+La suite E2E Cocina verifica `GET /pedidos/:id/estado` con token de seguimiento tras marcar una línea no disponible: devuelve nombre/cantidad, sin exponer el motivo interno. Evidencia QA previa: `verificar-e2e-jest.ps1` 8/8 suites, 37/37; Nest unitario 50/127, build OK. Revalidación focalizada actual: `cocina.e2e-spec.ts` 7/7 contra `foody_diseno_qa` y Nest QA :3001 con `FOODY_QA_SIN_EFECTOS=1`; cubre nombre/cantidad con token y bloqueo de despacho. Fixture limpiado, :3001 detenido; :3000 PID 10208 y Tunnel intactos.
+
+### Revalidación AR-17 (2026-11-25)
+
+`verificar-e2e-jest.ps1` pasó 8/8 suites y 37/37 pruebas con Nest aislado en `127.0.0.1:3001` y PostgreSQL `foody_diseno_qa`; se usó `FOODY_QA_SIN_EFECTOS=1`. El caso nuevo crea/cobra un pedido de mesa, cierra su turno y consulta el movimiento con admin; confirma pedido, venta y `caja_estado=cerrada`. También valida por servicio el scope de sucursal y el DTO HTTP paginado. Nest unitario: 50 suites/127 pruebas; build OK. El primer intento mostró 7 fallos de fixture porque el horario QA estaba cerrado a medianoche; `limpiar-demo-qa.ps1` ahora invoca `Ensure-HorariosDemoAbiertos`, después de lo cual la suite pasó. Tras la prueba se limpió/restauró el fixture y se detuvo solo el Nest QA. No se tocó `:3000`, Tunnel, OAuth, credenciales ni datos comerciales. El endpoint no está aún activo en el API público: el proceso `:3000` precede al `dist` actual, y el E2E autenticado público queda pendiente de activación coordinada.
+
+### Ejecución integral de auditoría (2026-11-24)
+
 Con `foody_diseno_qa` y Nest aislado en `127.0.0.1:3001`, la batería `scripts/verificar-todos-e2e.ps1` terminó **9/9 scripts**, `scripts/verificar-e2e-jest.ps1` **8/8 suites y 32/32 pruebas**, `npm test -- --runInBand` **42/42 suites y 104/104 pruebas**, y `npm run build` finalizó correctamente. Cobertura añadida: el API rechaza `listo` con líneas pendientes; cambiar observaciones tras `listo` reabre Cocina; reducir el total por debajo de un abono se rechaza y conserva el pedido. Los casos de caja verifican la reversa de abonos mixtos mientras el pedido sigue `pagando`; el estado terminal `pagado` no se cancela por Kanban. Dos unitarias prueban además el bloqueo de Wompi y Supabase Auth.
 
 Para estas E2E, el proceso QA usó `FOODY_QA_SIN_EFECTOS=1`: evita cargar credenciales/clientes Firebase, Supabase Auth/Realtime/Storage; deshabilita solicitudes Wompi y geocodificación Photon; y pausa cron, impresión, expiración de ofertas y despacho automático. Despacho automático se cubre aparte con pruebas unitarias; los flujos E2E prueban asignación explícita. La batería manual de impresión inició el agente de archivo solo durante ese script y se detuvo después. Todo el tráfico de pruebas fue a QA. API productiva `:3000`, Cliente, Equipo y Tunnel respondieron HTTP 200 después; no se reinició ni publicó el backend del Tunnel.

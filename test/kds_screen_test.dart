@@ -17,6 +17,7 @@ class _CocinasRepositoryFake extends CocinasRepository {
   bool fallarTickets;
   final String? itemQueFalla;
   int fallosPreparacion = 0;
+  int reimpresiones = 0;
   int lecturasTickets = 0;
   final List<String> cambiosEstado = [];
 
@@ -68,6 +69,14 @@ class _CocinasRepositoryFake extends CocinasRepository {
     required String motivo,
   }) async {
     fallosPreparacion++;
+  }
+
+  @override
+  Future<void> reimprimirPedido({
+    required String pedidoId,
+    String? sucursalId,
+  }) async {
+    reimpresiones++;
   }
 }
 
@@ -231,6 +240,66 @@ void main() {
 
     expect(find.text('P-NULL'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Marcar listo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('KDS permite terminar una línea ya cobrada sin ocultarla antes',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    AppBackend.supabaseReady = false;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(() => AppBackend.supabaseReady = false);
+    final repository = _CocinasRepositoryFake(
+      listaTickets: [
+        {
+          'pedido_id': 'pedido-pagado-cocina-pendiente',
+          'numero_pedido': 'P-COBRADO',
+          'tipo': 'mesa',
+          'estado': 'pagado',
+          'cocina_desde': DateTime.now().toIso8601String(),
+          'items': [
+            {
+              'item_id': 'item-cobrado-pendiente',
+              'cantidad': 1,
+              'producto': 'Plato ya cobrado',
+              'estado_cocina': 'preparando',
+              'incluidos': [],
+            },
+          ],
+        },
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: KdsScreen(
+            sucursalId: 'sucursal-1',
+            repository: repository,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    for (var i = 0; i < 60 && find.text('P-COBRADO').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('P-COBRADO'), findsOneWidget);
+    expect(find.text('Cobrado'), findsOneWidget);
+    final listo = find.widgetWithText(FilledButton, 'Marcar listo');
+    expect(listo, findsOneWidget);
+    await tester.tap(listo);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(repository.cambiosEstado, ['item-cobrado-pendiente']);
+    expect(find.text('P-COBRADO'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -517,6 +586,171 @@ void main() {
       find.byKey(const ValueKey<String>('kds-return-to-kitchen')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'Listos muestra antigüedad del pedido sin llamarla demora de cocina',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    AppBackend.supabaseReady = false;
+    addTearDown(() => AppBackend.supabaseReady = false);
+    final repository = _CocinasRepositoryFake(
+      listaTickets: [
+        {
+          'pedido_id': 'pedido-listo-antiguo',
+          'numero_pedido': 'P-LISTO-ANTIGUO',
+          'tipo': 'para_llevar',
+          'estado': 'listo',
+          'created_at': DateTime.now()
+              .subtract(const Duration(hours: 27))
+              .toIso8601String(),
+          'cocina_desde': DateTime.now()
+              .subtract(const Duration(hours: 26))
+              .toIso8601String(),
+          'items': [
+            {
+              'item_id': 'item-listo-antiguo',
+              'cantidad': 1,
+              'producto': 'Producto listo',
+              'estado_cocina': 'listo',
+              'incluidos': [],
+            },
+          ],
+        },
+        {
+          'pedido_id': 'pedido-listo-muy-antiguo',
+          'numero_pedido': 'P-LISTO-MUY-ANTIGUO',
+          'tipo': 'para_llevar',
+          'estado': 'listo',
+          'created_at': DateTime.now()
+              .subtract(const Duration(days: 113, hours: 9))
+              .toIso8601String(),
+          'cocina_desde': DateTime.now()
+              .subtract(const Duration(days: 113, hours: 8))
+              .toIso8601String(),
+          'items': [
+            {
+              'item_id': 'item-listo-muy-antiguo',
+              'cantidad': 1,
+              'producto': 'Producto listo antiguo',
+              'estado_cocina': 'listo',
+              'incluidos': [],
+            },
+          ],
+        },
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: KdsScreen(sucursalId: 'sucursal-1', repository: repository),
+        ),
+      ),
+    );
+    for (var i = 0;
+        i < 60 && find.text('P-LISTO-ANTIGUO').evaluate().isEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Listos').first);
+    await tester.pump();
+
+    expect(find.text('Pedido 1d 3h'), findsOneWidget);
+    expect(
+        find.byKey(
+            const ValueKey<String>('kds-ready-order-age-P-LISTO-ANTIGUO')),
+        findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(
+            const ValueKey<String>('kds-ready-order-age-P-LISTO-ANTIGUO')),
+        matching: find.byIcon(Icons.schedule),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Icon>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>(
+                  'kds-ready-order-age-P-LISTO-ANTIGUO')),
+              matching: find.byIcon(Icons.schedule),
+            ),
+          )
+          .color,
+      const Color(0xFFD97706),
+    );
+    expect(find.text('Pedido 113d 9h'), findsOneWidget);
+    expect(
+      tester
+          .widget<Icon>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>(
+                  'kds-ready-order-age-P-LISTO-MUY-ANTIGUO')),
+              matching: find.byIcon(Icons.schedule),
+            ),
+          )
+          .color,
+      const Color(0xFFDC2626),
+    );
+    expect(find.text('P-LISTO-ANTIGUO'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Reimprimir exige confirmación y permite cancelar sin efecto',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    AppBackend.supabaseReady = false;
+    addTearDown(() => AppBackend.supabaseReady = false);
+    final repository = _CocinasRepositoryFake(
+      listaTickets: [
+        {
+          'pedido_id': 'pedido-reimpresion',
+          'numero_pedido': 'P-REIMP',
+          'tipo': 'mesa',
+          'estado': 'en_cocina',
+          'cocina_desde': DateTime.now().toIso8601String(),
+          'items': [
+            {
+              'item_id': 'item-reimpresion',
+              'cantidad': 1,
+              'producto': 'Producto de prueba',
+              'estado_cocina': 'pendiente',
+              'incluidos': [],
+            },
+          ],
+        },
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: KdsScreen(sucursalId: 'sucursal-1', repository: repository),
+        ),
+      ),
+    );
+    for (var i = 0; i < 60 && find.text('P-REIMP').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await tester.tap(find.text('Reimprimir').first);
+    await tester.pump();
+    expect(find.text('¿Reimprimir esta comanda?'), findsOneWidget);
+    expect(repository.reimpresiones, 0);
+    await tester.tap(find.text('Cancelar'));
+    await tester.pump();
+    expect(repository.reimpresiones, 0);
+
+    await tester.tap(find.text('Reimprimir').first);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Reimprimir'));
+    await tester.pump();
+    expect(repository.reimpresiones, 1);
     expect(tester.takeException(), isNull);
   });
 }

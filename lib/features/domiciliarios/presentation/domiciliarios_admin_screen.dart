@@ -53,10 +53,12 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
   bool _datosInicialesCargados = false;
   bool _cargandoComisiones = false;
   bool _cargandoLiquidacion = false;
+  bool _cargandoResumenDomicilios = false;
   String? _error;
   String? _errorActualizacion;
   String? _errorComisiones;
   String? _errorLiquidacion;
+  String? _errorResumenDomicilios;
   RealtimeChannel? _canalRt;
   PollRealtimeRespaldo? _pollRespaldo;
 
@@ -121,37 +123,58 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
   Future<void> _cargarLiquidacion() async {
     final sid = widget.sucursalId;
     if (sid == null) return;
+    await Future.wait([
+      _cargarResumenLiquidacion(sid),
+      _cargarResumenDomicilios(sid),
+    ]);
+  }
+
+  Future<void> _cargarResumenLiquidacion(String sucursalId) async {
     setState(() {
       _cargandoLiquidacion = true;
       _errorLiquidacion = null;
     });
     try {
-      final respuestas = await Future.wait([
-        _repo.resumenLiquidacion(sid),
-        _repo.resumenDomicilios(sid),
-      ]);
-      final data = respuestas[0];
-      final dom = respuestas[1];
+      final data = await _repo.resumenLiquidacion(sucursalId);
       if (!mounted) return;
       setState(() {
         _permiteFiado = data['permite_fiado_domiciliario'] == true;
         _liquidaciones = (data['domiciliarios'] as List<dynamic>? ?? [])
             .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
             .toList();
-        _domicilioEnCaja = dom['domicilio_ingresa_a_caja'] == true;
-        _domicilios = (dom['domiciliarios'] as List<dynamic>? ?? [])
-            .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
-            .toList();
         _cargandoLiquidacion = false;
       });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _cargandoLiquidacion = false;
-          _errorLiquidacion =
-              mensajeErrorHttp(e, contexto: 'reglas de domicilio');
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _cargandoLiquidacion = false;
+        _errorLiquidacion = mensajeErrorHttp(e, contexto: 'fiados de planta');
+      });
+    }
+  }
+
+  Future<void> _cargarResumenDomicilios(String sucursalId) async {
+    setState(() {
+      _cargandoResumenDomicilios = true;
+      _errorResumenDomicilios = null;
+    });
+    try {
+      final data = await _repo.resumenDomicilios(sucursalId);
+      if (!mounted) return;
+      setState(() {
+        _domicilioEnCaja = data['domicilio_ingresa_a_caja'] == true;
+        _domicilios = (data['domiciliarios'] as List<dynamic>? ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
+            .toList();
+        _cargandoResumenDomicilios = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cargandoResumenDomicilios = false;
+        _errorResumenDomicilios =
+            mensajeErrorHttp(e, contexto: 'resumen de entregas');
+      });
     }
   }
 
@@ -494,15 +517,19 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
       ),
       _Kpi(
         'Fiado por cobrar',
-        _formato.format(_totalPendienteLiquidar),
+        _cargandoLiquidacion || _errorLiquidacion != null
+            ? '—'
+            : _formato.format(_totalPendienteLiquidar),
         _totalPendienteLiquidar > 0
             ? AnaliticaTokens.alertas
             : _scheme.onSurfaceVariant,
         Icons.account_balance_wallet_outlined,
       ),
       _Kpi(
-        'Pago a independientes',
-        _formato.format(_totalPayoutIndep),
+        'Ganancias estimadas',
+        _cargandoComisiones || _errorComisiones != null
+            ? '—'
+            : _formato.format(_totalPayoutIndep),
         _scheme.onSurface,
         Icons.payments_outlined,
       ),
@@ -747,7 +774,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         children: [
           _tituloSeccion(
             'Reglas de cobro',
-            trailing: _cargandoLiquidacion
+            trailing: _cargandoLiquidacion || _cargandoResumenDomicilios
                 ? const SizedBox(
                     width: 16,
                     height: 16,
@@ -776,8 +803,11 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               ),
             )
           else if (_errorLiquidacion != null)
-            _estadoInlineError(_errorLiquidacion!, _cargarLiquidacion)
-          else ...[
+            _estadoInlineError(
+              _errorLiquidacion!,
+              () => _cargarResumenLiquidacion(widget.sucursalId!),
+            )
+          else
             _toggleFila(
               titulo: 'Permitir fiado',
               detalle:
@@ -785,7 +815,24 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               value: _permiteFiado,
               onChanged: _toggleFiado,
             ),
-            Divider(height: 20, color: _scheme.outlineVariant),
+          Divider(height: 20, color: _scheme.outlineVariant),
+          if (_cargandoResumenDomicilios)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (_errorResumenDomicilios != null)
+            _estadoInlineError(
+              _errorResumenDomicilios!,
+              () => _cargarResumenDomicilios(widget.sucursalId!),
+            )
+          else
             _toggleFila(
               titulo: 'Domicilio entra a caja',
               detalle: _domicilioEnCaja
@@ -794,7 +841,6 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
               value: _domicilioEnCaja,
               onChanged: _toggleDomicilioCaja,
             ),
-          ],
         ],
       ),
     );
@@ -871,7 +917,9 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
           _tituloSeccion(
             'Fiados de planta por cobrar',
             trailing: Text(
-              _formato.format(_totalPendienteLiquidar),
+              _cargandoLiquidacion || _errorLiquidacion != null
+                  ? '—'
+                  : _formato.format(_totalPendienteLiquidar),
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -882,7 +930,23 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          if (!_permiteFiado)
+          if (_cargandoLiquidacion)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (_errorLiquidacion != null)
+            _estadoInlineError(
+              _errorLiquidacion!,
+              () => _cargarResumenLiquidacion(widget.sucursalId!),
+            )
+          else if (!_permiteFiado)
             Text(
               'Fiado apagado. Actívalo arriba si quieres que lleven pedidos a crédito.',
               style: TextStyle(
@@ -960,7 +1024,23 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
         children: [
           _tituloSeccion('Entregas por repartidor (planta)'),
           const SizedBox(height: 8),
-          if (_domicilios.isEmpty)
+          if (_cargandoResumenDomicilios)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (_errorResumenDomicilios != null)
+            _estadoInlineError(
+              _errorResumenDomicilios!,
+              () => _cargarResumenDomicilios(widget.sucursalId!),
+            )
+          else if (_domicilios.isEmpty)
             Text(
               'Aún no hay domicilios entregados en el resumen.',
               style: TextStyle(
@@ -1086,7 +1166,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'Saldos registrados al aceptar ofertas; no confirman entregas ni pagos.',
+              'Estimaciones al aceptar ofertas; pueden incluir pedidos cancelados. Aún no confirman entrega ni pago.',
               style: TextStyle(
                 fontSize: 12,
                 color: _scheme.onSurfaceVariant,
@@ -1184,7 +1264,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                             ),
                           ),
                           Text(
-                            'Por pagar',
+                            'Estimado',
                             style: TextStyle(
                               fontSize: 10.5,
                               color: _scheme.onSurfaceVariant,

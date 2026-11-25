@@ -5,6 +5,7 @@ import 'package:reserva_canchas/features/analitica/presentation/widgets/analitic
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/utilidades/parsear_numero.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 import 'package:reserva_canchas/features/admin/data/dashboard_repository.dart';
 import 'package:reserva_canchas/features/admin/data/pedidos_repository.dart';
 import 'package:reserva_canchas/features/admin/domain/pedido_admin_model.dart';
@@ -507,7 +508,8 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
           _acordeon(
             id: 'alertas',
             titulo: 'Alertas',
-            subtitulo: 'Las más graves primero (crítico → bajo)',
+            subtitulo: 'Se muestran hasta 8, ordenadas por gravedad; '
+                'el KPI indica el total pendiente',
             icono: Icons.notifications_active_outlined,
             count: _conteoDisponible('alertas', _alertas.length),
             colorCount: AnaliticaTokens.alertas,
@@ -534,6 +536,19 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
     final hora = _actualizadoEn != null
         ? DateFormat('HH:mm').format(_actualizadoEn!)
         : null;
+    final parcial = _fuentesFallidas.isNotEmpty;
+    final estado = _actualizando
+        ? 'Actualizando ahora'
+        : parcial
+            ? 'Actualización parcial'
+            : hora == null
+                ? 'Preparando resumen'
+                : 'Actualizado $hora';
+    final colorEstado = parcial
+        ? _scheme.error
+        : _actualizando
+            ? _scheme.primary
+            : _scheme.onSurfaceVariant;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -543,21 +558,69 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
             children: [
               Text(
                 'Centro de operación',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: _scheme.onSurface,
-                ),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.4,
+                      color: _scheme.onSurface,
+                    ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                hora == null
-                    ? 'Solo lo que requiere atención ahora'
-                    : 'Actualizado $hora · refresco cada ${_pollSeg}s (no en vivo)',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _scheme.onSurfaceVariant,
+              const SizedBox(height: SaaSTokens.s8),
+              AnimatedSwitcher(
+                duration: _duracionTransicion,
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: Semantics(
+                  key: ValueKey<String>(estado),
+                  liveRegion: true,
+                  label:
+                      '$estado. Actualización automática cada $_pollSeg segundos.',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: SaaSTokens.s12,
+                      vertical: SaaSTokens.s8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(SaaSTokens.radioPill),
+                      border: Border.all(color: _scheme.outlineVariant),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_actualizando)
+                          SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colorEstado,
+                            ),
+                          )
+                        else
+                          Icon(
+                            parcial
+                                ? Icons.error_outline_rounded
+                                : Icons.schedule_rounded,
+                            size: 14,
+                            color: colorEstado,
+                          ),
+                        const SizedBox(width: SaaSTokens.s8),
+                        Flexible(
+                          child: Text(
+                            '$estado · cada ${_pollSeg}s',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(
+                                  color: colorEstado,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -593,7 +656,7 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
         widget.onIrReportes ?? widget.onIrCaja,
       ),
       _Kpi(
-        'Activos',
+        'Abiertos',
         resumenDisponible ? '${d['pedidos_activos'] ?? 0}' : '—',
         AnaliticaTokens.pedidos,
         Icons.receipt_long_outlined,
@@ -640,12 +703,12 @@ class _DashboardResumenWidgetState extends State<DashboardResumenWidget> {
                   final indice = entry.key;
                   final k = entry.value;
                   final anchoTarjeta = (c.maxWidth - 8 * (cols - 1)) / cols;
-                  final alertaDestacada = indice == items.length - 1 && cols < 5;
+                  final alertaDestacada =
+                      indice == items.length - 1 && cols < 5;
                   return SizedBox(
                     key: ValueKey<String>('dashboard-kpi-${k.titulo}'),
-                    width: alertaDestacada
-                        ? anchoTarjeta * 2 + 8
-                        : anchoTarjeta,
+                    width:
+                        alertaDestacada ? anchoTarjeta * 2 + 8 : anchoTarjeta,
                     height: alertaDestacada ? 76 : 104,
                     child: _kpiCard(k, horizontal: alertaDestacada),
                   );

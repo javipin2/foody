@@ -5,11 +5,14 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var GeografiaService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GeografiaService = void 0;
 const common_1 = require("@nestjs/common");
 const qa_safety_1 = require("../../core/config/qa-safety");
 let GeografiaService = class GeografiaService {
+    static { GeografiaService_1 = this; }
+    static timeoutMs = 5000;
     cache = new Map();
     maxCache = 300;
     async buscarDirecciones(consulta, opciones = {}) {
@@ -35,13 +38,30 @@ let GeografiaService = class GeografiaService {
             params.set('lon', String(opciones.lng));
         }
         const url = `https://photon.komoot.io/api/?${params.toString()}`;
-        const respuesta = await fetch(url, {
-            headers: { Accept: 'application/json' },
-        });
-        if (!respuesta.ok) {
-            throw new common_1.BadRequestException('No se pudo consultar el servicio de direcciones');
+        const signal = AbortSignal.timeout(GeografiaService_1.timeoutMs);
+        let respuesta;
+        let datos;
+        try {
+            respuesta = await fetch(url, {
+                headers: { Accept: 'application/json' },
+                signal,
+            });
+            if (!respuesta.ok) {
+                throw new common_1.BadGatewayException('No se pudo consultar el servicio de direcciones');
+            }
+            datos = (await respuesta.json());
         }
-        const datos = (await respuesta.json());
+        catch (error) {
+            if (signal.aborted ||
+                (error instanceof Error && error.name === 'TimeoutError')) {
+                throw new common_1.GatewayTimeoutException('El servicio de direcciones tardó demasiado. Intenta de nuevo.');
+            }
+            if (error instanceof common_1.BadGatewayException ||
+                error instanceof common_1.GatewayTimeoutException) {
+                throw error;
+            }
+            throw new common_1.BadGatewayException('No fue posible conectar con el servicio de direcciones');
+        }
         const resultados = (datos.features ?? [])
             .map((f) => {
             const coords = f.geometry?.coordinates;
@@ -84,7 +104,7 @@ let GeografiaService = class GeografiaService {
     }
 };
 exports.GeografiaService = GeografiaService;
-exports.GeografiaService = GeografiaService = __decorate([
+exports.GeografiaService = GeografiaService = GeografiaService_1 = __decorate([
     (0, common_1.Injectable)()
 ], GeografiaService);
 //# sourceMappingURL=geografia.service.js.map

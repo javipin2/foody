@@ -43,11 +43,11 @@ Reconfirmado en código 2026-08-06 (≡ RBAC-\* abiertos). Spoof sede ajena: **b
 
 | ID | Estado | Sev | Ataque | Evidencia |
 |----|--------|-----|--------|-----------|
-| **SEC-BAC-01** | 🟣 | **Crítica** | IDOR `POST /caja/cerrar` con `caja_id` de otro restaurante | `caja.controller.ts:55-62` + `caja.service.ts:111-113` (`WHERE id=$1` sin assert sucursal JWT) ≡ **RBAC-TENANT-01** |
-| **SEC-BAC-02** | 🟣 | Alta | Mesero cobra (`OR ver_pedidos/crear_pedido`) | `pedidos.controller.ts:114`, `:236` ≡ **RBAC-MESERO-01/02** |
+| **SEC-BAC-01** | ✅ | — | `POST /caja/cerrar` valida la sucursal real de la caja antes de escrituras; QA cross-tenant: admin de A intenta caja B → 403 y caja B permanece abierta | `CajaService.cerrar()` + clon QA 2026-11-24; ver `AUDITORIA_RBAC.md` y `AVANCE_PROYECTO.md` |
+| **SEC-BAC-02** | ✅ | — | Ambas rutas de cobro exigen `cobrar_pedido`; mesero sin ese permiso recibe 403 | `pedidos.controller.ts` + guard specs; ver `AUDITORIA_RBAC.md` |
 | **SEC-BAC-03** | ✅ | Alta | Anonimizar exige posesión FCM/sesión (F3) | `dispositivos.controller.ts` · `verificar-f3-confianza` |
 | **SEC-BAC-04** | ✅ | Alta | `prueba-web` `@Permisos('ver_dashboard')` + tokens propios | `notificaciones.controller.ts` |
-| **SEC-BAC-05** | 🟣 | Media | `procesar-cola` con `ver_dashboard` — cola global | ≡ **RBAC-GUARD-03** |
+| **SEC-BAC-05** | ✅ | — | `procesar-cola` solo admite JWT activo con `SuperAdminGuard`; ya no es una ruta de staff con `ver_dashboard` | `notificaciones.controller.ts` + guard metadata spec; ver `AUDITORIA_RBAC.md` |
 | **SEC-BAC-06** | 🟣 | Media | **NUEVO** `/finanzas/*` mutaciones solo `@Permisos('ver_finanzas')` | `finanzas.controller.ts` · migr. 080 |
 | **SEC-BAC-07** | ✅ | — | Scope `sucursal_id` otro restaurante → 403 en reportes/auditoría/caja config | `verificar-idor-scope.ps1` |
 | **SEC-BAC-08** | ✅ | — | `/super/*` + SuperAdminGuard | — |
@@ -111,16 +111,16 @@ Módulo nuevo `empleados` (080): `REVOKE` + ENABLE + FORCE en la misma migració
 
 ## F) Backlog (SEC-FIX)
 
-| ID | Prio | Acción | Cierra |
-|----|------|--------|--------|
-| **SEC-FIX-01** | P0 | Assert `caja.sucursal_id` en cerrar | SEC-BAC-01 |
-| **SEC-FIX-02** | P0 | Cobrar: exigir `ver_caja` / `cobrar_pedido` | SEC-BAC-02 |
+| ID | Prio/estado | Acción | Cierra |
+|----|------------|--------|--------|
+| **SEC-FIX-01** | P0 · ✅ | `CajaService.cerrar` valida scope por la sucursal leída de la caja; prueba cross-tenant QA 403 y sin mutación (2026-11-24) | SEC-BAC-01 |
+| **SEC-FIX-02** | P0 · ✅ | Las dos rutas de cobro exigen `cobrar_pedido`; guard specs bloquean mesero y permiten cajero | SEC-BAC-02 |
 | **SEC-FIX-03** | P0 | Anonimizar: posesión device / HMAC | SEC-BAC-03 |
 | **SEC-FIX-04** | P1 | `prueba-web` → super_admin + no-prod | SEC-BAC-04 |
 | **SEC-FIX-05** | P1 | JWT: fallar boot si secret default/débil | SEC-SECRET-01/02 |
 | **SEC-FIX-06** | P1 | Rate limit geografía/menú; considerar activar en staging | SEC-RLIMIT-03 |
 | **SEC-FIX-07** | P2 | Finanzas: permisos write dedicados | SEC-BAC-06 |
-| **SEC-FIX-08** | P2 | Extender `verificar-idor-scope` con cerrar-caja cross-tenant | SEC-BAC-01 |
+| **SEC-FIX-08** | P2 · 🟡 | La prueba cross-tenant ya se ejecutó en clon QA; falta incorporarla a `verificar-idor-scope` como caso reproducible | SEC-BAC-01 |
 
 ---
 

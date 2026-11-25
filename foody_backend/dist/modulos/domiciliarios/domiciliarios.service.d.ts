@@ -65,6 +65,10 @@ export declare class DomiciliariosService {
         total: string;
         monto_pagado: string;
         metodo_pago: string | null;
+        pagos_resumen: Array<{
+            metodo_pago: string;
+            monto: string | number;
+        }>;
         created_at: string;
         estado_asignacion: string;
         asignado_at: string;

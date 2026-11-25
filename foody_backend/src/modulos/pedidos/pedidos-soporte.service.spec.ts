@@ -35,3 +35,33 @@ describe('PedidosSoporteService.generarNumeroPedido', () => {
     expect(consultas[1].sql).not.toContain('EXTRACT(YEAR');
   });
 });
+
+describe('PedidosSoporteService.notificarDesasignacionesDomicilio', () => {
+  it('avisa a domiciliarios de planta e independientes', () => {
+    const realtime = {
+      pedidoDesasignado: jest.fn(),
+      pedidoDesasignadoIndep: jest.fn(),
+    };
+    const service = new PedidosSoporteService(
+      {} as never,
+      realtime as never,
+      {} as never,
+      {} as never,
+    );
+
+    service.notificarDesasignacionesDomicilio(
+      ['usuario-planta'],
+      'pedido-cancelado',
+      ['domiciliario-indep'],
+    );
+
+    expect(realtime.pedidoDesasignado).toHaveBeenCalledWith('usuario-planta', {
+      pedido_id: 'pedido-cancelado',
+      accion: 'cancelado',
+    });
+    expect(realtime.pedidoDesasignadoIndep).toHaveBeenCalledWith(
+      'domiciliario-indep',
+      { pedido_id: 'pedido-cancelado', accion: 'cancelado' },
+    );
+  });
+});

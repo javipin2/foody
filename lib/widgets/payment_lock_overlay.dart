@@ -81,9 +81,8 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
       }
 
       final inicio = planInicioTs.toDate();
-      final ultimoPago = (ultimoPagoTs is Timestamp)
-          ? ultimoPagoTs.toDate()
-          : null;
+      final ultimoPago =
+          (ultimoPagoTs is Timestamp) ? ultimoPagoTs.toDate() : null;
       final monto = (planValor is num) ? planValor.toDouble() : null;
       if (monto == null) {
         setState(() {
@@ -220,8 +219,7 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
     if (raw.isEmpty) return;
 
     // Quitar espacios, guiones y otros caracteres no numéricos salvo '+'
-    final numeroLimpio =
-        raw.replaceAll(RegExp(r'[^0-9\+]'), '');
+    final numeroLimpio = raw.replaceAll(RegExp(r'[^0-9\+]'), '');
     if (numeroLimpio.isEmpty) return;
 
     final uri = Uri.parse('https://wa.me/$numeroLimpio');
@@ -249,7 +247,7 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
         widget.child,
         Positioned.fill(
           child: Container(
-            color: Colors.black.withOpacity(0.35),
+            color: Colors.black.withValues(alpha: 0.35),
           ),
         ),
         Center(
@@ -261,7 +259,8 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   color: _forceBlock
-                      ? const Color(0xFFFFF1F2) // fondo rosado cuando está bloqueado
+                      ? const Color(
+                          0xFFFFF1F2) // fondo rosado cuando está bloqueado
                       : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
@@ -272,7 +271,7 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.25),
+                      color: Colors.black.withValues(alpha: 0.25),
                       blurRadius: 18,
                       offset: const Offset(0, 8),
                     ),
@@ -288,8 +287,9 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: _forceBlock
-                                ? Colors.red.withOpacity(0.08)
-                                : const Color(0xFF2E7D60).withOpacity(0.08),
+                                ? Colors.red.withValues(alpha: 0.08)
+                                : const Color(0xFF2E7D60)
+                                    .withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(
@@ -511,7 +511,8 @@ class _PaymentLockOverlayState extends State<PaymentLockOverlay> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          icon: const Icon(Icons.phone_in_talk_rounded, size: 20),
+                          icon:
+                              const Icon(Icons.phone_in_talk_rounded, size: 20),
                           label: Text(
                             _whatsappCobro,
                             style: const TextStyle(
@@ -565,4 +566,3 @@ class PagoEstadoInfo {
 
   PagoEstadoInfo(this.estado, this.diasDiferencia, this.proximoVencimiento);
 }
-

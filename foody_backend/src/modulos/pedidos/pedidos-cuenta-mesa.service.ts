@@ -93,13 +93,16 @@ export class PedidosCuentaMesaService {
       monto: string;
       propina: string;
       metodo_pago: string;
+      numero_pedido: string | null;
       created_at: Date;
       referencia: string | null;
       responsable_nombre: string | null;
     }>(
       `SELECT pp.id, pp.monto, pp.propina, pp.metodo_pago, pp.created_at, pp.referencia,
+              p.numero_pedido,
               u.nombre AS responsable_nombre
        FROM pagos_pedido pp
+       LEFT JOIN pedidos p ON p.id = pp.pedido_id AND p.sucursal_id = pp.sucursal_id
        LEFT JOIN usuarios u ON u.id = pp.usuario_id
        WHERE pp.mesa_id = ANY($1::uuid[]) AND pp.sucursal_id = $2
        ORDER BY pp.created_at DESC
@@ -130,6 +133,7 @@ export class PedidosCuentaMesaService {
         monto: Number(p.monto),
         propina: Number(p.propina),
         metodo_pago: p.metodo_pago,
+        numero_pedido: p.numero_pedido,
         created_at: p.created_at,
         referencia: p.referencia,
         responsable_nombre: p.responsable_nombre,

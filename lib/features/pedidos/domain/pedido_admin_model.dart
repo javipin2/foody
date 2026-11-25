@@ -19,6 +19,8 @@ class PedidoAdminModel {
     required this.total,
     this.montoPagado = 0,
     this.metodoPago,
+    this.pagosResumen = const [],
+    this.propinaRecibida = 0,
     required this.creadoEn,
     required this.estadoDesde,
     this.itemsResumen = const [],
@@ -34,6 +36,7 @@ class PedidoAdminModel {
   final String? mesaId;
   final String? meseraId;
   final String? meseraNombre;
+
   /// Mesera ya asignada a la mesa (turno), para preselección al confirmar QR.
   final String? meseraMesaId;
   final String? direccionEntrega;
@@ -41,6 +44,8 @@ class PedidoAdminModel {
   final num total;
   final num montoPagado;
   final String? metodoPago;
+  final List<PagoPedidoResumen> pagosResumen;
+  final num propinaRecibida;
   final DateTime creadoEn;
   final DateTime estadoDesde;
   final List<PedidoItemResumen> itemsResumen;
@@ -48,14 +53,22 @@ class PedidoAdminModel {
   num get saldoPendiente =>
       (total - montoPagado).clamp(0, double.infinity).toDouble();
 
-  bool get requiereCobroCaja =>
-      tipo == 'para_llevar' &&
-      saldoPendiente > 0.01 &&
-      !['cancelado', 'rechazado', 'entregado', 'pagado'].contains(estado);
+  bool get requiereCobroCaja {
+    if (saldoPendiente <= 0.01 ||
+        const {'cancelado', 'rechazado', 'pagado'}.contains(estado)) {
+      return false;
+    }
+    return (tipo == 'para_llevar' && estado != 'entregado') ||
+        (tipo == 'domicilio' && estado == 'entregado');
+  }
 
-  bool get esTerminal =>
-      const {'pagado', 'entregado', 'cancelado', 'rechazado'}
-          .contains(estado);
+  bool get esTerminal {
+    if (estado == 'entregado' && tipo == 'domicilio' && saldoPendiente > 0.01) {
+      return false;
+    }
+    return const {'pagado', 'entregado', 'cancelado', 'rechazado'}
+        .contains(estado);
+  }
 
   factory PedidoAdminModel.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items_resumen'] as List<dynamic>? ?? [];
@@ -76,6 +89,12 @@ class PedidoAdminModel {
       total: parsearNumero(json['total']),
       montoPagado: parsearNumero(json['monto_pagado'] ?? 0),
       metodoPago: json['metodo_pago'] as String?,
+      pagosResumen: (json['pagos_resumen'] as List<dynamic>? ?? [])
+          .map((e) => PagoPedidoResumen.fromJson(
+                Map<String, dynamic>.from(e as Map),
+              ))
+          .toList(),
+      propinaRecibida: parsearNumero(json['propina_recibida'] ?? 0),
       creadoEn: DateTime.parse(json['created_at'].toString()),
       estadoDesde: DateTime.parse(
         (json['estado_desde'] ?? json['created_at']).toString(),
@@ -113,8 +132,7 @@ class PedidoAdminModel {
     if (meseraNombre?.trim().isNotEmpty == true) {
       partes.add('Mesera: ${meseraNombre!.trim()}');
     }
-    if (clienteNombre?.trim().isNotEmpty == true &&
-        tipo != 'mesa') {
+    if (clienteNombre?.trim().isNotEmpty == true && tipo != 'mesa') {
       partes.add('Cliente: ${clienteNombre!.trim()}');
     }
     if (domiciliarioNombre?.trim().isNotEmpty == true) {
@@ -124,6 +142,7 @@ class PedidoAdminModel {
   }
 
   String? get accionRapida {
+    if (requiereCobroCaja && estado == 'entregado') return 'cobrar';
     switch (estado) {
       case 'pendiente_aprobacion':
         return 'aprobar';
@@ -140,6 +159,8 @@ class PedidoAdminModel {
         return tipo == 'domicilio' ? 'en_camino' : null;
       case 'en_camino':
         return tipo == 'domicilio' ? 'entregado' : null;
+      case 'entregado':
+        return null;
       default:
         return null;
     }
@@ -163,10 +184,29 @@ class PedidoAdminModel {
         return 'A cobrar';
       case 'en_camino':
         return 'En camino';
+      case 'cobrar':
+        return 'Registrar pago';
       case 'entregado':
         return 'Entregado';
       default:
         return 'Avanzar';
     }
   }
+}
+
+/// Suma cobrada por cada medio de pago.
+class PagoPedidoResumen {
+  const PagoPedidoResumen({
+    required this.metodoPago,
+    required this.monto,
+  });
+
+  final String metodoPago;
+  final num monto;
+
+  factory PagoPedidoResumen.fromJson(Map<String, dynamic> json) =>
+      PagoPedidoResumen(
+        metodoPago: json['metodo_pago'] as String,
+        monto: parsearNumero(json['monto']),
+      );
 }

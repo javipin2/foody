@@ -76,6 +76,7 @@ export declare class PedidosService {
             monto: number;
             propina: number;
             metodo_pago: string;
+            numero_pedido: string | null;
             created_at: Date;
             referencia: string | null;
             responsable_nombre: string | null;
@@ -458,6 +459,10 @@ export declare class PedidosService {
         direccion_entrega: string | null;
         tiempo_estimado_minutos: number | null;
         created_at: Date;
+        items_no_disponibles: {
+            nombre: string;
+            cantidad: number;
+        }[];
         historial: {
             estado: string;
             fecha: Date;

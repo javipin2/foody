@@ -85,13 +85,26 @@ class AnaliticaChartCard extends StatelessWidget {
   }
 
   Widget _empty(BuildContext context) {
+    final inkSoft = AnaliticaTokens.inkSoftOf(context);
     return Center(
-      child: Text(
-        mensajeVacio,
-        style: TextStyle(
-          color: AnaliticaTokens.inkSoftOf(context),
-          fontSize: 12.5,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icono ?? Icons.query_stats_rounded,
+            size: 20,
+            color: inkSoft,
+          ),
+          const SizedBox(height: 5),
+          Text(
+            mensajeVacio,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: inkSoft,
+              fontSize: 12.5,
+            ),
+          ),
+        ],
       ),
     );
   }

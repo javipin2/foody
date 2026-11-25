@@ -4,6 +4,7 @@ import 'package:reserva_canchas/core/modelos/respuesta_api.dart';
 import 'package:reserva_canchas/core/red/cliente_dio.dart';
 import 'package:reserva_canchas/features/pedidos/domain/linea_carrito.dart';
 import 'package:reserva_canchas/features/pedidos/data/sesion_cliente_service.dart';
+import 'package:reserva_canchas/services/mesa_sesion_service.dart';
 
 class PedidosClienteRepository {
   PedidosClienteRepository({Dio? dio}) : _dio = dio ?? ClienteDio.instancia();
@@ -26,13 +27,22 @@ class PedidosClienteRepository {
     String? nombreFiscalCliente,
     String? emailCliente,
     String? codigoPromocion,
-    double? propina,
     String? idempotencyKey,
     String? fechaEntregaDeseada,
   }) async {
     await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
     final capabilityHeaders = await DispositivoService.capabilityHeaders();
+    final mesaSesion =
+        tipo == 'mesa' ? await MesaSesionService.obtener() : null;
+    if (tipo == 'mesa' &&
+        (mesaId == null ||
+            mesaSesion?.mesaId != mesaId ||
+            mesaSesion?.sucursalId != sucursalId ||
+            mesaSesion?.qrToken == null ||
+            mesaSesion!.qrToken!.isEmpty)) {
+      throw StateError('Escanea el QR de la mesa antes de enviar el pedido.');
+    }
     final lineasProducto = lineas.where((l) => !l.esCombo).toList();
     final lineasCombo = lineas.where((l) => l.esCombo).toList();
     final payload = <String, dynamic>{
@@ -42,6 +52,7 @@ class PedidosClienteRepository {
       'metodo_pago': metodoPago ?? 'pendiente',
       'requiere_factura': requiereFactura,
       if (mesaId != null) 'mesa_id': mesaId,
+      if (tipo == 'mesa') 'qr_token': mesaSesion!.qrToken,
       if (clienteNombre != null) 'cliente_nombre': clienteNombre,
       if (clienteTelefono != null) 'cliente_telefono': clienteTelefono,
       if (direccionEntrega != null) 'direccion_entrega': direccionEntrega,
@@ -58,7 +69,6 @@ class PedidosClienteRepository {
         'combos': lineasCombo.map(_comboJson).toList(),
       if (codigoPromocion != null && codigoPromocion.trim().isNotEmpty)
         'codigo_promocion': codigoPromocion.trim(),
-      if (propina != null && propina > 0) 'propina': propina,
       if (idempotencyKey != null && idempotencyKey.isNotEmpty)
         'idempotency_key': idempotencyKey,
       if (fechaEntregaDeseada != null && fechaEntregaDeseada.isNotEmpty)

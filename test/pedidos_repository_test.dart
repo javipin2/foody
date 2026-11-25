@@ -100,6 +100,40 @@ void main() {
     expect(adapter.ultimaSolicitud?.data, {'idempotency_key': 'req-123'});
   });
 
+  test('crear pedido staff transmite la clave idempotente al endpoint',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'foody_device_id': 'device-pos-idempotency-regression',
+    });
+    final adapter = _PedidosPaginadosAdapter({
+      'exito': true,
+      'datos': {'pedido_id': 'pedido-1'},
+    });
+    final dio = Dio(BaseOptions(baseUrl: 'https://foody.test'))
+      ..httpClientAdapter = adapter;
+    final repository = PedidosRepository(dio: dio);
+
+    await repository.crearPedidoStaff(
+      sucursalId: 'sucursal-1',
+      tipo: 'para_llevar',
+      lineas: [
+        LineaCarrito(
+          clave: 'producto-1',
+          productoId: 'producto-1',
+          nombre: 'Producto demo',
+          precioUnitario: 25000,
+        ),
+      ],
+      idempotencyKey: 'staff-req-123',
+    );
+
+    expect(adapter.ultimaSolicitud?.path, '/pedidos/staff');
+    expect(
+      (adapter.ultimaSolicitud?.data as Map<String, dynamic>)['idempotency_key'],
+      'staff-req-123',
+    );
+  });
+
   test('reemplazar ítem usa el endpoint atómico con clave y motivo', () async {
     SharedPreferences.setMockInitialValues({});
     final adapter = _PedidosPaginadosAdapter({

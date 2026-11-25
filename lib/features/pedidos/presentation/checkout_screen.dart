@@ -47,7 +47,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _nombreFiscal = TextEditingController();
   final _email = TextEditingController();
   final _codigoPromo = TextEditingController();
-  final _propina = TextEditingController(text: '0');
   final _repo = PedidosClienteRepository();
   final _zonasRepo = ZonasRepository();
   late String _tipo;
@@ -138,7 +137,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _nombreFiscal.dispose();
     _email.dispose();
     _codigoPromo.dispose();
-    _propina.dispose();
     super.dispose();
   }
 
@@ -459,9 +457,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             _requiereFactura ? _nombreFiscal.text.trim() : null,
         emailCliente: _requiereFactura ? _email.text.trim() : null,
         codigoPromocion: _codigoPromoAplicado,
-        propina: widget.mesaId == null
-            ? double.tryParse(_propina.text.replaceAll(',', '').trim())
-            : null,
         idempotencyKey: _idempotencyKey,
         fechaEntregaDeseada: tipoPedido == 'encargo'
             ? DateFormat('yyyy-MM-dd').format(_fechaEncargo!)
@@ -629,6 +624,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     color: scheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'La propina es voluntaria y no se suma al valor del pedido; si deseas darla, entrégala aparte al pagar.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                 ),
                 const SizedBox(height: 14),
                 if (_errorFormulario != null) ...[
@@ -855,7 +857,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           autofillHints: const [AutofillHints.name],
                           style: TextStyle(color: scheme.onSurface),
                           decoration: _campo(label: 'Nombre'),
-                          onSaved: (value) => _nombre.text = value?.trim() ?? '',
+                          onSaved: (value) =>
+                              _nombre.text = value?.trim() ?? '',
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -869,10 +872,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               .copyWith(errorMaxLines: 2),
                           validator: (value) => validarTelefonoCheckout(
                             value,
-                            domicilio: _resolverTipo(ref.read(carritoProvider)) ==
-                                'domicilio',
+                            domicilio:
+                                _resolverTipo(ref.read(carritoProvider)) ==
+                                    'domicilio',
                           ),
-                          onSaved: (value) => _telefono.text = value?.trim() ?? '',
+                          onSaved: (value) =>
+                              _telefono.text = value?.trim() ?? '',
                           onFieldSubmitted: (_) =>
                               FocusScope.of(context).unfocus(),
                         ),
@@ -1043,20 +1048,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ],
                   ),
                 ),
-                if (widget.mesaId == null) ...[
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _propina,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: scheme.onSurface),
-                    decoration: _campo(
-                      label: 'Propina (opcional)',
-                      hint: '0',
-                      prefixText: r'$ ',
-                      helperText: 'Se registra al cobrar tu pedido',
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 20),
                 _tituloSeccion('Método de pago'),
                 const SizedBox(height: 8),

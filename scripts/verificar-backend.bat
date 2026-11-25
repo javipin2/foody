@@ -8,6 +8,7 @@ powershell -NoProfile -Command ^
   "  'http://localhost:3000/api/v1/domiciliario/pedidos-asignados'," ^
   "  'http://localhost:3000/api/v1/reportes/financiero'," ^
   "  'http://localhost:3000/api/v1/alertas/c0000000-0000-4000-8000-000000000001'," ^
+  "  'http://localhost:3000/api/v1/caja/pedidos/00000000-0000-4000-8000-000000000001/movimientos'," ^
   "  'http://localhost:3000/api/v1/usuarios'" ^
   ");" ^
   "function Test-Probe($url) {" ^

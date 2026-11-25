@@ -21,11 +21,23 @@ La muestra puntual de hoy encontró:
 
 Es una muestra secuencial de una sola computadora, hecha con `Invoke-WebRequest`; **no es una prueba de carga ni una medición de navegador**. La diferencia en las rutas públicas incluye DNS, TLS, Cloudflare, el túnel, transferencias y variación de red. La respuesta HTML es pequeña; el artefacto JavaScript principal pesa 6,48 MB en esta descarga. El navegador además pide fuentes, iconos, assets, APIs e imágenes, y esta prueba no mide ese conjunto.
 
-La evidencia más clara de latencia evitable en la interfaz actual está en Inicio del panel: carga resumen, mesas, pedidos, alertas e inventario **en cinco esperas secuenciales**. El tiempo de pantalla puede aproximarse a la suma de las cinco llamadas, aunque sean independientes. La consolidación por sedes en Nest también consulta cada sede en un `for` con `await`, de manera serial.
+La versión auditada inicialmente demoraba Inicio al cargar resumen, mesas, pedidos, alertas e inventario en cinco esperas secuenciales. El estado de código más reciente ya ejecuta resumen, mesas, alertas e inventario en paralelo; solo pide pedidos activos en forma condicional si la respuesta de resumen no incluye `domicilios_tardios`. La consolidación por sedes en Nest aún consulta cada sede en un `for` con `await`, de manera serial.
 
 Las pruebas históricas de carga del 6 de agosto de 2026 reportaron degradación muy alta a 50 y 200 solicitudes concurrentes. Sirven como señal de riesgo, pero no como capacidad vigente certificada: se hicieron en la PC local, con una muestra chica y distintos métodos de carga, y desde entonces cambiaron índices, consultas, paginación y cachés. La base local actual sigue siendo muy pequeña (47 MB; `pedidos` ~440 KB, `movimientos_caja` ~232 KB), así que no representa cientos de locales con historial real.
 
 **Conclusión:** es razonable para desarrollo y pruebas funcionales. No hay evidencia actual que permita afirmar que la infraestructura soporte cientos o miles de usuarios concurrentes. Antes de optimizar a ciegas hay que instrumentar cuánto tarda cada tramo y probar en un entorno aislado parecido al despliegue esperado.
+
+### Actualización 2026-11-25 — muestra breve API/Equipo actual
+
+Después de publicar el bundle Equipo actual se midieron GET pequeñas (`/api/v1/salud` y `/`) secuenciales desde el mismo PC. API local: 12/12 HTTP 200, p50 2 ms, p95 4 ms, máximo 79 ms. API por Tunnel: 12/12 HTTP 200, p50 438 ms, p95 520 ms, máximo 606 ms. Sitio Equipo local: 12/12 HTTP 200, p50 2 ms, p95 3 ms, máximo 65 ms. Equipo por Tunnel: 4/4 HTTP 200, p50 437 ms, máximo 709 ms (muestra demasiado pequeña para reportar p95 con valor útil).
+
+La parte pública agrega aproximadamente 430–440 ms frente a localhost en esta muestra. Esto apunta a la ruta externa (cliente→Cloudflare→Tunnel→PC) para el retardo de solicitudes pequeñas, no identifica cuál tramo exacto domina. **No es profiling Flutter ni del SQL de pantallas autenticadas, ni prueba de carga; no extrapolar a usuarios simultáneos.** La muestra es GET de salud/HTML, sin datos sensibles ni escrituras. El proceso API sigue siendo anterior al artefacto en `dist`; sus tiempos no validan la nueva consulta de dashboard.
+
+### Actualización 2026-11-25 — descarga del bundle Equipo por Tunnel
+
+Tres `fetch` consecutivos a `https://equipo.foodyy.store/main.dart.js` desde el mismo PC recibieron HTTP 200 y el cuerpo decodificado de **6.960.485 bytes**; tiempos completos: **1.677 ms, 586 ms y 495 ms** (n=3, p50=586 ms; muestra insuficiente para p95). Cloudflare reportó `Content-Encoding: br` y `cf-cache-status: REVALIDATED` en las tres respuestas. La petición no autenticada midió el asset público, no el arranque completo del panel ni una sesión real. Es coherente con el build servido; el release candidato nuevo pesa 6.961.504 bytes, un cambio de aproximadamente 1 KB. No hay base para atribuir la variación solo a Tunnel, CPU del PC o Cloudflare, ni para estimar concurrencia.
+
+La transferencia muestra que Cloudflare entrega Brotli; merece medirse con una waterfall de navegador si las visitas repetidas aprovechan caché de cliente/edge de forma efectiva, ya que en esta muestra el estado fue `REVALIDATED`, no `HIT`. No se alteró política de caché ni configuración de Tunnel.
 
 ## Recorrido de una acción y dónde se consume el tiempo
 
@@ -69,11 +81,11 @@ Este es el camino usual de una lectura protegida. Hay variantes: login y refresh
 
 ## Hallazgos priorizados
 
-### P0 — Cargas independientes serializadas en el Inicio del panel
+### Optimización aplicada, falta medición de red — cargas del Inicio
 
-`DashboardResumenWidget._cargar()` espera consecutivamente `GET /dashboard/resumen`, lista de mesas, pedidos activos, alertas e ingredientes. El propio comentario indica que son cargas independientes, pero se capturan en cinco bloques `try` secuenciales. El tiempo del bloque se vuelve aproximadamente `t1+t2+t3+t4+t5`; un servicio lento retrasa todas las solicitudes posteriores y la pantalla completa.
+`DashboardResumenWidget._cargar()` ya inicia resumen, mesas, alertas e inventario juntos con `Future.wait`, conserva errores por fuente y evita que una falla tumbe las demás. Pedidos activos es una llamada de compatibilidad que solo inicia después de recibir el resumen cuando este no devuelve `domicilios_tardios`; por tanto, una API vieja aún puede introducir una espera serial.
 
-**Mejora:** cuando se implemente, ejecutar las cargas independientes en paralelo con captura de error por tarea (mantener el comportamiento de que una falla no tumbe las demás) y renderizar cada sección en cuanto tenga datos. Confirmar antes si el indicador de carga debe esperar las cinco respuestas o si las tarjetas pueden aparecer progresivamente.
+Prueba `test/dashboard_resumen_widget_test.dart`: cuatro fuentes se comprueban iniciadas antes de liberar cualquiera de sus respuestas; suite 10/10, analyzer de widget y prueba sin incidencias. Esto prueba concurrencia en Flutter, no p50/p95 de red, SQL ni tiempo hasta primer render. El render espera a las cuatro respuestas del centro; una medición de waterfall autenticada debe decidir si conviene carga progresiva. La consulta de pedidos fallback podría retirarse cuando el runtime de todas las instalaciones garantice el contrato nuevo.
 
 ### P0 — Túnel a una máquina de desarrollo y tamaño de arranque web
 
@@ -107,19 +119,19 @@ La búsqueda del Kanban se filtra sobre la lista cargada en el cliente, no es un
 
 ### P1 — Llamadas externas sin límite explícito de espera
 
-La configuración común de Dio marca timeout de conexión 15 s, respuesta 45 s y envío 15 s. Son límites suficientemente largos para una interacción de caja si el upstream se atasca. Además, las llamadas `fetch` de Wompi y Photon que se inspeccionaron no pasan `AbortSignal`/timeout explícito. La búsqueda de direcciones externa puede retener la petición del usuario y recursos Nest si Photon tarda.
+La configuración común de Dio marca timeout de conexión 15 s, respuesta 45 s y envío 15 s. El máximo de respuesta puede percibirse como congelamiento en acciones interactivas; no se reduce globalmente hasta separar operaciones normales de reportes, cargas y procesos extensos. La búsqueda Photon ahora tiene tope de 5 s con `AbortSignal`, respuesta 504 por demora y sin reintentos; el caché solo guarda respuestas válidas. Nest 3/3 y build OK. Las llamadas Wompi aún carecen de timeout explícito. Un timeout en `POST /transactions` sería ambiguo: Wompi documenta `reference` única pero su guía de idempotencia consultada aplica a dispersiones/payouts, no prueba idempotencia de transacciones con payment source. Se requiere preservar el pago como pendiente y evitar reintento/cobro duplicado antes de abortar automáticamente.
 
-**Mejora:** fijar presupuestos por operación (búsqueda interactiva corta, transacción con presupuesto definido, tarea diferida distinta), abortar al superar el límite y reintentar solo errores transitorios con máximo pequeño y backoff. Pagos requieren idempotencia y conciliación antes de introducir reintentos automáticos.
+**Mejora pendiente:** cerrar timeout seguro de Wompi con reconciliación por referencia/estado, bloquear cobros simultáneos o ambiguos y distinguir 502/504 de rechazos definitivos. No añadir reintentos automáticos hasta demostrar idempotencia. Los presupuestos deben ser por operación, sin compartir el timeout interactivo con tareas diferidas.
 
 ### P1 — Pool PostgreSQL no publica su saturación ni aplica límites de espera en código
 
-`DatabaseService` crea `pg.Pool` con `max = Number(DB_POOL_MAX) || 10`. La validación de producción exige que exista y sea al menos 25, pero el servicio no configura `connectionTimeoutMillis`, `query_timeout`, `statement_timeout` ni reporta `totalCount`, `idleCount` o `waitingCount`. Cuando no quedan conexiones, las solicitudes esperan sin que hoy haya un indicador directo de cola. Aumentar el tamaño por sí solo puede trasladar saturación a PostgreSQL.
+`DatabaseService` ahora fija `connectionTimeoutMillis` en 5 s por defecto y permite cambiarlo con `DB_POOL_CONNECT_TIMEOUT_MS`. Esto limita la espera para obtener/abrir una conexión, no cancela consultas que ya empezaron. Siguen sin configuración de `query_timeout`/`statement_timeout` ni métricas de `totalCount`, `idleCount` y `waitingCount`; por ello no se mide la cola ni el tiempo dentro de SQL. `DB_POOL_MAX` continúa como estaba y la validación de producción exige mínimo 25, valor que debe contrastarse con el límite real del Postgres, PgBouncer y número de instancias antes de desplegar.
 
 **Mejora:** medir espera por conexión, duración de consulta y conexiones ocupadas/ociosas/en espera; etiquetar consultas por endpoint sin registrar secretos ni valores personales. Definir límites de consulta y transacción, revisar junto con `max_connections` de PostgreSQL y la cantidad de réplicas. Calcular presupuesto global: `conexiones por réplica × réplicas` más conexiones de Supabase y administración.
 
 ### P1 — Costo de caja depende de todos los movimientos del turno
 
-La API ya pagina `GET /caja/:caja_id/movimientos` y consulta en paralelo la página y el total. La app, sin embargo, recorre páginas secuencialmente con `limit=100` hasta 50 páginas y acumula hasta 5.000 registros antes de mostrar la lista. Es una corrección importante frente al antiguo endpoint sin paginar, pero en un turno grande suma hasta 50 viajes HTTP/SQL remotos y crea una lista completa en memoria.
+La API pagina `GET /caja/:caja_id/movimientos` y consulta en paralelo la página y el total. Caja solo presenta los 80 movimientos recientes, pero descargaba páginas secuenciales hasta 50 páginas antes de truncar a 80. Ahora obtiene como máximo dos páginas (50 por página), conserva esos mismos 80 registros visibles y evita traer el resto del historial. La prueba de repositorio verifica dos solicitudes y el límite. El saldo de cierre continúa calculándose en backend, por fuera de esta lista visual.
 
 **Mejora:** solicitar una primera página para pintar la caja y cargar más bajo demanda o virtualizar con paginación; el total puede obtenerse aparte o con conteo eficiente. Validar que los indicadores del cierre tengan datos completos antes de limitar el historial.
 
@@ -164,7 +176,7 @@ El formato común de lecturas Nest es: controller/DTO → autenticación y autor
 
 | Flujo/pantalla | Llamadas y trabajo detectado | Qué mirar en la traza |
 |---|---|---|
-| Inicio admin | `GET /dashboard/resumen`, mesas, pedidos activos, alertas pendientes, ingredientes; hoy cinco cargas secuenciales | duración individual vs duración total, tamaño JSON y si cada widget espera a todos |
+| Inicio admin | `GET /dashboard/resumen`, mesas, alertas e ingredientes en paralelo; pedidos activos solo como fallback secuencial cuando faltan domicilios tardíos en resumen | duración individual y total, bytes JSON, waterfall autenticada, efecto del fallback y tiempo al primer render |
 | Dashboard de gráficos | `GET /dashboard/graficos`; varias agregaciones en pedidos, items y ventas | tiempo de cada SQL, rango de fechas, buffers, bytes de respuesta |
 | Consolidado cadena | `GET /dashboard/consolidado`; sedes y resumen SQL secuencial por sede | número de sedes, consultas emitidas, duración total |
 | Kanban pedidos | GET lista activa/cerrados, detalle y estados; Realtime más poll de respaldo y reloj | frecuencia de polling, query params/limit, eventos duplicados, tiempo de build con 100 cards |
@@ -280,3 +292,35 @@ En una comprobación de solo lectura posterior, `GET /api/v1/salud` respondió H
 
 **Actualización posterior (2026-11-22):** durante la siguiente pasada visual de Domiciliarios se corrigió el cast de importes en su repositorio Flutter y se agregó `test/domiciliarios_repository_test.dart`. El problema de tipo de Domiciliarios queda resuelto en cliente y validado con una respuesta sintética; estados de carga/error ahora permiten reintentar y no presentan una falla como lista vacía. Cocina/Realtime tenía pendiente alinear la firma con el permiso existente; se resolvió en fuente el 2026-11-23 (ver encima) y quedó pendiente el smoke autenticado tras reiniciar Nest :3000.
 
+### Actualización 2026-11-25 — PERF-PEDIDO-CATALOGO-01
+
+La creación/cotización de pedido consultaba dentro de la transacción cada producto, topping, bebida y combo según las líneas del DTO. En pedidos con muchas líneas y extras el número de viajes a PostgreSQL crecía con el contenido del pedido, aun cuando el catálogo de la sede era el mismo.
+
+**Cambio en Nest:** las filas de catálogo se leen en lote dentro de la transacción. Combos y sus componentes se obtienen en dos lecturas cuando hay combos; productos, toppings y bebidas se resuelven en consultas agrupadas para el pedido. Nest conserva la autoridad de disponibilidad, sede, precios y cálculos; se mantiene el orden de validación/errores y el recorrido en memoria del DTO. No se añadió caché, Redis, endpoint, dependencia, ni lógica de negocio en Flutter. Para una cotización sin combos, las lecturas de catálogo se reducen a tres consultas agrupadas, independientemente del número de líneas (más lecturas de combos solo cuando el DTO los contiene).
+
+**Pruebas y medidas en QA aislada:** build Nest correcto; unitarias 51 suites/128 pruebas; E2E de QR 1 suite/6 pruebas. El script [`scripts/perf/medir-estimacion-pedidos.cjs`](../scripts/perf/medir-estimacion-pedidos.cjs) mide 12 muestras de `POST /pedidos/estimar` en un clon local desechable y verifica tanto totales finitos como subtotal lineal (1 línea = $14.500; 30 líneas = $435.000). Resultado observado: 1 línea p50 12,88 ms, p95/máximo 23,91 ms; 30 líneas p50 13,69 ms, p95/máximo 14,62 ms. Se ejecutó en una sola instancia sin carga concurrente, contra localhost y con datos QA; no estima usuarios concurrentes, no incluye Tunnel/red móvil, no aísla el tiempo de SQL y no es SLO de producción. La mejora demostrada en fuente es que el conteo de lecturas ya no escala con la cantidad de renglones; la baja de latencia observada es orientativa.
+
+**Límite de cobertura:** el clon de QA no tenía un combo disponible para la sede-fixture; la ruta de combo quedó cubierta por build y pruebas de servicio existentes, pero esta medición no ejercitó una cotización con combo real. La base QA persistente y la instancia activa :3000 quedaron fuera de las pruebas. Al terminar se detuvo el proceso temporal :3001 y se eliminó solo `foody_diseno_qa_codex_perf_20261125`; `foody_diseno_qa` siguió presente y :3000 conservó PID 10208 con salud HTTP 200. No se midió el camino por Cloudflare.
+
+
+### Captura de navegador autenticado — KDS por Tunnel (2026-11-25)
+
+Se recargó una sola vez la sesión autenticada de Cocina en `equipo.foodyy.store`, con DevTools Network y caché caliente. Chrome reportó `DOMContentLoaded: 634 ms`, `Load: 996 ms`, 71 solicitudes acumuladas tras dejar la vista abierta, 15,5 kB transferidos y 16,8 MB de recursos declarados/cargados (mayormente caché). El panel mantenía un WebSocket Realtime 101/Pending y sondeos; `Finish` llegó a 1,7 min por la conexión persistente, así que no representa el tiempo de carga útil. No se exportó HAR ni se guardó información de sesión.
+
+En la tabla aparecen lecturas autenticadas de `/auth/perfil`, `/cocinas/:id`, `/cocina/tickets/:id`, `/auth/realtime-canales` y salud. Las lecturas de datos observadas tardaron aproximadamente 216–268 ms a través del Tunnel (304/200). Los preflight OPTIONS de API oscilaron entre 213 y 256 ms. La secuencia no atribuye por sí sola ese tiempo a Nest, DB, Cloudflare o red. Fue una sesión única, con recursos calientes, en el mismo computador que sirve el Tunnel; no es una muestra de usuario móvil ni percentil.
+
+La inspección de fuente explica parte del tráfico acumulado: `ApiOfflineBanner` sondea `/salud` cada 20 s en todo el panel; `RealtimeAvisoBanner` verifica Realtime cada 2 min; `PollRealtimeRespaldo` de KDS revisa `/health/realtime` al programar cada respaldo (90 s si RT aparece sano, 30 s si no), además de cargar tickets cuando el temporizador vence. Esto se suma a consultas periódicas de salud que siguen en Network después del primer render. Conviene deduplicar/coordinar estos chequeos o justificar frecuencia por impacto operativo; cualquier ajuste debe preservar detección de caída y reconexión y probar que no crea sondeos solapados. La captura no basta para afirmar que los 71 requests ocurrieron en el arranque: el conteo es acumulado durante la observación.
+
+El servidor configura `enableCors` con `origin` y `credentials`, pero no fija `maxAge` en la opción CORS de Nest. Network registró repetición de OPTIONS. La evidencia de tabla no confirma todos los headers efectivos del preflight; no se debe ampliar orígenes ni cambiar OAuth. Como mejora candidata, confirmar `Access-Control-Max-Age` y validar de forma controlada un TTL prudente para reducir viajes repetidos, conservando allowlist/credenciales y respetando caché del navegador. No se cambió CORS en esta pasada.
+
+**Siguiente medición:** una recarga fría y una warm con ventanas temporales controladas (p. ej. 5 s, 30 s, 2 min); distinguir peticiones del inicio de las de operación continua; medir tiempo hasta primer frame útil y llamadas API por pantalla. Después instrumentar p50/p95 por ruta desde Nest y DB en QA/staging. Sin carga concurrente en el computador que hoy presta servicio.
+
+### CORS preflight — mitigación de viaje repetido (2026-11-25)
+
+OPTIONS de solo lectura a `https://api.foodyy.store/api/v1/health/realtime`, simulando origen `https://equipo.foodyy.store` y headers de la petición: HTTP 204; `Access-Control-Allow-Origin` conservó el origen esperado, credenciales `true` y los headers solicitados; `Access-Control-Max-Age` no estaba presente. Se agregó `maxAge: 300` (5 min) a la configuración CORS de Nest. Esto cachea solo la autorización preflight del navegador por un periodo corto; no amplía la allowlist ni modifica permisos de origen en servidor. OAuth, credenciales, Cloudflare y Tunnel no cambiaron.
+
+`npm run build` de `foody_backend` terminó correctamente y el artefacto compilado contiene `maxAge: 300`. No se reinició el proceso de API activo, por lo que el OPTIONS público todavía no demuestra la mitigación. Tras el próximo arranque normal comprobar `Access-Control-Max-Age: 300` y comparar una secuencia de llamadas: el primer OPTIONS puede tardar ~0,2 s; solicitudes compatibles subsiguientes dentro de la ventana deberían evitar esa ida de red. Si el header no aparece en el proceso activo o Cloudflare interfiere, investigar sin alterar OAuth ni allowlist. La optimización no demuestra reducción de p95 global.
+
+### Revalidación de CORS tras build (2026-11-25)
+
+El proceso Nest QA :3001, iniciado contra `foody_diseno_qa_codex_abonomix_20261125`, respondió al OPTIONS de `https://equipo.foodyy.store` con HTTP 204, `Access-Control-Max-Age: 300`, `Access-Control-Allow-Origin: https://equipo.foodyy.store` y `Access-Control-Allow-Credentials: true`. Esto confirma que la opción compilada funciona y conserva la configuración exacta. La llamada equivalente al API público por Tunnel sigue sin `Access-Control-Max-Age`: el Nest :3000 no se reinició, así que el rendimiento público todavía no refleja el cambio. Se apagó el proceso de QA y se eliminó el clon con cero conexiones.

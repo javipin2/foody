@@ -85,4 +85,42 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('muestra el saldo pendiente del domicilio entregado',
+      (tester) async {
+    final domicilioPendiente = PedidoAdminModel(
+      id: 'pedido-pendiente',
+      numeroPedido: 'FOODY-000002',
+      tipo: 'domicilio',
+      estado: 'entregado',
+      total: 25000,
+      montoPagado: 10000,
+      creadoEn: DateTime(2026, 11, 22),
+      estadoDesde: DateTime(2026, 11, 22),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PedidoKanbanCard(
+            pedido: domicilioPendiente,
+            formatoMoneda: NumberFormat.currency(
+              locale: 'es_CO',
+              symbol: r'$',
+              decimalDigits: 0,
+            ),
+            minutos: 15,
+            textoReloj: (m) => '$m min',
+            colorReloj: (_) => Colors.red,
+            onTap: () {},
+            onAccionRapida: () async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey<String>('pedido-saldo-por-cobrar')),
+        findsOneWidget);
+    expect(find.textContaining('15.000'), findsOneWidget);
+  });
 }

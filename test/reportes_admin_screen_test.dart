@@ -133,6 +133,11 @@ void main() {
                   'etiqueta_ventas_caja': 'Cobrado en caja (neto)',
                   'nota_universos': 'Tickets y caja son universos distintos.',
                 },
+                'recaudo_periodo': {
+                  'total_neto': 1500,
+                  'nota':
+                      'Suma ventas menos devoluciones registradas dentro del rango; puede incluir pedidos creados antes. Las propinas voluntarias van aparte.',
+                },
               },
             ),
             auditoriaRepository: _AuditoriaRepositoryFake(),
@@ -141,10 +146,23 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Recaudo registrado en el rango'),
+      400,
+      scrollable: find.byType(Scrollable).last,
+    );
 
-    expect(find.text('Movimientos netos de caja'), findsOneWidget);
+    expect(find.text('Ventas y cobros asociados'), findsOneWidget);
+    expect(find.text('Ventas de pedidos'), findsOneWidget);
+    expect(find.text('Cobros netos asociados'), findsOneWidget);
+    expect(find.text('Ventas menos cobros'), findsOneWidget);
+    expect(find.text('Recaudo registrado en el rango'), findsOneWidget);
     expect(
-      find.textContaining('fecha de creación del pedido'),
+      find.text('Ventas menos devoluciones por fecha de movimiento'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('fecha del pedido'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

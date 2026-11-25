@@ -50,6 +50,12 @@ const MENSAJES_NEGOCIO: Record<string, string> = {
   PEDIDO_NO_ENCONTRADO: 'Pedido no encontrado en esta sucursal.',
   COBRO_REQUERIDO:
     'Indica un método de pago válido al confirmar la entrega del domicilio.',
+  PAGO_CLIENTE_NO_CONFIRMADO:
+    'El checkout público no puede declarar pagos recibidos; el establecimiento debe confirmar el cobro.',
+  PAGO_MIXTO_SOLO_PARA_LLEVAR:
+    'El pago mixto al crear solo está disponible para pedidos para llevar.',
+  QR_MESA_NO_COINCIDE:
+    'El código QR no corresponde a esta mesa. Escanea nuevamente el código.',
 };
 
 const CODIGOS_ERROR_PRESERVAR = new Set([
@@ -66,6 +72,9 @@ const CODIGOS_ERROR_PRESERVAR = new Set([
   'ITEMS_INVALIDOS',
   'MONTO_PARCIAL_EXCESO',
   'PAGOS_NO_COINCIDEN',
+  'PAGO_CLIENTE_NO_CONFIRMADO',
+  'PAGO_MIXTO_SOLO_PARA_LLEVAR',
+  'QR_MESA_NO_COINCIDE',
   'DEVOLUCION_EXCEDE_VENTAS_TURNO',
   'PEDIDO_SIN_COBRO_CAJA',
   'DEVOLUCION_EXCEDE_COBRO_PEDIDO',

@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Body,
   Controller,
   Delete,
@@ -140,6 +141,9 @@ export class PedidosController {
     @Body() dto: CrearPedidoDto,
     @UsuarioActual() usuario: JwtPayload,
   ) {
+    if (dto.pagos?.length && !usuario.permisos.includes('cobrar_pedido')) {
+      throw new ForbiddenException('No tienes permiso para cobrar pedidos');
+    }
     return this.pedidosService.crearStaff(usuario, dto);
   }
 

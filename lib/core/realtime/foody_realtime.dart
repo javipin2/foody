@@ -51,9 +51,11 @@ class FoodyRealtime {
     aplicarCanalesStaff(await SesionStaffService.obtenerRealtimeCanales());
   }
 
-  static String canalCatalogo(String sucursalId) => 'sucursal_${sucursalId}_catalogo';
+  static String canalCatalogo(String sucursalId) =>
+      'sucursal_${sucursalId}_catalogo';
 
-  static String canalPedidoSeguimiento(String pedidoId, String seguimientoToken) =>
+  static String canalPedidoSeguimiento(
+          String pedidoId, String seguimientoToken) =>
       'pedido_${pedidoId}_$seguimientoToken';
 
   static String _topicStaff(String clave, String prefijo, String id) {
@@ -190,7 +192,8 @@ class FoodyRealtime {
         )
         .onBroadcast(
           event: 'alerta_nueva',
-          callback: (p) => recibir('alerta_nueva', Map<String, dynamic>.from(p)),
+          callback: (p) =>
+              recibir('alerta_nueva', Map<String, dynamic>.from(p)),
         )
         .onBroadcast(
           event: 'qr_aprobacion_urgente',
@@ -204,7 +207,8 @@ class FoodyRealtime {
         )
         .onBroadcast(
           event: 'llamar_mesera',
-          callback: (p) => recibir('llamar_mesera', Map<String, dynamic>.from(p)),
+          callback: (p) =>
+              recibir('llamar_mesera', Map<String, dynamic>.from(p)),
         )
         .subscribe(_onStatus(onReconectado));
   }
@@ -327,6 +331,7 @@ class FoodyRealtime {
     String domiciliarioId, {
     required void Function() onActualizado,
     required void Function() onOfertaExpirada,
+    required void Function() onPedidoDesasignado,
     void Function()? onReconectado,
     int debounceMs = _debounceMsDefault,
   }) {
@@ -350,6 +355,15 @@ class FoodyRealtime {
             '${domiciliarioId}_exp',
             debounceMs,
             onOfertaExpirada,
+          ),
+        )
+        .onBroadcast(
+          event: 'pedido_desasignado',
+          callback: (_) => _debounce(
+            _timerDomIndep,
+            '${domiciliarioId}_des',
+            debounceMs,
+            onPedidoDesasignado,
           ),
         )
         .subscribe(_onStatus(onReconectado));

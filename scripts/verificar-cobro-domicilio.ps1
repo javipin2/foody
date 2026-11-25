@@ -20,16 +20,16 @@ function eq(nombre, got, esp) {
 }
 // Pedido 20k + domicilio 5k, nada pagado: caja=20k producto, 5k domicilio.
 eq('nada pagado', repartirCobroDomicilio(25000, 5000, 0),
-   { saldo: 25000, productoPendiente: 20000, domicilioPendiente: 5000 });
+   { saldo: 25000, productoTotal: 20000, productoPendiente: 20000, domicilioPendiente: 5000 });
 // Producto ya pagado online (20k): solo queda el domicilio.
 eq('producto pagado', repartirCobroDomicilio(25000, 5000, 20000),
-   { saldo: 5000, productoPendiente: 0, domicilioPendiente: 5000 });
+   { saldo: 5000, productoTotal: 20000, productoPendiente: 0, domicilioPendiente: 5000 });
 // Pago parcial 10k: producto pendiente 10k, domicilio 5k.
 eq('pago parcial', repartirCobroDomicilio(25000, 5000, 10000),
-   { saldo: 15000, productoPendiente: 10000, domicilioPendiente: 5000 });
+   { saldo: 15000, productoTotal: 20000, productoPendiente: 10000, domicilioPendiente: 5000 });
 // Sin domicilio: todo es producto.
 eq('sin domicilio', repartirCobroDomicilio(20000, 0, 0),
-   { saldo: 20000, productoPendiente: 20000, domicilioPendiente: 0 });
+   { saldo: 20000, productoTotal: 20000, productoPendiente: 20000, domicilioPendiente: 0 });
 // Kanban entregado: domicilio fuera de caja -> solo producto pendiente.
 eq('monto caja sin domi en caja', montoVentaCajaEntregaDomicilio(25000, 5000, 0, false), 20000);
 eq('monto caja domi en caja', montoVentaCajaEntregaDomicilio(25000, 5000, 0, true), 25000);

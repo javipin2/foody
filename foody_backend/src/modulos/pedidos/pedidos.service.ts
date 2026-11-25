@@ -19,6 +19,7 @@ import { PedidosDescuentoService } from './pedidos-descuento.service';
 import { PedidosEstadoService } from './pedidos-estado.service';
 import { PedidosItemsService } from './pedidos-items.service';
 import { PedidosPagosService } from './pedidos-pagos.service';
+import { sqlWherePedidoAbiertoOperativo } from './pedido-estados';
 import {
   envolverPaginado,
   resolverPaginacion,
@@ -52,7 +53,7 @@ export class PedidosService {
   ) {
     const params: unknown[] = [sucursalId];
     const filtroActivos = opciones.soloActivos
-      ? `AND p.estado IN ('pendiente', 'pendiente_aprobacion', 'confirmado', 'en_cocina', 'listo', 'pagando', 'asignado', 'en_camino')`
+      ? `AND ${sqlWherePedidoAbiertoOperativo('p')}`
       : '';
     let filtroMesera = '';
     if (opciones.meseraId) {
@@ -176,7 +177,13 @@ export class PedidosService {
       filtroMesera = ` AND p.mesera_id = $${idx}`;
     }
     const where = `WHERE p.sucursal_id = $1
-         AND p.estado IN ('pagado', 'entregado', 'cancelado', 'rechazado')
+         AND (
+           p.estado IN ('pagado', 'cancelado', 'rechazado')
+           OR (
+             p.estado = 'entregado'
+             AND COALESCE(p.monto_pagado, 0) >= p.total - 0.01
+           )
+         )
          AND p.created_at >= date_trunc('day', NOW())
          ${filtroMesera}`;
     const fromJoin = `FROM pedidos p
@@ -248,6 +255,11 @@ export class PedidosService {
       total: string;
       monto_pagado: string;
       metodo_pago: string | null;
+      pagos_resumen: Array<{
+        metodo_pago: string;
+        monto: number;
+      }>;
+      propina_recibida: string;
       created_at: string;
       mesa_id: string | null;
       mesera_id: string | null;
@@ -260,6 +272,8 @@ export class PedidosService {
       `SELECT p.id, p.numero_pedido, p.tipo, p.estado, p.cliente_nombre,
               p.cliente_telefono, p.direccion_entrega, p.total,
               COALESCE(p.monto_pagado, 0) AS monto_pagado, p.metodo_pago,
+              COALESCE(pagos.resumen, '[]'::jsonb) AS pagos_resumen,
+              COALESCE(pagos.propina, 0) AS propina_recibida,
               p.created_at, p.mesa_id, p.observaciones,
               p.mesera_id, u_mesera.nombre AS mesera_nombre,
               m.nombre AS mesa_nombre,
@@ -274,6 +288,19 @@ export class PedidosService {
          WHERE pedido_id = p.id AND estado_nuevo = p.estado
          ORDER BY fecha DESC LIMIT 1
        ) h ON true
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(jsonb_build_object(
+           'metodo_pago', pagos.metodo_pago,
+           'monto', pagos.monto
+         ) ORDER BY pagos.metodo_pago) AS resumen,
+         SUM(pagos.propina) AS propina
+         FROM (
+           SELECT metodo_pago, SUM(monto) AS monto, SUM(propina) AS propina
+           FROM pagos_pedido
+           WHERE pedido_id = p.id AND sucursal_id = p.sucursal_id
+           GROUP BY metodo_pago
+         ) pagos
+       ) pagos ON true
        WHERE p.id = $1 AND p.sucursal_id = $2`,
       [pedidoId, sucursalId],
     );
@@ -423,7 +450,12 @@ export class PedidosService {
     }
     return this.crear(
       { ...dto, sucursal_id: sucursalId },
-      { creadoPorStaff: true, usuarioId: usuario.sub, rol: usuario.rol },
+      {
+        creadoPorStaff: true,
+        usuarioId: usuario.sub,
+        rol: usuario.rol,
+        puedeCobrar: usuario.permisos.includes('cobrar_pedido'),
+      },
     );
   }
 
@@ -554,11 +586,27 @@ export class PedidosService {
       direccion_entrega: string | null;
       tiempo_estimado_minutos: number | null;
       created_at: Date;
+      items_no_disponibles: Array<{ nombre: string; cantidad: number }>;
     }>(
       `SELECT id, numero_pedido, estado, total, tipo, mesa_id, device_id,
               seguimiento_token::text AS seguimiento_token,
               lat, lng, direccion_entrega,
-              tiempo_estimado_minutos, created_at
+              tiempo_estimado_minutos, created_at,
+              (
+                SELECT COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'nombre', COALESCE(pr.nombre, 'Producto'),
+                      'cantidad', pi.cantidad
+                    ) ORDER BY pi.created_at
+                  ),
+                  '[]'::json
+                )
+                FROM pedido_items pi
+                LEFT JOIN productos pr ON pr.id = pi.producto_id
+                WHERE pi.pedido_id = pedidos.id
+                  AND pi.estado_cocina = 'no_disponible'
+              ) AS items_no_disponibles
        FROM pedidos WHERE id = $1`,
       [pedidoId],
     );
@@ -633,6 +681,7 @@ export class PedidosService {
       direccion_entrega: pedido.direccion_entrega,
       tiempo_estimado_minutos: pedido.tiempo_estimado_minutos,
       created_at: pedido.created_at,
+      items_no_disponibles: pedido.items_no_disponibles ?? [],
       historial: historial.map((h) => ({
         estado: h.estado_nuevo,
         fecha: h.fecha,

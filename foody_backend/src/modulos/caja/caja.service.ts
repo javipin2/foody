@@ -30,6 +30,18 @@ import {
   ResultadoPaginado,
 } from '../../compartido/dto/paginacion.dto';
 
+/** Efectivo físico esperado; pagos no efectivos y propinas quedan separados. */
+const SQL_SALDO_EFECTIVO_CAJA = `
+  COALESCE(SUM(
+    CASE
+      WHEN tipo = 'apertura' THEN monto
+      WHEN tipo IN ('venta', 'ingreso_extra') AND metodo_pago = 'efectivo' THEN monto
+      WHEN tipo IN ('retiro', 'gasto') THEN -monto
+      WHEN tipo = 'devolucion' AND metodo_pago = 'efectivo' THEN -monto
+      ELSE 0
+    END
+  ), 0)::text AS total`;
+
 @Injectable()
 export class CajaService {
   constructor(
@@ -216,13 +228,7 @@ export class CajaService {
       }
 
       const movs = await client.query<{ total: string }>(
-        `SELECT COALESCE(SUM(
-           CASE
-             WHEN tipo IN ('venta', 'ingreso_extra', 'apertura') THEN monto
-             WHEN tipo IN ('retiro', 'gasto', 'devolucion') THEN -monto
-             ELSE 0
-           END
-         ), 0)::text AS total
+        `SELECT ${SQL_SALDO_EFECTIVO_CAJA}
          FROM movimientos_caja WHERE caja_id = $1`,
         [dto.caja_id],
       );
@@ -230,12 +236,13 @@ export class CajaService {
       const diferencia = dto.monto_final_contado - montoSistema;
 
       const propinasRow = await client.query<{ total: string }>(
-        `SELECT COALESCE(SUM(p.propina_acumulada), 0)::text AS total
-         FROM pedidos p
+        `SELECT COALESCE(SUM(pp.propina), 0)::text AS total
+         FROM pagos_pedido pp
          INNER JOIN cajas c ON c.id = $2
-         WHERE p.sucursal_id = $1
-           AND COALESCE(p.propina_acumulada, 0) > 0
-           AND p.created_at >= c.apertura_at`,
+         WHERE pp.sucursal_id = $1
+           AND pp.propina > 0
+           AND pp.created_at >= c.apertura_at
+           AND pp.created_at <= NOW()`,
         [fila.sucursal_id, dto.caja_id],
       );
       const propinasTurno = Number(propinasRow.rows[0]?.total ?? 0);
@@ -729,13 +736,7 @@ export class CajaService {
       [cajaId],
     );
     const saldo = await this.database.consultarUno<{ total: string }>(
-      `SELECT COALESCE(SUM(
-         CASE
-           WHEN tipo IN ('venta', 'ingreso_extra', 'apertura') THEN monto
-           WHEN tipo IN ('retiro', 'gasto', 'devolucion') THEN -monto
-           ELSE 0
-         END
-       ), 0)::text AS total
+      `SELECT ${SQL_SALDO_EFECTIVO_CAJA}
        FROM movimientos_caja WHERE caja_id = $1`,
       [cajaId],
     );

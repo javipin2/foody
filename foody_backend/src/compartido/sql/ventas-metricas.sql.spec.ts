@@ -1,11 +1,20 @@
 import {
   SQL_FECHA_CAJA_COALESCED_P2_P3,
+  SQL_FECHA_MOVIMIENTOS_CAJA_P2_P3,
   SQL_FECHA_PEDIDOS_P2_P3,
   SQL_FECHA_PEDIDOS_P_P2_P3,
+  SQL_PEDIDO_DESDE_7D,
+  SQL_PEDIDO_DESDE_7D_P,
   sqlFechaRango,
 } from './ventas-metricas.sql';
 
 describe('rangos de fecha por día local', () => {
+  it('usa límites locales explícitos para los últimos siete días', () => {
+    expect(SQL_PEDIDO_DESDE_7D).toContain("AT TIME ZONE 'America/Bogota'");
+    expect(SQL_PEDIDO_DESDE_7D).toContain('created_at <');
+    expect(SQL_PEDIDO_DESDE_7D_P).toContain('p.created_at >=');
+    expect(SQL_PEDIDO_DESDE_7D_P).toContain('p.created_at <');
+  });
   it('convierte fechas de entrada a límites explícitos America/Bogota', () => {
     expect(sqlFechaRango('p.created_at', '$2', '$3')).toBe(
       "p.created_at >= ($2::date::timestamp AT TIME ZONE 'America/Bogota') AND p.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')",
@@ -18,6 +27,12 @@ describe('rangos de fecha por día local', () => {
     );
     expect(SQL_FECHA_PEDIDOS_P_P2_P3).toContain(
       "p.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')",
+    );
+  });
+
+  it('expone recaudos por fecha de movimiento en el calendario local', () => {
+    expect(SQL_FECHA_MOVIMIENTOS_CAJA_P2_P3).toBe(
+      "m.created_at >= ($2::date::timestamp AT TIME ZONE 'America/Bogota') AND m.created_at < (($3::date + interval '1 day')::timestamp AT TIME ZONE 'America/Bogota')",
     );
   });
 

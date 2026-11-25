@@ -121,6 +121,8 @@ flutter:
   assets:
     - assets/foody.png
     - assets/logo_foody.png
+    - assets/fonts/roboto-regular.ttf
+    - assets/fonts/roboto-bold.ttf
     - assets/Michel Teló - Ai Se Eu Te Pego (LetraLyrics).mp3
 
   # Optimizaciones para producción

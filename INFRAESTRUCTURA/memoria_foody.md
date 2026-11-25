@@ -17,6 +17,24 @@ Modelo de negocio: Suscripción mensual por restaurante + comisión domiciliario
 Stack: Flutter + NestJS + Supabase self-hosted + FCM + Python printer server
 ```
 
+### Propina — decisión de producto (2026-11-25)
+
+La propina en Colombia es voluntaria y se mantiene separada del valor de la venta. Foody no debe sumarla al total del pedido ni conservar una sugerencia elegida antes del pago. Solo registrar una propina aparte cuando el cliente efectivamente la entrega durante un cobro real. Aún está pendiente definir destinatario, reparto, liquidación y tratamiento de una propina entregada directamente al domiciliario.
+
+### Permisos de Caja — separación lectura/escritura (2026-11-25)
+
+`ver_caja` autoriza solo consultas. Fiados genéricos, gastos del turno y devoluciones requieren `gestionar_caja`; abrir, cerrar y retirar efectivo conservan `abrir_caja`, `cerrar_caja` y `hacer_retiro_parcial`. La migración 094 se aplicó a la DB local activa usada por API `:3000` y concede `gestionar_caja` a admin, gerente, gerente_cadena y cajero. La tabla de overrides tenía 0 usuarios en esa DB al verificar. Los overrides siguen siendo listas completas: si en el futuro una persona tiene override sin `gestionar_caja`, permanece en lectura hasta que el administrador lo conceda explícitamente. API `:3000` validada: cajero puede consultar Caja (200) y alcanza validación DTO en intento de escritura inválido (400); admin también alcanza validación (400), sin registrar movimiento. E2E aislada confirma override lectura (403 al escribir) y comportamiento de admin.
+
+### Rendimiento, capacidad y caché — criterio permanente
+
+El rendimiento es requisito transversal del objetivo de Foody: revisar fluidez del panel Flutter y latencia punta a punta (navegador/red → Cloudflare Tunnel → NestJS/auth → pool PostgreSQL/SQL → respuesta/render), además de servicios externos, polling y realtime. Distinguir la latencia propia del Tunnel/PC actual de la aplicación para no atribuirles el mismo cuello de botella. Usar mediciones comparables y cargas controladas en QA aislada; reportar percentiles p50/p95, errores y consumo de CPU/RAM/conexiones, no solo un HTTP 200 o una petición aislada.
+
+Mantener el PC + Docker + Cloudflare Tunnel como entorno de desarrollo remoto mientras no exista VPS; la migración a VPS es posterior y no autoriza cambiar el modo actual. Preparar una línea base para VPS inicial de referencia (2 vCPU, 8 GB RAM) y medir capacidad según mezcla real de consultas/pedidos y concurrencia antes de prometer un número de usuarios. Buscar fluidez y ausencia de cuellos de botella mediante evidencia, sin sacrificar permisos, consistencia transaccional ni reglas de negocio.
+
+Agregar caché solo a lecturas repetidas cuyo beneficio y frescura se puedan medir y garantizar. Toda escritura que cambie menú/precio/disponibilidad/configuración debe invalidar o versionar las claves relacionadas; cotización y creación de pedido deben validar importes y disponibilidad actuales en Nest, nunca confiar en un precio cacheado por Flutter. Caja, pagos, stock y finanzas no deben presentarse como verdad desde una caché vencida. Redis es una opción de escalado posterior si se demuestra que caché compartida, rate limit o coordinación multiinstancia lo requieren; no introducirlo por anticipado.
+
+Informe de rendimiento vivo: `docs/AUDITORIA_RENDIMIENTO_PUNTA_A_PUNTA.md`; priorizar e incorporar nueva evidencia en `docs/PRIORIDADES_FOODY.md` y `docs/MASTER_STATUS.md` sin duplicar auditorías ya cerradas.
+
 ---
 
 ## LA COLUMNA VERTEBRAL — sucursal_id

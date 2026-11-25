@@ -104,7 +104,18 @@ Future<void> _iniciarFoody() async {
   try {
     await FirebaseInicializador.inicializar();
     AppBackend.firebaseReady = true;
-    unawaited(ServicioFcmFoody.instancia.inicializar());
+    // El registro de push es opcional para renderizar la aplicación. En web,
+    // el navegador o Firebase pueden devolver una respuesta no JSON; no dejar
+    // esa excepción asíncrona sin capturar ni bloquear la primera pantalla.
+    unawaited(
+      ServicioFcmFoody.instancia
+          .inicializar()
+          .catchError((Object error, StackTrace stack) {
+        if (kDebugMode) {
+          debugPrint('ServicioFcmFoody no disponible: $error\n$stack');
+        }
+      }),
+    );
   } catch (e, st) {
     AppBackend.firebaseReady = false;
     if (kDebugMode) {

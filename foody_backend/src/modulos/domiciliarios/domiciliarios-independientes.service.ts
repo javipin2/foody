@@ -197,21 +197,92 @@ export class DomiciliariosIndependientesService {
     dto: ResponderOfertaDto,
   ) {
     return this.database.enTransaccion(async (client) => {
-      const oferta = await this.consultarUnoCliente<{
+      const referenciaOferta = await this.consultarUnoCliente<{
         id: string;
         pedido_id: string;
         sucursal_id: string;
+      }>(
+        client,
+        `SELECT id, pedido_id, sucursal_id
+         FROM ofertas_pedido WHERE id = $1`,
+        [ofertaId],
+      );
+
+      if (!referenciaOferta) {
+        throw new NotFoundException('Oferta no encontrada');
+      }
+
+      if (dto.respuesta === 'rechazada') {
+        const oferta = await this.consultarUnoCliente<{
+          id: string;
+          estado: string;
+          expira_at: Date;
+        }>(
+          client,
+          `SELECT id, estado, expira_at FROM ofertas_pedido
+           WHERE id = $1 AND pedido_id = $2 AND sucursal_id = $3 FOR UPDATE`,
+          [ofertaId, referenciaOferta.pedido_id, referenciaOferta.sucursal_id],
+        );
+        if (
+          !oferta ||
+          oferta.estado !== 'activa' ||
+          new Date(oferta.expira_at) <= new Date()
+        ) {
+          throw new BadRequestException('La oferta expiró o ya no está activa');
+        }
+        const respuesta = await this.consultarUnoCliente<{
+          id: string;
+          respuesta: string;
+        }>(
+          client,
+          `SELECT id, respuesta FROM respuestas_oferta
+           WHERE oferta_id = $1 AND domiciliario_id = $2 FOR UPDATE`,
+          [ofertaId, domiciliarioId],
+        );
+        if (!respuesta) {
+          throw new BadRequestException(
+            'No fuiste notificado para esta oferta',
+          );
+        }
+        if (respuesta.respuesta !== 'no_vio') {
+          throw new BadRequestException('Ya respondiste esta oferta');
+        }
+        await client.query(
+          `UPDATE respuestas_oferta SET respuesta = 'rechazada', respondido_at = now()
+           WHERE id = $1`,
+          [respuesta.id],
+        );
+        return { oferta_id: ofertaId, respuesta: 'rechazada' };
+      }
+
+      const pedido = await this.consultarUnoCliente<{
+        id: string;
+        estado: string;
+        costo_domicilio: string;
+      }>(
+        client,
+        `SELECT id, estado, costo_domicilio FROM pedidos
+         WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
+        [referenciaOferta.pedido_id, referenciaOferta.sucursal_id],
+      );
+      if (!pedido || pedido.estado !== 'listo') {
+        throw new BadRequestException('El pedido ya no está disponible');
+      }
+
+      // Lock order first, then offer: cancellation uses the same order and
+      // avoids a pedido↔oferta deadlock while closing active offers.
+      const oferta = await this.consultarUnoCliente<{
+        id: string;
         estado: string;
         expira_at: Date;
       }>(
         client,
-        `SELECT id, pedido_id, sucursal_id, estado, expira_at
-         FROM ofertas_pedido WHERE id = $1 FOR UPDATE`,
-        [ofertaId],
+        `SELECT id, estado, expira_at FROM ofertas_pedido
+         WHERE id = $1 AND pedido_id = $2 AND sucursal_id = $3 FOR UPDATE`,
+        [ofertaId, referenciaOferta.pedido_id, referenciaOferta.sucursal_id],
       );
-
-      if (!oferta) throw new NotFoundException('Oferta no encontrada');
       if (
+        !oferta ||
         oferta.estado !== 'activa' ||
         new Date(oferta.expira_at) <= new Date()
       ) {
@@ -234,13 +305,26 @@ export class DomiciliariosIndependientesService {
         throw new BadRequestException('Ya respondiste esta oferta');
       }
 
-      if (dto.respuesta === 'rechazada') {
-        await client.query(
-          `UPDATE respuestas_oferta SET respuesta = 'rechazada', respondido_at = now()
-           WHERE id = $1`,
-          [respuesta.id],
+      const domiciliario = await this.consultarUnoCliente<{ id: string }>(
+        client,
+        `SELECT id FROM domiciliarios_independientes
+         WHERE id = $1 FOR UPDATE`,
+        [domiciliarioId],
+      );
+      if (!domiciliario) {
+        throw new NotFoundException('Domiciliario no encontrado');
+      }
+      const sesionDisponible = await this.consultarUnoCliente<{ id: string }>(
+        client,
+        `SELECT id FROM domiciliarios_sesiones
+         WHERE domiciliario_id = $1 AND activa = true AND disponible = true
+         ORDER BY iniciada_at DESC LIMIT 1 FOR UPDATE`,
+        [domiciliarioId],
+      );
+      if (!sesionDisponible) {
+        throw new BadRequestException(
+          'Activa tu disponibilidad antes de aceptar otro pedido',
         );
-        return { oferta_id: ofertaId, respuesta: 'rechazada' };
       }
 
       const ocupado = await this.consultarUnoCliente<{ id: string }>(
@@ -254,23 +338,9 @@ export class DomiciliariosIndependientesService {
         throw new BadRequestException('Ya tienes un pedido activo');
       }
 
-      const pedido = await this.consultarUnoCliente<{
-        id: string;
-        estado: string;
-        costo_domicilio: string;
-      }>(
-        client,
-        `SELECT id, estado, costo_domicilio FROM pedidos
-         WHERE id = $1 FOR UPDATE`,
-        [oferta.pedido_id],
-      );
-      if (!pedido || pedido.estado !== 'listo') {
-        throw new BadRequestException('El pedido ya no está disponible');
-      }
-
       const despacho = await this.dispatch.validarPedidoParaDespacho(
-        oferta.pedido_id,
-        oferta.sucursal_id,
+        referenciaOferta.pedido_id,
+        referenciaOferta.sucursal_id,
         client,
       );
       if (!despacho.valido) {
@@ -281,7 +351,7 @@ export class DomiciliariosIndependientesService {
         client,
         `SELECT id FROM asignaciones_domicilio
          WHERE pedido_id = $1 AND estado IN ('asignado', 'en_camino')`,
-        [oferta.pedido_id],
+        [referenciaOferta.pedido_id],
       );
       if (yaAsignado) {
         await client.query(
@@ -316,7 +386,7 @@ export class DomiciliariosIndependientesService {
          SET respuesta = 'rechazada', respondido_at = now()
          WHERE oferta_id IN (SELECT id FROM canceladas)
            AND respuesta = 'no_vio'`,
-        [oferta.pedido_id, ofertaId],
+        [referenciaOferta.pedido_id, ofertaId],
       );
 
       const asignacion = await client.query<{ id: string }>(
@@ -341,13 +411,17 @@ export class DomiciliariosIndependientesService {
          JOIN sucursales s ON s.id = p.sucursal_id
          WHERE p.id = $1 AND p.sucursal_id = $2
          RETURNING id`,
-        [oferta.pedido_id, oferta.sucursal_id, domiciliarioId],
+        [
+          referenciaOferta.pedido_id,
+          referenciaOferta.sucursal_id,
+          domiciliarioId,
+        ],
       );
       const asignacionId = asignacion.rows[0].id;
 
       await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
-        pedidoId: oferta.pedido_id,
-        sucursalId: oferta.sucursal_id,
+        pedidoId: referenciaOferta.pedido_id,
+        sucursalId: referenciaOferta.sucursal_id,
         nuevoEstado: 'asignado',
         origen: 'domiciliario',
         motivo: 'Domiciliario independiente aceptó oferta',
@@ -376,7 +450,7 @@ export class DomiciliariosIndependientesService {
       return {
         oferta_id: ofertaId,
         respuesta: 'aceptada',
-        pedido_id: oferta.pedido_id,
+        pedido_id: referenciaOferta.pedido_id,
         asignacion_id: asignacionId,
         estado: 'asignado',
       };
@@ -395,6 +469,7 @@ export class DomiciliariosIndependientesService {
       total: string;
       monto_pagado: string;
       metodo_pago: string | null;
+      pagos_resumen: Array<{ metodo_pago: string; monto: string | number }>;
       costo_domicilio: string;
       lat: string | null;
       lng: string | null;
@@ -415,6 +490,7 @@ export class DomiciliariosIndependientesService {
               p.total,
               COALESCE(p.monto_pagado, 0) AS monto_pagado,
               p.metodo_pago,
+              COALESCE(pagos.resumen, '[]'::jsonb) AS pagos_resumen,
               p.costo_domicilio,
               p.lat,
               p.lng,
@@ -425,8 +501,20 @@ export class DomiciliariosIndependientesService {
               s.lat AS sucursal_lat,
               s.lng AS sucursal_lng
        FROM asignaciones_domicilio ad
-       JOIN pedidos p ON p.id = ad.pedido_id
+       JOIN pedidos p ON p.id = ad.pedido_id AND p.sucursal_id = ad.sucursal_id
        JOIN sucursales s ON s.id = ad.sucursal_id
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(jsonb_build_object(
+           'metodo_pago', pagos.metodo_pago,
+           'monto', pagos.monto
+         ) ORDER BY pagos.metodo_pago) AS resumen
+         FROM (
+           SELECT pp.metodo_pago, SUM(pp.monto) AS monto
+           FROM pagos_pedido pp
+           WHERE pp.pedido_id = p.id AND pp.sucursal_id = p.sucursal_id
+           GROUP BY pp.metodo_pago
+         ) pagos
+       ) pagos ON true
        WHERE ad.domiciliario_independiente_id = $1
          AND ad.estado IN ('asignado', 'en_camino')
        ORDER BY ad.asignado_at ASC`,

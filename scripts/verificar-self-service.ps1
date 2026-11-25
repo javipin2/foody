@@ -1,7 +1,9 @@
 # Foody — verificación self-service F1–F4
 # Uso: powershell -File scripts/verificar-self-service.ps1
 $ErrorActionPreference = "Continue"
-$Base = "http://localhost:3000/api/v1"
+. "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
+$Base = $script:FoodyQaBase
 
 function Invoke-Api {
     param([string]$Method = "GET", [string]$Path, [hashtable]$Headers = @{}, [object]$Body = $null)
@@ -73,19 +75,19 @@ $g = Invoke-Api -Method POST -Path "/auth/login-google" -Body @{ access_token = 
 Add-Result "login-google rechaza token inválido" ($g.status -eq 401 -or -not $g.json.exito) "status=$($g.status)"
 
 # BD: origen self_service
-$db = docker exec supabase-db psql -U postgres -d postgres -tAc "SELECT origen, plan, estado FROM restaurantes r JOIN suscripciones_restaurante s ON s.restaurante_id = r.id WHERE r.id = '$restId';" 2>&1
+$db = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc "SELECT origen, plan, estado FROM restaurantes r JOIN suscripciones_restaurante s ON s.restaurante_id = r.id WHERE r.id = '$restId';" 2>&1
 Add-Result "BD origen self_service + plan gratis" ($db -match "self_service") $db.ToString().Trim()
 
 # Columnas avisos F4
-$cols = docker exec supabase-db psql -U postgres -d postgres -tAc "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='suscripciones_restaurante' AND column_name IN ('aviso_3d_enviado_at','aviso_vence_hoy_enviado_at');" 2>&1
+$cols = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='suscripciones_restaurante' AND column_name IN ('aviso_3d_enviado_at','aviso_vence_hoy_enviado_at');" 2>&1
 Add-Result "Migración 053 columnas avisos" ($cols.Trim() -eq "2") "cols=$cols"
 
-# F5 checkout Wompi (requiere llaves en foody_backend/.env)
+# F5 en QA aislada: confirmar que checkout no persiste un pago al estar Wompi desactivado.
 if ($token) {
     $chk = Invoke-Api -Method POST -Path "/pagos/checkout" -Headers @{ Authorization = "Bearer $token" } -Body @{ plan = "basico" }
-    $url = $chk.json.datos.checkout_url
-    $okChk = $chk.ok -and $chk.json.exito -eq $true -and $url -match "checkout\.wompi\.co/l/"
-    Add-Result "POST /pagos/checkout (Wompi)" $okChk $(if ($okChk) { "url=$url" } else { "status=$($chk.status) $($chk.json.mensaje)" })
+    $pagoCount = docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc "SELECT COUNT(*) FROM pagos_suscripcion WHERE restaurante_id = '$restId';" 2>&1
+    $bloqueado = -not $chk.ok -and $chk.status -eq 400 -and $pagoCount.Trim() -eq '0'
+    Add-Result "POST /pagos/checkout bloqueado sin persistir ni llamar Wompi" $bloqueado "status=$($chk.status); pagos_creados=$($pagoCount.Trim())"
 }
 
 $results | Format-Table -AutoSize

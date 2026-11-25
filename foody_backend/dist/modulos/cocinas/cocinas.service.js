@@ -114,6 +114,9 @@ let CocinasService = class CocinasService {
     }
     async actualizarCocina(id, sucursalId, dto) {
         await this.exigirCocina(id, sucursalId);
+        if (dto.activa === false) {
+            await this.exigirCocinaSinOperacionPendiente(id, sucursalId);
+        }
         const campos = [];
         const valores = [];
         let i = 1;
@@ -134,11 +137,7 @@ let CocinasService = class CocinasService {
     }
     async eliminarCocina(id, sucursalId) {
         await this.exigirCocina(id, sucursalId);
-        const enUso = await this.database.consultarUno(`SELECT COUNT(*) AS total FROM productos
-       WHERE cocina_id = $1 AND sucursal_id = $2`, [id, sucursalId]);
-        if (Number(enUso?.total ?? 0) > 0) {
-            throw new common_1.BadRequestException('No puedes desactivar una cocina con productos asignados. Reasigna esos productos primero.');
-        }
+        await this.exigirCocinaSinOperacionPendiente(id, sucursalId);
         await this.database.consultar(`UPDATE cocinas SET activa = false WHERE id = $1 AND sucursal_id = $2`, [id, sucursalId]);
         return { id, activa: false };
     }
@@ -287,6 +286,20 @@ let CocinasService = class CocinasService {
             const pedidoId = fila.pedido_id;
             const estadoPedidoActual = fila.estado;
             const estadoCocinaAnterior = fila.estado_cocina;
+            const puedeCompletarPedidoPagado = (0, pedido_estados_1.puedeAvanzarCocinaPedidoPagado)({
+                estadoPedido: estadoPedidoActual,
+                total: fila.total,
+                montoPagado: fila.monto_pagado,
+                estadoItem: estadoCocinaAnterior,
+                nuevoEstadoItem: estado,
+            });
+            if (pedido_estados_1.ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA.has(estadoPedidoActual) &&
+                !puedeCompletarPedidoPagado) {
+                throw new common_1.ConflictException({
+                    error: 'PEDIDO_COCINA_CERRADO',
+                    message: 'No puedes cambiar ítems de Cocina cuando el pedido está en cobro, despacho o un estado terminal.',
+                });
+            }
             await client.query(`UPDATE pedido_items SET estado_cocina = $1 WHERE id = $2`, [estado, itemId]);
             if (estado === 'no_disponible' &&
                 estadoCocinaAnterior !== 'no_disponible') {
@@ -341,7 +354,10 @@ let CocinasService = class CocinasService {
          FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
             const { pendientes, en_proceso } = conteo.rows[0];
             let nuevoEstadoPedido = estadoPedidoActual;
-            if (Number(pendientes) === 0) {
+            if (puedeCompletarPedidoPagado) {
+                nuevoEstadoPedido = 'pagado';
+            }
+            else if (Number(pendientes) === 0) {
                 nuevoEstadoPedido = 'listo';
             }
             else if (Number(en_proceso) > 0) {
@@ -487,6 +503,31 @@ let CocinasService = class CocinasService {
         const c = await this.database.consultarUno(`SELECT id FROM cocinas WHERE id = $1 AND sucursal_id = $2`, [id, sucursalId]);
         if (!c)
             throw new common_1.NotFoundException('Cocina no encontrada');
+    }
+    async exigirCocinaSinOperacionPendiente(id, sucursalId) {
+        const uso = await this.database.consultarUno(`SELECT
+         (SELECT COUNT(*) FROM productos
+          WHERE cocina_id = $1 AND sucursal_id = $2 AND disponible = true)
+           AS productos_disponibles,
+         (SELECT COUNT(*)
+          FROM pedido_items pi
+          JOIN pedidos p ON p.id = pi.pedido_id
+          WHERE pi.cocina_id = $1
+            AND p.sucursal_id = $2
+            AND (
+              p.estado IN ('confirmado', 'en_cocina', 'listo', 'pagando')
+              OR (p.estado = 'pagado' AND (
+                pi.estado_cocina IS NULL
+                OR pi.estado_cocina NOT IN ('listo', 'no_disponible')
+              ))
+            )
+            AND (pi.estado_cocina IS NULL
+              OR pi.estado_cocina NOT IN ('listo', 'no_disponible')))
+           AS items_pendientes`, [id, sucursalId]);
+        if (Number(uso?.productos_disponibles ?? 0) > 0 ||
+            Number(uso?.items_pendientes ?? 0) > 0) {
+            throw new common_1.BadRequestException('No puedes desactivar una cocina con productos disponibles o pedidos pendientes. Reasigna los productos y termina los pedidos primero.');
+        }
     }
     async exigirImpresora(id, sucursalId) {
         const i = await this.database.consultarUno(`SELECT id FROM impresoras WHERE id = $1 AND sucursal_id = $2`, [id, sucursalId]);

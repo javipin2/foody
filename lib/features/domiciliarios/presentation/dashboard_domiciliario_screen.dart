@@ -58,6 +58,24 @@ class _DashboardDomiciliarioScreenState
   );
   final _fecha = DateFormat('d MMM · HH:mm', 'es_CO');
 
+  String _resumenMetodosPago(Map<String, dynamic> pedido) {
+    final pagos = pedido['pagos_resumen'];
+    if (pagos is List && pagos.isNotEmpty) {
+      return pagos.whereType<Map>().map((pago) {
+        final monto = num.tryParse('${pago['monto']}') ?? 0;
+        final metodo = switch ('${pago['metodo_pago']}') {
+          'efectivo' => 'Efectivo',
+          'tarjeta' => 'Tarjeta',
+          'transferencia' => 'Transferencia',
+          'nequi' => 'Nequi',
+          final otro => otro,
+        };
+        return '$metodo: ${_moneda.format(monto)}';
+      }).join(', ');
+    }
+    return '${pedido['metodo_pago'] ?? ''}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -739,7 +757,7 @@ class _DashboardDomiciliarioScreenState
                     itemBuilder: (_, i) {
                       final h = _historial[i];
                       final total = h['total'];
-                      final metodo = h['metodo_pago'];
+                      final metodo = _resumenMetodosPago(h);
                       final fecha = h['entregado_at'] ?? h['asignado_at'];
                       String? fechaTxt;
                       if (fecha != null) {
@@ -763,7 +781,7 @@ class _DashboardDomiciliarioScreenState
                               if (h['direccion_entrega'] != null)
                                 h['direccion_entrega'],
                               if (fechaTxt != null) fechaTxt,
-                              if (metodo != null) '$metodo',
+                              if (metodo.trim().isNotEmpty) metodo,
                             ].where((e) => '$e'.trim().isNotEmpty).join(' · '),
                           ),
                           isThreeLine: true,

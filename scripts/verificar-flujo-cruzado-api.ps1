@@ -6,10 +6,13 @@ $raiz = $PSScriptRoot
 
 Write-Host '=== Flujo cruzado API (checklist sec4) ===' -ForegroundColor Cyan
 . "$PSScriptRoot\lib\qa-helpers.ps1"
-Ensure-HorariosDemoAbiertos
-& "$raiz\limpiar-demo-qa.ps1"
-if ($LASTEXITCODE -ne 0) { exit 1 }
-
+$qaUri = [Uri]$script:FoodyQaBase
+$esQaLocal = @('127.0.0.1', 'localhost') -contains $qaUri.Host -and $qaUri.Port -eq 3001
+$esClonDesechable = $script:FoodyQaDatabase -match '^foody_diseno_qa_codex_[a-zA-Z0-9_]+$'
+if (-not $esQaLocal -or $script:FoodyQaDbContainer -ne 'foody-diseno-qa-db' -or -not $esClonDesechable) {
+    Write-Host "BLOQUEADO: el flujo cruzado modifica datos y requiere API localhost:3001, contenedor foody-diseno-qa-db y clon foody_diseno_qa_codex_* (actual: $($script:FoodyQaBase), $($script:FoodyQaDbContainer)/$($script:FoodyQaDatabase))." -ForegroundColor Yellow
+    exit 2
+}
 $scripts = @(
     @{ Name = 'Cliente menu + registro (self-service)'; Script = 'verificar-self-service.ps1' }
     @{ Name = 'Para llevar + cocina (impresion)'; Script = 'verificar-impresion.ps1' }
@@ -24,6 +27,28 @@ $scripts = @(
     @{ Name = 'Caja coherencia'; Script = 'verificar-caja-coherencia.ps1' }
     @{ Name = 'Fiado domiciliario'; Script = 'verificar-fiado-domiciliario.ps1'; ArgsHash = @{ CicloCompleto = $true } }
 )
+
+# El guard del orquestador también revisa las dependencias para evitar que un
+# subguion con destino fijo eluda el clon y alcance el API :3000 o la BD dev.
+$preflight = @($scripts | ForEach-Object { $_.Script }) + @('reparar-impresora-demo.ps1')
+foreach ($scriptName in $preflight) {
+    $scriptPath = Join-Path $raiz $scriptName
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        Write-Host "BLOQUEADO: falta el subguion requerido $scriptName" -ForegroundColor Yellow
+        exit 2
+    }
+    $source = Get-Content -LiteralPath $scriptPath -Raw
+    if ($source -match 'http://(?:localhost|127\.0\.0\.1):3000|docker\s+exec\s+supabase-db') {
+        Write-Host "BLOQUEADO: $scriptName contiene un destino dev fijo; no se ejecutará ninguna prueba." -ForegroundColor Yellow
+        exit 2
+    }
+}
+
+try { Assert-FoodyQaDisposable }
+catch { Write-Host "BLOQUEADO: $($_.Exception.Message)" -ForegroundColor Yellow; exit 2 }
+Ensure-HorariosDemoAbiertos
+& "$raiz\limpiar-demo-qa.ps1"
+if ($LASTEXITCODE -ne 0) { exit 1 }
 
 $results = @()
 foreach ($item in $scripts) {

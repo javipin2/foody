@@ -34,6 +34,7 @@ class MenuScreenFoody extends ConsumerStatefulWidget {
     required this.sucursalNombre,
     this.mesaId,
     this.mesaNombre,
+    this.qrToken,
     this.productoIdDestino,
   });
 
@@ -41,6 +42,8 @@ class MenuScreenFoody extends ConsumerStatefulWidget {
   final String sucursalNombre;
   final String? mesaId;
   final String? mesaNombre;
+  final String? qrToken;
+
   /// Deep-link desde story con producto vinculado.
   final String? productoIdDestino;
 
@@ -87,6 +90,7 @@ class _MenuScreenFoodyState extends ConsumerState<MenuScreenFoody> {
           mesaNombre: widget.mesaNombre!,
           sucursalId: widget.sucursalId,
           sucursalNombre: widget.sucursalNombre,
+          qrToken: widget.qrToken,
         );
         unawaited(_refrescarPedidosActivosMesa());
       }
@@ -98,7 +102,9 @@ class _MenuScreenFoodyState extends ConsumerState<MenuScreenFoody> {
     final sesion = await MesaSesionService.obtener();
     final token = sesion?.qrToken;
     if (token == null || token.isEmpty) {
-      if (mounted) setState(() => _pedidosActivosMesa = sesion?.pedidosActivos ?? 0);
+      if (mounted) {
+        setState(() => _pedidosActivosMesa = sesion?.pedidosActivos ?? 0);
+      }
       return;
     }
     try {
@@ -298,15 +304,15 @@ class _MenuScreenFoodyState extends ConsumerState<MenuScreenFoody> {
         }
       },
       child: Scaffold(
-      backgroundColor: AnaliticaTokens.canvas,
-      floatingActionButton: null,
-      bottomNavigationBar: Consumer(
-        builder: (context, ref, _) {
-          final resumen = ref.watch(
-            carritoProvider.select((c) => (c.totalItems, c.totalPrecio)),
-          );
-          if (resumen.$1 <= 0) return const SizedBox.shrink();
-          return Material(
+        backgroundColor: AnaliticaTokens.canvas,
+        floatingActionButton: null,
+        bottomNavigationBar: Consumer(
+          builder: (context, ref, _) {
+            final resumen = ref.watch(
+              carritoProvider.select((c) => (c.totalItems, c.totalPrecio)),
+            );
+            if (resumen.$1 <= 0) return const SizedBox.shrink();
+            return Material(
               elevation: 0,
               color: AnaliticaTokens.surface,
               child: SafeArea(
@@ -340,520 +346,532 @@ class _MenuScreenFoodyState extends ConsumerState<MenuScreenFoody> {
                 ),
               ),
             );
-        },
-      ),
-      body: FutureBuilder<MenuModel>(
-        future: _futureMenu,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return FoodyEstadoUi.cargando(mensaje: 'Cargando menú…');
-          }
-          if (snapshot.hasError) {
-            return FoodyEstadoUi.error(
-              mensaje: mensajeErrorCliente(
-                snapshot.error!,
-                contexto: 'cargar el menú',
-              ),
-              onReintentar: _reintentar,
-            );
-          }
-
-          final menu = snapshot.data!;
-          _abrirProductoDestinoSiAplica(menu);
-          if (!menu.sucursal.horarioActivo) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.schedule, size: 56, color: Colors.grey.shade400),
-                    const SizedBox(height: 16),
-                    Text(
-                      '${widget.sucursalNombre} está cerrado en este momento.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
-                      onPressed: () => context.pop(),
-                      child: const Text('Volver'),
-                    ),
-                  ],
+          },
+        ),
+        body: FutureBuilder<MenuModel>(
+          future: _futureMenu,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return FoodyEstadoUi.cargando(mensaje: 'Cargando menú…');
+            }
+            if (snapshot.hasError) {
+              return FoodyEstadoUi.error(
+                mensaje: mensajeErrorCliente(
+                  snapshot.error!,
+                  contexto: 'cargar el menú',
                 ),
-              ),
-            );
-          }
+                onReintentar: _reintentar,
+              );
+            }
 
-          final productos = _productosFiltrados(menu);
-          final encargos = _encargos(menu);
+            final menu = snapshot.data!;
+            _abrirProductoDestinoSiAplica(menu);
+            if (!menu.sucursal.horarioActivo) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.schedule,
+                          size: 56, color: Colors.grey.shade400),
+                      const SizedBox(height: 16),
+                      Text(
+                        '${widget.sucursalNombre} está cerrado en este momento.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton(
+                        onPressed: () => context.pop(),
+                        child: const Text('Volver'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              _reintentar();
-              await _futureMenu;
-              await _refrescarPedidosActivosMesa();
-            },
-            child: CustomScrollView(
-              slivers: [
-                if (widget.mesaNombre != null)
-                  SliverToBoxAdapter(
-                    child: Column(
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AnaliticaTokens.surface,
-                            borderRadius:
-                                BorderRadius.circular(AnaliticaTokens.r12),
-                            border: Border.all(color: AnaliticaTokens.border),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.table_restaurant_rounded,
-                                color: AnaliticaTokens.ink
-                                    .withValues(alpha: 0.75),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Mesa ${widget.mesaNombre} · ${widget.sucursalNombre}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: AnaliticaTokens.ink,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (_pedidosActivosMesa > 0)
+            final productos = _productosFiltrados(menu);
+            final encargos = _encargos(menu);
+
+            return RefreshIndicator(
+              onRefresh: () async {
+                _reintentar();
+                await _futureMenu;
+                await _refrescarPedidosActivosMesa();
+              },
+              child: CustomScrollView(
+                slivers: [
+                  if (widget.mesaNombre != null)
+                    SliverToBoxAdapter(
+                      child: Column(
+                        children: [
                           Container(
                             width: double.infinity,
                             margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: AnaliticaTokens.surfaceMuted,
+                              color: AnaliticaTokens.surface,
                               borderRadius:
                                   BorderRadius.circular(AnaliticaTokens.r12),
                               border: Border.all(color: AnaliticaTokens.border),
                             ),
                             child: Row(
                               children: [
-                                const Icon(
-                                  Icons.receipt_long_rounded,
-                                  color: AnaliticaTokens.ink,
-                                  size: 22,
+                                Icon(
+                                  Icons.table_restaurant_rounded,
+                                  color: AnaliticaTokens.ink
+                                      .withValues(alpha: 0.75),
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    _pedidosActivosMesa == 1
-                                        ? 'Cuenta de mesa activa · ${_formatoMoneda.format(_totalPendienteMesa)} pendiente. '
-                                            'Puedes seguir pidiendo; todo se suma a la misma cuenta.'
-                                        : 'Cuenta unificada: $_pedidosActivosMesa pedidos · '
-                                            '${_formatoMoneda.format(_totalPendienteMesa)} pendiente. '
-                                            'Los nuevos ítems se agregan a esta mesa.',
+                                    'Mesa ${widget.mesaNombre} · ${widget.sucursalNombre}',
                                     style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AnaliticaTokens.inkMuted,
-                                      height: 1.35,
+                                      fontWeight: FontWeight.w600,
+                                      color: AnaliticaTokens.ink,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                SliverAppBar(
-                  pinned: true,
-                  backgroundColor: AnaliticaTokens.surface,
-                  foregroundColor: AnaliticaTokens.ink,
-                  surfaceTintColor: Colors.transparent,
-                  elevation: 0,
-                  scrolledUnderElevation: 1,
-                  centerTitle: false,
-                  titleSpacing: 0,
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'Menú',
-                        style: TextStyle(
-                          color: AnaliticaTokens.inkMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          height: 1.1,
-                        ),
-                      ),
-                      Text(
-                        widget.sucursalNombre,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: AnaliticaTokens.ink,
-                          letterSpacing: -0.3,
-                          height: 1.15,
-                        ),
-                      ),
-                    ],
-                  ),
-                  actions: widget.mesaId != null
-                      ? [
-                          TextButton.icon(
-                            onPressed: _salirDeMesa,
-                            icon: const Icon(Icons.logout, size: 18),
-                            label: const Text('Terminé'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: AnaliticaTokens.ink,
-                            ),
-                          ),
-                        ]
-                      : null,
-                ),
-                SliverToBoxAdapter(
-                  child: PromocionesStoriesBar(
-                    sucursalId: widget.sucursalId,
-                    sucursalNombre: widget.sucursalNombre,
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: TextField(
-                      controller: _busquedaCtrl,
-                      onChanged: (v) => setState(() => _busqueda = v),
-                      style: const TextStyle(
-                        color: AnaliticaTokens.ink,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Buscar plato o bebida…',
-                        hintStyle: const TextStyle(
-                          color: AnaliticaTokens.inkSoft,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          color: AnaliticaTokens.inkMuted,
-                        ),
-                        filled: true,
-                        fillColor: AnaliticaTokens.surface,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AnaliticaTokens.r12),
-                          borderSide:
-                              const BorderSide(color: AnaliticaTokens.border),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AnaliticaTokens.r12),
-                          borderSide:
-                              const BorderSide(color: AnaliticaTokens.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AnaliticaTokens.r12),
-                          borderSide: const BorderSide(
-                            color: AnaliticaTokens.ink,
-                            width: 1.4,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Consumer(
-                  builder: (context, ref, _) {
-                    final vacio = ref.watch(
-                      carritoProvider.select((c) => c.totalItems == 0),
-                    );
-                    if (!vacio) {
-                      return const SliverToBoxAdapter(
-                        child: SizedBox.shrink(),
-                      );
-                    }
-                    return const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
-                        child: Text(
-                          'Toca + para armar tu pedido. Puedes agregar extras al plato.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: AnaliticaTokens.inkMuted,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 44,
-                    child: FoodyScrollHorizontalFade(
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        children: [
-                          _chipCategoria('Todas', _categoriaId == null, () {
-                            setState(() => _categoriaId = null);
-                          }),
-                          for (final c in menu.categorias)
-                            _chipCategoria(
-                              c.nombre,
-                              _categoriaId == c.id,
-                              () => setState(() {
-                                _categoriaId =
-                                    _categoriaId == c.id ? null : c.id;
-                              }),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (encargos.isNotEmpty &&
-                    _categoriaId == null &&
-                    _busqueda.isEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Encargos',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: AnaliticaTokens.ink,
-                                ),
-                          ),
-                          const Text(
-                            'Requieren confirmación del restaurante',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AnaliticaTokens.inkMuted,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ...encargos.map(
-                            (p) => Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              color: AnaliticaTokens.surfaceMuted,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
+                          if (_pedidosActivosMesa > 0)
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AnaliticaTokens.surfaceMuted,
                                 borderRadius:
                                     BorderRadius.circular(AnaliticaTokens.r12),
-                                side: const BorderSide(
-                                  color: AnaliticaTokens.border,
-                                ),
+                                border:
+                                    Border.all(color: AnaliticaTokens.border),
                               ),
-                              child: ListTile(
-                                title: Text(
-                                  p.nombre,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.receipt_long_rounded,
                                     color: AnaliticaTokens.ink,
+                                    size: 22,
                                   ),
-                                ),
-                                subtitle: Text(
-                                  p.disponible
-                                      ? (p.descripcion ?? '')
-                                      : 'Agotado',
-                                  style: const TextStyle(
-                                    color: AnaliticaTokens.inkMuted,
-                                  ),
-                                ),
-                                trailing: p.disponible
-                                    ? IconButton(
-                                        icon: const Icon(Icons.add_circle),
-                                        color: AnaliticaTokens.ink,
-                                        onPressed: () =>
-                                            _agregarProducto(p, menu),
-                                      )
-                                    : Chip(
-                                        label: const Text('Agotado'),
-                                        visualDensity: VisualDensity.compact,
-                                        backgroundColor:
-                                            AnaliticaTokens.surfaceMuted,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _pedidosActivosMesa == 1
+                                          ? 'Cuenta de mesa activa · ${_formatoMoneda.format(_totalPendienteMesa)} pendiente. '
+                                              'Puedes seguir pidiendo; todo se suma a la misma cuenta.'
+                                          : 'Cuenta unificada: $_pedidosActivosMesa pedidos · '
+                                              '${_formatoMoneda.format(_totalPendienteMesa)} pendiente. '
+                                              'Los nuevos ítems se agregan a esta mesa.',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AnaliticaTokens.inkMuted,
+                                        height: 1.35,
                                       ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
                         ],
                       ),
                     ),
+                  SliverAppBar(
+                    pinned: true,
+                    backgroundColor: AnaliticaTokens.surface,
+                    foregroundColor: AnaliticaTokens.ink,
+                    surfaceTintColor: Colors.transparent,
+                    elevation: 0,
+                    scrolledUnderElevation: 1,
+                    centerTitle: false,
+                    titleSpacing: 0,
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Menú',
+                          style: TextStyle(
+                            color: AnaliticaTokens.inkMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            height: 1.1,
+                          ),
+                        ),
+                        Text(
+                          widget.sucursalNombre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AnaliticaTokens.ink,
+                            letterSpacing: -0.3,
+                            height: 1.15,
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: widget.mesaId != null
+                        ? [
+                            TextButton.icon(
+                              onPressed: _salirDeMesa,
+                              icon: const Icon(Icons.logout, size: 18),
+                              label: const Text('Terminé'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AnaliticaTokens.ink,
+                              ),
+                            ),
+                          ]
+                        : null,
                   ),
-                if (menu.combos.isNotEmpty &&
-                    _categoriaId == null &&
-                    _busqueda.isEmpty)
+                  SliverToBoxAdapter(
+                    child: PromocionesStoriesBar(
+                      sucursalId: widget.sucursalId,
+                      sucursalNombre: widget.sucursalNombre,
+                    ),
+                  ),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Combos',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: AnaliticaTokens.ink,
-                                ),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: TextField(
+                        controller: _busquedaCtrl,
+                        onChanged: (v) => setState(() => _busqueda = v),
+                        style: const TextStyle(
+                          color: AnaliticaTokens.ink,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Buscar plato o bebida…',
+                          hintStyle: const TextStyle(
+                            color: AnaliticaTokens.inkSoft,
+                            fontWeight: FontWeight.w400,
                           ),
-                          const SizedBox(height: 8),
-                          ...menu.combos.map(
-                            (combo) => Opacity(
-                              opacity: combo.disponible ? 1 : 0.55,
-                              child: Card(
+                          prefixIcon: const Icon(
+                            Icons.search_rounded,
+                            color: AnaliticaTokens.inkMuted,
+                          ),
+                          filled: true,
+                          fillColor: AnaliticaTokens.surface,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.circular(AnaliticaTokens.r12),
+                            borderSide:
+                                const BorderSide(color: AnaliticaTokens.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.circular(AnaliticaTokens.r12),
+                            borderSide:
+                                const BorderSide(color: AnaliticaTokens.border),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.circular(AnaliticaTokens.r12),
+                            borderSide: const BorderSide(
+                              color: AnaliticaTokens.ink,
+                              width: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final vacio = ref.watch(
+                        carritoProvider.select((c) => c.totalItems == 0),
+                      );
+                      if (!vacio) {
+                        return const SliverToBoxAdapter(
+                          child: SizedBox.shrink(),
+                        );
+                      }
+                      return const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+                          child: Text(
+                            'Toca + para armar tu pedido. Puedes agregar extras al plato.',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AnaliticaTokens.inkMuted,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 44,
+                      child: FoodyScrollHorizontalFade(
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          children: [
+                            _chipCategoria('Todas', _categoriaId == null, () {
+                              setState(() => _categoriaId = null);
+                            }),
+                            for (final c in menu.categorias)
+                              _chipCategoria(
+                                c.nombre,
+                                _categoriaId == c.id,
+                                () => setState(() {
+                                  _categoriaId =
+                                      _categoriaId == c.id ? null : c.id;
+                                }),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (encargos.isNotEmpty &&
+                      _categoriaId == null &&
+                      _busqueda.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Encargos',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AnaliticaTokens.ink,
+                                  ),
+                            ),
+                            const Text(
+                              'Requieren confirmación del restaurante',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AnaliticaTokens.inkMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...encargos.map(
+                              (p) => Card(
                                 margin: const EdgeInsets.only(bottom: 8),
+                                color: AnaliticaTokens.surfaceMuted,
                                 elevation: 0,
-                                color: AnaliticaTokens.surface,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(
-                                    AnaliticaTokens.r12,
-                                  ),
+                                      AnaliticaTokens.r12),
                                   side: const BorderSide(
                                     color: AnaliticaTokens.border,
                                   ),
                                 ),
                                 child: ListTile(
-                                  leading: combo.imagenUrl != null &&
-                                          combo.imagenUrl!.isNotEmpty
-                                      ? ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          child: CachedNetworkImage(
-                                            imageUrl: combo.imagenUrl!,
-                                            width: 56,
-                                            height: 56,
-                                            memCacheWidth:
-                                                (56 * MediaQuery.devicePixelRatioOf(context))
-                                                    .round(),
-                                            memCacheHeight:
-                                                (56 * MediaQuery.devicePixelRatioOf(context))
-                                                    .round(),
-                                            fit: BoxFit.cover,
-                                            placeholder: (_, __) =>
-                                                const Icon(
-                                              Icons.fastfood_rounded,
-                                              color: AnaliticaTokens.inkMuted,
-                                            ),
-                                            errorWidget: (_, __, ___) =>
-                                                const Icon(
-                                              Icons.fastfood_rounded,
-                                              color: AnaliticaTokens.inkMuted,
-                                            ),
-                                          ),
-                                        )
-                                      : CircleAvatar(
-                                          backgroundColor:
-                                              AnaliticaTokens.surfaceMuted,
-                                          child: Icon(
-                                            Icons.layers_rounded,
-                                            color: AnaliticaTokens.ink
-                                                .withValues(alpha: 0.7),
-                                          ),
-                                        ),
                                   title: Text(
-                                    combo.nombre,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                    p.nombre,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                       color: AnaliticaTokens.ink,
                                     ),
                                   ),
                                   subtitle: Text(
-                                    [
-                                      if (!combo.disponible) 'Agotado',
-                                      _formatoMoneda.format(combo.precioFijo),
-                                      if (combo.resumenItems.isNotEmpty)
-                                        combo.resumenItems
-                                      else if ((combo.descripcion ?? '')
-                                          .isNotEmpty)
-                                        combo.descripcion!,
-                                    ].join(' · '),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                    p.disponible
+                                        ? (p.descripcion ?? '')
+                                        : 'Agotado',
                                     style: const TextStyle(
                                       color: AnaliticaTokens.inkMuted,
                                     ),
                                   ),
-                                  trailing: combo.disponible
-                                      ? _BotonAgregarRapido(
-                                          onTap: () =>
-                                              _agregarCombo(combo, menu),
+                                  trailing: p.disponible
+                                      ? IconButton(
+                                          icon: const Icon(Icons.add_circle),
+                                          color: AnaliticaTokens.ink,
+                                          onPressed: () =>
+                                              _agregarProducto(p, menu),
                                         )
-                                      : null,
+                                      : Chip(
+                                          label: const Text('Agotado'),
+                                          visualDensity: VisualDensity.compact,
+                                          backgroundColor:
+                                              AnaliticaTokens.surfaceMuted,
+                                        ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                if (productos.isEmpty && menu.combos.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: FoodyEstadoUi.vacio(
-                      titulo: _tituloVacioCategoria(menu),
-                      subtitulo: _subtituloVacioCategoria(menu),
-                      icono: Icons.search_off_outlined,
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final p = productos[index];
-                          return TweenAnimationBuilder<double>(
-                            tween: Tween(begin: 0, end: 1),
-                            duration: Duration(
-                              milliseconds: 220 + (index.clamp(0, 8) * 28),
+                  if (menu.combos.isNotEmpty &&
+                      _categoriaId == null &&
+                      _busqueda.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Combos',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AnaliticaTokens.ink,
+                                  ),
                             ),
-                            curve: Curves.easeOutCubic,
-                            builder: (context, t, child) {
-                              return Opacity(
-                                opacity: t,
-                                child: Transform.translate(
-                                  offset: Offset(0, 10 * (1 - t)),
-                                  child: child,
+                            const SizedBox(height: 8),
+                            ...menu.combos.map(
+                              (combo) => Opacity(
+                                opacity: combo.disponible ? 1 : 0.55,
+                                child: Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  elevation: 0,
+                                  color: AnaliticaTokens.surface,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      AnaliticaTokens.r12,
+                                    ),
+                                    side: const BorderSide(
+                                      color: AnaliticaTokens.border,
+                                    ),
+                                  ),
+                                  child: ListTile(
+                                    leading: combo.imagenUrl != null &&
+                                            combo.imagenUrl!.isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: CachedNetworkImage(
+                                              imageUrl: combo.imagenUrl!,
+                                              width: 56,
+                                              height: 56,
+                                              memCacheWidth: (56 *
+                                                      MediaQuery
+                                                          .devicePixelRatioOf(
+                                                              context))
+                                                  .round(),
+                                              memCacheHeight: (56 *
+                                                      MediaQuery
+                                                          .devicePixelRatioOf(
+                                                              context))
+                                                  .round(),
+                                              fit: BoxFit.cover,
+                                              placeholder: (_, __) =>
+                                                  const Icon(
+                                                Icons.fastfood_rounded,
+                                                color: AnaliticaTokens.inkMuted,
+                                              ),
+                                              errorWidget: (_, __, ___) =>
+                                                  const Icon(
+                                                Icons.fastfood_rounded,
+                                                color: AnaliticaTokens.inkMuted,
+                                              ),
+                                            ),
+                                          )
+                                        : CircleAvatar(
+                                            backgroundColor:
+                                                AnaliticaTokens.surfaceMuted,
+                                            child: Icon(
+                                              Icons.layers_rounded,
+                                              color: AnaliticaTokens.ink
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                          ),
+                                    title: Text(
+                                      combo.nombre,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: AnaliticaTokens.ink,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      [
+                                        if (!combo.disponible) 'Agotado',
+                                        _formatoMoneda.format(combo.precioFijo),
+                                        if (combo.resumenItems.isNotEmpty)
+                                          combo.resumenItems
+                                        else if ((combo.descripcion ?? '')
+                                            .isNotEmpty)
+                                          combo.descripcion!,
+                                      ].join(' · '),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: AnaliticaTokens.inkMuted,
+                                      ),
+                                    ),
+                                    trailing: combo.disponible
+                                        ? _BotonAgregarRapido(
+                                            onTap: () =>
+                                                _agregarCombo(combo, menu),
+                                          )
+                                        : null,
+                                  ),
                                 ),
-                              );
-                            },
-                            child: _TarjetaProducto(
-                              producto: p,
-                              formato: _formatoMoneda,
-                              onAgregar: () => _agregarProducto(p, menu),
+                              ),
                             ),
-                          );
-                        },
-                        childCount: productos.length,
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-          );
-        },
+                  if (productos.isEmpty && menu.combos.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: FoodyEstadoUi.vacio(
+                        titulo: _tituloVacioCategoria(menu),
+                        subtitulo: _subtituloVacioCategoria(menu),
+                        icono: Icons.search_off_outlined,
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final p = productos[index];
+                            return TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0, end: 1),
+                              duration: Duration(
+                                milliseconds: 220 + (index.clamp(0, 8) * 28),
+                              ),
+                              curve: Curves.easeOutCubic,
+                              builder: (context, t, child) {
+                                return Opacity(
+                                  opacity: t,
+                                  child: Transform.translate(
+                                    offset: Offset(0, 10 * (1 - t)),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: _TarjetaProducto(
+                                producto: p,
+                                formato: _formatoMoneda,
+                                onAgregar: () => _agregarProducto(p, menu),
+                              ),
+                            );
+                          },
+                          childCount: productos.length,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
-    ),
     );
   }
 
@@ -972,119 +990,119 @@ class _TarjetaProducto extends StatelessWidget {
     final disponible = producto.disponible;
     return Opacity(
       opacity: disponible ? 1 : 0.55,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Material(
-        color: AnaliticaTokens.surface,
-        elevation: 0,
-        borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: disponible ? onAgregar : null,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
-              border: Border.all(color: AnaliticaTokens.border),
-              boxShadow: AnaliticaTokens.shadowSoft,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  _imagen(context),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                producto.nombre,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  color: AnaliticaTokens.ink,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                            ),
-                            if (!disponible)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AnaliticaTokens.surfaceMuted,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Agotado',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AnaliticaTokens.inkMuted,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Material(
+          color: AnaliticaTokens.surface,
+          elevation: 0,
+          borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: disponible ? onAgregar : null,
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AnaliticaTokens.r12),
+                border: Border.all(color: AnaliticaTokens.border),
+                boxShadow: AnaliticaTokens.shadowSoft,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    _imagen(context),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  producto.nombre,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: AnaliticaTokens.ink,
+                                    letterSpacing: -0.2,
                                   ),
                                 ),
                               ),
+                              if (!disponible)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AnaliticaTokens.surfaceMuted,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'Agotado',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: AnaliticaTokens.inkMuted,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if ((producto.descripcion ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              producto.descripcion!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AnaliticaTokens.inkMuted,
+                              ),
+                            ),
                           ],
-                        ),
-                        if ((producto.descripcion ?? '').isNotEmpty) ...[
-                          const SizedBox(height: 4),
+                          if (producto.tienePersonalizacion) ...[
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Personalizable · extras',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AnaliticaTokens.inkSoft,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
                           Text(
-                            producto.descripcion!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            formato.format(producto.precio),
                             style: const TextStyle(
-                              fontSize: 12,
-                              color: AnaliticaTokens.inkMuted,
+                              fontWeight: FontWeight.w700,
+                              color: AnaliticaTokens.ink,
+                              fontSize: 14,
                             ),
                           ),
+                          if (producto.tienePrecioLlevarDistinto)
+                            Text(
+                              'Llevar ${formato.format(producto.precioParaLlevar!)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AnaliticaTokens.inkMuted,
+                              ),
+                            ),
                         ],
-                        if (producto.tienePersonalizacion) ...[
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Personalizable · extras',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AnaliticaTokens.inkSoft,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Text(
-                          formato.format(producto.precio),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AnaliticaTokens.ink,
-                            fontSize: 14,
-                          ),
-                        ),
-                        if (producto.tienePrecioLlevarDistinto)
-                          Text(
-                            'Llevar ${formato.format(producto.precioParaLlevar!)}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AnaliticaTokens.inkMuted,
-                            ),
-                          ),
-                      ],
+                      ),
                     ),
-                  ),
-                  if (disponible) ...[
-                    const SizedBox(width: 8),
-                    _BotonAgregarRapido(onTap: onAgregar),
+                    if (disponible) ...[
+                      const SizedBox(width: 8),
+                      _BotonAgregarRapido(onTap: onAgregar),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
         ),
       ),
-            ),
     );
   }
 

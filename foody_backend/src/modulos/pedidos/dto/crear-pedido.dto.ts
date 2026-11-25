@@ -93,6 +93,11 @@ export class CrearPedidoDto {
   @IsUUID()
   mesa_id?: string;
 
+  /** Código de mesa portado por checkout QR público (no se usa en POS staff). */
+  @IsOptional()
+  @IsString()
+  qr_token?: string;
+
   @IsString()
   device_id: string;
 

@@ -270,11 +270,24 @@ let DomiciliariosService = class DomiciliariosService {
               p.costo_domicilio,
               p.total,
               p.metodo_pago,
+              COALESCE(pagos.resumen, '[]'::jsonb) AS pagos_resumen,
               p.estado,
               ad.entregado_at,
               ad.asignado_at
        FROM asignaciones_domicilio ad
-       JOIN pedidos p ON p.id = ad.pedido_id
+       JOIN pedidos p ON p.id = ad.pedido_id AND p.sucursal_id = ad.sucursal_id
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(jsonb_build_object(
+           'metodo_pago', pagos.metodo_pago,
+           'monto', pagos.monto
+         ) ORDER BY pagos.metodo_pago) AS resumen
+         FROM (
+           SELECT pp.metodo_pago, SUM(pp.monto) AS monto
+           FROM pagos_pedido pp
+           WHERE pp.pedido_id = p.id AND pp.sucursal_id = p.sucursal_id
+           GROUP BY pp.metodo_pago
+         ) pagos
+       ) pagos ON true
        WHERE ad.domiciliario_planta_id = $1
          AND ad.estado = 'entregado'${filtroFecha}
        ORDER BY ad.entregado_at DESC NULLS LAST
@@ -345,14 +358,27 @@ let DomiciliariosService = class DomiciliariosService {
               p.total,
               COALESCE(p.monto_pagado, 0) AS monto_pagado,
               p.metodo_pago,
+              COALESCE(pagos.resumen, '[]'::jsonb) AS pagos_resumen,
               p.created_at,
               ad.estado AS estado_asignacion,
               ad.asignado_at,
               COALESCE(s.permite_fiado_domiciliario, false) AS permite_fiado_domiciliario,
               COALESCE(s.domicilio_ingresa_a_caja, false) AS domicilio_ingresa_a_caja
        FROM asignaciones_domicilio ad
-       JOIN pedidos p ON p.id = ad.pedido_id
+       JOIN pedidos p ON p.id = ad.pedido_id AND p.sucursal_id = ad.sucursal_id
        JOIN sucursales s ON s.id = p.sucursal_id
+       LEFT JOIN LATERAL (
+         SELECT jsonb_agg(jsonb_build_object(
+           'metodo_pago', pagos.metodo_pago,
+           'monto', pagos.monto
+         ) ORDER BY pagos.metodo_pago) AS resumen
+         FROM (
+           SELECT pp.metodo_pago, SUM(pp.monto) AS monto
+           FROM pagos_pedido pp
+           WHERE pp.pedido_id = p.id AND pp.sucursal_id = p.sucursal_id
+           GROUP BY pp.metodo_pago
+         ) pagos
+       ) pagos ON true
        WHERE ad.domiciliario_planta_id = $1
          AND ad.estado IN ('asignado', 'en_camino')
          AND p.estado IN ('asignado', 'en_camino')
@@ -458,8 +484,19 @@ let DomiciliariosService = class DomiciliariosService {
                         usuarioId,
                     });
                     await client.query(`UPDATE pedidos
-             SET monto_pagado = total, metodo_pago = 'efectivo'
-             WHERE id = $1`, [cuenta.pedido_id]);
+             SET monto_pagado = pedidos.total,
+                 metodo_pago = COALESCE(
+                   (
+                     SELECT pp.metodo_pago
+                     FROM pagos_pedido pp
+                     WHERE pp.pedido_id = pedidos.id
+                       AND pp.sucursal_id = pedidos.sucursal_id
+                     ORDER BY pp.created_at ASC, pp.id ASC
+                     LIMIT 1
+                   ),
+                   'efectivo'
+                 )
+             WHERE pedidos.id = $1 AND pedidos.sucursal_id = $2`, [cuenta.pedido_id, sucursalId]);
                 }
             }
             await client.query(`INSERT INTO auditoria_logs (

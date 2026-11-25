@@ -76,6 +76,9 @@ let PedidosController = class PedidosController {
         return this.pedidosService.cobrarCuentaMesa(id, mesaId, usuario.sub, dto, usuario.rol);
     }
     async crearStaff(dto, usuario) {
+        if (dto.pagos?.length && !usuario.permisos.includes('cobrar_pedido')) {
+            throw new common_1.ForbiddenException('No tienes permiso para cobrar pedidos');
+        }
         return this.pedidosService.crearStaff(usuario, dto);
     }
     async agregarItems(pedidoId, dto, usuario, sucursalId) {

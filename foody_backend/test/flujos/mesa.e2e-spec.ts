@@ -5,6 +5,7 @@ import {
   api,
   assertApiViva,
   crearPedidoStaff,
+  detallePedido,
   ensureCajaAbierta,
   itemBody,
   limpiarPedidosActivos,
@@ -86,6 +87,29 @@ describe('E2E mesa', () => {
 
     try {
       const mesero = await login(email);
+      const recoger = await crearPedidoStaff(mesero.auth, {
+        sucursal_id: SID,
+        tipo: 'para_llevar',
+        device_id: `jest-mesero-recoger-${Date.now()}`,
+        metodo_pago: 'efectivo',
+        items: [itemBody()],
+      });
+      expect(recoger.body.exito).toBe(true);
+      const recogerId = pedidoId(recoger);
+      const detalleRecoger = await detallePedido(admin.auth, recogerId);
+      const pedidoRecoger =
+        detalleRecoger.body.datos?.pedido ?? detalleRecoger.body.datos;
+      expect(Number(pedidoRecoger.monto_pagado ?? 0)).toBe(0);
+      const pagoSinPermiso = await crearPedidoStaff(mesero.auth, {
+        sucursal_id: SID,
+        tipo: 'para_llevar',
+        device_id: `jest-mesero-pago-${Date.now()}`,
+        metodo_pago: 'efectivo',
+        pagos: [{ metodo_pago: 'efectivo', monto: PRECIO }],
+        items: [itemBody()],
+      });
+      expect(pagoSinPermiso.status).toBe(403);
+
       const mesa = await mesaLibre(cajero.auth);
       const crear = await crearPedidoStaff(mesero.auth, {
         sucursal_id: SID,

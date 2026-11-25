@@ -17,7 +17,7 @@ import 'package:reserva_canchas/features/reportes/utils/reporte_export_foody.dar
 import 'package:share_plus/share_plus.dart';
 
 const _notaPeriodoMovimientosCaja =
-    'En movimientos ligados a un pedido se usa la fecha de creación del pedido; si no tienen pedido, la fecha del movimiento.';
+    'Los movimientos ligados a pedidos usan la fecha del pedido, aunque el cobro ocurra después del rango. Los cobros posteriores pueden cambiar el saldo; no representa el efectivo recibido en el rango ni el descuadre físico de un turno.';
 
 /// Reportes admin — misma línea visual que Centro de Inteligencia.
 class ReportesAdminScreen extends StatefulWidget {
@@ -470,15 +470,11 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   Widget _tabFinanciero() {
     final r = _financiero?['resumen'] as Map<String, dynamic>? ?? {};
     final cuadre = _financiero?['cuadre_caja'] as Map<String, dynamic>? ?? {};
+    final recaudoPeriodo =
+        _financiero?['recaudo_periodo'] as Map<String, dynamic>?;
     final porTipo = _financiero?['por_tipo'] as List<dynamic>? ?? [];
     final porMetodoCaja = cuadre['por_metodo_caja'] as List<dynamic>? ?? [];
     final diferencia = _num(cuadre['diferencia']);
-
-    Color colorDiferencia() {
-      if (diferencia.abs() < 1) return AnaliticaTokens.inventario;
-      if (diferencia.abs() <= 5000) return _scheme.onSurfaceVariant;
-      return AnaliticaTokens.alertas;
-    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
@@ -521,8 +517,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         ),
         const SizedBox(height: 16),
         const AnaliticaSectionHeader(
-          titulo: 'Cuadre de caja',
-          subtitulo: 'Tickets del periodo vs movimientos netos de caja',
+          titulo: 'Ventas y cobros asociados',
+          subtitulo:
+              'Pedidos creados en el rango y cobros vinculados a esos pedidos',
           icono: Icons.balance_outlined,
         ),
         AnaliticaSurface(
@@ -531,20 +528,19 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _filaCuadre(
-                (cuadre['etiqueta_ventas_pedidos'] as String?) ??
-                    'Tickets (total pedidos)',
+                'Ventas de pedidos',
                 _moneda.format(_num(cuadre['ventas_pedidos'])),
               ),
               _filaCuadre(
-                'Movimientos netos de caja',
+                'Cobros netos asociados',
                 _moneda.format(_num(cuadre['ventas_movimientos_caja'])),
               ),
               Divider(height: 20, color: _scheme.outlineVariant),
               _filaCuadre(
-                'Diferencia',
+                'Ventas menos cobros',
                 _moneda.format(diferencia),
                 destacado: true,
-                color: colorDiferencia(),
+                color: _scheme.onSurfaceVariant,
               ),
               const SizedBox(height: 8),
               Column(
@@ -555,10 +551,10 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                             true
                         ? cuadre['nota_universos'] as String
                         : diferencia.abs() < 1
-                            ? 'Cuadre OK — tickets y caja coinciden.'
+                            ? 'Ventas y cobros asociados coinciden.'
                             : diferencia > 0
-                                ? 'Hay más en tickets que en caja (cobros pendientes o sin registrar).'
-                                : 'Hay más en caja que en tickets (revisar movimientos manuales o duplicados).',
+                                ? 'Las ventas de esta cohorte superan los cobros netos asociados.'
+                                : 'Los cobros netos asociados superan las ventas de esta cohorte.',
                     style: TextStyle(
                       fontSize: 12,
                       color: _scheme.onSurfaceVariant,
@@ -595,10 +591,41 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
             ],
           ),
         ),
+        if (recaudoPeriodo != null) ...[
+          const SizedBox(height: 10),
+          AnaliticaSurface(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Recaudo registrado en el rango',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                _filaCuadre(
+                  'Ventas menos devoluciones por fecha de movimiento',
+                  _moneda.format(_num(recaudoPeriodo['total_neto'])),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  (recaudoPeriodo['nota'] as String?) ??
+                      'Suma ventas menos devoluciones registradas dentro del rango; puede incluir pedidos creados antes. Las propinas voluntarias van aparte.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _scheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (porMetodoCaja.isNotEmpty) ...[
           const SizedBox(height: 16),
           const AnaliticaSectionHeader(
-            titulo: 'Caja por método',
+            titulo: 'Cobros asociados por método',
+            subtitulo: 'Pedidos creados en el rango',
             icono: Icons.account_balance_wallet_outlined,
           ),
           ...porMetodoCaja.map((item) {

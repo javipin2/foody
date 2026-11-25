@@ -30,6 +30,12 @@ export declare class ReportesController {
                 total: number;
             }[];
         };
+        recaudo_periodo: {
+            total_neto: number;
+            movimientos_venta: number;
+            etiqueta: string;
+            nota: string;
+        };
         por_tipo: {
             tipo: string;
             pedidos: number;

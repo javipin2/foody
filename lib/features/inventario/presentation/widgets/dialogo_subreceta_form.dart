@@ -80,7 +80,7 @@ class _DialogoSubrecetaFormState extends State<_DialogoSubrecetaForm> {
   /// PostgreSQL / JSON suele enviar numeric como String ("1.000").
   static double _leerNumero(dynamic v, [double fallback = 1]) {
     if (v is num) return v.toDouble();
-    return double.tryParse('${v}'.replaceAll(',', '.')) ?? fallback;
+    return double.tryParse('$v'.replaceAll(',', '.')) ?? fallback;
   }
 
   @override

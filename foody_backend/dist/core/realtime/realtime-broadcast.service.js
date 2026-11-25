@@ -195,6 +195,9 @@ let RealtimeBroadcastService = RealtimeBroadcastService_1 = class RealtimeBroadc
             ...payload,
         });
     }
+    async pedidoDesasignadoIndep(domiciliarioId, payload) {
+        await this.enviarBroadcast(this.topicDomiciliarioIndep(domiciliarioId), 'pedido_desasignado', { domiciliario_id: domiciliarioId, ...payload });
+    }
     async obtenerCanal(nombre) {
         if (!this.cliente)
             return null;

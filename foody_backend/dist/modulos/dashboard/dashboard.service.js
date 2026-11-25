@@ -19,16 +19,6 @@ const database_service_1 = require("../../core/database/database.service");
 const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const ventas_metricas_sql_1 = require("../../compartido/sql/ventas-metricas.sql");
 const pedido_estados_1 = require("../pedidos/pedido-estados");
-const ESTADOS_PEDIDO_ACTIVO = [
-    'pendiente_aprobacion',
-    'pendiente',
-    'confirmado',
-    'en_cocina',
-    'listo',
-    'pagando',
-    'asignado',
-    'en_camino',
-];
 const TTL_RESUMEN_MS = 30_000;
 let DashboardService = class DashboardService {
     database;
@@ -59,15 +49,28 @@ let DashboardService = class DashboardService {
         return datos;
     }
     async graficos(sucursalId) {
-        const ventas7d = await this.database.consultar(`SELECT ${ventas_metricas_sql_1.SQL_DIA_LOCAL}::text AS dia,
-              COUNT(*)::text AS pedidos,
-              COALESCE(SUM(total), 0)::text AS ventas
-       FROM pedidos
-       WHERE sucursal_id = $1
-         AND ${ventas_metricas_sql_1.SQL_PEDIDO_DESDE_7D}
-         AND ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
-       GROUP BY ${ventas_metricas_sql_1.SQL_DIA_LOCAL}
-       ORDER BY dia ASC`, [sucursalId]);
+        const ventas7d = await this.database.consultar(`WITH dias AS (
+         SELECT generate_series(
+           (${ventas_metricas_sql_1.SQL_HOY_LOCAL} - 6)::timestamp,
+           ${ventas_metricas_sql_1.SQL_HOY_LOCAL}::timestamp,
+           interval '1 day'
+         )::date AS dia
+       ), ventas AS (
+         SELECT ${ventas_metricas_sql_1.SQL_DIA_LOCAL} AS dia,
+                COUNT(*) AS pedidos,
+                COALESCE(SUM(total), 0) AS ventas
+         FROM pedidos
+         WHERE sucursal_id = $1
+           AND ${ventas_metricas_sql_1.SQL_PEDIDO_DESDE_7D}
+           AND ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
+         GROUP BY ${ventas_metricas_sql_1.SQL_DIA_LOCAL}
+       )
+       SELECT dias.dia::text AS dia,
+              COALESCE(ventas.pedidos, 0)::text AS pedidos,
+              COALESCE(ventas.ventas, 0)::text AS ventas
+       FROM dias
+       LEFT JOIN ventas USING (dia)
+       ORDER BY dias.dia ASC`, [sucursalId]);
         const porTipoHoy = await this.database.consultar(`SELECT tipo,
               COUNT(*)::text AS pedidos,
               COALESCE(SUM(total), 0)::text AS ventas
@@ -185,7 +188,7 @@ let DashboardService = class DashboardService {
            SELECT COUNT(*)
            FROM pedidos
            WHERE sucursal_id = $1
-             AND estado = ANY($2::text[])
+             AND ${(0, pedido_estados_1.sqlWherePedidoAbiertoOperativo)()}
          ), 0)::text AS pedidos_activos,
          COALESCE((
            SELECT COUNT(*)
@@ -261,7 +264,7 @@ let DashboardService = class DashboardService {
              ORDER BY base.estado_desde ASC
              LIMIT 8
            ) demoras
-         ), '[]'::json) AS domicilios_tardios`, [sucursalId, ESTADOS_PEDIDO_ACTIVO]);
+         ), '[]'::json) AS domicilios_tardios`, [sucursalId]);
         if (!fila)
             return null;
         return {

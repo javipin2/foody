@@ -265,17 +265,17 @@ Necesario antes de publicar en stores o escalar clientes.
 - [x] **AUTH-FIX-05** Logout server (bump `token_version`) — `POST /auth/logout`
 - [ ] **AUTH-FIX-06** WhatsApp OTP — solo si producto lo pide (hoy 🚫 ausente)
 
-### RBAC (Prompt 06 — documentada, no implementada)
+### RBAC (Prompt 06 — auditoría y remediación parcial)
 
-> Registro completo: [`AUDITORIA_RBAC.md`](archivo/auditorias-prompts/AUDITORIA_RBAC.md). **P0 prod-risk:** IDOR cerrar caja + cobro mesero.
+> Registro completo: [`AUDITORIA_RBAC.md`](archivo/auditorias-prompts/AUDITORIA_RBAC.md). Cierre de caja cross-tenant y cobro por mesero tienen fix y evidencia; permanecen permisos de escritura de caja, promociones globales y billing staff.
 
-- [ ] **RBAC-FIX-01** `POST /caja/cerrar` exigir `caja.sucursal_id` scoped
+- [x] **RBAC-FIX-01** `POST /caja/cerrar` exige `caja.sucursal_id` scoped; QA cross-tenant 403 y caja sin mutación (2026-11-24, ver `AVANCE_PROYECTO.md`)
 - [x] **RBAC-FIX-02** Cobrar exige `cobrar_pedido` en ambas rutas (`pedidos.controller.ts`); spec guard mesero 403 / cajero permitido (2026-11-23)
 - [~] **RBAC-FIX-03** Estado exige `crear_pedido` y el servicio restringe estados del mesero; falta matriz granular por acción para roles personalizados y smoke por API
 - [x] **RBAC-FIX-04** Asignar domiciliario solo `gestionar_domiciliarios`
-- [ ] **RBAC-FIX-05** Anonimizar device con prueba de posesión
-- [ ] **RBAC-FIX-06** `prueba-web` / pagos staff con RolGuard
-- [ ] **RBAC-FIX-07** Writes caja + colas globales acotadas
+- [x] **RBAC-FIX-05** Anonimizar device con prueba de posesión (ver `AUDITORIA_RBAC.md`)
+- [~] **RBAC-FIX-06** `prueba-web` y cola global están limitadas; billing staff/endpoint de pagos aún requiere revisión
+- [~] **RBAC-FIX-07** Cola global acotada a Super Admin; writes de Caja y scopes de jobs aún requieren permisos dedicados/revisión
 
 ### BD / Supabase (Prompt 07 — documentada, no implementada)
 

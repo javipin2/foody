@@ -48,8 +48,10 @@ class CajaRepository {
   Future<List<Map<String, dynamic>>> movimientos(String cajaId) async {
     final all = <Map<String, dynamic>>[];
     var page = 1;
-    const limit = 100;
-    while (page <= 50) {
+    const limit = 50;
+    // La API limita cada página a 50. La pantalla solo pinta los 80 más
+    // recientes, así que no descargamos el historial completo del turno.
+    while (page <= 2 && all.length < 80) {
       final r = await _dio.get<Map<String, dynamic>>(
         '/caja/$cajaId/movimientos',
         queryParameters: {'page': page, 'limit': limit},
@@ -69,7 +71,7 @@ class CajaRepository {
       if (page >= totalPages) break;
       page++;
     }
-    return all;
+    return all.take(80).toList();
   }
 
   Future<List<Map<String, dynamic>>> movimientosPedido(

@@ -83,6 +83,18 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
     }
   }
 
+  List<String> _etiquetasPagos() {
+    final pagos = pedido['pagos_resumen'];
+    if (pagos is List && pagos.isNotEmpty) {
+      return pagos.whereType<Map>().map((pago) {
+        final metodo = _etiquetaPago(pago['metodo_pago'] as String?);
+        final monto = num.tryParse('${pago['monto']}') ?? 0;
+        return '$metodo ${_moneda.format(monto)}';
+      }).toList();
+    }
+    return [_etiquetaPago(pedido['metodo_pago'] as String?)];
+  }
+
   Future<void> _copiar(BuildContext context, String texto, String ok) async {
     await Clipboard.setData(ClipboardData(text: texto));
     if (context.mounted) {
@@ -122,7 +134,7 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
     final producto =
         productoNeto ?? (num.tryParse('${pedido['subtotal']}') ?? 0);
     final saldoPendiente = num.tryParse('${pedido['saldo_pendiente']}');
-    final metodo = pedido['metodo_pago'] as String?;
+    final pagos = _etiquetasPagos();
     final estado = _estado;
     final latOk = lat;
     final lngOk = lng;
@@ -322,7 +334,7 @@ class TarjetaPedidoDomiciliario extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _chipPago(_etiquetaPago(metodo)),
+                ...pagos.map(_chipPago),
                 if (mostrarIrRestaurante && sLat != null && sLng != null)
                   ActionChip(
                     avatar: const Icon(Icons.storefront_outlined, size: 16),

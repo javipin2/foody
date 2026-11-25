@@ -66,8 +66,10 @@ let PedidosCuentaMesaService = class PedidosCuentaMesaService {
             return sum + Math.max(0, saldo);
         }, 0);
         const pagosAbonos = await this.database.consultar(`SELECT pp.id, pp.monto, pp.propina, pp.metodo_pago, pp.created_at, pp.referencia,
+              p.numero_pedido,
               u.nombre AS responsable_nombre
        FROM pagos_pedido pp
+       LEFT JOIN pedidos p ON p.id = pp.pedido_id AND p.sucursal_id = pp.sucursal_id
        LEFT JOIN usuarios u ON u.id = pp.usuario_id
        WHERE pp.mesa_id = ANY($1::uuid[]) AND pp.sucursal_id = $2
        ORDER BY pp.created_at DESC
@@ -94,6 +96,7 @@ let PedidosCuentaMesaService = class PedidosCuentaMesaService {
                 monto: Number(p.monto),
                 propina: Number(p.propina),
                 metodo_pago: p.metodo_pago,
+                numero_pedido: p.numero_pedido,
                 created_at: p.created_at,
                 referencia: p.referencia,
                 responsable_nombre: p.responsable_nombre,

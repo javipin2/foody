@@ -33,18 +33,33 @@ function Test-PuertoEscucha([int]$Puerto) {
 
 function Liberar-Puerto([int]$Puerto) {
   foreach ($id in (Get-PidsEscuchando $Puerto)) {
-    Write-Host "Liberando :$Puerto (PID $id)" -ForegroundColor Yellow
+    $proceso = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
+    $spaEsperado = Join-Path $PSScriptRoot 'spa_http_server.py'
+    if (-not $proceso -or $proceso.Name -notmatch '^python(w)?\.exe$' -or
+        $proceso.CommandLine.IndexOf($spaEsperado, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+      throw "No liberar :${Puerto}: PID $id no coincide con el servidor SPA de Foody."
+    }
+    Write-Host "Liberando servidor SPA Foody :$Puerto (PID $id)" -ForegroundColor Yellow
     Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
   }
 }
 
 function Build-Web([string]$Flavor, [string]$OutDir) {
-  Write-Host "Build web RELEASE flavor=$Flavor -> $OutDir" -ForegroundColor Cyan
+  if (Test-Path -LiteralPath $OutDir) {
+    Remove-Item -LiteralPath $OutDir -Recurse -Force
+  }
+  Write-Host "Build web RELEASE flavor=$Flavor -> $OutDir (staging)" -ForegroundColor Cyan
   & flutter build web --release `
     --dart-define="APP_FLAVOR=$Flavor" `
     -t lib/main.dart `
     -o $OutDir
   if ($LASTEXITCODE -ne 0) { throw "flutter build web $Flavor fallo ($LASTEXITCODE)" }
+
+  # Flutter solo publica los artefactos que gestiona; conserva los recursos web
+  # propios del proyecto (FCM service worker, páginas legales y manifest).
+  Get-ChildItem (Join-Path $raiz 'web') -File |
+    Where-Object { $_.Name -ne 'index.html' } |
+    Copy-Item -Destination $OutDir -Force
 
   # Evita que el navegador conserve el main.dart.js de una publicación anterior.
   $mainJs = Join-Path $OutDir 'main.dart.js'
@@ -105,7 +120,7 @@ function Start-SpaServidor {
   $arg = "`"$spa`" $Puerto `"$Directorio`""
   $proc = Start-Process -FilePath 'python' -ArgumentList $arg `
     -WorkingDirectory $raiz `
-    -WindowStyle Minimized `
+    -WindowStyle Hidden `
     -RedirectStandardOutput $outLog `
     -RedirectStandardError $errLog `
     -PassThru
@@ -143,6 +158,11 @@ $outEquipo = Join-Path $raiz 'build\web_equipo'
 $pCli = $FoodyPuertoCliente
 $pEq = $FoodyPuertoEquipo
 
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+$stageRoot = Join-Path $raiz "build\.foody-release-stage-$stamp"
+$stageCliente = Join-Path $stageRoot 'cliente'
+$stageEquipo = Join-Path $stageRoot 'equipo'
+
 $tieneCliente = Test-Path (Join-Path $outCliente 'index.html')
 $tieneEquipo = Test-Path (Join-Path $outEquipo 'index.html')
 # -SkipBuild omite Flutter solo si el artefacto existe y está al día.
@@ -175,8 +195,20 @@ if ($buildClientePendiente -or $buildEquipoPendiente) {
   if ($SkipBuild) {
     Write-Host 'AVISO: builds web faltantes o desactualizados; compilando los flavors necesarios...' -ForegroundColor Yellow
   }
-  if ($buildClientePendiente) { Build-Web 'cliente' $outCliente }
-  if ($buildEquipoPendiente) { Build-Web 'equipo' $outEquipo }
+  if ($buildClientePendiente) { Build-Web 'cliente' $stageCliente }
+  if ($buildEquipoPendiente) { Build-Web 'equipo' $stageEquipo }
+}
+
+foreach ($candidato in @(
+  @{ Requerido = $buildClientePendiente; Stage = $stageCliente; Nombre = 'cliente' },
+  @{ Requerido = $buildEquipoPendiente; Stage = $stageEquipo; Nombre = 'equipo' }
+)) {
+  if (-not $candidato.Requerido) { continue }
+  foreach ($archivo in @('index.html', 'main.dart.js', 'flutter_bootstrap.js')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $candidato.Stage $archivo))) {
+      throw "Build $($candidato.Nombre) incompleto; falta $archivo. El sitio actual sigue servido."
+    }
+  }
 }
 
 Write-Host ''
@@ -185,9 +217,54 @@ Write-Host "  $FoodyUrlApp         <- :$pCli cliente" -ForegroundColor White
 Write-Host "  $FoodyUrlEquipo  <- :$pEq equipo + superadmin" -ForegroundColor White
 Write-Host ''
 
-# Equipo primero: si falla, no dejamos solo el cliente “medio funcionando”
-Start-SpaServidor -Puerto $pEq -Directorio $outEquipo -Nombre 'equipo'
-Start-SpaServidor -Puerto $pCli -Directorio $outCliente -Nombre 'cliente'
+$backups = @{}
+$publicados = @()
+try {
+  # Compilar ambos antes del corte. El servicio anterior sigue respondiendo durante los builds.
+  Liberar-Puerto $pEq
+  Liberar-Puerto $pCli
+  Start-Sleep -Milliseconds 400
+
+  foreach ($candidato in @(
+    @{ Requerido = $buildEquipoPendiente; Stage = $stageEquipo; Destino = $outEquipo; Nombre = 'equipo' },
+    @{ Requerido = $buildClientePendiente; Stage = $stageCliente; Destino = $outCliente; Nombre = 'cliente' }
+  )) {
+    if (-not $candidato.Requerido) { continue }
+    $backup = "$($candidato.Destino).__previous_$stamp"
+    if (Test-Path -LiteralPath $backup) { throw "Ya existe backup inesperado: $backup" }
+    if (Test-Path -LiteralPath $candidato.Destino) {
+      Move-Item -LiteralPath $candidato.Destino -Destination $backup
+      $backups[$candidato.Nombre] = $backup
+    }
+    Move-Item -LiteralPath $candidato.Stage -Destination $candidato.Destino
+    $publicados += $candidato.Nombre
+  }
+
+  # Equipo primero; ambos artifacts ya están completos y versionados por SHA.
+  Start-SpaServidor -Puerto $pEq -Directorio $outEquipo -Nombre 'equipo'
+  Start-SpaServidor -Puerto $pCli -Directorio $outCliente -Nombre 'cliente'
+} catch {
+  Write-Host "Falló la publicación web: $($_.Exception.Message). Restaurando el último build disponible..." -ForegroundColor Red
+  foreach ($puerto in @($pEq, $pCli)) {
+    try { Liberar-Puerto $puerto } catch { Write-Host $_.Exception.Message -ForegroundColor Yellow }
+  }
+  foreach ($nombre in @('cliente', 'equipo')) {
+    if ($backups.ContainsKey($nombre)) {
+      $destino = if ($nombre -eq 'cliente') { $outCliente } else { $outEquipo }
+      $failed = "$destino.__failed_$stamp"
+      if (Test-Path -LiteralPath $destino) { Move-Item -LiteralPath $destino -Destination $failed }
+      Move-Item -LiteralPath $backups[$nombre] -Destination $destino
+    }
+  }
+  if ((Test-Path (Join-Path $outEquipo 'index.html')) -and (Test-Path (Join-Path $outCliente 'index.html'))) {
+    try {
+      Start-SpaServidor -Puerto $pEq -Directorio $outEquipo -Nombre 'equipo-rollback'
+      Start-SpaServidor -Puerto $pCli -Directorio $outCliente -Nombre 'cliente-rollback'
+      Write-Host 'Rollback de los bundles anteriores comprobado en ambos puertos.' -ForegroundColor Yellow
+    } catch { Write-Host "No se pudo reactivar SPA anterior: $($_.Exception.Message)" -ForegroundColor Red }
+  }
+  throw
+}
 
 try {
   $m = Invoke-WebRequest "http://127.0.0.1:$pCli/main.dart.js" -UseBasicParsing -TimeoutSec 10
@@ -199,3 +276,6 @@ Write-Host 'Listo (ambos puertos OK). Recarga Ctrl+F5:' -ForegroundColor Green
 Write-Host "  $FoodyUrlApp"
 Write-Host "  $FoodyUrlEquipo/admin/login"
 Write-Host "Para parar: mata procesos en :$pEq / :$pCli"
+if ($backups.Count -gt 0) {
+  Write-Host "Backups previos conservados: $($backups.Values -join ', ')" -ForegroundColor DarkGray
+}

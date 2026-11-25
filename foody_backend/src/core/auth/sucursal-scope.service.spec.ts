@@ -1,16 +1,18 @@
 import { ForbiddenException } from '@nestjs/common';
+import { JwtPayload } from './jwt-payload';
 import { SucursalScopeService } from './sucursal-scope.service';
 
 describe('SucursalScopeService — aislamiento operativo', () => {
   const database = { consultarUno: jest.fn() };
   const service = new SucursalScopeService(database as never);
-  const usuario = {
+  const usuario: JwtPayload = {
     sub: 'usuario-1',
+    email: 'admin@test.invalid',
     restaurante_id: 'restaurante-1',
     sucursal_id: 'sucursal-a',
     rol: 'admin',
     permisos: [],
-  } as never;
+  };
 
   beforeEach(() => database.consultarUno.mockReset());
 
@@ -53,7 +55,7 @@ describe('SucursalScopeService — aislamiento operativo', () => {
     const corporativo = {
       ...usuario,
       permisos: ['gestionar_sucursales'],
-    } as never;
+    } as JwtPayload;
 
     await expect(
       service.resolverLecturaOperativa(corporativo, 'sucursal-b'),

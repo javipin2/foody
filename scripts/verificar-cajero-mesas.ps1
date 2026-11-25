@@ -1,9 +1,11 @@
 # Foody - QA cajero sin asignacion de mesas (post migracion 049)
 # Uso: powershell -File scripts/verificar-cajero-mesas.ps1
 $ErrorActionPreference = "Continue"
-$Base = "http://localhost:3000/api/v1"
+. "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
+$Base = $script:FoodyQaBase
 $Sucursal = "c0000000-0000-4000-8000-000000000001"
-$MesaLibre = "7170df60-ca76-4049-9248-8c6f1f799a42"
+$MesaLibre = $null
 $Producto = "f0000000-0000-4000-8000-000000000002"
 $Precio = 8000
 $Pass = "123456"
@@ -70,11 +72,13 @@ if (-not $mesasOk) {
 }
 $lista = @($mesas.json.datos)
 Assert ($lista.Count -gt 0) "Hay mesas en sucursal demo"
+$MesaLibre = @($lista | Where-Object { $_.activa -ne $false -and $_.estado_operativo -eq 'libre' } | Select-Object -First 1).id
+Assert ([bool]$MesaLibre) "Hay mesa libre para probar pedido de cajero"
 
 $malAsignadas = @($lista | Where-Object { $_.mesera_asignada_id -eq $CajeroId })
 Assert ($malAsignadas.Count -eq 0) "Ninguna mesa con mesera_asignada_id = cajero"
 
-$crear = Invoke-Api -Method POST -Path "/pedidos/staff" -Headers $h -Body @{
+$crear = if ($MesaLibre) { Invoke-Api -Method POST -Path "/pedidos/staff" -Headers $h -Body @{
     sucursal_id = $Sucursal
     mesa_id     = $MesaLibre
     tipo        = "mesa"
@@ -87,7 +91,7 @@ $crear = Invoke-Api -Method POST -Path "/pedidos/staff" -Headers $h -Body @{
             precio      = $Precio
         }
     )
-}
+} } else { @{ ok = $false; status = 0; json = $null; error = 'No hay una mesa libre en el clon QA' } }
 Assert ($crear.ok -and $crear.json.exito) "POST /pedidos/staff mesa (status=$($crear.status) err=$($crear.json.error) msg=$($crear.json.message) raw=$($crear.error))"
 $pedidoId = $crear.json.datos.id
 if (-not $pedidoId) { $pedidoId = $crear.json.datos.pedido_id }
@@ -100,7 +104,7 @@ Assert ($null -eq $mesa.mesera_asignada_id -or $mesa.mesera_asignada_id -eq "") 
 
 if ($pedidoId) {
     $sql = "SELECT mesera_id FROM pedidos WHERE id = '$pedidoId'"
-    $meseraPedido = (docker exec supabase-db psql -U postgres -d postgres -tAc $sql 2>&1).ToString().Trim()
+    $meseraPedido = (docker exec $script:FoodyQaDbContainer psql -U postgres -d $script:FoodyQaDatabase -tAc $sql 2>&1).ToString().Trim()
     Assert ([string]::IsNullOrWhiteSpace($meseraPedido)) "pedidos.mesera_id vacio para pedido del cajero"
 } else {
     Assert $false "No se pudo verificar mesera_id (pedido no creado)"

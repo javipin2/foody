@@ -12,7 +12,7 @@ describe('AuthService realtimeCanales', () => {
     restaurante_id: 'restaurante-1',
     activo: true,
     hash_contrasena: null,
-    cocina_id: null,
+    cocina_id: null as string | null,
   };
 
   function crearServicio({

@@ -72,6 +72,7 @@ void main() {
             home: Scaffold(
               body: CajaAdminScreen(
                 sucursalId: 'sucursal-1',
+                permisos: const ['abrir_caja'],
                 repository: _CajaRepositoryFake(),
               ),
             ),
@@ -115,7 +116,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Turno activo'), findsOneWidget);
-      expect(find.text('Saldo sistema'), findsOneWidget);
+      expect(find.text('Efectivo esperado'), findsOneWidget);
       expect(find.text('Ventas'), findsOneWidget);
       expect(find.text('Gastos'), findsOneWidget);
       await tester.scrollUntilVisible(
@@ -233,6 +234,7 @@ void main() {
               home: Scaffold(
                 body: CajaAdminScreen(
                   sucursalId: 'sucursal-1',
+                  permisos: const ['abrir_caja'],
                   pedidoIdInicial: 'pedido-1',
                   onPedidoInicialUsado: () => consumido = true,
                   repository: _CajaRepositoryFake(
@@ -264,4 +266,36 @@ void main() {
       },
     );
   }
+
+  testWidgets('modo lectura oculta acciones que escriben en Caja', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: CajaAdminScreen(
+              sucursalId: 'sucursal-1',
+              permisos: const ['ver_caja'],
+              repository: _CajaRepositoryFake(turnoAbierto: true),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Registrar fiado'), findsNothing);
+    expect(find.text('Guardar gasto'), findsNothing);
+    expect(find.text('Registrar retiro'), findsNothing);
+    expect(find.text('Registrar devolución'), findsNothing);
+    expect(find.text('Cerrar caja'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

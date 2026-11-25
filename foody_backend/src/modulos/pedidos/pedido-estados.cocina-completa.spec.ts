@@ -1,4 +1,7 @@
-import { pedidoCocinaCompleta } from './pedido-estados';
+import {
+  pedidoCocinaCompleta,
+  puedeAvanzarCocinaPedidoPagado,
+} from './pedido-estados';
 
 describe('pedidoCocinaCompleta', () => {
   it('considera incompletos los estados nulos o desconocidos', async () => {
@@ -30,5 +33,47 @@ describe('pedidoCocinaCompleta', () => {
     };
 
     await expect(pedidoCocinaCompleta(client, 'pedido-1')).resolves.toBe(false);
+  });
+});
+
+describe('puedeAvanzarCocinaPedidoPagado', () => {
+  const base = {
+    estadoPedido: 'pagado',
+    total: 10000,
+    montoPagado: 10000,
+    estadoItem: 'preparando',
+  };
+
+  it.each(['preparando', 'listo', 'no_disponible'])(
+    'permite avanzar una línea cobrada pendiente a %s',
+    (nuevoEstadoItem) => {
+      expect(puedeAvanzarCocinaPedidoPagado({ ...base, nuevoEstadoItem })).toBe(
+        true,
+      );
+    },
+  );
+
+  it('no permite Cocina sobre pagos incompletos ni estados terminales', () => {
+    expect(
+      puedeAvanzarCocinaPedidoPagado({
+        ...base,
+        montoPagado: 9999,
+        nuevoEstadoItem: 'listo',
+      }),
+    ).toBe(false);
+    expect(
+      puedeAvanzarCocinaPedidoPagado({
+        ...base,
+        estadoPedido: 'cancelado',
+        nuevoEstadoItem: 'listo',
+      }),
+    ).toBe(false);
+    expect(
+      puedeAvanzarCocinaPedidoPagado({
+        ...base,
+        estadoItem: 'listo',
+        nuevoEstadoItem: 'pendiente',
+      }),
+    ).toBe(false);
   });
 });

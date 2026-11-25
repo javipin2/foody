@@ -112,7 +112,7 @@ __decorate([
 ], DomiciliariosPlantaController.prototype, "resumenLiquidacion", null);
 __decorate([
     (0, common_1.Post)('liquidar/:domiciliario_planta_id'),
-    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'ver_caja'),
+    (0, permisos_decorator_1.Permisos)('gestionar_domiciliarios', 'gestionar_caja'),
     __param(0, (0, common_1.Param)('domiciliario_planta_id', common_1.ParseUUIDPipe)),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __param(2, (0, common_1.Query)('sucursal_id')),

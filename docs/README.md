@@ -2,6 +2,8 @@
 
 ## Leer primero (cada sesión)
 
+Para pasar el trabajo a otra cuenta/chat de Codex, consultar [`HANDOFF_CODEX_FOODY.md`](HANDOFF_CODEX_FOODY.md): resume el corte, lo ya probado y los pendientes para evitar repetir trabajo.
+
 | # | Documento | Para qué |
 |--:|-----------|----------|
 | 1 | [`MASTER_STATUS.md`](MASTER_STATUS.md) | **Estado oficial** — implementado, pendiente, problemas |
@@ -43,6 +45,7 @@ Frontend UI: [`frontend/FRONTEND_ROADMAP.md`](frontend/FRONTEND_ROADMAP.md) · M
 
 - **Rendimiento de punta a punta (2026-11-22):** [`AUDITORIA_RENDIMIENTO_PUNTA_A_PUNTA.md`](AUDITORIA_RENDIMIENTO_PUNTA_A_PUNTA.md) — flujo Flutter → Tunnel → Nest → pool/SQL → PostgreSQL, mediciones ligeras, hallazgos vigentes y plan priorizado.
 - Medición HTTP GET liviana local/túnel: [`../scripts/perf/medir-lecturas-tunel.ps1`](../scripts/perf/medir-lecturas-tunel.ps1) — solo `/salud` y `/menu/:sucursalId`, concurrencia máxima 5; no usar como prueba de capacidad.
+- Medición local del estimador de pedidos: [`../scripts/perf/medir-estimacion-pedidos.cjs`](../scripts/perf/medir-estimacion-pedidos.cjs) — solo `127.0.0.1:3001`, 1 vs. 30 líneas con catálogo de prueba; requiere clon QA y no es una prueba de carga.
 
 Los informes forenses Prompts 01–34 viven en:
 

@@ -235,6 +235,7 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
       return CajaAdminScreen(
         key: ValueKey('caja-$sid-$_refreshTick'),
         sucursalId: sid,
+        permisos: _sesion?.permisos ?? const [],
         ocultarCabecera: true,
         permitirArqueoCiego: false,
         onCajaEstadoCambiado: _onCajaEstadoCambiado,
@@ -341,6 +342,7 @@ class _PanelCajeroScreenState extends State<PanelCajeroScreen> {
           child: CajaAdminScreen(
             key: ValueKey('apertura-$sucursalId'),
             sucursalId: sucursalId,
+            permisos: _sesion?.permisos ?? const [],
             ocultarCabecera: true,
             permitirArqueoCiego: false,
             onCajaEstadoCambiado: _onCajaEstadoCambiado,

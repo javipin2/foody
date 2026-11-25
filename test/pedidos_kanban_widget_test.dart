@@ -220,7 +220,7 @@ void main() {
     expect(find.text('A cocina →'), findsOneWidget);
     expect(find.text('Valor en pedidos'), findsOneWidget);
     final kpiValor = find.byTooltip(
-      'Suma del valor total de pedidos activos; no equivale a dinero cobrado.',
+      'Suma del valor de los pedidos abiertos; no equivale a dinero cobrado.',
     );
     expect(kpiValor, findsOneWidget);
     expect(
@@ -583,17 +583,17 @@ void main() {
     }
 
     expect(find.text('101'), findsOneWidget);
-    expect(find.text('Mostrando 1 de 101 pedidos activos'), findsOneWidget);
+    expect(find.text('Mostrando 1 de 101 pedidos abiertos'), findsOneWidget);
     expect(find.text('#P-ANT'), findsNothing);
 
     await tester.tap(find.text('Cargar más'));
     await tester.pumpAndSettle();
     expect(find.text('#P-ANT'), findsOneWidget);
-    expect(find.text('Mostrando 2 de 101 pedidos activos'), findsOneWidget);
+    expect(find.text('Mostrando 2 de 101 pedidos abiertos'), findsOneWidget);
     expect(find.text('Valor cargado'), findsNothing);
     await tester.tap(find.byTooltip('Vista columnas'));
     await tester.pumpAndSettle();
-    expect(find.text('Mostrando 2 de 101 pedidos activos'), findsOneWidget);
+    expect(find.text('Mostrando 2 de 101 pedidos abiertos'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

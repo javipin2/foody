@@ -12,6 +12,8 @@ export type OpcionesStaffPedido = {
   usuarioId?: string;
   /** Rol JWT del staff que opera (mesero asigna mesa; cajero/admin no). */
   rol?: string;
+  /** El usuario puede registrar cobros confirmados desde el POS. */
+  puedeCobrar?: boolean;
   /** Solo calcula totales (sin INSERT / stock / idempotencia). AQ-SOLID-06. */
   soloEstimar?: boolean;
 };
@@ -284,9 +286,19 @@ export class PedidosSoporteService {
     });
   }
 
-  notificarDesasignacionesDomicilio(usuarioIds: string[], pedidoId: string) {
+  notificarDesasignacionesDomicilio(
+    usuarioIds: string[],
+    pedidoId: string,
+    independientesIds: string[] = [],
+  ) {
     for (const usuarioId of usuarioIds) {
       void this.realtime.pedidoDesasignado(usuarioId, {
+        pedido_id: pedidoId,
+        accion: 'cancelado',
+      });
+    }
+    for (const domiciliarioId of independientesIds) {
+      void this.realtime.pedidoDesasignadoIndep(domiciliarioId, {
         pedido_id: pedidoId,
         accion: 'cancelado',
       });

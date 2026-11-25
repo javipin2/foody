@@ -208,6 +208,10 @@ export declare class PedidosPublicController {
         direccion_entrega: string | null;
         tiempo_estimado_minutos: number | null;
         created_at: Date;
+        items_no_disponibles: {
+            nombre: string;
+            cantidad: number;
+        }[];
         historial: {
             estado: string;
             fecha: Date;

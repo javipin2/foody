@@ -24,6 +24,11 @@ class _PedidosFake extends PedidosRepository {
             'Calle 123 #45-67, interior 9, barrio de nombre largo, Bogotá',
         domiciliarioNombre: 'Repartidor de prueba',
         total: 58000,
+        pagosResumen: const [
+          PagoPedidoResumen(metodoPago: 'efectivo', monto: 53000),
+          PagoPedidoResumen(metodoPago: 'nequi', monto: 5000),
+        ],
+        propinaRecibida: 2000,
         creadoEn: DateTime(2026, 11, 22),
         estadoDesde: DateTime(2026, 11, 22),
         itemsResumen: const [
@@ -102,6 +107,18 @@ void main() {
       }
 
       expect(find.text('#P-0001'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Propina registrada · aparte'),
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byType(PedidoDetalleSheet),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text('Pagos registrados'), findsOneWidget);
+      expect(find.text('Propina registrada · aparte'), findsOneWidget);
       await tester.scrollUntilVisible(
         find.text('Productos'),
         200,

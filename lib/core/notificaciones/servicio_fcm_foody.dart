@@ -57,7 +57,14 @@ class ServicioFcmFoody {
     if (token != null) {
       await _registrarToken(token);
     }
-    unawaited(_manejarAperturaDesdeNotificacion());
+    // En web, Firebase puede responder HTML (p. ej. fallo del servicio) y su
+    // parser JSON arrojar FormatException. Es opcional para renderizar Foody;
+    // capturar aquí evita una promesa rechazada fuera del catch del caller.
+    unawaited(_manejarAperturaDesdeNotificacion().catchError((Object error) {
+      if (kDebugMode) {
+        debugPrint('FCM: no se pudo leer el mensaje inicial: $error');
+      }
+    }));
     debugPrint('ServicioFcmFoody: listo (${AppFlavor.actual.id})');
   }
 

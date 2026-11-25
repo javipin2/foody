@@ -12,6 +12,7 @@ import 'package:reserva_canchas/core/realtime/poll_realtime_respaldo.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/pedidos/data/pedidos_cliente_repository.dart';
 import 'package:reserva_canchas/features/pedidos/presentation/widgets/pedido_estado_pill.dart';
+import 'package:reserva_canchas/features/pedidos/presentation/widgets/aviso_cliente_items_no_disponibles.dart';
 import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
 import 'package:reserva_canchas/services/mesa_sesion_service.dart';
@@ -407,7 +408,9 @@ class _SeguimientoPedidoScreenState extends State<SeguimientoPedidoScreen> {
       floatingActionButton: FutureBuilder<MesaSesion?>(
         future: MesaSesionService.obtener(),
         builder: (context, snap) {
-          if (!snap.hasData || snap.data == null) return const SizedBox.shrink();
+          if (!snap.hasData || snap.data == null) {
+            return const SizedBox.shrink();
+          }
           return FloatingActionButton.extended(
             onPressed: _volverAlMenuMesa,
             backgroundColor: AnaliticaTokens.ink,
@@ -445,6 +448,11 @@ class _SeguimientoPedidoScreenState extends State<SeguimientoPedidoScreen> {
     final historial =
         (_datos!['historial'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
     final total = _datos!['total'];
+    final itemsNoDisponibles =
+        (_datos!['items_no_disponibles'] as List<dynamic>? ?? [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
     final mesaId = _datos!['mesa_id'] as String?;
     final mesaNombre = _datos!['mesa_nombre'] as String?;
     final eta = _datos!['tiempo_estimado_minutos'];
@@ -514,6 +522,10 @@ class _SeguimientoPedidoScreenState extends State<SeguimientoPedidoScreen> {
               ],
             ),
           ),
+          if (itemsNoDisponibles.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            AvisoClienteItemsNoDisponibles(items: itemsNoDisponibles),
+          ],
           if (_puedeCancelarCliente(_datos)) ...[
             const SizedBox(height: 16),
             OutlinedButton.icon(

@@ -336,6 +336,25 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                           widget.formatoMoneda.format(_pedido.total),
                           bold: true,
                         ),
+                        if (_pedido.pagosResumen.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Pagos registrados',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          ..._pedido.pagosResumen.map(
+                            (pago) => _metaFila(
+                              _etiquetaMetodoPago(pago.metodoPago),
+                              widget.formatoMoneda.format(pago.monto),
+                            ),
+                          ),
+                        ],
+                        if (_pedido.propinaRecibida > 0)
+                          _metaFila(
+                            'Propina registrada · aparte',
+                            widget.formatoMoneda
+                                .format(_pedido.propinaRecibida),
+                          ),
                         AvisoItemsNoDisponibles(
                           cantidad: _pedido.itemsResumen
                               .where((it) => it.estadoCocina == 'no_disponible')
@@ -504,6 +523,7 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                           ),
                         ],
                         if (_pedido.accionRapida != null &&
+                            _pedido.accionRapida != 'cobrar' &&
                             ((_pedido.accionRapida == 'aprobar' &&
                                     widget.permisos
                                         .contains('aprobar_pedido_mesa')) ||
@@ -632,5 +652,13 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
         'para_llevar' => 'Para llevar / Recoger',
         'domicilio' => 'Domicilio',
         _ => t,
+      };
+
+  String _etiquetaMetodoPago(String metodo) => switch (metodo) {
+        'efectivo' => 'Efectivo',
+        'tarjeta' => 'Tarjeta',
+        'transferencia' => 'Transferencia',
+        'nequi' => 'Nequi',
+        _ => metodo,
       };
 }

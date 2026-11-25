@@ -1,4 +1,4 @@
-# Verifica columnas/tablas criticas de migraciones recientes (055, 064, 066, 067).
+# Verifica columnas/tablas/permisos criticos de migraciones recientes (055, 064, 066, 067, 094).
 # Uso: .\scripts\verificar-migraciones-prod.ps1
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +33,11 @@ $checks = @(
         Nombre = '067 pedidos.seguimiento_token'
         Sql    = "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'pedidos' AND column_name = 'seguimiento_token'"
         Esperado = '1'
+    }
+    @{
+        Nombre = '094 permiso gestionar_caja en roles operativos'
+        Sql    = "SELECT COUNT(*) FROM roles_permisos WHERE permiso = 'gestionar_caja' AND rol IN ('admin','gerente','gerente_cadena','cajero')"
+        Esperado = '4'
     }
     @{
         Nombre = '065 fiado domiciliario config'

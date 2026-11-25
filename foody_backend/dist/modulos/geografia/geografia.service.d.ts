@@ -4,6 +4,7 @@ type ResultadoBusqueda = {
     lng: number;
 };
 export declare class GeografiaService {
+    private static readonly timeoutMs;
     private readonly cache;
     private readonly maxCache;
     buscarDirecciones(consulta: string, opciones?: {

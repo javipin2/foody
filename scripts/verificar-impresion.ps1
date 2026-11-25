@@ -3,6 +3,7 @@
 # Requiere: API NestJS + migración 058 + agente Python (opcional pero recomendado)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\lib\qa-helpers.ps1"
+Assert-FoodyQaDisposable
 
 Write-Host '=== Verificar impresion cocina ===' -ForegroundColor Cyan
 
@@ -21,22 +22,8 @@ try {
     }
     else {
         Write-Host "AVISO agente impresion: $($hi.datos.mensaje)" -ForegroundColor Yellow
-        $printerDir = Join-Path (Split-Path $PSScriptRoot -Parent) 'foody_python_printer'
-        if (Test-Path (Join-Path $printerDir 'main.py')) {
-            Write-Host '  Levantando agente modo archivo en background...' -ForegroundColor DarkGray
-            Start-Process -FilePath 'powershell' -ArgumentList @(
-                '-NoProfile', '-Command',
-                "Set-Location '$printerDir'; `$env:FOODY_PRINTER_MODE='archivo'; python main.py"
-            ) -WindowStyle Hidden
-            Start-Sleep -Seconds 5
-            $hi2 = Invoke-RestMethod -Uri "$script:FoodyQaBase/health/impresion" -TimeoutSec 8
-            $script:AgenteImpresionOk = [bool]$hi2.datos.conectado
-            if ($script:AgenteImpresionOk) {
-                Write-Host 'OK agente impresion (background)' -ForegroundColor Green
-            }
-        }
         if (-not $script:AgenteImpresionOk) {
-            Write-Host '  Inicia manual: .\scripts\iniciar-impresora.ps1' -ForegroundColor DarkGray
+            Write-Host '  QA no inicia el agente automáticamente para evitar conectarlo a otra API; se verifica solo la cola.' -ForegroundColor DarkGray
         }
     }
 }

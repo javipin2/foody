@@ -1214,9 +1214,9 @@ export class AnaliticaService {
         ventas_pedidos: ventasPedidos,
         ventas_movimientos_caja: ventasCaja,
         diferencia: Math.round(diferenciaCuadre * 100) / 100,
-        etiqueta_ventas_caja: 'Movimientos netos de caja',
+        etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
         nota_periodo_caja:
-          'Para movimientos ligados a un pedido se usa la fecha de creación del pedido; para movimientos sin pedido, la fecha del movimiento.',
+          'Compara ventas de pedidos creados en el rango con cobros netos asociados a esos pedidos. Los movimientos vinculados usan la fecha del pedido, aunque el pago ocurra después del rango; por eso esta diferencia puede cambiar con cobros posteriores y no representa el descuadre físico de un turno.',
         umbral_relevante_cop: UMBRALES_ALERTA.cuadreCajaCOP,
         descuadre_relevante:
           Math.abs(diferenciaCuadre) >= UMBRALES_ALERTA.cuadreCajaCOP,

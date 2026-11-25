@@ -5,6 +5,7 @@
 import {
   api,
   assertApiViva,
+  COCINA_ID,
   crearPedidoStaff,
   detallePedido,
   ensureCajaAbierta,
@@ -14,6 +15,7 @@ import {
   marcarItemsCocinaListos,
   mesaLibre,
   pedidoId,
+  PRECIO,
   setEstado,
   SID,
   TokenBundle,
@@ -355,6 +357,116 @@ describe('E2E casos límite Prompts 28-30', () => {
     expect(items).toHaveLength(2);
   });
 
+  it('PED-STAFF-IDEM-01: replay concurrente de POS crea un pedido y un solo recaudo', async () => {
+    const cajaAntes = await api()
+      .get(`/api/v1/caja/activa/${SID}`)
+      .set(admin.auth);
+    expect(cajaAntes.body.exito).toBe(true);
+    const saldoAntes = Number(cajaAntes.body.datos?.saldo_sistema);
+    const idempotencyKey = `jest-staff-create-${Date.now()}-${Math.random()}`;
+    const body = {
+      sucursal_id: SID,
+      tipo: 'para_llevar',
+      device_id: `jest-staff-create-${Date.now()}`,
+      metodo_pago: 'efectivo',
+      pagos: [{ metodo_pago: 'efectivo', monto: PRECIO }],
+      idempotency_key: idempotencyKey,
+      items: [itemBody()],
+    };
+
+    const [primero, replay] = await Promise.all([
+      crearPedidoStaff(cajero.auth, body),
+      crearPedidoStaff(cajero.auth, body),
+    ]);
+    expect(primero.status).toBe(201);
+    expect(replay.status).toBe(201);
+    expect(primero.body.exito).toBe(true);
+    expect(replay.body.exito).toBe(true);
+    const pedidoCreado = pedidoId(primero);
+    expect(pedidoId(replay)).toBe(pedidoCreado);
+    expect(
+      [primero.body.datos?.idempotente, replay.body.datos?.idempotente].filter(
+        (value) => value === true,
+      ),
+    ).toHaveLength(1);
+    pedidoPruebaId = pedidoCreado;
+
+    const cajaDespues = await api()
+      .get(`/api/v1/caja/activa/${SID}`)
+      .set(admin.auth);
+    expect(cajaDespues.body.exito).toBe(true);
+    const deltaCaja =
+      Number(cajaDespues.body.datos?.saldo_sistema) - saldoAntes;
+    expect(deltaCaja).toBe(PRECIO);
+
+    const payloadModificado = await crearPedidoStaff(cajero.auth, {
+      ...body,
+      items: [itemBody(2)],
+    });
+    expect(payloadModificado.status).toBe(409);
+    expect(payloadModificado.body.error).toBe('IDEMPOTENCY_KEY_REUSED');
+
+    const detalle = await detallePedido(cajero.auth, pedidoCreado);
+    const datos = detalle.body.datos ?? {};
+    const items = (datos.items_resumen ||
+      datos.items ||
+      datos.pedido?.items ||
+      []) as unknown[];
+    expect(items).toHaveLength(1);
+  });
+
+  it('PED-STAFF-IDEM-02: el replay no repite los efectos de Cocina', async () => {
+    const clave = `jest-staff-cocina-${Date.now()}-${Math.random()}`;
+    const body = {
+      sucursal_id: SID,
+      tipo: 'para_llevar',
+      device_id: `jest-staff-cocina-${Date.now()}`,
+      metodo_pago: 'pendiente',
+      idempotency_key: clave,
+      items: [itemBody()],
+    };
+
+    const primero = await crearPedidoStaff(cajero.auth, body);
+    expect(primero.status).toBe(201);
+    expect(primero.body.exito).toBe(true);
+    const id = pedidoId(primero);
+    pedidoPruebaId = id;
+
+    const cocinaAntes = await api()
+      .get(`/api/v1/cocina/tickets/${COCINA_ID}`)
+      .set(cocina.auth);
+    expect(cocinaAntes.body.exito).toBe(true);
+    const ticketsAntes = (cocinaAntes.body.datos ?? []) as Array<{
+      pedido_id: string;
+    }>;
+    expect(
+      ticketsAntes.filter((ticket) => ticket.pedido_id === id),
+    ).toHaveLength(1);
+
+    const replay = await crearPedidoStaff(cajero.auth, body);
+    expect(replay.status).toBe(201);
+    expect(replay.body.exito).toBe(true);
+    expect(pedidoId(replay)).toBe(id);
+    expect(replay.body.datos?.idempotente).toBe(true);
+
+    const cocinaDespues = await api()
+      .get(`/api/v1/cocina/tickets/${COCINA_ID}`)
+      .set(cocina.auth);
+    const ticketsDespues = (cocinaDespues.body.datos ?? []) as Array<{
+      pedido_id: string;
+    }>;
+    expect(
+      ticketsDespues.filter((ticket) => ticket.pedido_id === id),
+    ).toHaveLength(1);
+    const detalle = await detallePedido(cajero.auth, id);
+    const datos = detalle.body.datos ?? {};
+    const items = (datos.items_resumen ||
+      datos.items ||
+      datos.pedido?.items ||
+      []) as unknown[];
+    expect(items).toHaveLength(1);
+  });
+
   it('VIE-05/13 [C]: abono OK; pagado bloqueado sin cocina; admin+motivo OK', async () => {
     const cocina = await login('cocina@foody.demo');
     const mesa = await mesaLibre(cajero.auth);
@@ -400,6 +512,36 @@ describe('E2E casos límite Prompts 28-30', () => {
         motivo: 'jest override cocina incompleta',
       });
     expect(forzar.body.exito).toBe(true);
+
+    const ticketsPagados = await api()
+      .get(`/api/v1/cocina/tickets/${COCINA_ID}`)
+      .set(cocina.auth);
+    expect(ticketsPagados.body.exito).toBe(true);
+    const ticketPendiente = (
+      (ticketsPagados.body.datos ?? []) as Array<{
+        pedido_id: string;
+        estado: string;
+        items: Array<{ item_id: string; estado_cocina: string }>;
+      }>
+    ).find((ticket) => ticket.pedido_id === id);
+    expect(ticketPendiente?.estado).toBe('pagado');
+    expect(ticketPendiente?.items[0]?.estado_cocina).toBe('preparando');
+
+    const terminarCocina = await api()
+      .patch(`/api/v1/cocina/items/${itemId}/estado`)
+      .set(cocina.auth)
+      .send({ estado_cocina: 'listo' });
+    expect(terminarCocina.body.exito).toBe(true);
+    expect(terminarCocina.body.datos?.estado_pedido).toBe('pagado');
+
+    const detalleFinal = await detallePedido(cajero.auth, id);
+    const datosFinales = detalleFinal.body.datos ?? {};
+    const lineasFinales = (datosFinales.items_resumen ||
+      datosFinales.items ||
+      datosFinales.pedido?.items ||
+      []) as Array<{ item_id?: string; estado_cocina?: string }>;
+    expect(datosFinales.estado || datosFinales.pedido?.estado).toBe('pagado');
+    expect(lineasFinales[0]?.estado_cocina).toBe('listo');
   });
 
   it('PED-PREPAGO-01: prepago en cocina no bloquea cierre; KDS lo cierra pagado', async () => {
