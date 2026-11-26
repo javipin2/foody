@@ -160,7 +160,7 @@ export class WompiService {
     return `https://checkout.wompi.co/l/${paymentLinkId}`;
   }
 
-  /** Consulta estado de una transacción (llave pública). */
+  /** Consulta estado de una transacción desde el backend con llave privada. */
   async consultarTransaccion(transaccionId: string): Promise<{
     id: string;
     status: string;
@@ -175,7 +175,7 @@ export class WompiService {
     const resp = await fetch(
       `${this.baseUrl()}/transactions/${encodeURIComponent(id)}`,
       {
-        headers: { Authorization: `Bearer ${this.clavePublica()}` },
+        headers: { Authorization: `Bearer ${this.clavePrivada()}` },
       },
     );
     const json = (await resp.json()) as {

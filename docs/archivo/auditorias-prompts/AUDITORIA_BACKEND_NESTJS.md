@@ -234,6 +234,12 @@ Muchos GET staff usan `@Query('sucursal_id') string` + scope después — deuda 
 
 **No hay** `catch {}` vacío.
 
+### WOMPI-WEBHOOK-REFERENCE-01 — renovaciones recurrentes
+
+El proceso de renovación crea un `pagos_suscripcion` pendiente con referencia única y llama `POST /v1/transactions`, sin `payment_link_id` ni SKU de enlace. El webhook `transaction.updated` entrega el objeto transaction con `reference`; antes de la corrección, `buscarPagoPendiente` solo probaba link o SKU y devolvía `pago_no_encontrado`, incluso si el cobro llegaba aprobado. Ahora, después de intentar los identificadores existentes, busca `referencia_interna` coincidente con `estado='pendiente'`.
+
+Wompi documenta la referencia única y el seguimiento por evento [`transaction.updated`](https://docs.wompi.co/docs/colombia/transacciones/) ([eventos](https://docs.wompi.co/docs/colombia/eventos/)). Prueba unitaria sintetiza un webhook APPROVED sin `payment_link_id`/`sku` y confirma asociación, aprobación y actualización de suscripción (1/1); `tsc --noEmit -p tsconfig.build.json` pasa. No se contactó Wompi ni la API/DB de Foody. E2E en clon y activación runtime siguen pendientes. Esto no resuelve el timeout ambiguo de `POST /transactions` (WOMPI-EXT-TIMEOUT-01).
+
 ---
 
 ## 5. Interceptors, pipes, filters (BN-PIPE)

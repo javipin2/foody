@@ -45,6 +45,41 @@ describe('CrearPedidoDto delivery address', () => {
       'direccion_entrega',
     );
   });
+
+  it('rejects placeholder values instead of a real delivery address', async () => {
+    for (const direccion_entrega of ['Por confirmar', ' pendiente ', 'N/A']) {
+      const result = await errors({ ...base, direccion_entrega });
+      expect(result.map((error) => error.property)).toContain(
+        'direccion_entrega',
+      );
+    }
+  });
+});
+
+describe('CrearPedidoDto expected total precondition', () => {
+  it('accepts a non-negative quoted total and rejects invalid values', async () => {
+    const valido = plainToInstance(CrearPedidoDto, {
+      ...base,
+      tipo: 'para_llevar',
+      total_esperado: 12000,
+    });
+    expect(
+      (await validate(valido)).map((error) => error.property),
+    ).not.toContain('total_esperado');
+
+    for (const total_esperado of [-1, '12000']) {
+      const errores = await validate(
+        plainToInstance(CrearPedidoDto, {
+          ...base,
+          tipo: 'para_llevar',
+          total_esperado,
+        }),
+      );
+      expect(errores.map((error) => error.property)).toContain(
+        'total_esperado',
+      );
+    }
+  });
 });
 
 describe('CrearPedidoDto delivery contact', () => {

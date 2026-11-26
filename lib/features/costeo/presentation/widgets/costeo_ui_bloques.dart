@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Etiqueta de sección (estilo guía costeo).
@@ -57,6 +58,7 @@ class CosteoPlatoClienteCard extends StatelessWidget {
 
   final String nombre;
   final String precio;
+
   /// Cabecera densa (móvil / colapsada).
   final bool compacto;
   final VoidCallback? onMargen;
@@ -227,8 +229,131 @@ class CosteoFlechaFlujo extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Center(
-        child: Icon(Icons.arrow_downward, color: Colors.grey.shade400, size: 28),
+        child:
+            Icon(Icons.arrow_downward, color: Colors.grey.shade400, size: 28),
       ),
+    );
+  }
+}
+
+/// Secuencia de trabajo de una receta. Los pasos son una guía visual y no
+/// implican que el producto ya tenga esa configuración guardada.
+class CosteoFlujoReceta extends StatelessWidget {
+  const CosteoFlujoReceta({super.key, this.pasoActivo = 1});
+
+  final int pasoActivo;
+
+  static const _pasos = [
+    'Ingredientes',
+    'Preparaciones',
+    'Empaques',
+    'Acompañamientos',
+    'Costo y margen',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final anchoDisponible = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final compacto = anchoDisponible < 620;
+        final anchoPaso = compacto ? 104.0 : anchoDisponible / _pasos.length;
+        return SingleChildScrollView(
+          key: const ValueKey('costeo-flujo-receta'),
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: compacto ? anchoPaso * _pasos.length : anchoDisponible,
+            child: Row(
+              children: [
+                for (var i = 0; i < _pasos.length; i++)
+                  SizedBox(
+                    width: anchoPaso,
+                    child: _PasoReceta(
+                      numero: i + 1,
+                      titulo: _pasos[i],
+                      activo: i + 1 == pasoActivo,
+                      ultimo: i == _pasos.length - 1,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PasoReceta extends StatelessWidget {
+  const _PasoReceta({
+    required this.numero,
+    required this.titulo,
+    required this.activo,
+    required this.ultimo,
+  });
+
+  final int numero;
+  final String titulo;
+  final bool activo;
+  final bool ultimo;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = activo ? AnaliticaTokens.ventas : AnaliticaTokens.border;
+    final texto = activo ? AnaliticaTokens.ink : AnaliticaTokens.inkMuted;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            if (numero > 1)
+              Expanded(
+                child: Container(height: 1, color: AnaliticaTokens.border),
+              ),
+            Container(
+              key: activo ? ValueKey('costeo-paso-activo-$numero') : null,
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: activo ? AnaliticaTokens.ventas : Colors.transparent,
+                shape: BoxShape.circle,
+                border: Border.all(color: color, width: activo ? 0 : 1.2),
+              ),
+              child: Text(
+                '$numero',
+                style: TextStyle(
+                  color: activo ? Colors.white : texto,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            if (!ultimo)
+              Expanded(
+                child: Container(height: 1, color: AnaliticaTokens.border),
+              ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            titulo,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: texto,
+              fontSize: 11,
+              fontWeight: activo ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -368,51 +493,145 @@ class CosteoLineaResumen extends StatelessWidget {
 }
 
 /// Bloque agrupado de líneas de receta.
-class CosteoGrupoReceta extends StatelessWidget {
+class CosteoGrupoReceta extends StatefulWidget {
   const CosteoGrupoReceta({
     super.key,
     required this.titulo,
     required this.subtitulo,
     required this.colorBadge,
     required this.lineas,
+    this.numero,
+    this.inicialmenteExpandido = true,
   });
 
   final String titulo;
   final String subtitulo;
   final Color colorBadge;
   final List<Widget> lineas;
+  final int? numero;
+  final bool inicialmenteExpandido;
+
+  @override
+  State<CosteoGrupoReceta> createState() => _CosteoGrupoRecetaState();
+}
+
+class _CosteoGrupoRecetaState extends State<CosteoGrupoReceta> {
+  late bool _expandido;
+
+  @override
+  void initState() {
+    super.initState();
+    _expandido = widget.inicialmenteExpandido;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (lineas.isEmpty) return const SizedBox.shrink();
+    if (widget.lineas.isEmpty) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       decoration: BoxDecoration(
-        color: AnaliticaTokens.surface,
+        color: SaaSTokens.surface(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AnaliticaTokens.border),
+        border: Border.all(color: SaaSTokens.border(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              CosteoBadgeGrupo(texto: titulo, color: colorBadge),
-              const SizedBox(width: 8),
+              if (widget.numero != null) ...[
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: widget.colorBadge,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '${widget.numero}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.titulo,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: SaaSTokens.ink(context),
+                      ),
+                    ),
+                    Text(
+                      widget.subtitulo,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: SaaSTokens.inkMuted(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: SaaSTokens.surfaceMuted(context),
+                  borderRadius: BorderRadius.circular(SaaSTokens.radioPill),
+                ),
                 child: Text(
-                  subtitulo,
-                  style: const TextStyle(
+                  '${widget.lineas.length}',
+                  style: TextStyle(
+                    color: SaaSTokens.inkMuted(context),
                     fontSize: 11,
-                    color: AnaliticaTokens.inkSoft,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Semantics(
+                button: true,
+                expanded: _expandido,
+                label: _expandido
+                    ? 'Contraer ${widget.titulo}'
+                    : 'Expandir ${widget.titulo}',
+                child: IconButton(
+                  key: ValueKey(
+                      'alternar-grupo-costeo-${widget.numero ?? widget.titulo}'),
+                  tooltip: _expandido ? 'Contraer sección' : 'Expandir sección',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() => _expandido = !_expandido),
+                  icon: Icon(
+                    _expandido ? Icons.expand_less : Icons.expand_more,
+                    color: SaaSTokens.inkMuted(context),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          ...lineas,
+          AnimatedSize(
+            duration: SaaSTokens.duracionTransicion,
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _expandido
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: widget.lineas,
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );
@@ -430,6 +649,7 @@ class CosteoResumenPie extends StatelessWidget {
     required this.margenPct,
     required this.colorFoodCost,
     this.lineasExtra = const [],
+    this.numero,
   });
 
   final String tituloCosto;
@@ -439,6 +659,7 @@ class CosteoResumenPie extends StatelessWidget {
   final String margenPct;
   final Color colorFoodCost;
   final List<Widget> lineasExtra;
+  final int? numero;
 
   @override
   Widget build(BuildContext context) {
@@ -452,26 +673,76 @@ class CosteoResumenPie extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (numero != null) ...[
+            Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: AnaliticaTokens.inventario,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$numero',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Costo y margen',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AnaliticaTokens.ink,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           ...lineasExtra,
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                tituloCosto,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AnaliticaTokens.ink,
-                ),
-              ),
-              Text(
-                costoTotal,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AnaliticaTokens.ink,
-                ),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const estiloTitulo = TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AnaliticaTokens.ink,
+              );
+              const estiloCosto = TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AnaliticaTokens.ink,
+              );
+              if (constraints.maxWidth < 400) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(tituloCosto, style: estiloTitulo),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(costoTotal, style: estiloCosto),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: Text(tituloCosto, style: estiloTitulo)),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      costoTotal,
+                      textAlign: TextAlign.end,
+                      style: estiloCosto,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           LayoutBuilder(
@@ -485,9 +756,7 @@ class CosteoResumenPie extends StatelessWidget {
                         ? '${foodCostPct!.toStringAsFixed(1)}%'
                         : '—',
                     colorFoodCost,
-                    foodCostPct != null
-                        ? (foodCostPct! / 100).clamp(0, 1)
-                        : 0,
+                    foodCostPct != null ? (foodCostPct! / 100).clamp(0, 1) : 0,
                   ),
                 ),
                 SizedBox(width: estrecho ? 8 : 12),
@@ -564,6 +833,7 @@ class GuiaPasosCompacta extends StatefulWidget {
   });
 
   final List<String> pasos;
+
   /// Si no es null, guarda colapsado/oculto en SharedPreferences.
   final String? preferenciaKey;
 

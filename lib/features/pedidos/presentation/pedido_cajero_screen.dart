@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:intl/intl.dart';
@@ -25,6 +26,20 @@ import 'package:reserva_canchas/core/realtime/foody_realtime.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+
+bool esDireccionDomicilioPendiente(String direccion) {
+  final normalizada = direccion.trim().toLowerCase();
+  return normalizada.isEmpty ||
+      const {
+        'por confirmar',
+        'pendiente',
+        'por definir',
+        'n/a',
+        'na',
+        'sin dirección',
+        'sin direccion',
+      }.contains(normalizada);
+}
 
 /// Constructor de pedido staff — layout POS (ref. foody_redesign_complete.html).
 class PedidoCajeroScreen extends StatefulWidget {
@@ -185,7 +200,8 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
       });
       return;
     }
-    if (_tipoPedido == 'domicilio' && _direccionCtrl.text.trim().isEmpty) {
+    if (_tipoPedido == 'domicilio' &&
+        esDireccionDomicilioPendiente(_direccionCtrl.text)) {
       setState(() {
         _totalEstimadoServidor = null;
         _estimandoTotal = false;
@@ -462,11 +478,11 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
       final nombre = _clienteNombreCtrl.text.trim();
       final tel = _clienteTelCtrl.text.trim();
       final dir = _direccionCtrl.text.trim();
-      if (nombre.isEmpty || tel.isEmpty || dir.isEmpty) {
+      if (nombre.isEmpty || tel.isEmpty || esDireccionDomicilioPendiente(dir)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Domicilio: nombre, teléfono y dirección son obligatorios',
+              'Domicilio: nombre y teléfono son obligatorios; ingresa una dirección real',
             ),
           ),
         );
@@ -563,6 +579,9 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
         observaciones: observacionesOperacion,
         propina: propinaOperacion,
         idempotencyKey: idempotencyKey,
+        totalEsperado: _requiereCotizacionParaConfirmar
+            ? _totalEstimadoServidor?.toDouble()
+            : null,
       );
       if (!mounted) return;
       final pendiente = _metodoPago == 'pendiente' &&
@@ -618,6 +637,34 @@ class _PedidoCajeroScreenState extends State<PedidoCajeroScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _enviando = false);
+      if (codigoErrorApi(e) == 'TOTAL_PEDIDO_CAMBIO' && e is DioException) {
+        final datos = e.response?.data;
+        if (datos is Map && datos['total_actual'] is num) {
+          final anterior = datos['total_esperado'] is num
+              ? (datos['total_esperado'] as num).toDouble()
+              : _totalEstimadoServidor?.toDouble();
+          final actual = (datos['total_actual'] as num).toDouble();
+          setState(() => _totalEstimadoServidor = actual);
+          await FoodyDialogo.mostrar<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('El precio del pedido cambió'),
+              content: Text(
+                'No se creó ni se cobró el pedido. '
+                '${anterior == null ? '' : 'El total cotizado era ${_moneda.format(anterior)} y ahora es '}'
+                '${_moneda.format(actual)}. Revisa el nuevo valor y confirma otra vez para continuar.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Entendido'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+      }
       final mostrado = await mostrarDialogoStockSiAplica(context, e);
       if (!mostrado && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

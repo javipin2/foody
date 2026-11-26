@@ -27,6 +27,12 @@ describe('CocinasService.listarTickets', () => {
 
     expect(database.consultarUno).toHaveBeenCalledTimes(1);
     expect(database.consultar).toHaveBeenCalledTimes(1);
+    expect(database.consultar.mock.calls[0][0]).toContain(
+      "'combo_componentes'",
+    );
+    expect(database.consultar.mock.calls[0][0]).toContain(
+      'componentes_snapshot',
+    );
     expect(alertasRiesgo.registrar).not.toHaveBeenCalled();
     expect(alertasRiesgo.registrarEnTransaccion).not.toHaveBeenCalled();
   });

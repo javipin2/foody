@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reserva_canchas/features/caja/data/caja_repository.dart';
@@ -20,11 +21,13 @@ class _PedidosRepositoryFake extends PedidosRepository {
   int creaciones = 0;
   final List<String?> reemplazos = [];
   Object? errorEstimacion;
+  Object? errorCreacion;
   int fallosCreacion = 0;
   final List<String?> clavesIdempotencia = [];
   final List<String?> metodosPago = [];
   final List<double?> propinasRecibidas = [];
   final List<List<Map<String, dynamic>>?> pagosRecibidos = [];
+  final List<double?> totalesEsperados = [];
 
   @override
   Future<Map<String, dynamic>> crearPedidoStaff({
@@ -44,6 +47,7 @@ class _PedidosRepositoryFake extends PedidosRepository {
     double? propina,
     String? observaciones,
     String? idempotencyKey,
+    double? totalEsperado,
   }) async {
     creaciones++;
     reemplazos.add(itemIdReemplazar);
@@ -51,6 +55,8 @@ class _PedidosRepositoryFake extends PedidosRepository {
     metodosPago.add(metodoPago);
     propinasRecibidas.add(propina);
     pagosRecibidos.add(pagos);
+    totalesEsperados.add(totalEsperado);
+    if (errorCreacion != null) throw errorCreacion!;
     if (fallosCreacion > 0) {
       fallosCreacion--;
       throw Exception('Respuesta perdida');
@@ -167,6 +173,11 @@ class _CajaRepositoryPendiente extends CajaRepository {
 }
 
 void main() {
+  test('valida que la dirección de domicilio no sea un marcador pendiente', () {
+    expect(esDireccionDomicilioPendiente(' Por confirmar '), isTrue);
+    expect(esDireccionDomicilioPendiente('Calle 10 # 5-20'), isFalse);
+  });
+
   testWidgets('mesero crea el pedido con pago pendiente por defecto', (
     tester,
   ) async {
@@ -422,6 +433,69 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(pedidos.creaciones, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('un total cambiado requiere confirmación nueva del cajero',
+      (tester) async {
+    tester.view.physicalSize = const Size(1440, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final pedidos = _PedidosRepositoryFake();
+    pedidos.errorCreacion = DioException(
+      requestOptions: RequestOptions(path: '/pedidos/staff'),
+      response: Response<Map<String, dynamic>>(
+        requestOptions: RequestOptions(path: '/pedidos/staff'),
+        statusCode: 409,
+        data: {
+          'error': 'TOTAL_PEDIDO_CAMBIO',
+          'total_esperado': 12000,
+          'total_actual': 12500,
+        },
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PedidoCajeroScreen(
+            sucursalId: 'sucursal-prueba',
+            menuRepository: _MenuRepositoryFake(conProductos: true),
+            mesasRepository: _MesasRepositoryFake(),
+            cajaRepository: _CajaRepositoryFake(),
+            pedidosRepository: pedidos,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Arepa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Agregar ·'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    final confirmar = find.widgetWithText(FilledButton, 'Confirmar pedido →');
+    await tester.ensureVisible(confirmar);
+    await tester.tap(confirmar);
+    await tester.pumpAndSettle();
+
+    expect(find.text('El precio del pedido cambió'), findsOneWidget);
+    expect(find.textContaining('No se creó ni se cobró'), findsOneWidget);
+    expect(pedidos.creaciones, 1);
+    expect(pedidos.totalesEsperados.single, 12000);
+    expect(tester.takeException(), isNull);
+
+    pedidos.errorCreacion = null;
+    await tester.tap(find.text('Entendido'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(confirmar);
+    await tester.tap(confirmar);
+    await tester.pumpAndSettle();
+    expect(pedidos.creaciones, 2);
+    expect(pedidos.totalesEsperados.last, 12500);
     expect(tester.takeException(), isNull);
   });
 

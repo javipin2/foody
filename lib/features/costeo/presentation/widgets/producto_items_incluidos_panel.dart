@@ -15,6 +15,7 @@ class ProductoItemsIncluidosPanel extends StatefulWidget {
     required this.nombreProducto,
     required this.productosDisponibles,
     required this.onGuardado,
+    this.catalogoRepository,
     this.onCostosActualizados,
     this.precioVenta,
     this.costoTotalProducto,
@@ -28,6 +29,7 @@ class ProductoItemsIncluidosPanel extends StatefulWidget {
   final String nombreProducto;
   final List<Map<String, dynamic>> productosDisponibles;
   final VoidCallback onGuardado;
+  final CatalogoAdminRepository? catalogoRepository;
   /// Tras cargar incluidos el backend recalcula; refresca listado sin otro POST.
   final VoidCallback? onCostosActualizados;
   final double? precioVenta;
@@ -46,7 +48,8 @@ class ProductoItemsIncluidosPanel extends StatefulWidget {
 
 class _ProductoItemsIncluidosPanelState
     extends State<ProductoItemsIncluidosPanel> {
-  final _repo = CatalogoAdminRepository();
+  late final CatalogoAdminRepository _repo =
+      widget.catalogoRepository ?? CatalogoAdminRepository();
   final _listaCtrl = ScrollController();
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _filas = [];
@@ -353,12 +356,15 @@ class _ProductoItemsIncluidosPanelState
           lineasExtra: [
             if (precio != null && precio > 0) ...[
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Precio de venta',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  Expanded(
+                    child: Text(
+                      'Precio de venta',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey.shade700),
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     _moneda.format(precio),
                     style: const TextStyle(fontWeight: FontWeight.w600),
@@ -368,23 +374,29 @@ class _ProductoItemsIncluidosPanelState
               const SizedBox(height: 6),
             ],
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Preparación ${widget.nombreProducto}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                Expanded(
+                  child: Text(
+                    'Preparación ${widget.nombreProducto}',
+                    style:
+                        TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(_moneda.format(prepSolo)),
               ],
             ),
             if (incluidos > 0)
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Productos incluidos',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  Expanded(
+                    child: Text(
+                      'Productos incluidos',
+                      style:
+                          TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(_moneda.format(incluidos)),
                 ],
               ),

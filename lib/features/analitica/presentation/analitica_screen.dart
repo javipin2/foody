@@ -1866,7 +1866,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           const SizedBox(height: 16),
           const SaaSInsightCard(
             texto:
-                'Con filtros predeterminados, incluye pedidos pendientes o impagos; no equivale a cobros en caja.',
+                'Con filtros predeterminados, incluye pedidos pendientes o impagos; no equivale a cobros en caja. Los gastos se descuentan completos para la sede y el período; no se prorratean entre los pedidos filtrados.',
             icono: Icons.info_outline_rounded,
           ),
           const SizedBox(height: 12),

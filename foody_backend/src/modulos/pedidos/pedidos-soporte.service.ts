@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PoolClient, QueryResultRow } from 'pg';
 import { esAdminRestaurante } from '../../core/auth/roles-food';
 import { DatabaseService } from '../../core/database/database.service';
@@ -21,6 +21,8 @@ export type OpcionesStaffPedido = {
 /** Utilidades compartidas entre subdominios de pedidos (mesa, crear, estado). */
 @Injectable()
 export class PedidosSoporteService {
+  private readonly logger = new Logger(PedidosSoporteService.name);
+
   constructor(
     private readonly database: DatabaseService,
     private readonly realtime: RealtimeBroadcastService,
@@ -514,19 +516,41 @@ export class PedidosSoporteService {
   }
 
   async notificarCocinasPorPedido(pedidoId: string, sucursalId: string) {
-    const filas = await this.database.consultar<{ cocina_id: string }>(
-      `SELECT DISTINCT pi.cocina_id
-       FROM pedido_items pi
-       INNER JOIN pedidos p ON p.id = pi.pedido_id
-       WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`,
-      [pedidoId, sucursalId],
-    );
-    for (const f of filas) {
-      void this.realtime.cocinaActualizada(f.cocina_id, {
-        pedido_id: pedidoId,
-        sucursal_id: sucursalId,
-      });
+    try {
+      const filas = await this.database.consultar<{ cocina_id: string }>(
+        `SELECT DISTINCT pi.cocina_id
+         FROM pedido_items pi
+         INNER JOIN pedidos p ON p.id = pi.pedido_id
+         WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`,
+        [pedidoId, sucursalId],
+      );
+      for (const f of filas) {
+        void this.realtime
+          .cocinaActualizada(f.cocina_id, {
+            pedido_id: pedidoId,
+            sucursal_id: sucursalId,
+          })
+          .catch((error: unknown) => {
+            this.logger.warn(
+              `Realtime de cocina falló para pedido ${pedidoId}: ${this.errorTexto(error)}`,
+            );
+          });
+      }
+    } catch (error) {
+      this.logger.error(
+        `No se pudieron resolver las cocinas del pedido ${pedidoId}: ${this.errorTexto(error)}`,
+      );
     }
-    void this.impresion.encolarPorPedido(pedidoId, sucursalId);
+    try {
+      await this.impresion.encolarPorPedido(pedidoId, sucursalId);
+    } catch (error) {
+      this.logger.error(
+        `No se pudo solicitar impresión del pedido ${pedidoId}: ${this.errorTexto(error)}`,
+      );
+    }
+  }
+
+  private errorTexto(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 }

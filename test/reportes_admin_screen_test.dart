@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -36,17 +38,60 @@ class _ReportesRepositoryFake extends ReportesRepository {
 }
 
 class _AuditoriaRepositoryFake extends AuditoriaRepository {
+  final requests = <({String desde, String hasta})>[];
+  final responses = <Future<Map<String, dynamic>>>[];
+  int fallosPendientes = 0;
+
   @override
   Future<Map<String, dynamic>> timeline({
     required String desde,
     required String hasta,
     String? sucursalId,
-  }) async =>
-      {};
+  }) async {
+    requests.add((desde: desde, hasta: hasta));
+    final responseIndex = requests.length - 1;
+    if (responseIndex < responses.length) return responses[responseIndex];
+    if (fallosPendientes > 0) {
+      fallosPendientes--;
+      throw Exception('Sin conexión');
+    }
+    return {};
+  }
 }
 
 void main() {
   setUpAll(() => initializeDateFormatting('es_CO'));
+
+  for (final caso in [
+    (bloqueada: true, etiqueta: 'Análisis · Pro'),
+    (bloqueada: false, etiqueta: 'Análisis'),
+  ]) {
+    testWidgets('puente a Análisis muestra estado del plan ${caso.etiqueta}',
+        (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(820, 1180);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReportesAdminScreen(
+              sucursalId: 's1',
+              repository: _ReportesRepositoryFake(),
+              auditoriaRepository: _AuditoriaRepositoryFake(),
+              onIrAnalitica: () {},
+              analiticaBloqueadaPorPlan: caso.bloqueada,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(caso.etiqueta), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final size in [
     const Size(320, 568),
@@ -108,6 +153,113 @@ void main() {
       tester.widget<Text>(etiqueta).style?.color,
       esquemaOscuro.onPrimaryContainer,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('auditoría vuelve a consultar el timeline al cambiar periodo',
+      (tester) async {
+    final auditoria = _AuditoriaRepositoryFake();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportesAdminScreen(
+            sucursalId: 's1',
+            repository: _ReportesRepositoryFake(),
+            auditoriaRepository: auditoria,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Auditoría'));
+    await tester.pumpAndSettle();
+    expect(auditoria.requests, hasLength(1));
+
+    await tester.tap(find.text('Hoy'));
+    await tester.pumpAndSettle();
+
+    expect(auditoria.requests, hasLength(2));
+    expect(auditoria.requests.last.desde, auditoria.requests.last.hasta);
+  });
+
+  testWidgets('error del timeline permite reintentar sin mostrar vacío falso',
+      (tester) async {
+    final auditoria = _AuditoriaRepositoryFake()..fallosPendientes = 1;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportesAdminScreen(
+            sucursalId: 's1',
+            repository: _ReportesRepositoryFake(),
+            auditoriaRepository: auditoria,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Auditoría'));
+    await tester.pumpAndSettle();
+
+    expect(auditoria.requests, hasLength(1));
+    expect(find.text('Reintentar'), findsOneWidget);
+    expect(find.text('Sin eventos en el período'), findsNothing);
+    await tester.tap(find.text('Reintentar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sin eventos en el período'), findsOneWidget);
+    expect(auditoria.requests, hasLength(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('respuesta tardía de otro periodo no reemplaza el timeline nuevo',
+      (tester) async {
+    final respuestaAnterior = Completer<Map<String, dynamic>>();
+    final auditoria = _AuditoriaRepositoryFake()
+      ..responses.add(respuestaAnterior.future)
+      ..responses.add(Future.value({
+        'eventos': [
+          {
+            'tipo': 'Evento del día actual',
+            'fuente': 'Pedidos',
+            'ocurrido_at': '2026-11-25T12:00:00Z',
+          },
+        ],
+      }));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportesAdminScreen(
+            sucursalId: 's1',
+            repository: _ReportesRepositoryFake(),
+            auditoriaRepository: auditoria,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Auditoría'));
+    // El skeleton anima mientras la primera llamada permanece pendiente.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(auditoria.requests, hasLength(1));
+
+    await tester.tap(find.text('Hoy'));
+    await tester.pumpAndSettle();
+    expect(auditoria.requests, hasLength(2));
+    expect(find.text('Evento del día actual'), findsOneWidget);
+
+    respuestaAnterior.complete({
+      'eventos': [
+        {
+          'tipo': 'Evento obsoleto',
+          'fuente': 'Pedidos',
+          'ocurrido_at': '2026-11-18T12:00:00Z',
+        },
+      ],
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Evento del día actual'), findsOneWidget);
+    expect(find.text('Evento obsoleto'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

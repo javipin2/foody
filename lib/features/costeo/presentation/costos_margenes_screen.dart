@@ -72,6 +72,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
   bool _cargandoImpacto = false;
   final _busquedaCtrl = TextEditingController();
   String _filtroLista = 'todos';
+  bool? _incluidosExpandido;
   TabController? _tabDetalleCtrl;
 
   TabController get _tabsDetalle =>
@@ -326,7 +327,9 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al recalcular: $e')),
+          SnackBar(
+            content: Text(mensajeErrorHttp(e, contexto: 'recalcular costos')),
+          ),
         );
       }
     }
@@ -583,6 +586,24 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     required bool esAncho,
     required bool compacto,
   }) {
+    final producto = _productoSeleccionado;
+    final id = producto?['id'] as String? ?? '';
+    final margenReal = num.tryParse('${producto?['margen_porcentaje']}');
+    final margenUmbral = _umbralMargen ?? 35;
+    final tipoProducto = producto?['tipo_entidad'] as String? ?? 'producto';
+    final mostrarFlujo = tipoProducto != 'combo' &&
+        tipoProducto != 'bebida' &&
+        tipoProducto != 'topping';
+    final tieneCanalLlevar = producto != null &&
+        tipoProducto == 'producto' &&
+        (producto['precio_sugerido_llevar'] != null ||
+            (producto['costo_canal_llevar'] as num? ?? 0) > 0);
+    final pasoActivo = _tabsDetalle.index == 0
+        ? 1
+        : tieneCanalLlevar
+            ? 3
+            : 4;
+
     return ColoredBox(
       color: SaaSTokens.canvas(context),
       child: Column(
@@ -594,32 +615,58 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
             compacto: compacto,
             enDetalle: true,
           ),
+          if (producto != null) ...[
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  compacto ? 12 : 20, 8, compacto ? 12 : 20, 0),
+              child: CosteoPreviewHeroCard(
+                nombre: producto['nombre'] as String? ?? '',
+                precioLabel: _moneda.format(_num(producto['precio'])),
+                imagenUrl: producto['imagen_url'] as String?,
+                categoria: _categoriaDe(producto),
+                idCorto:
+                    '#${id.length > 8 ? id.substring(0, 8).toUpperCase() : id.toUpperCase()}',
+                esPremium: margenReal != null && margenReal >= margenUmbral,
+              ),
+            ),
+            if (mostrarFlujo)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                    compacto ? 12 : 20, 12, compacto ? 12 : 20, 4),
+                child: CosteoFlujoReceta(pasoActivo: pasoActivo),
+              ),
+          ],
           Expanded(
-            child: esAncho
+            child: esAncho && tipoProducto != 'combo'
                 ? Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        width: 340,
-                        child: ListView(
-                          primary: false,
-                          padding: const EdgeInsets.fromLTRB(20, 8, 12, 24),
-                          children: _detalleColumnaIzquierda(
-                            umbral: umbral,
-                            compacto: compacto,
-                          ),
-                        ),
-                      ),
-                      VerticalDivider(
-                        width: 1,
-                        color: SaaSTokens.border(context),
-                      ),
                       Expanded(
                         child: _panelDetalle(
                           compacto: compacto,
                           enColumnaDerecha: true,
                         ),
                       ),
+                      VerticalDivider(
+                        width: 1,
+                        color: SaaSTokens.border(context),
+                      ),
+                      if (producto != null)
+                        SizedBox(
+                          width: 320,
+                          child: ListView(
+                            primary: false,
+                            padding: const EdgeInsets.fromLTRB(12, 8, 20, 24),
+                            children: _panelResumenCosteo(
+                              producto,
+                              umbral: umbral,
+                              incluirAcciones:
+                                  (producto['tipo_entidad'] as String? ??
+                                          'producto') ==
+                                      'producto',
+                            ),
+                          ),
+                        ),
                     ],
                   )
                 : _panelDetalle(compacto: compacto, enColumnaDerecha: false),
@@ -634,13 +681,23 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
       controller: _busquedaCtrl,
       onChanged: (_) => setState(() {}),
       decoration: InputDecoration(
-        hintText: 'Buscar plato…',
+        hintText: 'Buscar plato, bebida, combo o adicional…',
         hintStyle: TextStyle(color: SaaSTokens.inkSoft(context)),
         prefixIcon: Icon(
           Icons.search,
           size: 18,
           color: SaaSTokens.inkSoft(context),
         ),
+        suffixIcon: _busquedaCtrl.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Limpiar búsqueda',
+                onPressed: () {
+                  _busquedaCtrl.clear();
+                  setState(() {});
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
         isDense: true,
         filled: true,
         fillColor: SaaSTokens.surface(context),
@@ -697,6 +754,9 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
   }
 
   Widget _vacioLista() {
+    final sinItems = _productos.isEmpty;
+    final busquedaActiva = _busquedaCtrl.text.trim().isNotEmpty;
+    final filtroActivo = _filtroLista != 'todos';
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -710,16 +770,18 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
             ),
             const SizedBox(height: 12),
             Text(
-              _productos.isEmpty
+              sinItems
                   ? 'Sin ítems en el menú'
-                  : 'Ningún ítem coincide con el filtro',
+                  : busquedaActiva || filtroActivo
+                      ? 'No encontramos ítems con esos criterios'
+                      : 'Aún no hay costos para mostrar',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color: SaaSTokens.ink(context),
               ),
             ),
-            if (_productos.isEmpty && widget.onVolverAlMenu != null) ...[
+            if (sinItems && widget.onVolverAlMenu != null) ...[
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: widget.onVolverAlMenu,
@@ -728,6 +790,17 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                 ),
                 icon: const Icon(Icons.restaurant_menu_outlined),
                 label: const Text('Ir a Menú'),
+              ),
+            ],
+            if (!sinItems && (busquedaActiva || filtroActivo)) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  _busquedaCtrl.clear();
+                  setState(() => _filtroLista = 'todos');
+                },
+                icon: const Icon(Icons.filter_alt_off_outlined),
+                label: const Text('Quitar búsqueda y filtros'),
               ),
             ],
           ],
@@ -770,38 +843,158 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
     return '—';
   }
 
-  List<Widget> _detalleColumnaIzquierda({
+  List<Widget> _panelResumenCosteo(
+    Map<String, dynamic> p, {
     required double umbral,
-    required bool compacto,
+    required bool incluirAcciones,
   }) {
-    final p = _productoSeleccionado;
-    if (p == null) return const [];
-    final precio = _num(p['precio']);
-    final margenReal = num.tryParse('${p['margen_porcentaje']}');
-    final sinReceta = p['costo_calculado'] == null;
-    final id = p['id'] as String? ?? '';
-    final idCorto =
-        '#${id.length > 8 ? id.substring(0, 8).toUpperCase() : id.toUpperCase()}';
+    final tipo = p['tipo_entidad'] as String? ?? 'producto';
+    final extra = tipo == 'bebida' || tipo == 'topping';
+    final combo = tipo == 'combo';
+    final tieneDomicilio = !extra &&
+        !combo &&
+        (p['precio_sugerido_llevar'] != null ||
+            _num(p['costo_canal_llevar']) > 0);
+    final domicilio = tieneDomicilio && _tabsDetalle.index == 1;
+    final precio = _num(
+        domicilio ? (p['precio_para_llevar'] ?? p['precio']) : p['precio']);
+    final costoRaw = domicilio ? p['costo_canal_llevar'] : p['costo_calculado'];
+    final costo = num.tryParse('$costoRaw')?.toDouble();
+    final margen = num.tryParse(
+      '${domicilio ? p['margen_llevar_porcentaje'] : p['margen_porcentaje']}',
+    );
+    final foodCost = domicilio
+        ? null
+        : num.tryParse('${p['food_cost_porcentaje']}')?.toDouble();
+    final nivel = costeoNivelDe(
+      margenPct: margen,
+      sinReceta: costo == null,
+      umbral: umbral,
+    );
+    final precioSugerido = domicilio
+        ? (p['precio_sugerido_llevar'] == null
+            ? '—'
+            : _moneda.format(_num(p['precio_sugerido_llevar'])))
+        : _precioSugLabel(p);
+    final margenObj = _margenObjetivoActual(p);
+    final mostrarAccion = incluirAcciones && !domicilio && !extra && !combo;
+
+    Widget fila(String etiqueta, String valor, {bool destacado = false}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                etiqueta,
+                style: TextStyle(
+                  color: SaaSTokens.inkMuted(context),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            Text(
+              valor,
+              style: TextStyle(
+                color:
+                    destacado ? SaaSTokens.positivo : SaaSTokens.ink(context),
+                fontWeight: FontWeight.w700,
+                fontSize: destacado ? 15 : 12.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return [
-      CosteoPreviewHeroCard(
-        nombre: p['nombre'] as String? ?? '',
-        precioLabel: _moneda.format(precio),
-        imagenUrl: p['imagen_url'] as String?,
-        categoria: _categoriaDe(p),
-        idCorto: idCorto,
-        esPremium: margenReal != null && margenReal >= umbral,
+      CosteoEstadoFinancieroCard(
+        margenPct: margen,
+        nivel: nivel,
+        umbral: umbral,
+        onAjustar: mostrarAccion ? () => _mostrarAjusteMargen(p) : null,
       ),
       const SizedBox(height: 12),
-      CosteoEstadoFinancieroCard(
-        margenPct: margenReal,
-        nivel: costeoNivelDe(
-          margenPct: margenReal,
-          sinReceta: sinReceta,
-          umbral: umbral,
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: SaaSTokens.surface(context),
+          borderRadius: BorderRadius.circular(SaaSTokens.r16),
+          border: Border.all(color: SaaSTokens.border(context)),
         ),
-        umbral: umbral,
-        onAjustar: () => _mostrarAjusteMargen(p),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: CosteoStitch.coral,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Text(
+                    '5',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Costo y margen',
+                  style: TextStyle(
+                    color: SaaSTokens.ink(context),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            fila('Precio actual', _moneda.format(precio)),
+            fila(
+              'Costo total estimado',
+              costo == null ? '—' : _moneda.format(costo),
+            ),
+            if (foodCost != null)
+              fila('Food cost', '${foodCost.toStringAsFixed(1)}%'),
+            if (margen != null) fila('Margen', '${margen.toStringAsFixed(1)}%'),
+            if (!domicilio) ...[
+              const Divider(height: 18),
+              fila('Precio sugerido', precioSugerido, destacado: true),
+            ] else if (precioSugerido != '—') ...[
+              const Divider(height: 18),
+              fila('Precio sugerido para llevar', precioSugerido,
+                  destacado: true),
+            ],
+            const SizedBox(height: 6),
+            Text(
+              'Valores del último cálculo confirmado. Guarda la receta para actualizarlos.',
+              style: TextStyle(
+                color: SaaSTokens.inkSoft(context),
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ),
       ),
+      if (mostrarAccion) ...[
+        const SizedBox(height: 12),
+        CosteoPricingActionBar(
+          costoLabel: costo == null ? '—' : _moneda.format(costo),
+          precioSugLabel: precioSugerido,
+          margenObjetivo: margenObj,
+          guardando: _guardandoMargen,
+          puedeAplicar: costo != null && costo > 0,
+          onCambiarMargen: () => _mostrarAjusteMargen(p),
+          onAplicar: () => _mostrarAjusteMargen(p),
+        ),
+      ],
     ];
   }
 
@@ -1484,16 +1677,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
         (p['precio_sugerido_llevar'] != null ||
             (p['costo_canal_llevar'] as num? ?? 0) > 0);
     final tabMesa = esExtra || esCombo || _tabsDetalle.index == 0;
-    final margenObj = _margenObjetivoActual(p);
-    final precioSug = costo != null && costo > 0
-        ? calcularPrecioSugeridoUi(costo.toDouble(), margenObj)
-        : null;
-
     final children = <Widget>[
-      if (!enColumnaDerecha) ...[
-        ..._detalleColumnaIzquierda(umbral: umbral, compacto: compacto),
-        const SizedBox(height: 12),
-      ],
       if (sinReceta)
         Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -1591,44 +1775,63 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
               bottom: BorderSide(color: SaaSTokens.borderSoft(context)),
             ),
           ),
-          child: FoodyScrollHorizontalFade(
-            child: TabBar(
-              controller: _tabsDetalle,
-              onTap: (_) => setState(() {}),
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              labelColor: CosteoStitch.titulo(context),
-              unselectedLabelColor: SaaSTokens.inkSoft(context),
-              indicatorColor: CosteoStitch.coral,
-              indicatorWeight: 2.5,
-              dividerColor: Colors.transparent,
-              labelStyle: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13.5,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 13.5,
-              ),
-              tabs: [
-                const Tab(text: 'Mesa / Local'),
-                Tab(
-                  text: tieneCanalLlevar
-                      ? 'Domicilio (Para llevar)'
-                      : 'Incluidos',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+                child: Text(
+                  'ESCENARIO DE VENTA',
+                  style: TextStyle(
+                    color: SaaSTokens.inkSoft(context),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
                 ),
-              ],
-            ),
+              ),
+              FoodyScrollHorizontalFade(
+                child: TabBar(
+                  controller: _tabsDetalle,
+                  onTap: (_) => setState(() {}),
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  labelColor: CosteoStitch.titulo(context),
+                  unselectedLabelColor: SaaSTokens.inkSoft(context),
+                  indicatorColor: CosteoStitch.coral,
+                  indicatorWeight: 2.5,
+                  dividerColor: Colors.transparent,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13.5,
+                  ),
+                  tabs: [
+                    const Tab(text: 'Mesa / Local'),
+                    Tab(
+                      text: tieneCanalLlevar
+                          ? 'Domicilio (Para llevar)'
+                          : 'Incluidos',
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       if (tabMesa || esExtra) ...[
         Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: SaaSTokens.surface(context),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: SaaSTokens.borderSoft(context)),
-          ),
+          padding: esCombo ? const EdgeInsets.all(16) : EdgeInsets.zero,
+          decoration: esCombo
+              ? BoxDecoration(
+                  color: SaaSTokens.surface(context),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: SaaSTokens.borderSoft(context)),
+                )
+              : null,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1668,15 +1871,6 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                   label: const Text('Recalcular costo del combo'),
                 ),
               ] else ...[
-                Text(
-                  'Insumos de Receta',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: SaaSTokens.ink(context),
-                  ),
-                ),
-                const SizedBox(height: 8),
                 RecetaProductoPanel(
                   key: ValueKey('receta-$tipoEntidad-${p['id']}'),
                   productoId: p['id'] as String,
@@ -1684,6 +1878,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                   nombreProducto: p['nombre'] as String? ?? '',
                   ingredientes: _ingredientes,
                   subrecetas: _subrecetas,
+                  repositorio: _inventarioRepo,
                   sucursalId: widget.sucursalId,
                   onInsumosCambiados: () => _cargar(silent: true),
                   onIrInsumos: widget.onIrInsumos,
@@ -1693,53 +1888,35 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
                   foodCostPct: foodCost?.toDouble(),
                   margenPct: margenReal?.toDouble(),
                   colorFoodCost: fcColor,
+                  mostrarResumenFinanciero: false,
                   scrollExterno: true,
                 ),
-                if (!esExtra) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    'Ítems Incluidos',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: SaaSTokens.ink(context),
+                if (!esExtra)
+                  _seccionAcompanamientos(
+                    compacto: compacto,
+                    contenido: ProductoItemsIncluidosPanel(
+                      key: ValueKey('incluye-${p['id']}'),
+                    catalogoRepository: _catalogoRepo,
+                      productoId: p['id'] as String,
+                      nombreProducto: p['nombre'] as String? ?? '',
+                      productosDisponibles: _productos
+                          .where((x) =>
+                              (x['tipo_entidad'] as String? ?? 'producto') ==
+                              'producto')
+                          .toList(),
+                      onGuardado: () => _recalcularProducto(p['id'] as String),
+                      onCostosActualizados: () => _cargar(silent: true),
+                      precioVenta: precio,
+                      costoTotalProducto: costo?.toDouble(),
+                      foodCostPct: foodCost?.toDouble(),
+                      margenPct: margenReal?.toDouble(),
+                      scrollExterno: true,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  ProductoItemsIncluidosPanel(
-                    key: ValueKey('incluye-${p['id']}'),
-                    productoId: p['id'] as String,
-                    nombreProducto: p['nombre'] as String? ?? '',
-                    productosDisponibles: _productos
-                        .where((x) =>
-                            (x['tipo_entidad'] as String? ?? 'producto') ==
-                            'producto')
-                        .toList(),
-                    onGuardado: () => _recalcularProducto(p['id'] as String),
-                    onCostosActualizados: () => _cargar(silent: true),
-                    precioVenta: precio,
-                    costoTotalProducto: costo?.toDouble(),
-                    foodCostPct: foodCost?.toDouble(),
-                    margenPct: margenReal?.toDouble(),
-                    scrollExterno: true,
-                  ),
-                ],
               ],
             ],
           ),
         ),
-        if (!esExtra && !esCombo) ...[
-          const SizedBox(height: 14),
-          CosteoPricingActionBar(
-            costoLabel: costo != null ? _moneda.format(costo) : '—',
-            precioSugLabel: precioSug != null ? _moneda.format(precioSug) : '—',
-            margenObjetivo: margenObj,
-            guardando: _guardandoMargen,
-            puedeAplicar: costo != null && costo > 0,
-            onCambiarMargen: () => _mostrarAjusteMargen(p),
-            onAplicar: () => _mostrarAjusteMargen(p),
-          ),
-        ],
       ] else if (tieneCanalLlevar) ...[
         Container(
           padding: const EdgeInsets.all(16),
@@ -1785,6 +1962,7 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
       ] else
         ProductoItemsIncluidosPanel(
           key: ValueKey('incluye-solo-${p['id']}'),
+          catalogoRepository: _catalogoRepo,
           productoId: p['id'] as String,
           nombreProducto: p['nombre'] as String? ?? '',
           productosDisponibles: _productos
@@ -1800,6 +1978,17 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
           scrollExterno: true,
         ),
     ];
+
+    if (!enColumnaDerecha && !esCombo) {
+      children.add(const SizedBox(height: 16));
+      children.addAll(
+        _panelResumenCosteo(
+          p,
+          umbral: _umbralMargen ?? 35,
+          incluirAcciones: !esExtra,
+        ),
+      );
+    }
 
     return ListView(
       primary: false,
@@ -1834,6 +2023,97 @@ class _CostosMargenesScreenState extends State<CostosMargenesScreen>
               fontWeight: destacado ? FontWeight.w700 : FontWeight.w600,
               color: destacado ? _scheme.onSurface : _scheme.onSurfaceVariant,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _seccionAcompanamientos({
+    required bool compacto,
+    required Widget contenido,
+  }) {
+    final expandido = _incluidosExpandido ?? !compacto;
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      decoration: BoxDecoration(
+        color: SaaSTokens.surface(context),
+        borderRadius: BorderRadius.circular(SaaSTokens.r12),
+        border: Border.all(color: SaaSTokens.border(context)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: CosteoStitch.coral,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Text(
+                    '4',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Acompañamientos incluidos',
+                        style: TextStyle(
+                          color: SaaSTokens.ink(context),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                      Text(
+                        'Complementos entregados con el plato.',
+                        style: TextStyle(
+                          color: SaaSTokens.inkMuted(context),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('toggle-acompanamientos-costeo'),
+                  tooltip: expandido
+                      ? 'Contraer acompañamientos'
+                      : 'Expandir acompañamientos',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(
+                    () => _incluidosExpandido = !expandido,
+                  ),
+                  icon: Icon(
+                    expandido ? Icons.expand_less : Icons.expand_more,
+                    color: SaaSTokens.inkMuted(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          AnimatedSize(
+            duration: SaaSTokens.duracionTransicion,
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: expandido
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: contenido,
+                  )
+                : const SizedBox(width: double.infinity),
           ),
         ],
       ),

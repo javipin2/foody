@@ -299,7 +299,8 @@ let CajaService = class CajaService {
     }
     listarCuentasPorCobrar(sucursalId, incluirPagadas = false) {
         const filtro = incluirPagadas ? '' : `AND c.estado = 'pendiente'`;
-        return this.database.consultar(`SELECT c.id, c.pedido_id, c.cliente_nombre, c.cliente_telefono,
+        return this.database.consultar(`SELECT c.id, c.pedido_id, c.domiciliario_planta_id,
+              c.cliente_nombre, c.cliente_telefono,
               c.monto, c.estado, c.created_at, c.pagada_at,
               p.numero_pedido,
               uc.nombre AS creada_por,
@@ -360,7 +361,8 @@ let CajaService = class CajaService {
     }
     pagarCuentaPorCobrar(cuentaId, sucursalId, usuarioId, metodoPago = 'efectivo') {
         return this.database.enTransaccion(async (client) => {
-            const cuenta = await client.query(`SELECT id, pedido_id, monto, estado FROM cuentas_por_cobrar
+            const cuenta = await client.query(`SELECT id, pedido_id, monto, estado, domiciliario_planta_id
+         FROM cuentas_por_cobrar
          WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`, [cuentaId, sucursalId]);
             const fila = cuenta.rows[0];
             if (!fila)
@@ -369,6 +371,12 @@ let CajaService = class CajaService {
                 throw new common_1.BadRequestException({
                     error: 'CUENTA_YA_PAGADA',
                     mensaje: 'La cuenta ya está pagada',
+                });
+            }
+            if (fila.domiciliario_planta_id) {
+                throw new common_1.BadRequestException({
+                    error: 'LIQUIDACION_DOMICILIARIO_REQUERIDA',
+                    message: 'Esta cuenta corresponde a un domiciliario. Liquídala desde el módulo Domiciliarios para actualizar también el pedido y sus pagos.',
                 });
             }
             const monto = Number(fila.monto);

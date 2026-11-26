@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuditoriaService = void 0;
 const common_1 = require("@nestjs/common");
+const ventas_metricas_sql_1 = require("../../compartido/sql/ventas-metricas.sql");
 const database_service_1 = require("../../core/database/database.service");
 let AuditoriaService = class AuditoriaService {
     database;
@@ -26,12 +27,8 @@ let AuditoriaService = class AuditoriaService {
             registro.accion,
             registro.tablaAfectada,
             registro.registroId,
-            registro.datosAntes
-                ? JSON.stringify(registro.datosAntes)
-                : null,
-            registro.datosDespues
-                ? JSON.stringify(registro.datosDespues)
-                : null,
+            registro.datosAntes ? JSON.stringify(registro.datosAntes) : null,
+            registro.datosDespues ? JSON.stringify(registro.datosDespues) : null,
         ]);
     }
     async registrar(registro) {
@@ -39,7 +36,6 @@ let AuditoriaService = class AuditoriaService {
     }
     async timelineTurno(filtro) {
         const { sucursal_id, desde, hasta } = filtro;
-        const hastaExclusive = `${hasta}T23:59:59.999Z`;
         const auditoria = await this.database.consultar(`SELECT a.id, a.created_at AS ocurrido_at, 'auditoria' AS fuente,
               a.accion AS tipo, a.tabla_afectada, a.registro_id,
               a.datos_despues AS detalle,
@@ -47,37 +43,33 @@ let AuditoriaService = class AuditoriaService {
        FROM auditoria_logs a
        LEFT JOIN usuarios u ON u.id = a.usuario_id
        WHERE a.sucursal_id = $1
-         AND a.created_at >= $2::timestamptz
-         AND a.created_at <= $3::timestamptz
+         AND ${(0, ventas_metricas_sql_1.sqlFechaRango)('a.created_at', '$2', '$3')}
        ORDER BY a.created_at ASC
-       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
+       LIMIT 500`, [sucursal_id, desde, hasta]);
         const alertas = await this.database.consultar(`SELECT ar.id, ar.created_at AS ocurrido_at, 'alerta' AS fuente,
               ar.tipo, ar.nivel, ar.descripcion AS detalle,
               ar.referencia_id, ar.referencia_tipo, ar.revisada
        FROM alertas_riesgo ar
        WHERE ar.sucursal_id = $1
-         AND ar.created_at >= $2::timestamptz
-         AND ar.created_at <= $3::timestamptz
+         AND ${(0, ventas_metricas_sql_1.sqlFechaRango)('ar.created_at', '$2', '$3')}
        ORDER BY ar.created_at ASC
-       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
+       LIMIT 500`, [sucursal_id, desde, hasta]);
         const caja = await this.database.consultar(`SELECT m.id, m.created_at AS ocurrido_at, 'caja' AS fuente,
               m.tipo, m.monto, m.metodo_pago, m.descripcion AS detalle,
               m.pedido_id, u.nombre AS usuario_nombre
        FROM movimientos_caja m
        LEFT JOIN usuarios u ON u.id = m.usuario_id
        WHERE m.sucursal_id = $1
-         AND m.created_at >= $2::timestamptz
-         AND m.created_at <= $3::timestamptz
+         AND ${(0, ventas_metricas_sql_1.sqlFechaRango)('m.created_at', '$2', '$3')}
        ORDER BY m.created_at ASC
-       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
+       LIMIT 500`, [sucursal_id, desde, hasta]);
         const pedidos = await this.database.consultar(`SELECT p.id, p.created_at AS ocurrido_at, 'pedido' AS fuente,
               p.estado AS tipo, p.numero_pedido, p.total, p.tipo AS canal
        FROM pedidos p
        WHERE p.sucursal_id = $1
-         AND p.created_at >= $2::timestamptz
-         AND p.created_at <= $3::timestamptz
+         AND ${(0, ventas_metricas_sql_1.sqlFechaRango)('p.created_at', '$2', '$3')}
        ORDER BY p.created_at ASC
-       LIMIT 500`, [sucursal_id, desde, hastaExclusive]);
+       LIMIT 500`, [sucursal_id, desde, hasta]);
         const eventos = [
             ...auditoria.map((e) => ({ ...e, ocurrido_at: String(e.ocurrido_at) })),
             ...alertas.map((e) => ({ ...e, ocurrido_at: String(e.ocurrido_at) })),

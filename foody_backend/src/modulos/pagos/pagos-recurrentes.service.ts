@@ -243,20 +243,61 @@ export class PagosRecurrentesService {
 
     const referencia = this.wompi.generarReferenciaInterna();
     const monto = PRECIO_PLAN_CENTAVOS[plan];
+    const reserva = await this.database.enTransaccion(async (client) => {
+      // El bloqueo de la suscripción serializa el cron y el endpoint manual.
+      const suscripcionBloqueada = await client.query<{ restaurante_id: string }>(
+        `SELECT restaurante_id FROM suscripciones_restaurante
+         WHERE restaurante_id = $1 FOR UPDATE`,
+        [restauranteId],
+      );
+      if (!suscripcionBloqueada.rows[0]) {
+        return { pagoId: null, motivo: 'suscripcion_no_encontrada' };
+      }
 
-    const pago = await this.database.consultarUno<{ id: string }>(
-      `INSERT INTO pagos_suscripcion (
-         restaurante_id, plan, monto_centavos, referencia_interna, metodo
-       ) VALUES ($1, $2, $3, $4, 'renovacion_automatica')
-       RETURNING id`,
-      [restauranteId, plan, monto, referencia],
-    );
+      const pagoReciente = await client.query<{ id: string; estado: string }>(
+        `SELECT id, estado FROM pagos_suscripcion
+         WHERE restaurante_id = $1 AND plan = $2
+           AND estado IN ('pendiente', 'aprobado')
+           AND created_at > now() - interval '5 days'
+         LIMIT 1`,
+        [restauranteId, plan],
+      );
+      if (pagoReciente.rows[0]) {
+        return {
+          pagoId: null,
+          motivo:
+            pagoReciente.rows[0].estado === 'aprobado'
+              ? 'pago_reciente_aprobado'
+              : 'pago_reciente_existente',
+        };
+      }
 
-    await this.database.consultar(
-      `UPDATE fuentes_pago SET ultimo_intento_at = now(), updated_at = now()
-       WHERE id = $1`,
-      [fuente.id],
-    );
+      const fuenteReservada = await client.query<{ id: string }>(
+        `UPDATE fuentes_pago SET ultimo_intento_at = now(), updated_at = now()
+         WHERE id = $1 AND restaurante_id = $2 AND activa = true
+           AND (ultimo_intento_at IS NULL
+                OR ultimo_intento_at < now() - interval '20 hours')
+         RETURNING id`,
+        [fuente.id, restauranteId],
+      );
+      if (!fuenteReservada.rows[0]) {
+        return { pagoId: null, motivo: 'intento_reciente' };
+      }
+
+      const pago = await client.query<{ id: string }>(
+        `INSERT INTO pagos_suscripcion (
+           restaurante_id, plan, monto_centavos, referencia_interna, metodo
+         ) VALUES ($1, $2, $3, $4, 'renovacion_automatica')
+         RETURNING id`,
+        [restauranteId, plan, monto, referencia],
+      );
+      return { pagoId: pago.rows[0]?.id ?? null, motivo: 'iniciado' };
+    });
+
+    if (!reserva.pagoId) {
+      return { iniciado: false, motivo: reserva.motivo };
+    }
+    const pagoId = reserva.pagoId;
 
     try {
       const tx = await this.wompi.crearTransaccionRecurrente({
@@ -272,14 +313,14 @@ export class PagosRecurrentesService {
            referencia_wompi = $3,
            updated_at = now()
          WHERE id = $1`,
-        [pago!.id, tx.id, tx.reference],
+        [pagoId, tx.id, tx.reference],
       );
 
       if (tx.status === 'APPROVED') {
         await this.database.consultar(
           `UPDATE pagos_suscripcion SET estado = 'aprobado', updated_at = now()
            WHERE id = $1`,
-          [pago!.id],
+          [pagoId],
         );
         await this.extenderSuscripcion(restauranteId, plan);
         await this.database.consultar(
@@ -295,7 +336,7 @@ export class PagosRecurrentesService {
           tx.status === 'APPROVED'
             ? 'cobro_aprobado'
             : 'cobro_pendiente_webhook',
-        pago_id: pago!.id,
+        pago_id: pagoId,
         transaccion_wompi_id: tx.id,
         estado_transaccion: tx.status,
       };
@@ -303,7 +344,7 @@ export class PagosRecurrentesService {
       await this.database.consultar(
         `UPDATE pagos_suscripcion SET estado = 'error', updated_at = now()
          WHERE id = $1`,
-        [pago!.id],
+        [pagoId],
       );
       throw e;
     }

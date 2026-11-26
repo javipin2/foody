@@ -21,6 +21,8 @@ class PedidoAdminModel {
     this.metodoPago,
     this.pagosResumen = const [],
     this.propinaRecibida = 0,
+    this.devolucionesCajaVinculadas = 0,
+    this.recaudoNetoCajaVinculado = 0,
     required this.creadoEn,
     required this.estadoDesde,
     this.itemsResumen = const [],
@@ -46,6 +48,8 @@ class PedidoAdminModel {
   final String? metodoPago;
   final List<PagoPedidoResumen> pagosResumen;
   final num propinaRecibida;
+  final num devolucionesCajaVinculadas;
+  final num recaudoNetoCajaVinculado;
   final DateTime creadoEn;
   final DateTime estadoDesde;
   final List<PedidoItemResumen> itemsResumen;
@@ -95,6 +99,10 @@ class PedidoAdminModel {
               ))
           .toList(),
       propinaRecibida: parsearNumero(json['propina_recibida'] ?? 0),
+      devolucionesCajaVinculadas:
+          parsearNumero(json['devoluciones_caja_vinculadas'] ?? 0),
+      recaudoNetoCajaVinculado:
+          parsearNumero(json['recaudo_neto_caja_vinculado'] ?? 0),
       creadoEn: DateTime.parse(json['created_at'].toString()),
       estadoDesde: DateTime.parse(
         (json['estado_desde'] ?? json['created_at']).toString(),

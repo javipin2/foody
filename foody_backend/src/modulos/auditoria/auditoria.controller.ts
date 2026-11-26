@@ -9,6 +9,7 @@ import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
+import { SQL_TZ_NEGOCIO } from '../../compartido/sql/ventas-metricas.sql';
 import { AuditoriaService } from './auditoria.service';
 import { TimelineAuditoriaDto } from './dto/timeline-auditoria.dto';
 
@@ -33,7 +34,12 @@ export class AuditoriaController {
     @UsuarioActual() usuario: JwtPayload,
     @Query() query: TimelineAuditoriaDto,
   ) {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = new Intl.DateTimeFormat('en-CA', {
+      timeZone: SQL_TZ_NEGOCIO,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
     const id = await this.sucursalScope.resolverLecturaOperativa(
       usuario,
       query.sucursal_id,

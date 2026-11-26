@@ -230,6 +230,24 @@ let CocinasService = class CocinasService {
                           AND pii.sucursal_id = p.sucursal_id
                       ),
                       '[]'::json
+                    ),
+                    'combo_componentes', COALESCE(
+                      (
+                        SELECT json_agg(
+                          json_build_object(
+                            'nombre', componente.value->>'nombre',
+                            'cantidad',
+                              (componente.value->>'cantidad')::numeric * pi.cantidad
+                          ) ORDER BY componente.value->>'nombre'
+                        )
+                        FROM pedido_combo_selecciones pcs
+                        CROSS JOIN LATERAL jsonb_array_elements(
+                          pcs.componentes_snapshot
+                        ) AS componente(value)
+                        WHERE pcs.pedido_item_id = pi.id
+                          AND componente.value->>'item_id' <> pi.producto_id::text
+                      ),
+                      '[]'::json
                     )
                   ) ORDER BY pi.created_at
                 ) FILTER (WHERE pi.id IS NOT NULL),

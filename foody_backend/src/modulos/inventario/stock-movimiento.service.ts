@@ -7,6 +7,7 @@ export type TipoMovimientoStock =
   | 'compra'
   | 'conteo'
   | 'merma'
+  | 'devolucion'
   | 'produccion';
 
 export type AplicarMovimientoStockParams = {
@@ -25,6 +26,8 @@ export type AplicarMovimientoStockParams = {
   /** Si ya se bloqueó la fila (p. ej. pedidos), pasar el valor leído. */
   stockAnterior?: number;
   pedidoId?: string | null;
+  /** Order line that caused this movement; deferred FK supports create ordering. */
+  pedidoItemId?: string | null;
   usuarioId?: string | null;
   /** Producción en lote: FK a `producciones`. */
   produccionId?: string | null;
@@ -56,6 +59,7 @@ export class StockMovimientoService {
       motivo,
       stockPosterior,
       pedidoId = null,
+      pedidoItemId = null,
       usuarioId = null,
       produccionId = null,
       costoUnitarioActual,
@@ -111,14 +115,15 @@ export class StockMovimientoService {
 
     await client.query(
       `INSERT INTO movimientos_ingrediente (
-         sucursal_id, ingrediente_id, pedido_id, tipo,
+         sucursal_id, ingrediente_id, pedido_id, pedido_item_id, tipo,
          cantidad, stock_anterior, stock_posterior, motivo,
          usuario_id, produccion_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         sucursalId,
         ingredienteId,
         pedidoId,
+        pedidoItemId,
         tipo,
         cantidad,
         stockAnterior,

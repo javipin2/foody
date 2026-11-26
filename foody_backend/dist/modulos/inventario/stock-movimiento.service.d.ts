@@ -1,5 +1,5 @@
 import { PoolClient } from 'pg';
-export type TipoMovimientoStock = 'venta' | 'ajuste' | 'compra' | 'conteo' | 'merma' | 'produccion';
+export type TipoMovimientoStock = 'venta' | 'ajuste' | 'compra' | 'conteo' | 'merma' | 'devolucion' | 'produccion';
 export type AplicarMovimientoStockParams = {
     client: PoolClient;
     sucursalId: string;
@@ -10,6 +10,7 @@ export type AplicarMovimientoStockParams = {
     stockPosterior: number;
     stockAnterior?: number;
     pedidoId?: string | null;
+    pedidoItemId?: string | null;
     usuarioId?: string | null;
     produccionId?: string | null;
     costoUnitarioActual?: number;

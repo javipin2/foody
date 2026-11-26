@@ -291,6 +291,13 @@ describe('E2E domicilio', () => {
     expect(movimientoVenta).toBeTruthy();
     expect(movimientoVenta?.metodo_pago).toBe('efectivo');
     expect(Number(movimientoVenta?.monto)).toBeGreaterThan(0);
+    const pagosResumen = detalle.body.datos.pagos_resumen as Array<{
+      monto: number;
+      metodo_pago: string;
+    }>;
+    expect(pagosResumen).toEqual([
+      { metodo_pago: 'efectivo', monto: Number(movimientoVenta?.monto) },
+    ]);
   });
 
   it('rechaza Pendiente al confirmar entrega con domiciliario', async () => {

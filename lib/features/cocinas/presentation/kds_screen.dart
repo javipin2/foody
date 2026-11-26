@@ -1461,6 +1461,25 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                           ),
                         ),
                       ),
+                    if (item['combo_componentes'] is List &&
+                        (item['combo_componentes'] as List).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          'Incluye: ${(item['combo_componentes'] as List).map((componente) {
+                            final m =
+                                Map<String, dynamic>.from(componente as Map);
+                            return '${m['cantidad']}× ${m['nombre']}';
+                          }).join(', ')}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _scheme.primary,
+                          ),
+                        ),
+                      ),
                     if ((item['observaciones'] as String?)?.isNotEmpty == true)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),

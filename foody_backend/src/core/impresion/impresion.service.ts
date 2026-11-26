@@ -244,10 +244,14 @@ export class ImpresionService implements OnModuleInit {
         nombre: string;
         cantidad: number;
         observaciones: string | null;
+        producto_id: string;
+        componentes_snapshot: unknown;
       }>(
-        `SELECT pr.nombre, pi.cantidad, pi.observaciones
+        `SELECT pr.nombre, pi.cantidad, pi.observaciones, pi.producto_id,
+                pcs.componentes_snapshot
          FROM pedido_items pi
          INNER JOIN productos pr ON pr.id = pi.producto_id
+         LEFT JOIN pedido_combo_selecciones pcs ON pcs.pedido_item_id = pi.id
          WHERE pi.pedido_id = $1 AND pi.cocina_id = $2
          ORDER BY pi.created_at ASC`,
         [pedidoId, coc.cocina_id],
@@ -255,7 +259,22 @@ export class ImpresionService implements OnModuleInit {
 
       const lineas = items.map((i) => {
         const nota = i.observaciones?.trim();
-        return `${i.cantidad}x ${i.nombre}${nota ? ` (${nota})` : ''}`;
+        const componentes = Array.isArray(i.componentes_snapshot)
+          ? (
+              i.componentes_snapshot as {
+                tipo_item: string;
+                item_id: string;
+                nombre: string;
+                cantidad: number;
+              }[]
+            )
+              .filter((c) => c.item_id !== i.producto_id)
+              .map((c) => `${Number(c.cantidad) * i.cantidad}x ${c.nombre}`)
+          : [];
+        const detalle = componentes.length
+          ? ` [Incluye: ${componentes.join(', ')}]`
+          : '';
+        return `${i.cantidad}x ${i.nombre}${detalle}${nota ? ` (${nota})` : ''}`;
       });
 
       const encabezado = [

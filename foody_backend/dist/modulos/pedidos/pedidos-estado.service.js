@@ -173,6 +173,16 @@ let PedidosEstadoService = class PedidosEstadoService {
                 const montoCaja = (0, cobro_domicilio_util_1.montoVentaCajaEntregaDomicilio)(totalPedido, Number(pedido.costo_domicilio), pagado, domicilioEnCaja);
                 if (montoCaja > 0.01 &&
                     pedidos_caja_auditoria_service_1.METODOS_CON_CAJA.includes(metodo)) {
+                    await client.query(`INSERT INTO pagos_pedido (
+               sucursal_id, pedido_id, monto, propina, metodo_pago, usuario_id, referencia
+             ) VALUES ($1,$2,$3,0,$4,$5,$6)`, [
+                        sucursalId,
+                        pedidoId,
+                        montoCaja,
+                        metodo,
+                        usuarioId,
+                        `Cobro producto domicilio ${pedido.numero_pedido}`,
+                    ]);
                     await this.cajaAuditoria.registrarVentaEnCaja(client, sucursalId, pedidoId, montoCaja, metodo, {
                         exigirCaja: true,
                         descripcion: `Domicilio entregado ${pedido.numero_pedido}`,

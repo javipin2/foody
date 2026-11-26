@@ -1,5 +1,21 @@
 # Foody — Roadmap Frontend (documento maestro)
 
+### 2026-11-25 — REP-ANALYTICS-PLAN-LINK-01 · requisito Pro visible desde Reportes
+
+El acceso al Centro de Análisis desde Reportes ahora muestra «Análisis · Pro» si el módulo no está habilitado en la sesión. El bloqueo y la pantalla de mejora de plan existentes se conservan. Prueba Reportes 11/11 y analyzer limpio. Cliente/Equipo publicados; rutas públicas y FCM 200; SHA público/local de Equipo coincide. Cloudflare Tunnel sigue activo.
+
+### 2026-11-25 — ANA-PNL-EXP-SCOPE-01 · alcance de gastos bajo filtros
+
+Rentabilidad ahora aclara que los gastos operativos se descuentan completos para la sede y período y no se prorratean entre pedidos filtrados. Se conserva la fórmula hasta definir una política contable de asignación. `analitica_screen_progressive_load_test.dart`: 8/8 en 320/390/820/1440; analyzer focalizado limpio. No cambia API ni cálculos.
+
+### 2026-11-25 — COST-RECIPE-ACCORDION-01 · edición compacta
+
+En móvil/tableta, Ingredientes queda expandido inicialmente y Preparaciones/Empaques se pliegan con contador visible; se pueden abrir desde sus encabezados. Escritorio conserva grupos abiertos. Se alinea el corte con `FoodyBreakpoints.esCompact`. Pruebas Costos/Receta 17/17 y analyzer limpio. Sin cambios de persistencia o backend.
+
+### 2026-11-25 — COST-RECIPE-STRUCT-01 · Costos y márgenes según referencia del propietario
+
+El detalle prioriza el producto y presenta el flujo visual de cinco pasos. Resumen de costo lateral en escritorio y bajo el flujo en móvil; la edición agrupa ingredientes, preparaciones y empaques. Subtotales editables son orientativos. COST-RECIPE-LOAD-FAIL-01 evita confundir error de lectura con receta nueva; COST-RECIPE-EDIT-RESP-01 corrige overflow del resumen, selector, texto de disponibilidad y fila larga de preparación en acompañamientos. El paso activo se sincroniza con la pestaña/contexto visible. Suite combinada 16/16: flujo/error/reintento/acordeón/búsqueda y UI→repositorio del guardado en 320/390/820/1440; composición de detalle integra hero, receta, etapas e incluidos usando repositorios fake, sin red externa; analyzer limpio. Sin cambio backend, DB ni regla de costo. **Pendiente:** persistencia/recálculo contra producto real y API, autenticados; ADM-12 sigue parcial hasta recorrido y revisión visual.
+
 ### 2026-11-25 — RBAC-CAJA-WRITE-01 · acciones según permiso
 
 Caja recibe los permisos efectivos de sesión: `ver_caja` conserva consulta, `gestionar_caja` habilita CxC/gasto/devolución, y apertura/cierre/retiro usan sus permisos propios. Las acciones no autorizadas se ocultan; quien no puede abrir turno ve un aviso claro. Widget responsive Caja 17/17 y `dart analyze` de Caja, shells Admin/Cajero, Usuarios y test sin incidencias. Publicación y verificación autenticada esperan aplicar migración 094 y activar API.
@@ -467,3 +483,9 @@ Añadir en **[FRONTEND_INSTRUCCIONES.md](FRONTEND_INSTRUCCIONES.md)** cada nueva
 Inventario ya presenta selector emergente con icono, sección activa y progreso «Sección n de 5» en compactos; escritorio conserva navegación visible para Mercado, Movimientos, Subrecetas, Conteo y Traslados. `inventario_seccion_selector_test.dart` 6/6 (320/390 claro y oscuro, 820/1440) y analyzer focalizado limpio. F4-02 queda cerrado como subnavegación responsive; la agrupación conceptual de entidades queda como decisión aparte si cambian módulos.
 
 **2026-11-25 — publicación web verificada:** resolución de recursos estáticos FCM y 404 para assets inexistentes está documentada en docs/archivo/auditorias-prompts/AUDITORIA_ARRANQUE_WEB.md; panel Equipo volvió a renderizar tras recarga del Tunnel. Cache edge antigua de la URL FCM puede persistir hasta su TTL.
+
+### 2026-11-25 — REP-TIMELINE-FRESH-01 · actualización de auditoría por período
+
+El timeline de auditoría vuelve a cargar cuando cambia el rango. Respuestas obsoletas se descartan; fallos muestran el estado de error con acción de reintento y no una lista vacía. Prueba Reportes 8/8 responsive; analyzer limpio.
+### 2026-11-25 — REP-AUDIT-TZ-01 · fechas locales del timeline
+El rango de Auditoría ahora coincide con el día de negocio America/Bogota, incluyendo los eventos hasta medianoche local; fallos de UI y errores de respuesta continúan diferenciados. Backend compilado y probado; activación en :3000 pendiente.

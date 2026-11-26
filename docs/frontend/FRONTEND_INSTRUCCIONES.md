@@ -184,3 +184,15 @@
 | **Criterio de hecho** | Vistas pendientes abordadas por grupos; verificación focalizada y pendientes visuales registrados |
 | **Estado** | 🔄 En curso |
 | **Notas** | Vistas abordadas: Inicio, Usuarios, Domiciliarios, Horarios, Sedes, Zonas, Cocinas, Alertas, Finanzas, Promociones, Reportes, Menú (incluido diálogo de precios), Costos, Inventario, Caja, Facturación, Kanban/detalle/asignación de Pedidos, grilla/detalle/diálogos de Mesas y estado vacío/ticket activo KDS. Se corrigió el shell común al hallar conflicto con `LayoutBuilder`; KDS mantiene polling si Realtime no está disponible; el detalle de mesa aplica tokens del tema. Pruebas focalizadas cubren anchos compactos/tablet/escritorio y creación/renombre con teclado simulado. Un test detectó liberación prematura del controlador al cerrar el diálogo, ahora diferida tras la transición. Pendientes: acciones reales autenticadas, KDS con Realtime/datos, formularios/estados secundarios y QA por rol/tema/dispositivo; vistas cliente/repartidor no están cerradas. |
+
+### INS-013 — Estructura de Costos y márgenes basada en referencia
+
+| Campo | Detalle |
+|-------|---------|
+| **Fecha** | 2026-11-25 |
+| **Pedido** | Usar la imagen de referencia como guía de organización/estructura para Recetas; no copiar su paleta. |
+| **Alcance** | Admin · Costos y márgenes · receta de producto, escritorio/tablet/móvil |
+| **Derivado a** | `COST-RECIPE-STRUCT-01` · ADM-12 · `FRONTEND_ROADMAP.md` |
+| **Criterio de hecho** | Producto destacado, secuencia de cinco pasos, secciones agrupadas para ingredientes/preparaciones/empaques/acompañamientos y costo/margen, resumen lateral en escritorio y apilado en móvil, sin alterar motor/contratos de costos. |
+| **Estado** | 🔄 Estructura aplicada; suite responsive 16/16 incluye guardado UI→repositorio y composición integrada sin llamadas externas. Persistencia/recálculo API y QA visual autenticada pendientes |
+| **Notas** | Javier aclaró que la referencia importa por su organización y claridad, no por sus colores. Subtotales de edición son orientativos; importes/porcentajes confirmados son del backend. COST-RECIPE-LOAD-FAIL-01 separa error de carga de receta vacía. COST-RECIPE-EDIT-RESP-01 corrige overflow en resumen, selector de tipo y fila de stock y etiqueta larga de preparación en móvil. El paso activo sigue la pestaña/contexto visible. COST-RECIPE-INTEGRATION-01 corrige que receta/incluidos ignoraran los repositorios inyectados del padre; el test integrado ya no usa red real. |

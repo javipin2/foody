@@ -260,6 +260,8 @@ export class PedidosService {
         monto: number;
       }>;
       propina_recibida: string;
+      devoluciones_caja_vinculadas: string;
+      recaudo_neto_caja_vinculado: string;
       created_at: string;
       mesa_id: string | null;
       mesera_id: string | null;
@@ -274,6 +276,9 @@ export class PedidosService {
               COALESCE(p.monto_pagado, 0) AS monto_pagado, p.metodo_pago,
               COALESCE(pagos.resumen, '[]'::jsonb) AS pagos_resumen,
               COALESCE(pagos.propina, 0) AS propina_recibida,
+              COALESCE(caja.devoluciones, 0) AS devoluciones_caja_vinculadas,
+              COALESCE(caja.ventas, 0) - COALESCE(caja.devoluciones, 0)
+                AS recaudo_neto_caja_vinculado,
               p.created_at, p.mesa_id, p.observaciones,
               p.mesera_id, u_mesera.nombre AS mesera_nombre,
               m.nombre AS mesa_nombre,
@@ -301,6 +306,14 @@ export class PedidosService {
            GROUP BY metodo_pago
          ) pagos
        ) pagos ON true
+       LEFT JOIN LATERAL (
+         SELECT SUM(m.monto) FILTER (WHERE m.tipo = 'devolucion') AS devoluciones,
+                SUM(m.monto) FILTER (WHERE m.tipo = 'venta') AS ventas
+         FROM movimientos_caja m
+         WHERE m.pedido_id = p.id
+           AND m.sucursal_id = p.sucursal_id
+           AND m.tipo IN ('venta', 'devolucion')
+       ) caja ON true
        WHERE p.id = $1 AND p.sucursal_id = $2`,
       [pedidoId, sucursalId],
     );

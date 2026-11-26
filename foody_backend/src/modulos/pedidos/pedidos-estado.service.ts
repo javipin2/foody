@@ -275,6 +275,19 @@ export class PedidosEstadoService {
           montoCaja > 0.01 &&
           METODOS_CON_CAJA.includes(metodo as (typeof METODOS_CON_CAJA)[number])
         ) {
+          await client.query(
+            `INSERT INTO pagos_pedido (
+               sucursal_id, pedido_id, monto, propina, metodo_pago, usuario_id, referencia
+             ) VALUES ($1,$2,$3,0,$4,$5,$6)`,
+            [
+              sucursalId,
+              pedidoId,
+              montoCaja,
+              metodo,
+              usuarioId,
+              `Cobro producto domicilio ${pedido.numero_pedido}`,
+            ],
+          );
           await this.cajaAuditoria.registrarVentaEnCaja(
             client,
             sucursalId,

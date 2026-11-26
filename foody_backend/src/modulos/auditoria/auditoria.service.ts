@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import { sqlFechaRango } from '../../compartido/sql/ventas-metricas.sql';
 import { DatabaseService } from '../../core/database/database.service';
 
 export interface FiltroTimeline {
@@ -37,12 +38,8 @@ export class AuditoriaService {
         registro.accion,
         registro.tablaAfectada,
         registro.registroId,
-        registro.datosAntes
-          ? JSON.stringify(registro.datosAntes)
-          : null,
-        registro.datosDespues
-          ? JSON.stringify(registro.datosDespues)
-          : null,
+        registro.datosAntes ? JSON.stringify(registro.datosAntes) : null,
+        registro.datosDespues ? JSON.stringify(registro.datosDespues) : null,
       ],
     );
   }
@@ -56,7 +53,6 @@ export class AuditoriaService {
   /** Timeline unificado turno: auditoría + alertas + movimientos caja (X-010). */
   async timelineTurno(filtro: FiltroTimeline) {
     const { sucursal_id, desde, hasta } = filtro;
-    const hastaExclusive = `${hasta}T23:59:59.999Z`;
 
     const auditoria = await this.database.consultar(
       `SELECT a.id, a.created_at AS ocurrido_at, 'auditoria' AS fuente,
@@ -66,11 +62,10 @@ export class AuditoriaService {
        FROM auditoria_logs a
        LEFT JOIN usuarios u ON u.id = a.usuario_id
        WHERE a.sucursal_id = $1
-         AND a.created_at >= $2::timestamptz
-         AND a.created_at <= $3::timestamptz
+         AND ${sqlFechaRango('a.created_at', '$2', '$3')}
        ORDER BY a.created_at ASC
        LIMIT 500`,
-      [sucursal_id, desde, hastaExclusive],
+      [sucursal_id, desde, hasta],
     );
 
     const alertas = await this.database.consultar(
@@ -79,11 +74,10 @@ export class AuditoriaService {
               ar.referencia_id, ar.referencia_tipo, ar.revisada
        FROM alertas_riesgo ar
        WHERE ar.sucursal_id = $1
-         AND ar.created_at >= $2::timestamptz
-         AND ar.created_at <= $3::timestamptz
+         AND ${sqlFechaRango('ar.created_at', '$2', '$3')}
        ORDER BY ar.created_at ASC
        LIMIT 500`,
-      [sucursal_id, desde, hastaExclusive],
+      [sucursal_id, desde, hasta],
     );
 
     const caja = await this.database.consultar(
@@ -93,11 +87,10 @@ export class AuditoriaService {
        FROM movimientos_caja m
        LEFT JOIN usuarios u ON u.id = m.usuario_id
        WHERE m.sucursal_id = $1
-         AND m.created_at >= $2::timestamptz
-         AND m.created_at <= $3::timestamptz
+         AND ${sqlFechaRango('m.created_at', '$2', '$3')}
        ORDER BY m.created_at ASC
        LIMIT 500`,
-      [sucursal_id, desde, hastaExclusive],
+      [sucursal_id, desde, hasta],
     );
 
     const pedidos = await this.database.consultar(
@@ -105,11 +98,10 @@ export class AuditoriaService {
               p.estado AS tipo, p.numero_pedido, p.total, p.tipo AS canal
        FROM pedidos p
        WHERE p.sucursal_id = $1
-         AND p.created_at >= $2::timestamptz
-         AND p.created_at <= $3::timestamptz
+         AND ${sqlFechaRango('p.created_at', '$2', '$3')}
        ORDER BY p.created_at ASC
        LIMIT 500`,
-      [sucursal_id, desde, hastaExclusive],
+      [sucursal_id, desde, hasta],
     );
 
     const eventos = [

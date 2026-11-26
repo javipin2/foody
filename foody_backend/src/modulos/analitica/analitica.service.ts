@@ -16,7 +16,6 @@ import {
   SQL_DIA_LOCAL,
   SQL_DIA_LOCAL_P,
   SQL_NETO_MOVIMIENTO_CAJA,
-  SQL_PEDIDOS_VALIDOS_P,
   SQL_TIPOS_MOV_CAJA_VENTA,
   SQL_TZ_NEGOCIO,
   sqlFechaRango,
@@ -1349,17 +1348,29 @@ export class AnaliticaService {
         anterior.hasta,
         filtros,
       );
+      const {
+        params: pMargenAnt,
+        suc: sucMAnt,
+        fecha: fechaMAnt,
+        extra: extraMAnt,
+      } = this.inicio(
+        sucursalId,
+        anterior.desde,
+        anterior.hasta,
+        filtros,
+        'p',
+      );
+      const extraItemsAnt = clausulasItemsYaJoineados(pMargenAnt, filtros);
       const prevCogs = await this.database.consultarUno<{
         costo_ventas: string;
       }>(
         `SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo_ventas
          FROM pedido_items pi
          JOIN pedidos p ON p.id = pi.pedido_id
-         WHERE p.sucursal_id = $1
-           AND ${SQL_DIA_LOCAL_P} >= $2::date
-           AND ${SQL_DIA_LOCAL_P} <= $3::date
-           AND ${SQL_PEDIDOS_VALIDOS_P}`,
-        [sucursalId, anterior.desde, anterior.hasta],
+         LEFT JOIN productos pr ON pr.id = pi.producto_id
+         WHERE p.sucursal_id = ${sucMAnt}
+           AND ${fechaMAnt}${extraMAnt}${extraItemsAnt}`,
+        pMargenAnt.list,
       );
       const prevGastos = await this.database.consultarUno<{ total: string }>(
         `SELECT COALESCE(SUM(monto), 0)::text AS total FROM gastos

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
+import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/costeo/domain/unidad_costeo_util.dart';
+import 'package:reserva_canchas/features/costeo/presentation/widgets/costeo_stitch_ui.dart';
 import 'package:reserva_canchas/features/costeo/presentation/widgets/costeo_ui_bloques.dart';
 import 'package:reserva_canchas/features/inventario/data/inventario_repository.dart';
 import 'package:reserva_canchas/features/inventario/presentation/widgets/dialogo_insumo_form.dart';
@@ -27,19 +31,24 @@ class RecetaProductoPanel extends StatefulWidget {
     this.margenPct,
     this.margenBruto,
     this.colorFoodCost,
+    this.mostrarResumenFinanciero = true,
     this.scrollExterno = false,
+    this.repositorio,
   });
 
   final String productoId;
+
   /// producto | bebida | topping
   final String tipoEntidad;
   final String nombreProducto;
   final List<Map<String, dynamic>> ingredientes;
   final List<Map<String, dynamic>> subrecetas;
   final VoidCallback onGuardado;
+
   /// NAV-MC-04: permite crear insumos sin salir de Costos.
   final String? sucursalId;
   final VoidCallback? onInsumosCambiados;
+
   /// NAV-MG-03: navegar a Insumos (p. ej. crear subrecetas).
   final VoidCallback? onIrInsumos;
   final double? precioVenta;
@@ -48,20 +57,25 @@ class RecetaProductoPanel extends StatefulWidget {
   final double? margenPct;
   final double? margenBruto;
   final Color? colorFoodCost;
+  final bool mostrarResumenFinanciero;
+
   /// Padre hace el scroll (un solo ListView en Costos).
   final bool scrollExterno;
+  final InventarioRepository? repositorio;
 
   @override
   State<RecetaProductoPanel> createState() => _RecetaProductoPanelState();
 }
 
 class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
-  final _repo = InventarioRepository();
+  late final InventarioRepository _repo;
   List<Map<String, dynamic>> _filas = [];
   bool _cargando = true;
   bool _guardando = false;
   bool _modoEdicion = false;
+  String? _errorCarga;
   double _margenError = 0.05;
+  final Map<String, bool> _expansionEditorPorGrupo = {};
   late final TextEditingController _margenPctCtrl;
 
   final _moneda = NumberFormat.currency(
@@ -79,6 +93,7 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
   @override
   void initState() {
     super.initState();
+    _repo = widget.repositorio ?? InventarioRepository();
     _margenPctCtrl = TextEditingController(text: '5');
     _cargarReceta();
   }
@@ -197,15 +212,17 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
         _margenError = margen ?? 0.05;
         _margenPctCtrl.text = (_margenError * 100).toStringAsFixed(1);
         _filas = filas.isEmpty ? [_filaPorDefecto()] : filas;
+        _errorCarga = null;
         _cargando = false;
         _modoEdicion = filas.isEmpty;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _filas = [_filaPorDefecto()];
+        _filas = [];
+        _errorCarga = mensajeErrorHttp(e, contexto: 'cargar receta');
         _cargando = false;
-        _modoEdicion = true;
+        _modoEdicion = false;
       });
     }
   }
@@ -384,7 +401,8 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'crear insumo'))),
+          SnackBar(
+              content: Text(mensajeErrorHttp(e, contexto: 'crear insumo'))),
         );
       }
     }
@@ -544,7 +562,8 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
       }
     } else {
       final ing = _ingredientePorId(fila['ingrediente_id'] as String?);
-      nombre = ing?['nombre'] as String? ?? fila['nombre_insumo'] as String? ?? '—';
+      nombre =
+          ing?['nombre'] as String? ?? fila['nombre_insumo'] as String? ?? '—';
       final uLinea = fila['unidad'] as String? ?? 'und';
       final uBase = ing?['unidad_base'] as String? ?? uLinea;
       detalle = '$cant $uLinea';
@@ -621,33 +640,42 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
     final fc = widget.foodCostPct;
     final margenBruto = widget.margenBruto;
     final margenPct = widget.margenPct;
+    final compacto = FoodyBreakpoints.esCompact(
+      MediaQuery.sizeOf(context).width,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         CosteoGrupoReceta(
+          numero: 1,
           titulo: 'Ingredientes directos',
           subtitulo: 'descuentan inventario al vender',
           colorBadge: AnaliticaTokens.ventas,
           lineas: directos.map(_lineaResumen).toList(),
         ),
         CosteoGrupoReceta(
+          numero: 2,
           titulo: 'Subrecetas reutilizables',
           subtitulo: 'ya costeadas, se jalan por gramo',
           colorBadge: AnaliticaTokens.pedidos,
           lineas: subrecetas.map(_lineaResumen).toList(),
+          inicialmenteExpandido: !compacto,
         ),
         CosteoGrupoReceta(
-          titulo: 'Costos indirectos',
+          titulo: 'Otros costos del plato',
           subtitulo: 'solo costo, no descuentan inventario',
           colorBadge: AnaliticaTokens.inkMuted,
           lineas: indirectos.map(_lineaResumen).toList(),
+          inicialmenteExpandido: !compacto,
         ),
         CosteoGrupoReceta(
-          titulo: 'Empaques domicilio',
+          numero: 3,
+          titulo: 'Empaques',
           subtitulo: 'solo para llevar / domicilio, no en mesa',
           colorBadge: const Color(0xFFD97706),
           lineas: empaques.map(_lineaResumen).toList(),
+          inicialmenteExpandido: !compacto,
         ),
         if (directos.isEmpty &&
             subrecetas.isEmpty &&
@@ -680,83 +708,307 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
             ),
           ),
         const SizedBox(height: 8),
-        CosteoResumenPie(
-          tituloCosto: 'Costo mesa (sin empaques)',
-          costoTotal: _moneda.format(costoTotal),
-          foodCostPct: fc,
-          margenBruto: margenBruto != null ? _moneda.format(margenBruto) : '—',
-          margenPct: margenPct != null ? '${margenPct.toStringAsFixed(1)}%' : '—',
-          colorFoodCost: widget.colorFoodCost ?? AnaliticaTokens.inventario,
-          lineasExtra: [
-            if (sumaSinEmpaque > 0) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Suma insumos + subrecetas + indirectos',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                  Text(_moneda.format(sumaSinEmpaque)),
-                ],
-              ),
-              if (_margenError > 0)
+        if (widget.mostrarResumenFinanciero)
+          CosteoResumenPie(
+            numero: 5,
+            tituloCosto: 'Costo mesa (sin empaques)',
+            costoTotal: _moneda.format(costoTotal),
+            foodCostPct: fc,
+            margenBruto:
+                margenBruto != null ? _moneda.format(margenBruto) : '—',
+            margenPct:
+                margenPct != null ? '${margenPct.toStringAsFixed(1)}%' : '—',
+            colorFoodCost: widget.colorFoodCost ?? AnaliticaTokens.inventario,
+            lineasExtra: [
+              if (sumaSinEmpaque > 0) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '+ Margen de error ${(_margenError * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                      'Suma insumos + subrecetas + indirectos',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade700),
                     ),
-                    Text(_moneda.format(costoMesa - sumaSinEmpaque)),
+                    Text(_moneda.format(sumaSinEmpaque)),
                   ],
                 ),
-            ],
-            if (sumaEmpaques > 0) ...[
+                if (_margenError > 0)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '+ Margen de error ${(_margenError * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade700),
+                      ),
+                      Text(_moneda.format(costoMesa - sumaSinEmpaque)),
+                    ],
+                  ),
+              ],
+              if (sumaEmpaques > 0) ...[
+                const Divider(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '+ Empaques domicilio',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    ),
+                    Text(_moneda.format(sumaEmpaques)),
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Costo domicilio / llevar',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    Text(
+                      _moneda.format(costoDomicilio),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AnaliticaTokens.pedidos,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const Divider(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '+ Empaques domicilio',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                  ),
-                  Text(_moneda.format(sumaEmpaques)),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Costo domicilio / llevar',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                  Text(
-                    _moneda.format(costoDomicilio),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AnaliticaTokens.pedidos,
-                    ),
-                  ),
-                ],
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'El costo mesa no incluye empaques. '
+                  'El margen real con productos incluidos está en «Incluidos».',
+                  style:
+                      TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
+                ),
               ),
             ],
-            const Divider(height: 16),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'El costo mesa no incluye empaques. '
-                'El margen real con productos incluidos está en «Incluidos».',
-                style: TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
-              ),
-            ),
-          ],
-        ),
+          ),
       ],
+    );
+  }
+
+  String _grupoEditor(Map<String, dynamic> fila) {
+    return switch (fila['tipo_item'] as String? ?? 'ingrediente') {
+      'subreceta' => 'preparaciones',
+      'empaque' => 'empaques',
+      _ => 'ingredientes',
+    };
+  }
+
+  Widget _campoMerma() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 150),
+      child: TextFormField(
+        controller: _margenPctCtrl,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(
+          labelText: 'Merma o desperdicio',
+          helperText: 'Se aplica a ingredientes',
+          isDense: true,
+          border: OutlineInputBorder(),
+          suffixText: '%',
+        ),
+        onChanged: (v) {
+          final pct = double.tryParse(v.replaceAll(',', '.')) ?? 5;
+          setState(() => _margenError = (pct / 100).clamp(0, 0.5));
+        },
+      ),
+    );
+  }
+
+  Widget _seccionEditor({
+    required int numero,
+    required String grupo,
+    required String titulo,
+    required String descripcion,
+    required IconData icono,
+    required String accion,
+    required VoidCallback onAgregar,
+    Widget? detalle,
+  }) {
+    final indices = [
+      for (var i = 0; i < _filas.length; i++)
+        if (_grupoEditor(_filas[i]) == grupo) i,
+    ];
+    final subtotal = _sumaLineas(indices.map((i) => _filas[i]));
+    final compacto = MediaQuery.sizeOf(context).width < 700;
+    final expandido = _expansionEditorPorGrupo[grupo] ??
+        (!compacto || grupo == 'ingredientes');
+    final color = grupo == 'empaques'
+        ? CosteoStitch.amber
+        : grupo == 'preparaciones'
+            ? AnaliticaTokens.pedidos
+            : AnaliticaTokens.ventas;
+
+    return Container(
+      key: ValueKey('seccion-receta-$grupo'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SaaSTokens.surface(context),
+        borderRadius: BorderRadius.circular(SaaSTokens.r12),
+        border: Border.all(color: SaaSTokens.border(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            key: ValueKey('alternar-editor-receta-$grupo'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(
+              () => _expansionEditorPorGrupo[grupo] = !expandido,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    '$numero',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(icono, size: 19, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        titulo,
+                        style: TextStyle(
+                          color: SaaSTokens.ink(context),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        descripcion,
+                        style: TextStyle(
+                          color: SaaSTokens.inkMuted(context),
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${indices.length}',
+                  style: TextStyle(
+                    color: SaaSTokens.inkMuted(context),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  expandido ? Icons.expand_less : Icons.expand_more,
+                  color: SaaSTokens.inkMuted(context),
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: expandido
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (detalle != null) ...[
+                        const SizedBox(height: 10),
+                        detalle,
+                      ],
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        key: ValueKey('agregar-receta-$grupo'),
+                        onPressed: onAgregar,
+                        icon: const Icon(Icons.add, size: 17),
+                        label: Text(accion),
+                        style: OutlinedButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                          foregroundColor: color,
+                          side:
+                              BorderSide(color: color.withValues(alpha: 0.45)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      if (indices.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10, bottom: 2),
+                          child: Text(
+                            'Aún no agregas elementos a esta sección.',
+                            style: TextStyle(
+                              color: SaaSTokens.inkSoft(context),
+                              fontSize: 12,
+                            ),
+                          ),
+                        )
+                      else ...[
+                        const SizedBox(height: 8),
+                        for (var posicion = 0;
+                            posicion < indices.length;
+                            posicion++) ...[
+                          if (posicion > 0) const SizedBox(height: 8),
+                          _filaEditor(indices[posicion]),
+                        ],
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Subtotal orientativo',
+                                style: TextStyle(
+                                  color: SaaSTokens.inkMuted(context),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              _moneda.format(subtotal),
+                              style: TextStyle(
+                                color: SaaSTokens.ink(context),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
     );
   }
 
@@ -774,6 +1026,15 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
               color: AnaliticaTokens.ink,
             ),
           ),
+        ),
+      );
+    }
+    if (_errorCarga != null) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: FoodyEstadoUi.desdeMensaje(
+          mensaje: _errorCarga!,
+          onReintentar: _cargarReceta,
         ),
       );
     }
@@ -825,79 +1086,54 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
     final cuerpo = <Widget>[
       _barraAcciones(),
       if (_modoEdicion) ...[
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AnaliticaTokens.surfaceMuted,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AnaliticaTokens.border),
+        _seccionEditor(
+          numero: 1,
+          grupo: 'ingredientes',
+          titulo: 'Ingredientes',
+          descripcion: 'Insumos principales y costos asociados al plato.',
+          icono: Icons.restaurant_outlined,
+          accion: 'Agregar ingrediente',
+          onAgregar: () => setState(
+            () => _filas.add(_filaPorDefecto(tipo: 'ingrediente')),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Cómo armar la receta',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.5,
-                  color: AnaliticaTokens.ink,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                '1) Elige tipo · 2) Busca el insumo · 3) Indica cantidad · 4) Guarda',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AnaliticaTokens.inkMuted,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  SizedBox(
-                    width: 118,
-                    child: TextFormField(
-                      controller: _margenPctCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Merma %',
-                        helperText: 'opcional',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        suffixText: '%',
-                      ),
-                      onChanged: (v) {
-                        final pct =
-                            double.tryParse(v.replaceAll(',', '.')) ?? 5;
-                        setState(() {
-                          _margenError = (pct / 100).clamp(0, 0.5);
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Holgura sobre insumos de mesa (no empaques).',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AnaliticaTokens.inkSoft,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          detalle: _campoMerma(),
         ),
-        const SizedBox(height: 12),
-        for (var i = 0; i < _filas.length; i++) ...[
-          if (i > 0) const SizedBox(height: 10),
-          _filaEditor(i),
-        ],
+        _seccionEditor(
+          numero: 2,
+          grupo: 'preparaciones',
+          titulo: 'Preparaciones',
+          descripcion: 'Bases y subrecetas que se reutilizan en el plato.',
+          icono: Icons.soup_kitchen_outlined,
+          accion: 'Agregar preparación',
+          onAgregar: () {
+            if (widget.subrecetas.isNotEmpty) {
+              setState(() => _filas.add(_filaPorDefecto(tipo: 'subreceta')));
+            } else if (widget.onIrInsumos != null) {
+              widget.onIrInsumos!.call();
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Crea una subreceta en Insumos y vuelve aquí'),
+                ),
+              );
+            }
+          },
+        ),
+        _seccionEditor(
+          numero: 3,
+          grupo: 'empaques',
+          titulo: 'Empaques',
+          descripcion: 'Solo se suman para venta para llevar o domicilio.',
+          icono: Icons.takeout_dining_outlined,
+          accion: _insumosEmpaque.isEmpty ? 'Crear empaque' : 'Agregar empaque',
+          onAgregar: () {
+            if (_insumosEmpaque.isEmpty) {
+              _crearInsumoDesdeCostos(categoriaInicial: 'empaque');
+            } else {
+              setState(() => _filas.add(_filaPorDefecto(tipo: 'empaque')));
+            }
+          },
+        ),
       ] else ...[
         const SizedBox(height: 12),
         _vistaResumen(),
@@ -975,80 +1211,19 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'Agregar a la receta',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: AnaliticaTokens.inkSoft,
-            letterSpacing: 0.3,
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: widget.sucursalId == null
+                ? null
+                : () => _crearInsumoDesdeCostos(),
+            style: TextButton.styleFrom(
+              foregroundColor: SaaSTokens.inkMuted(context),
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text('Crear insumo'),
           ),
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: () => setState(
-                () => _filas.add(_filaPorDefecto(tipo: 'ingrediente')),
-              ),
-              icon: const Icon(Icons.restaurant_outlined, size: 16),
-              label: const Text('Insumo'),
-            ),
-            // NAV-MC-11: siempre visible; si no hay subrecetas, guía a Insumos.
-            OutlinedButton.icon(
-              onPressed: widget.subrecetas.isNotEmpty
-                  ? () => setState(
-                        () => _filas.add(_filaPorDefecto(tipo: 'subreceta')),
-                      )
-                  : () {
-                      final ir = widget.onIrInsumos;
-                      if (ir != null) {
-                        ir();
-                        return;
-                      }
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Crea subrecetas en Insumos › Subrecetas y vuelve aquí',
-                          ),
-                        ),
-                      );
-                    },
-              icon: const Icon(Icons.layers_outlined, size: 16),
-              label: Text(
-                widget.subrecetas.isEmpty ? 'Subreceta…' : 'Subreceta',
-              ),
-            ),
-            // NAV-MC-04: si no hay empaques, el botón abre el diálogo de creación.
-            OutlinedButton.icon(
-              onPressed: _insumosEmpaque.isEmpty
-                  ? (widget.sucursalId == null
-                      ? null
-                      : () => _crearInsumoDesdeCostos(
-                            categoriaInicial: 'empaque',
-                          ))
-                  : () => setState(
-                        () => _filas.add(_filaPorDefecto(tipo: 'empaque')),
-                      ),
-              icon: const Icon(Icons.takeout_dining_outlined, size: 16),
-              label: Text(
-                _insumosEmpaque.isEmpty ? 'Crear empaque' : 'Empaque',
-              ),
-            ),
-            TextButton(
-              onPressed: widget.sucursalId == null
-                  ? null
-                  : () => _crearInsumoDesdeCostos(),
-              style: TextButton.styleFrom(
-                foregroundColor: AnaliticaTokens.inkMuted,
-                visualDensity: VisualDensity.compact,
-              ),
-              child: const Text('Nuevo insumo…'),
-            ),
-          ],
         ),
       ],
     );
@@ -1091,6 +1266,7 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
               const SizedBox(width: 10),
               Expanded(
                 child: DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: tipo,
                   decoration: const InputDecoration(
                     labelText: 'Tipo',
@@ -1100,7 +1276,7 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
                   items: [
                     const DropdownMenuItem(
                       value: 'ingrediente',
-                      child: Text('Insumo directo'),
+                      child: Text('Insumo'),
                     ),
                     if (widget.subrecetas.isNotEmpty)
                       const DropdownMenuItem(
@@ -1109,7 +1285,7 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
                       ),
                     const DropdownMenuItem(
                       value: 'empaque',
-                      child: Text('Empaque (llevar)'),
+                      child: Text('Empaque'),
                     ),
                   ],
                   onChanged: (v) {
@@ -1248,7 +1424,7 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
               );
               final subtotal = _bloqueSubtotal(valor);
 
-              if (constraints.maxWidth < 320) {
+              if (constraints.maxWidth < 400) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -1289,8 +1465,8 @@ class _RecetaProductoPanelState extends State<RecetaProductoPanel> {
       return unidadesDeFamiliaCosteo(base);
     }
     final ing = _ingredientePorId(fila['ingrediente_id'] as String?);
-    final base = ing?['unidad_base'] as String? ??
-        (fila['unidad'] as String? ?? 'und');
+    final base =
+        ing?['unidad_base'] as String? ?? (fila['unidad'] as String? ?? 'und');
     return unidadesDeFamiliaCosteo(base);
   }
 

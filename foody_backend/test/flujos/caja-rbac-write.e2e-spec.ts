@@ -1,6 +1,6 @@
 /**
- * RBAC-CAJA-WRITE-01: requiere migración 094 aplicada y usuario cajero con
- * override completo que contiene solo `ver_caja` en la base QA desechable.
+ * RBAC-CAJA-WRITE-01: requiere el fixture aislado `cajero.sololectura.test`
+ * con override completo que contiene solo `ver_caja` en la base QA desechable.
  */
 import {
   api,
@@ -17,7 +17,7 @@ describe('E2E permisos de lectura/escritura de Caja', () => {
   beforeAll(async () => {
     await assertApiViva();
     admin = await login('admin@foody.demo');
-    cajeroSoloLectura = await login('cajero.test@foody.demo');
+    cajeroSoloLectura = await login('cajero.sololectura.test@foody.demo');
   });
 
   it('conserva lectura de Caja y niega mutaciones a override ver_caja', async () => {

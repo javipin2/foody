@@ -22,6 +22,7 @@ describe('guardas de despacho de domicilio', () => {
       id: 'pedido-1',
       tipo: 'domicilio',
       estado: 'listo',
+      direccion_entrega: 'Calle 10 # 5-20',
       tiene_items: true,
       tiene_items_no_disponibles: true,
       tiene_items_cocina_pendientes: false,
@@ -42,6 +43,7 @@ describe('guardas de despacho de domicilio', () => {
       id: 'pedido-1',
       tipo: 'domicilio',
       estado: 'listo',
+      direccion_entrega: 'Calle 10 # 5-20',
       tiene_items: true,
       tiene_items_no_disponibles: true,
       tiene_items_cocina_pendientes: false,
@@ -61,6 +63,7 @@ describe('guardas de despacho de domicilio', () => {
       id: 'pedido-1',
       tipo: 'domicilio',
       estado: 'listo',
+      direccion_entrega: 'Calle 10 # 5-20',
       tiene_items: false,
       tiene_items_no_disponibles: false,
       tiene_items_cocina_pendientes: false,
@@ -74,6 +77,25 @@ describe('guardas de despacho de domicilio', () => {
     });
   });
 
+  it('bloquea el despacho de una dirección pendiente de confirmar', async () => {
+    database.consultarUno.mockResolvedValue({
+      id: 'pedido-1',
+      tipo: 'domicilio',
+      estado: 'listo',
+      direccion_entrega: ' Por confirmar ',
+      tiene_items: true,
+      tiene_items_no_disponibles: false,
+      tiene_items_cocina_pendientes: false,
+    });
+
+    await expect(
+      servicio.intentarDispatchAutomatico('pedido-1', 'sucursal-1'),
+    ).resolves.toMatchObject({
+      iniciado: false,
+      motivo: 'PEDIDO_DIRECCION_INCOMPLETA',
+    });
+  });
+
   it('vuelve a validar y bloquea dentro de la transacción con la fila bloqueada', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [
@@ -81,6 +103,7 @@ describe('guardas de despacho de domicilio', () => {
           id: 'pedido-1',
           tipo: 'domicilio',
           estado: 'listo',
+          direccion_entrega: 'Calle 10 # 5-20',
           tiene_items: true,
           tiene_items_no_disponibles: true,
           tiene_items_cocina_pendientes: false,
@@ -108,6 +131,7 @@ describe('guardas de despacho de domicilio', () => {
       id: 'pedido-1',
       tipo: 'domicilio',
       estado: 'listo',
+      direccion_entrega: 'Calle 10 # 5-20',
       tiene_items: true,
       tiene_items_no_disponibles: false,
       tiene_items_cocina_pendientes: true,

@@ -9,6 +9,7 @@ export interface LineaStockExtra {
     cantidad: number;
 }
 export interface LineaStock {
+    pedidoItemId?: string;
     productoId: string;
     cantidad: number;
     precioVentaLinea: number;

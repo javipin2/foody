@@ -16,6 +16,7 @@ export declare class PedidosSoporteService {
     private readonly realtime;
     private readonly notificaciones;
     private readonly impresion;
+    private readonly logger;
     constructor(database: DatabaseService, realtime: RealtimeBroadcastService, notificaciones: NotificacionesService, impresion: ImpresionService);
     obtenerSeguimientoToken(pedidoId: string): Promise<string | null>;
     emitirSeguimientoPedido(pedidoId: string, payload: Record<string, unknown>): void;
@@ -55,4 +56,5 @@ export declare class PedidosSoporteService {
         disponible: boolean;
     }[]): void;
     notificarCocinasPorPedido(pedidoId: string, sucursalId: string): Promise<void>;
+    private errorTexto;
 }

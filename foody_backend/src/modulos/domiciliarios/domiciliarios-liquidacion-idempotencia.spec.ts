@@ -36,7 +36,14 @@ describe('Liquidación domiciliario de planta', () => {
     );
     expect(updatePedido?.[0]).toMatch(/pp\.sucursal_id = pedidos\.sucursal_id/i);
     expect(updatePedido?.[0]).toMatch(/ORDER BY pp\.created_at ASC, pp\.id ASC/i);
+    expect(updatePedido?.[0]).toMatch(/metodo_pago\s*=\s*COALESCE/i);
+    expect(updatePedido?.[0]).toContain("'efectivo'");
+    expect(updatePedido?.[0]).toMatch(/SET monto_pagado = pedidos\.total/i);
     expect(updatePedido?.[1]).toEqual(['pedido-1', 'sucursal-qa']);
+    const pagoCxc = client.query.mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO pagos_pedido'),
+    );
+    expect(pagoCxc?.[0]).toContain("VALUES ($1,$2,$3,0,'efectivo',$4,$5)");
     expect(cajaAuditoria.registrarVentaEnCaja).toHaveBeenCalledWith(
       expect.anything(),
       'sucursal-qa',

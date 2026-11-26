@@ -10,6 +10,10 @@ Leyenda: 🟣 abierto · 🟡 aceptado · ✅ OK / corregido
 
 ## Veredicto
 
+**E2E-SUCURSAL-READ-01 (2026-11-25):** se agregó `test/flujos/sucursal-scope.e2e-spec.ts` para validar con gerente de sede los GET de Pedidos y Cocinas hacia la sede hermana Norte, esperando 403. La suite de política unitaria pasó 4/4, TypeScript compila y Jest descubre la E2E. No se ejecutó todavía: el contenedor `foody-diseno-qa-db` contiene únicamente `foody_diseno_qa`, sin clon desechable `foody_diseno_qa_codex_*` ni API `:3001`; la fuente QA se dejó intacta. Ejecutar únicamente después de provisionar y seleccionar un clon efímero con el wrapper QA.
+
+**Revalidación 2026-11-25:** la puerta protegida `verificar-e2e-jest.ps1` pasó 10/10 suites y 51/51 pruebas en una API Nest aislada sobre clon QA. El runner recompone grants leyendo migraciones y crea el usuario `cajero.sololectura.test@foody.demo` (solo `ver_caja`) únicamente dentro del clon; `cajero.test@foody.demo` permanece con plantilla de rol operativo. El proceso exige `FOODY_QA_DATABASE=foody_diseno_qa_codex_*` para no limpiar/sembrar la base QA fuente. Clon eliminado, :3001 detenido, :3000 intacto.
+
 Hay suite **reproducible** contra API QA viva (`:3001` + seed demo). Los E2E mutan y limpian fixtures; no deben apuntar al backend del piloto `:3000`.
 
 | Capa | Comando | Resultado esta sesión |
@@ -31,6 +35,7 @@ Los scripts PowerShell históricos (`verificar-pagos-mesa`, `verificar-flujo-dom
 | `foody_backend/test/flujos/qr.e2e-spec.ts` | Menú QR + pendiente_aprobacion + anti-tamper |
 | `foody_backend/test/flujos/domicilio.e2e-spec.ts` | Bloqueo listo→entregado + flujo entrega |
 | `foody_backend/test/flujos/cocina.e2e-spec.ts` | KDS tickets + **COC-NODISP-01** |
+| `foody_backend/test/flujos/sucursal-scope.e2e-spec.ts` | Lecturas de pedidos/cocinas denegadas entre sucursales |
 | `foody_backend/test/flujos/caja.e2e-spec.ts` | Cobro + **VIE-06** no reopen |
 | `foody_backend/test/flujos/casos-limite-28-30.e2e-spec.ts` | **VIE-01**, VIE-05/13, **PED-PREPAGO-01** |
 | `foody_backend/test/app.e2e-spec.ts` | Smoke `/salud` (reemplaza Hello World) |
@@ -75,14 +80,17 @@ Los scripts PowerShell históricos (`verificar-pagos-mesa`, `verificar-flujo-dom
 ## Cómo correr
 
 ```powershell
-# Pre: PostgreSQL QA aislado + API Nest QA en :3001
+# Pre: API Nest QA en :3001 conectada a un clon `foody_diseno_qa_codex_*`
+$env:FOODY_QA_DATABASE = 'foody_diseno_qa_codex_<identificador>'
+$env:FOODY_QA_DB_CONTAINER = 'foody-diseno-qa-db'
+$env:E2E_HOST = 'http://127.0.0.1:3001'
 .\scripts\verificar-e2e-jest.ps1
 .\scripts\verificar-e2e-flutter.ps1 -PermitirEscrituras
 ```
 
 Ambos orquestadores verifican salud en el mismo destino que utilizará la suite y bloquean hosts distintos de `localhost:3001` salvo `FOODY_E2E_ALLOW_NON_QA=1`. El Flutter E2E además exige `-PermitirEscrituras`. La API `:3000` del Tunnel no debe usarse para estas pruebas.
 
-Pre-requisitos demo: `admin@foody.demo` / `cajero.test@foody.demo` / `cocina@foody.demo` / `domi@foody.demo` · pass `123456`.
+Pre-requisitos demo: `admin@foody.demo` / `cajero.test@foody.demo` / `cocina@foody.demo` / `domi@foody.demo` · pass `123456`. El runner crea `cajero.sololectura.test@foody.demo` en el clon a partir del hash QA existente y solo con `ver_caja`; no existe ni se escribe en la base QA fuente.
 
 ---
 

@@ -253,11 +253,14 @@ class StockLineaReceta extends StatelessWidget {
     if (!descontarStock) {
       return const Row(
         children: [
-          Icon(Icons.payments_outlined, size: 14, color: AnaliticaTokens.inkMuted),
+          Icon(Icons.payments_outlined,
+              size: 14, color: AnaliticaTokens.inkMuted),
           SizedBox(width: 4),
-          Text(
-            'Solo costo · no descuenta inventario',
-            style: TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
+          Flexible(
+            child: Text(
+              'Solo costo · no descuenta inventario',
+              style: TextStyle(fontSize: 11, color: AnaliticaTokens.inkMuted),
+            ),
           ),
         ],
       );
@@ -281,12 +284,14 @@ class StockLineaReceta extends StatelessWidget {
               color: AnaliticaTokens.ventas,
             ),
             const SizedBox(width: 4),
-            Text(
-              'Venta descuenta ${_fmt(cantidadReceta)} $unidadReceta',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AnaliticaTokens.inkMuted,
+            Flexible(
+              child: Text(
+                'Venta descuenta ${_fmt(cantidadReceta)} $unidadReceta',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AnaliticaTokens.inkMuted,
+                ),
               ),
             ),
           ],
@@ -333,8 +338,7 @@ class StockImpactoProductoCard extends StatelessWidget {
         .cast<Map<String, dynamic>>();
     final incluidos = (impacto['incluidos'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
-    final color =
-        puede ? AnaliticaTokens.inventario : AnaliticaTokens.alertas;
+    final color = puede ? AnaliticaTokens.inventario : AnaliticaTokens.alertas;
     final hayDetalle =
         faltas.isNotEmpty || incluidos.isNotEmpty || ingredientes.isNotEmpty;
 

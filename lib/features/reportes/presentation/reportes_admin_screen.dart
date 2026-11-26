@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/red/mostrar_error_snackbar.dart';
+import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/core/saas_ui/saas_ui.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_chart_card.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_charts.dart';
@@ -25,6 +26,7 @@ class ReportesAdminScreen extends StatefulWidget {
     super.key,
     this.sucursalId,
     this.onIrAnalitica,
+    this.analiticaBloqueadaPorPlan = false,
     this.repository,
     this.auditoriaRepository,
   });
@@ -33,6 +35,9 @@ class ReportesAdminScreen extends StatefulWidget {
 
   /// NAV-ADM2-12: puente a Centro de Análisis.
   final VoidCallback? onIrAnalitica;
+
+  /// Indica que Análisis requiere una mejora de plan para esta cuenta.
+  final bool analiticaBloqueadaPorPlan;
   final ReportesRepository? repository;
   final AuditoriaRepository? auditoriaRepository;
 
@@ -57,6 +62,8 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   Map<String, dynamic>? _pedidos;
   Map<String, dynamic>? _timeline;
   bool _cargandoTimeline = false;
+  String? _errorTimeline;
+  int _versionTimeline = 0;
 
   final _moneda = NumberFormat.currency(
     locale: 'es_CO',
@@ -78,7 +85,10 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
     _auditoriaRepo = widget.auditoriaRepository ?? AuditoriaRepository();
     _tabs = TabController(length: 4, vsync: this);
     _tabs.addListener(() {
-      if (_tabs.index == 3 && _timeline == null && !_cargandoTimeline) {
+      if (_tabs.index == 3 &&
+          _timeline == null &&
+          !_cargandoTimeline &&
+          _errorTimeline == null) {
         _cargarTimeline();
       }
     });
@@ -100,7 +110,12 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   Future<void> _cargarTimeline() async {
     final sid = widget.sucursalId;
     if (sid == null) return;
-    setState(() => _cargandoTimeline = true);
+    final version = ++_versionTimeline;
+    setState(() {
+      _cargandoTimeline = true;
+      _errorTimeline = null;
+      _timeline = null;
+    });
     final (desde, hasta) = _rango();
     try {
       final data = await _auditoriaRepo.timeline(
@@ -108,14 +123,19 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         hasta: hasta,
         sucursalId: sid,
       );
-      if (mounted) {
+      if (mounted && version == _versionTimeline) {
         setState(() {
           _timeline = data;
           _cargandoTimeline = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _cargandoTimeline = false);
+      if (mounted && version == _versionTimeline) {
+        setState(() {
+          _errorTimeline = mensajeErrorHttp(e, contexto: 'auditoría');
+          _cargandoTimeline = false;
+        });
+      }
     }
   }
 
@@ -128,9 +148,14 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
       });
       return;
     }
+    // Invalida una respuesta de auditoría que siga pendiente para otro rango.
+    _versionTimeline++;
     setState(() {
       _cargando = true;
       _error = null;
+      _timeline = null;
+      _errorTimeline = null;
+      _cargandoTimeline = false;
     });
     final (desde, hasta) = _rango();
     try {
@@ -148,6 +173,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
           _cargando = false;
           _actualizadoEn = DateTime.now();
         });
+        if (_tabs.index == 3) await _cargarTimeline();
       }
     } catch (e) {
       if (mounted) {
@@ -325,7 +351,11 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                       foregroundColor: _scheme.onSurfaceVariant,
                       visualDensity: VisualDensity.compact,
                     ),
-                    child: const Text('Análisis'),
+                    child: Text(
+                      widget.analiticaBloqueadaPorPlan
+                          ? 'Análisis · Pro'
+                          : 'Análisis',
+                    ),
                   ),
                 IconButton(
                   tooltip: 'Exportar',
@@ -875,6 +905,12 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
   Widget _tabAuditoria() {
     if (_cargandoTimeline) {
       return AnaliticaSkeleton.tab();
+    }
+    if (_errorTimeline != null) {
+      return FoodyEstadoUi.errorUi(
+        mensaje: _errorTimeline!,
+        onReintentar: _cargarTimeline,
+      );
     }
     final eventos = (_timeline?['eventos'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();

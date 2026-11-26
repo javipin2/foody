@@ -438,6 +438,7 @@ export class PagosService {
       ? String(tx['payment_link_id'])
       : null;
     const sku = tx['sku'] ? String(tx['sku']) : null;
+    const referencia = tx['reference'] ? String(tx['reference']) : null;
     const metodo = tx['payment_method_type']
       ? String(tx['payment_method_type'])
       : null;
@@ -449,7 +450,7 @@ export class PagosService {
       return { procesado: false, motivo: 'sin_id_transaccion' };
     }
 
-    const pago = await this.buscarPagoPendiente(paymentLinkId, sku);
+    const pago = await this.buscarPagoPendiente(paymentLinkId, sku, referencia);
     if (!pago) {
       return { procesado: false, motivo: 'pago_no_encontrado' };
     }
@@ -544,6 +545,7 @@ export class PagosService {
   private async buscarPagoPendiente(
     paymentLinkId: string | null,
     sku: string | null,
+    referencia: string | null,
   ) {
     if (paymentLinkId) {
       const porLink = await this.database.consultarUno<{
@@ -560,7 +562,7 @@ export class PagosService {
     }
 
     if (sku) {
-      return this.database.consultarUno<{
+      const porSku = await this.database.consultarUno<{
         id: string;
         restaurante_id: string;
         plan: PlanPago;
@@ -569,6 +571,22 @@ export class PagosService {
          WHERE referencia_interna = $1
          ORDER BY created_at DESC LIMIT 1`,
         [sku],
+      );
+      if (porSku) return porSku;
+    }
+
+    // Las transacciones recurrentes no tienen payment_link_id ni sku: Wompi
+    // devuelve la referencia única enviada al crear el cobro.
+    if (referencia) {
+      return this.database.consultarUno<{
+        id: string;
+        restaurante_id: string;
+        plan: PlanPago;
+      }>(
+        `SELECT id, restaurante_id, plan FROM pagos_suscripcion
+         WHERE referencia_interna = $1 AND estado = 'pendiente'
+         ORDER BY created_at DESC LIMIT 1`,
+        [referencia],
       );
     }
 

@@ -63,6 +63,7 @@ export class DispatchService implements OnModuleInit {
           id: string;
           tipo: string;
           estado: string;
+          direccion_entrega: string | null;
           tiene_items: boolean;
           tiene_items_no_disponibles: boolean;
           tiene_items_cocina_pendientes: boolean;
@@ -70,7 +71,7 @@ export class DispatchService implements OnModuleInit {
       }
     | { valido: false; motivo: string; mensaje: string }
   > {
-    const sql = `SELECT p.id, p.tipo, p.estado,
+    const sql = `SELECT p.id, p.tipo, p.estado, p.direccion_entrega,
            EXISTS (
              SELECT 1 FROM pedido_items pi WHERE pi.pedido_id = p.id
            ) AS tiene_items,
@@ -110,6 +111,22 @@ export class DispatchService implements OnModuleInit {
         valido: false,
         motivo: 'PEDIDO_NO_LISTO',
         mensaje: 'El pedido debe estar listo para asignar un repartidor.',
+      };
+    }
+    const direccionNormalizada = (pedido.direccion_entrega ?? '')
+      .trim()
+      .toLocaleLowerCase('es');
+    if (
+      !direccionNormalizada ||
+      /^(?:por confirmar|pendiente|por definir|n\/?a|sin direcci[oó]n)$/.test(
+        direccionNormalizada,
+      )
+    ) {
+      return {
+        valido: false,
+        motivo: 'PEDIDO_DIRECCION_INCOMPLETA',
+        mensaje:
+          'Completa una dirección de entrega válida antes de asignar un repartidor.',
       };
     }
     if (pedido.tiene_items !== true) {

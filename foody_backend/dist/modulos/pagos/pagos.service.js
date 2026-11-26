@@ -286,6 +286,7 @@ let PagosService = PagosService_1 = class PagosService {
             ? String(tx['payment_link_id'])
             : null;
         const sku = tx['sku'] ? String(tx['sku']) : null;
+        const referencia = tx['reference'] ? String(tx['reference']) : null;
         const metodo = tx['payment_method_type']
             ? String(tx['payment_method_type'])
             : null;
@@ -295,7 +296,7 @@ let PagosService = PagosService_1 = class PagosService {
         if (!transaccionId) {
             return { procesado: false, motivo: 'sin_id_transaccion' };
         }
-        const pago = await this.buscarPagoPendiente(paymentLinkId, sku);
+        const pago = await this.buscarPagoPendiente(paymentLinkId, sku, referencia);
         if (!pago) {
             return { procesado: false, motivo: 'pago_no_encontrado' };
         }
@@ -351,7 +352,7 @@ let PagosService = PagosService_1 = class PagosService {
             this.logger.error(`No se pudo auditar fallo fuente: ${e2 instanceof Error ? e2.message : e2}`);
         }
     }
-    async buscarPagoPendiente(paymentLinkId, sku) {
+    async buscarPagoPendiente(paymentLinkId, sku, referencia) {
         if (paymentLinkId) {
             const porLink = await this.database.consultarUno(`SELECT id, restaurante_id, plan FROM pagos_suscripcion
          WHERE payment_link_id = $1
@@ -360,9 +361,16 @@ let PagosService = PagosService_1 = class PagosService {
                 return porLink;
         }
         if (sku) {
-            return this.database.consultarUno(`SELECT id, restaurante_id, plan FROM pagos_suscripcion
+            const porSku = await this.database.consultarUno(`SELECT id, restaurante_id, plan FROM pagos_suscripcion
          WHERE referencia_interna = $1
          ORDER BY created_at DESC LIMIT 1`, [sku]);
+            if (porSku)
+                return porSku;
+        }
+        if (referencia) {
+            return this.database.consultarUno(`SELECT id, restaurante_id, plan FROM pagos_suscripcion
+         WHERE referencia_interna = $1 AND estado = 'pendiente'
+         ORDER BY created_at DESC LIMIT 1`, [referencia]);
         }
         return null;
     }

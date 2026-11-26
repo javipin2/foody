@@ -29,6 +29,8 @@ class _PedidosFake extends PedidosRepository {
           PagoPedidoResumen(metodoPago: 'nequi', monto: 5000),
         ],
         propinaRecibida: 2000,
+        devolucionesCajaVinculadas: 3000,
+        recaudoNetoCajaVinculado: 55000,
         creadoEn: DateTime(2026, 11, 22),
         estadoDesde: DateTime(2026, 11, 22),
         itemsResumen: const [
@@ -119,6 +121,42 @@ void main() {
       );
       expect(find.text('Pagos registrados'), findsOneWidget);
       expect(find.text('Propina registrada · aparte'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Devoluciones de Caja vinculadas'),
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byType(PedidoDetalleSheet),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text('Devoluciones de Caja vinculadas'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Recaudo neto de Caja vinculado'),
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byType(PedidoDetalleSheet),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text('Recaudo neto de Caja vinculado'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.textContaining('devoluciones asociadas a este pedido'),
+        120,
+        scrollable: find
+            .descendant(
+              of: find.byType(PedidoDetalleSheet),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(
+        find.textContaining('devoluciones asociadas a este pedido'),
+        findsOneWidget,
+      );
       await tester.scrollUntilVisible(
         find.text('Productos'),
         200,

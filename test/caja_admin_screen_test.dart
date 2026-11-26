@@ -9,11 +9,13 @@ class _CajaRepositoryFake extends CajaRepository {
     this.turnoAbierto = false,
     this.horasAbierta = '2',
     this.movimientosDelPedido = const [],
+    this.cuentas = const [],
   });
 
   final bool turnoAbierto;
   final String horasAbierta;
   final List<Map<String, dynamic>> movimientosDelPedido;
+  final List<Map<String, dynamic>> cuentas;
 
   @override
   Future<Map<String, dynamic>?> cajaActiva(String sucursalId) async =>
@@ -42,14 +44,18 @@ class _CajaRepositoryFake extends CajaRepository {
   Future<Map<String, dynamic>> resumenCuentasPorCobrar(
     String sucursalId,
   ) async =>
-      {'saldo_pendiente': 0, 'cantidad_pendientes': 0};
+      {
+        'total_pendiente': 0,
+        'cantidad_pendiente': cuentas.length,
+        'antiguas_7d': 0,
+      };
 
   @override
   Future<List<Map<String, dynamic>>> cuentasPorCobrar(
     String sucursalId, {
     bool incluirPagadas = false,
   }) async =>
-      [];
+      cuentas;
 }
 
 void main() {
@@ -296,6 +302,57 @@ void main() {
     expect(find.text('Registrar retiro'), findsNothing);
     expect(find.text('Registrar devolución'), findsNothing);
     expect(find.text('Cerrar caja'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('las cuentas de domiciliario se liquidan desde Domiciliarios', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: CajaAdminScreen(
+              sucursalId: 'sucursal-1',
+              permisos: const ['gestionar_caja'],
+              repository: _CajaRepositoryFake(
+                turnoAbierto: true,
+                cuentas: const [
+                  {
+                    'id': 'cuenta-domi',
+                    'cliente_nombre': 'Domiciliario: Alex',
+                    'monto': 8000,
+                    'estado': 'pendiente',
+                    'domiciliario_planta_id': 'domi-1',
+                  },
+                  {
+                    'id': 'cuenta-cliente',
+                    'cliente_nombre': 'Cliente fiado',
+                    'monto': 5000,
+                    'estado': 'pendiente',
+                  },
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Domiciliario: Alex'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Liquidar desde Domiciliarios'), findsOneWidget);
+    expect(find.text('Cobrar'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

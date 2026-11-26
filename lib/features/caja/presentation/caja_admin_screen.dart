@@ -1810,6 +1810,17 @@ class _CajaAdminScreenState extends ConsumerState<CajaAdminScreen>
                     ),
                   ),
                   if (f['estado'] == 'pendiente' &&
+                      widget.permisos.contains('gestionar_caja') &&
+                      f['domiciliario_planta_id'] != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Liquidar desde Domiciliarios',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ] else if (f['estado'] == 'pendiente' &&
                       widget.permisos.contains('gestionar_caja')) ...[
                     const SizedBox(height: 6),
                     Align(

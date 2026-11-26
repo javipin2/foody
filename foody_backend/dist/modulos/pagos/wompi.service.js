@@ -110,7 +110,7 @@ let WompiService = class WompiService {
     async consultarTransaccion(transaccionId) {
         const id = transaccionId.trim();
         const resp = await fetch(`${this.baseUrl()}/transactions/${encodeURIComponent(id)}`, {
-            headers: { Authorization: `Bearer ${this.clavePublica()}` },
+            headers: { Authorization: `Bearer ${this.clavePrivada()}` },
         });
         const json = (await resp.json());
         if (!resp.ok || !json.data) {

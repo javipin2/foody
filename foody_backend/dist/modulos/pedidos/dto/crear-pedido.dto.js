@@ -133,6 +133,7 @@ class CrearPedidoDto {
     combos;
     codigo_promocion;
     idempotency_key;
+    total_esperado;
     forzar_fuera_horario;
     pagos;
     propina;
@@ -180,6 +181,9 @@ __decorate([
     (0, class_validator_1.ValidateIf)((pedido) => pedido.tipo === 'domicilio'),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.Matches)(/\S/, { message: 'La dirección de entrega es obligatoria' }),
+    (0, class_validator_1.Matches)(/^(?!\s*(?:por confirmar|pendiente|por definir|n\/?a|sin direcci[oó]n)\s*$).+\S$/i, {
+        message: 'Ingresa una dirección de entrega real, no un valor pendiente',
+    }),
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "direccion_entrega", void 0);
 __decorate([
@@ -251,6 +255,12 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CrearPedidoDto.prototype, "idempotency_key", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(0),
+    __metadata("design:type", Number)
+], CrearPedidoDto.prototype, "total_esperado", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),

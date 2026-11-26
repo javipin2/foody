@@ -544,6 +544,35 @@ export class CatalogoService {
         );
       }
 
+      const idsProducto = dto.items
+        .filter((item) => item.tipo_item === 'producto')
+        .map((item) => item.item_id);
+      const cocinasProducto = await client.query<{
+        cocina_id: string | null;
+      }>(
+        `SELECT DISTINCT cocina_id FROM productos
+         WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`,
+        [idsProducto, dto.sucursal_id],
+      );
+      const cocinasAsignadas = new Set(
+        cocinasProducto.rows
+          .map((fila) => fila.cocina_id)
+          .filter((id): id is string => id != null),
+      );
+      if (cocinasAsignadas.size === 0) {
+        throw new BadRequestException({
+          error: 'COMBO_SIN_COCINA',
+          message: 'Asigna una cocina a los productos antes de crear un combo.',
+        });
+      }
+      if (cocinasAsignadas.size > 1) {
+        throw new BadRequestException({
+          error: 'COMBO_COCINAS_DIFERENTES',
+          message:
+            'Los productos de un combo deben prepararse en la misma cocina. El enrutamiento a varias cocinas aún no está disponible.',
+        });
+      }
+
       return { id: comboId, nombre: dto.nombre, precio_fijo: dto.precio_fijo };
     });
     this.invalidarMenu(dto.sucursal_id);

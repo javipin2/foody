@@ -24,6 +24,7 @@ const plan_features_guard_1 = require("../../core/auth/guards/plan-features.guar
 const requiere_modulo_decorator_1 = require("../../compartido/decoradores/requiere-modulo.decorator");
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
+const ventas_metricas_sql_1 = require("../../compartido/sql/ventas-metricas.sql");
 const auditoria_service_1 = require("./auditoria.service");
 const timeline_auditoria_dto_1 = require("./dto/timeline-auditoria.dto");
 let AuditoriaController = class AuditoriaController {
@@ -34,7 +35,12 @@ let AuditoriaController = class AuditoriaController {
         this.sucursalScope = sucursalScope;
     }
     async timeline(usuario, query) {
-        const hoy = new Date().toISOString().slice(0, 10);
+        const hoy = new Intl.DateTimeFormat('en-CA', {
+            timeZone: ventas_metricas_sql_1.SQL_TZ_NEGOCIO,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(new Date());
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, query.sucursal_id);
         return this.auditoria.timelineTurno({
             sucursal_id: id,

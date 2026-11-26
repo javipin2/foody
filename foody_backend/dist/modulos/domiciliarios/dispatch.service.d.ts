@@ -29,6 +29,7 @@ export declare class DispatchService implements OnModuleInit {
             id: string;
             tipo: string;
             estado: string;
+            direccion_entrega: string | null;
             tiene_items: boolean;
             tiene_items_no_disponibles: boolean;
             tiene_items_cocina_pendientes: boolean;

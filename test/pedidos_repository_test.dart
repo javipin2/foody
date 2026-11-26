@@ -125,12 +125,18 @@ void main() {
         ),
       ],
       idempotencyKey: 'staff-req-123',
+      totalEsperado: 25000,
     );
 
     expect(adapter.ultimaSolicitud?.path, '/pedidos/staff');
     expect(
-      (adapter.ultimaSolicitud?.data as Map<String, dynamic>)['idempotency_key'],
+      (adapter.ultimaSolicitud?.data
+          as Map<String, dynamic>)['idempotency_key'],
       'staff-req-123',
+    );
+    expect(
+      (adapter.ultimaSolicitud?.data as Map<String, dynamic>)['total_esperado'],
+      25000,
     );
   });
 

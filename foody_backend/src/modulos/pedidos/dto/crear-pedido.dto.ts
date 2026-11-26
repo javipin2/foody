@@ -121,6 +121,12 @@ export class CrearPedidoDto {
   @ValidateIf((pedido: CrearPedidoDto) => pedido.tipo === 'domicilio')
   @IsString()
   @Matches(/\S/, { message: 'La dirección de entrega es obligatoria' })
+  @Matches(
+    /^(?!\s*(?:por confirmar|pendiente|por definir|n\/?a|sin direcci[oó]n)\s*$).+\S$/i,
+    {
+      message: 'Ingresa una dirección de entrega real, no un valor pendiente',
+    },
+  )
   direccion_entrega?: string;
 
   @IsOptional()
@@ -179,6 +185,12 @@ export class CrearPedidoDto {
   @IsOptional()
   @IsString()
   idempotency_key?: string;
+
+  /** Total cotizado previamente por el servidor; precondición de cobro staff. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  total_esperado?: number;
 
   /** PED-009: solo staff admin/gerente con permiso explícito. */
   @IsOptional()

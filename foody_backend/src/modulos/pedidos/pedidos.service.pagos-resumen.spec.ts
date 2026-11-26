@@ -15,6 +15,8 @@ describe('PedidosService.obtenerDetalleAdmin pagos_resumen', () => {
         { metodo_pago: 'nequi', monto: 5000 },
       ],
       propina_recibida: '2000',
+      devoluciones_caja_vinculadas: '3000',
+      recaudo_neto_caja_vinculado: '55000',
       created_at: '2026-11-25T12:00:00.000Z',
       estado_desde: '2026-11-25T12:00:00.000Z',
     });
@@ -42,9 +44,20 @@ describe('PedidosService.obtenerDetalleAdmin pagos_resumen', () => {
         { metodo_pago: 'nequi', monto: 5000 },
       ],
       propina_recibida: '2000',
+      devoluciones_caja_vinculadas: '3000',
+      recaudo_neto_caja_vinculado: '55000',
     });
     expect(detalleQuery.mock.calls[0][0]).toContain(
       'WHERE pedido_id = p.id AND sucursal_id = p.sucursal_id',
+    );
+    expect(detalleQuery.mock.calls[0][0]).toContain("m.tipo = 'devolucion'");
+    expect(detalleQuery.mock.calls[0][0]).toContain(
+      "m.tipo IN ('venta', 'devolucion')",
+    );
+    expect(detalleQuery.mock.calls[0][0]).toContain("m.tipo = 'venta'");
+    expect(detalleQuery.mock.calls[0][0]).toContain('m.pedido_id = p.id');
+    expect(detalleQuery.mock.calls[0][0]).toContain(
+      'm.sucursal_id = p.sucursal_id',
     );
     expect(detalleQuery.mock.calls[0][1]).toEqual(['pedido-1', 'sucursal-1']);
   });

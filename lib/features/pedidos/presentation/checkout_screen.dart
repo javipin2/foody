@@ -76,6 +76,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   num? _totalServidor;
   bool _estimando = false;
   String? _errorEstimar;
+  int _revisionEstimacion = 0;
 
   @override
   void initState() {
@@ -159,6 +160,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Future<void> _refrescarEstimar(CarritoState carrito) async {
+    final revision = ++_revisionEstimacion;
     if (carrito.lineas.isEmpty) {
       if (mounted) {
         setState(() {
@@ -181,7 +183,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         lng: _lng,
         codigoPromocion: _codigoPromoAplicado,
       );
-      if (!mounted) return;
+      if (!mounted || revision != _revisionEstimacion) return;
       setState(() {
         _totalServidor = datos['total'] as num? ?? 0;
         _descuentoPromo = datos['descuento'] as num? ?? 0;
@@ -192,7 +194,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         _errorEstimar = null;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || revision != _revisionEstimacion) return;
       setState(() {
         _estimando = false;
         _errorEstimar = mensajeErrorCliente(e, contexto: 'estimar total');

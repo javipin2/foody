@@ -269,6 +269,7 @@ let PedidosInventarioService = class PedidosInventarioService {
                     stockAnterior,
                     stockPosterior,
                     pedidoId,
+                    pedidoItemId: linea.pedidoItemId,
                     motivo: 'Venta pedido',
                 });
                 await this.alertarStockBajo(client, sucursalId, ing.ingrediente_id, stockPosterior, ing.stock_minimo);
@@ -402,14 +403,48 @@ let PedidosInventarioService = class PedidosInventarioService {
        FROM pedido_items pi
        WHERE pi.pedido_id = $1`, [pedidoId]);
         for (const row of items.rows) {
-            const combo = await client.query(`SELECT combo_id FROM pedido_combo_selecciones WHERE pedido_item_id = $1`, [row.item_id]);
+            const combo = await client.query(`SELECT combo_id, componentes_snapshot FROM pedido_combo_selecciones
+         WHERE pedido_item_id = $1`, [row.item_id]);
             if (combo.rows[0]) {
+                const snapshot = Array.isArray(combo.rows[0].componentes_snapshot)
+                    ? combo.rows[0].componentes_snapshot
+                    : [];
+                if (snapshot.length > 0) {
+                    const componentesProducto = snapshot.filter((c) => c.tipo_item === 'producto');
+                    for (const componente of componentesProducto) {
+                        const cant = Number(componente.cantidad) * row.cantidad;
+                        const key = `${row.item_id}:${componente.item_id}`;
+                        const prev = lineas.get(key);
+                        lineas.set(key, {
+                            pedidoItemId: row.item_id,
+                            cantidad: (prev?.cantidad ?? 0) + cant,
+                            precioVentaLinea: prev?.precioVentaLinea ?? 0,
+                            extras: prev?.extras ?? [],
+                        });
+                    }
+                    const productoAncla = componentesProducto[0]?.item_id;
+                    if (productoAncla) {
+                        const extras = snapshot
+                            .filter((c) => c.tipo_item !== 'producto')
+                            .map((c) => ({
+                            tipo: c.tipo_item,
+                            id: c.item_id,
+                            cantidad: Number(c.cantidad) * row.cantidad,
+                        }));
+                        const prev = lineas.get(`${row.item_id}:${productoAncla}`);
+                        if (prev)
+                            prev.extras.push(...extras);
+                    }
+                    continue;
+                }
                 const comboItems = await client.query(`SELECT item_id, cantidad FROM combo_items
            WHERE combo_id = $1 AND tipo_item = 'producto'`, [combo.rows[0].combo_id]);
                 for (const ci of comboItems.rows) {
                     const cant = Number(ci.cantidad) * row.cantidad;
-                    const prev = lineas.get(ci.item_id);
-                    lineas.set(ci.item_id, {
+                    const key = `${row.item_id}:${ci.item_id}`;
+                    const prev = lineas.get(key);
+                    lineas.set(key, {
+                        pedidoItemId: row.item_id,
                         cantidad: (prev?.cantidad ?? 0) + cant,
                         precioVentaLinea: (prev?.precioVentaLinea ?? 0) + 1,
                         extras: prev?.extras ?? [],
@@ -435,18 +470,21 @@ let PedidosInventarioService = class PedidosInventarioService {
                         cantidad: Number(b.cantidad),
                     });
                 }
-                const prev = lineas.get(row.producto_id);
+                const key = `${row.item_id}:${row.producto_id}`;
+                const prev = lineas.get(key);
                 const venta = Number(row.precio_unitario) * row.cantidad;
                 const extrasMerged = [...(prev?.extras ?? []), ...extras];
-                lineas.set(row.producto_id, {
+                lineas.set(key, {
+                    pedidoItemId: row.item_id,
                     cantidad: (prev?.cantidad ?? 0) + row.cantidad,
                     precioVentaLinea: (prev?.precioVentaLinea ?? 0) + venta,
                     extras: extrasMerged,
                 });
             }
         }
-        return [...lineas.entries()].map(([productoId, v]) => ({
-            productoId,
+        return [...lineas.entries()].map(([key, v]) => ({
+            productoId: key.slice(key.indexOf(':') + 1),
+            pedidoItemId: v.pedidoItemId,
             cantidad: v.cantidad,
             precioVentaLinea: v.precioVentaLinea,
             extras: v.extras,

@@ -45,3 +45,88 @@ describe('PedidosInventarioService.registrarMermaPedidoCompleto', () => {
     expect(registrarLinea).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('PedidosInventarioService.lineasDesdePedido', () => {
+  it('reconstruye stock desde el snapshot vendido y conserva extras incluidos', async () => {
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('FROM pedido_items pi')) {
+        return {
+          rows: [
+            {
+              item_id: 'pedido-item-1',
+              producto_id: 'producto-principal',
+              cantidad: 2,
+              precio_unitario: '15000',
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM pedido_combo_selecciones')) {
+        return {
+          rows: [
+            {
+              combo_id: 'combo-1',
+              componentes_snapshot: [
+                {
+                  tipo_item: 'producto',
+                  item_id: 'producto-principal',
+                  nombre: 'Hamburguesa',
+                  cantidad: 1,
+                },
+                {
+                  tipo_item: 'producto',
+                  item_id: 'producto-guarnicion',
+                  nombre: 'Papas',
+                  cantidad: 2,
+                },
+                {
+                  tipo_item: 'bebida',
+                  item_id: 'bebida-1',
+                  nombre: 'Gaseosa',
+                  cantidad: 1,
+                },
+                {
+                  tipo_item: 'topping',
+                  item_id: 'topping-1',
+                  nombre: 'Queso',
+                  cantidad: 2,
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`Consulta inesperada: ${sql}`);
+    });
+    const service = new PedidosInventarioService(
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const lineas = await service.lineasDesdePedido(
+      { query } as unknown as PoolClient,
+      'pedido-1',
+      'sucursal-1',
+    );
+
+    expect(lineas).toEqual([
+      {
+        productoId: 'producto-principal',
+        cantidad: 2,
+        precioVentaLinea: 0,
+        extras: [
+          { tipo: 'bebida', id: 'bebida-1', cantidad: 2 },
+          { tipo: 'topping', id: 'topping-1', cantidad: 4 },
+        ],
+      },
+      {
+        productoId: 'producto-guarnicion',
+        cantidad: 4,
+        precioVentaLinea: 0,
+        extras: [],
+      },
+    ]);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+});

@@ -4,9 +4,18 @@ import 'package:reserva_canchas/features/pagos/data/pagos_repository.dart';
 import 'package:reserva_canchas/features/pagos/presentation/mejorar_plan_screen.dart';
 
 class _PagosRepositoryFake extends PagosRepository {
+  _PagosRepositoryFake({
+    this.plan = 'gratis',
+    this.resultadoRenovacion,
+  });
+
+  final String plan;
+  final Map<String, dynamic>? resultadoRenovacion;
+  int renovaciones = 0;
+
   @override
   Future<Map<String, dynamic>> estado() async => {
-        'suscripcion': {'plan': 'gratis', 'estado': 'activa'},
+        'suscripcion': {'plan': plan, 'estado': 'activa'},
         'precios': {
           'basico': 5000000,
           'pro': 10000000,
@@ -14,6 +23,12 @@ class _PagosRepositoryFake extends PagosRepository {
         },
         'historial': <Map<String, dynamic>>[],
       };
+
+  @override
+  Future<Map<String, dynamic>> renovar() async {
+    renovaciones++;
+    return resultadoRenovacion ?? {'modo': 'recurrente'};
+  }
 }
 
 void main() {
@@ -64,4 +79,71 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('renovación ya pendiente informa que no crea otro cobro', (
+    tester,
+  ) async {
+    final repository = _PagosRepositoryFake(
+      plan: 'pro',
+      resultadoRenovacion: {
+        'modo': 'ninguno',
+        'motivo': 'pago_reciente_existente',
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MejorarPlanScreen(
+            planActual: 'pro',
+            repository: repository,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Renovar plan ahora'));
+    await tester.pumpAndSettle();
+
+    expect(repository.renovaciones, 1);
+    expect(
+      find.text(
+        'Ya hay un pago reciente en proceso. No enviamos otro cobro; espera la confirmación de Wompi.',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cooldown de renovación explica por qué no inicia un cobro', (
+    tester,
+  ) async {
+    final repository = _PagosRepositoryFake(
+      plan: 'pro',
+      resultadoRenovacion: {
+        'modo': 'ninguno',
+        'motivo': 'intento_reciente',
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MejorarPlanScreen(
+            planActual: 'pro',
+            repository: repository,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Renovar plan ahora'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Ya se registró un intento reciente. Para evitar un cobro duplicado, espera su conciliación antes de volver a intentarlo.',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -290,6 +290,7 @@ class PedidosRepository {
     double? propina,
     String? observaciones,
     String? idempotencyKey,
+    double? totalEsperado,
   }) async {
     final deviceId = await DispositivoService.obtenerDeviceId();
     final lineasProducto = lineas.where((l) => !l.esCombo).toList();
@@ -339,6 +340,7 @@ class PedidosRepository {
           'observaciones': observaciones.trim(),
         if (idempotencyKey != null && idempotencyKey.isNotEmpty)
           'idempotency_key': idempotencyKey,
+        if (totalEsperado != null) 'total_esperado': totalEsperado,
         ...body,
       },
     );

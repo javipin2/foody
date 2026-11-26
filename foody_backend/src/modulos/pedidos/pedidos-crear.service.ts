@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../../core/database/database.service';
 import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
 import { FacturacionService } from '../facturacion/facturacion.service';
@@ -23,7 +24,10 @@ import {
   PedidosInventarioService,
 } from './pedidos-inventario.service';
 import { estadoActivaCocina } from './pedido-estados';
-import { huellaIdempotenciaPedido } from './pedidos-idempotencia.util';
+import {
+  huellaIdempotenciaPedido,
+  validarTotalEsperadoPedido,
+} from './pedidos-idempotencia.util';
 
 const DIAS_ANTICIPACION_ENCARGO_MIN = 2;
 
@@ -303,6 +307,7 @@ export class PedidosCrearService {
 
       let subtotal = 0;
       const lineasInventario: {
+        pedidoItemId?: string;
         productoId: string;
         cantidad: number;
         precioVentaLinea: number;
@@ -314,6 +319,7 @@ export class PedidosCrearService {
         }[];
       }[] = [];
       const lineasPreparadas: {
+        pedidoItemId: string;
         productoId: string;
         cantidad: number;
         precioUnitario: number;
@@ -337,6 +343,7 @@ export class PedidosCrearService {
       }[] = [];
 
       const combosPreparados: {
+        itemIds: string[];
         comboId: string;
         nombre: string;
         cantidad: number;
@@ -345,6 +352,13 @@ export class PedidosCrearService {
         cocinaId: string | null;
         costoUnitario: number;
         productosCombo: { productoId: string; cantidad: number }[];
+        componentesSnapshot: {
+          tipo_item: 'producto' | 'bebida' | 'topping';
+          item_id: string;
+          nombre: string;
+          cantidad: number;
+          costo_unitario: number;
+        }[];
         toppings: {
           id: string;
           nombre: string;
@@ -449,6 +463,10 @@ export class PedidosCrearService {
           ...combos.flatMap((combo) =>
             (combo.toppings ?? []).map((t) => normalizarId(t.topping_id)),
           ),
+          ...[...itemsPorCombo.values()]
+            .flat()
+            .filter((item) => item.tipo_item === 'topping')
+            .map((item) => normalizarId(item.item_id)),
         ]),
       ];
       const toppingsCatalogo = new Map<string, ExtraCatalogo>();
@@ -470,6 +488,10 @@ export class PedidosCrearService {
           ...combos.flatMap((combo) =>
             (combo.bebidas ?? []).map((b) => normalizarId(b.bebida_id)),
           ),
+          ...[...itemsPorCombo.values()]
+            .flat()
+            .filter((item) => item.tipo_item === 'bebida')
+            .map((item) => normalizarId(item.item_id)),
         ]),
       ];
       const bebidasCatalogo = new Map<string, ExtraCatalogo>();
@@ -546,7 +568,9 @@ export class PedidosCrearService {
         const costoProductoUnit = Number(producto.costo_calculado ?? 0);
         const costoUnitarioExtra =
           item.cantidad > 0 ? costoExtras / item.cantidad : 0;
+        const pedidoItemId = randomUUID();
         lineasPreparadas.push({
+          pedidoItemId,
           productoId: producto.id,
           cantidad: item.cantidad,
           precioUnitario: precioUnit,
@@ -558,6 +582,7 @@ export class PedidosCrearService {
           bebidas,
         });
         lineasInventario.push({
+          pedidoItemId,
           productoId: producto.id,
           cantidad: item.cantidad,
           precioVentaLinea: lineaTotal,
@@ -600,6 +625,59 @@ export class PedidosCrearService {
         const productosCombo = comboItems
           .filter((ci) => ci.tipo_item === 'producto')
           .map((ci) => ({ productoId: ci.item_id, cantidad: ci.cantidad }));
+        const cocinasCombo = new Set(
+          productosCombo
+            .map((pc) => productos.get(normalizarId(pc.productoId))?.cocina_id)
+            .filter((id): id is string => id != null),
+        );
+        if (cocinasCombo.size > 1) {
+          throw new BadRequestException({
+            error: 'COMBO_COCINAS_DIFERENTES',
+            message:
+              'Este combo tiene productos de varias cocinas y todavía no se puede enviar a todas las estaciones. Reconfigúralo para usar una cocina.',
+          });
+        }
+        const cocinaComboId = [...cocinasCombo][0] ?? producto.cocina_id;
+        if (!cocinaComboId) {
+          throw new BadRequestException({
+            error: 'COMBO_SIN_COCINA',
+            message:
+              'No se puede enviar este combo a cocina porque ninguno de sus productos tiene una estación asignada.',
+          });
+        }
+        const componentesSnapshot = comboItems.map((ci) => {
+          if (ci.tipo_item === 'producto') {
+            const componente = productos.get(normalizarId(ci.item_id));
+            if (!componente?.disponible) {
+              throw new BadRequestException('PRODUCTO_NO_DISPONIBLE');
+            }
+            return {
+              tipo_item: 'producto' as const,
+              item_id: componente.id,
+              nombre: componente.nombre,
+              cantidad: ci.cantidad,
+              costo_unitario: Number(componente.costo_calculado ?? 0),
+            };
+          }
+          const catalogo =
+            ci.tipo_item === 'bebida'
+              ? bebidasCatalogo.get(normalizarId(ci.item_id))
+              : toppingsCatalogo.get(normalizarId(ci.item_id));
+          if (!catalogo) {
+            throw new BadRequestException(
+              ci.tipo_item === 'bebida'
+                ? 'BEBIDA_NO_DISPONIBLE'
+                : 'TOPPING_NO_DISPONIBLE',
+            );
+          }
+          return {
+            tipo_item: ci.tipo_item as 'bebida' | 'topping',
+            item_id: catalogo.id,
+            nombre: catalogo.nombre,
+            cantidad: ci.cantidad,
+            costo_unitario: Number(catalogo.costo_calculado ?? 0),
+          };
+        });
 
         const toppings: {
           id: string;
@@ -635,31 +713,67 @@ export class PedidosCrearService {
             costo: Number(beb.costo_calculado ?? 0),
           });
         }
+        for (const t of toppings) {
+          componentesSnapshot.push({
+            tipo_item: 'topping',
+            item_id: t.id,
+            nombre: t.nombre,
+            cantidad: 1,
+            costo_unitario: t.costo,
+          });
+        }
+        for (const b of bebidas) {
+          componentesSnapshot.push({
+            tipo_item: 'bebida',
+            item_id: b.id,
+            nombre: b.nombre,
+            cantidad: b.cantidad,
+            costo_unitario: b.costo,
+          });
+        }
         const extrasUnitario =
           toppings.reduce((s, t) => s + t.precio, 0) +
           bebidas.reduce((s, b) => s + b.precio * b.cantidad, 0);
+        const itemIds = Array.from({ length: comboDto.cantidad }, () =>
+          randomUUID(),
+        );
 
         subtotal += (precioFijo + extrasUnitario) * comboDto.cantidad;
         combosPreparados.push({
+          itemIds,
           comboId: combo.id,
           nombre: combo.nombre,
           cantidad: comboDto.cantidad,
           precioFijo,
           productoPrincipalId: producto.id,
-          cocinaId: producto.cocina_id,
+          cocinaId: cocinaComboId,
           costoUnitario: 0,
           productosCombo,
+          componentesSnapshot,
           toppings,
           bebidas,
           extrasUnitario,
         });
 
-        for (const pc of productosCombo) {
-          lineasInventario.push({
-            productoId: pc.productoId,
-            cantidad: pc.cantidad * comboDto.cantidad,
-            precioVentaLinea: 1,
-          });
+        for (const pedidoItemId of itemIds) {
+          for (const [indice, pc] of productosCombo.entries()) {
+            lineasInventario.push({
+              pedidoItemId,
+              productoId: pc.productoId,
+              cantidad: pc.cantidad,
+              precioVentaLinea: 1,
+              extras:
+                indice === 0
+                  ? componentesSnapshot
+                      .filter((c) => c.tipo_item !== 'producto')
+                      .map((c) => ({
+                        tipo: c.tipo_item as 'bebida' | 'topping',
+                        id: c.item_id,
+                        cantidad: c.cantidad,
+                      }))
+                  : [],
+            });
+          }
         }
       }
 
@@ -707,6 +821,19 @@ export class PedidosCrearService {
         dto.sucursal_id,
         total,
       );
+
+      const cobroInmediatoStaff =
+        opciones.creadoPorStaff === true &&
+        dto.tipo === 'para_llevar' &&
+        ((dto.pagos?.length ?? 0) > 0 ||
+          (dto.metodo_pago ?? 'pendiente') !== 'pendiente');
+      if (!opciones.soloEstimar && cobroInmediatoStaff) {
+        validarTotalEsperadoPedido(dto.total_esperado, total, {
+          subtotal,
+          costoDomicilio,
+          descuento: descuentoPromo,
+        });
+      }
 
       if (opciones.soloEstimar) {
         return {
@@ -854,21 +981,29 @@ export class PedidosCrearService {
       for (const combo of combosPreparados) {
         let costoUnit = 0;
         for (const pc of combo.productosCombo) {
-          const unit = costosRecalculados.get(pc.productoId) ?? 0;
+          const costoSnapshot = combo.componentesSnapshot.find(
+            (c) => c.tipo_item === 'producto' && c.item_id === pc.productoId,
+          )?.costo_unitario;
+          const unit =
+            costosRecalculados.get(pc.productoId) ?? costoSnapshot ?? 0;
           costoUnit += unit * pc.cantidad;
         }
+        costoUnit += combo.componentesSnapshot
+          .filter((c) => c.tipo_item !== 'producto')
+          .reduce((s, c) => s + c.costo_unitario * c.cantidad, 0);
         combo.costoUnitario = costoUnit;
       }
 
       for (const linea of lineasPreparadas) {
         const costoUnit =
           costosRecalculados.get(linea.productoId) ?? linea.costoUnitario;
-        const itemRes = await client.query<{ id: string }>(
+        await client.query(
           `INSERT INTO pedido_items (
-             pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
+             id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
              costo_unitario, observaciones
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
           [
+            linea.pedidoItemId,
             pedidoId,
             linea.productoId,
             linea.cocinaId,
@@ -878,7 +1013,7 @@ export class PedidosCrearService {
             linea.observaciones,
           ],
         );
-        const itemId = itemRes.rows[0].id;
+        const itemId = linea.pedidoItemId;
 
         const precioVenta = linea.precioVentaLinea;
         const costoTotal = costoUnit * linea.cantidad;
@@ -920,17 +1055,16 @@ export class PedidosCrearService {
 
       for (const combo of combosPreparados) {
         for (let u = 0; u < combo.cantidad; u++) {
-          const costoExtras =
-            combo.toppings.reduce((s, t) => s + t.costo, 0) +
-            combo.bebidas.reduce((s, b) => s + b.costo * b.cantidad, 0);
-          const costoUnit = combo.costoUnitario + costoExtras;
+          const costoUnit = combo.costoUnitario;
           const precioVenta = combo.precioFijo + combo.extrasUnitario;
-          const itemRes = await client.query<{ id: string }>(
+          const itemId = combo.itemIds[u];
+          await client.query(
             `INSERT INTO pedido_items (
-               pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
+               id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
                costo_unitario, observaciones
-             ) VALUES ($1,$2,$3,1,$4,$5,$6) RETURNING id`,
+             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7)`,
             [
+              itemId,
               pedidoId,
               combo.productoPrincipalId,
               combo.cocinaId,
@@ -939,13 +1073,19 @@ export class PedidosCrearService {
               `Combo: ${combo.nombre}`,
             ],
           );
-          const itemId = itemRes.rows[0].id;
 
           await client.query(
             `INSERT INTO pedido_combo_selecciones (
-               pedido_item_id, combo_id, nombre_combo, precio_combo
-             ) VALUES ($1,$2,$3,$4)`,
-            [itemId, combo.comboId, combo.nombre, combo.precioFijo],
+               pedido_item_id, combo_id, nombre_combo, precio_combo,
+               componentes_snapshot
+             ) VALUES ($1,$2,$3,$4,$5::jsonb)`,
+            [
+              itemId,
+              combo.comboId,
+              combo.nombre,
+              combo.precioFijo,
+              JSON.stringify(combo.componentesSnapshot),
+            ],
           );
           for (const t of combo.toppings) {
             await client.query(

@@ -154,12 +154,43 @@ let PagosRecurrentesService = PagosRecurrentesService_1 = class PagosRecurrentes
         }
         const referencia = this.wompi.generarReferenciaInterna();
         const monto = pagos_planes_config_1.PRECIO_PLAN_CENTAVOS[plan];
-        const pago = await this.database.consultarUno(`INSERT INTO pagos_suscripcion (
-         restaurante_id, plan, monto_centavos, referencia_interna, metodo
-       ) VALUES ($1, $2, $3, $4, 'renovacion_automatica')
-       RETURNING id`, [restauranteId, plan, monto, referencia]);
-        await this.database.consultar(`UPDATE fuentes_pago SET ultimo_intento_at = now(), updated_at = now()
-       WHERE id = $1`, [fuente.id]);
+        const reserva = await this.database.enTransaccion(async (client) => {
+            const suscripcionBloqueada = await client.query(`SELECT restaurante_id FROM suscripciones_restaurante
+         WHERE restaurante_id = $1 FOR UPDATE`, [restauranteId]);
+            if (!suscripcionBloqueada.rows[0]) {
+                return { pagoId: null, motivo: 'suscripcion_no_encontrada' };
+            }
+            const pagoReciente = await client.query(`SELECT id, estado FROM pagos_suscripcion
+         WHERE restaurante_id = $1 AND plan = $2
+           AND estado IN ('pendiente', 'aprobado')
+           AND created_at > now() - interval '5 days'
+         LIMIT 1`, [restauranteId, plan]);
+            if (pagoReciente.rows[0]) {
+                return {
+                    pagoId: null,
+                    motivo: pagoReciente.rows[0].estado === 'aprobado'
+                        ? 'pago_reciente_aprobado'
+                        : 'pago_reciente_existente',
+                };
+            }
+            const fuenteReservada = await client.query(`UPDATE fuentes_pago SET ultimo_intento_at = now(), updated_at = now()
+         WHERE id = $1 AND restaurante_id = $2 AND activa = true
+           AND (ultimo_intento_at IS NULL
+                OR ultimo_intento_at < now() - interval '20 hours')
+         RETURNING id`, [fuente.id, restauranteId]);
+            if (!fuenteReservada.rows[0]) {
+                return { pagoId: null, motivo: 'intento_reciente' };
+            }
+            const pago = await client.query(`INSERT INTO pagos_suscripcion (
+           restaurante_id, plan, monto_centavos, referencia_interna, metodo
+         ) VALUES ($1, $2, $3, $4, 'renovacion_automatica')
+         RETURNING id`, [restauranteId, plan, monto, referencia]);
+            return { pagoId: pago.rows[0]?.id ?? null, motivo: 'iniciado' };
+        });
+        if (!reserva.pagoId) {
+            return { iniciado: false, motivo: reserva.motivo };
+        }
+        const pagoId = reserva.pagoId;
         try {
             const tx = await this.wompi.crearTransaccionRecurrente({
                 referenciaInterna: referencia,
@@ -171,10 +202,10 @@ let PagosRecurrentesService = PagosRecurrentesService_1 = class PagosRecurrentes
            transaccion_wompi_id = $2,
            referencia_wompi = $3,
            updated_at = now()
-         WHERE id = $1`, [pago.id, tx.id, tx.reference]);
+         WHERE id = $1`, [pagoId, tx.id, tx.reference]);
             if (tx.status === 'APPROVED') {
                 await this.database.consultar(`UPDATE pagos_suscripcion SET estado = 'aprobado', updated_at = now()
-           WHERE id = $1`, [pago.id]);
+           WHERE id = $1`, [pagoId]);
                 await this.extenderSuscripcion(restauranteId, plan);
                 await this.database.consultar(`UPDATE fuentes_pago SET ultimo_cobro_at = now(), updated_at = now()
            WHERE id = $1`, [fuente.id]);
@@ -184,14 +215,14 @@ let PagosRecurrentesService = PagosRecurrentesService_1 = class PagosRecurrentes
                 motivo: tx.status === 'APPROVED'
                     ? 'cobro_aprobado'
                     : 'cobro_pendiente_webhook',
-                pago_id: pago.id,
+                pago_id: pagoId,
                 transaccion_wompi_id: tx.id,
                 estado_transaccion: tx.status,
             };
         }
         catch (e) {
             await this.database.consultar(`UPDATE pagos_suscripcion SET estado = 'error', updated_at = now()
-         WHERE id = $1`, [pago.id]);
+         WHERE id = $1`, [pagoId]);
             throw e;
         }
     }

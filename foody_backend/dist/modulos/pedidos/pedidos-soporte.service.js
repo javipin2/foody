@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var PedidosSoporteService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PedidosSoporteService = void 0;
 const common_1 = require("@nestjs/common");
@@ -16,11 +17,12 @@ const database_service_1 = require("../../core/database/database.service");
 const impresion_service_1 = require("../../core/impresion/impresion.service");
 const realtime_broadcast_service_1 = require("../../core/realtime/realtime-broadcast.service");
 const notificaciones_service_1 = require("../notificaciones/notificaciones.service");
-let PedidosSoporteService = class PedidosSoporteService {
+let PedidosSoporteService = PedidosSoporteService_1 = class PedidosSoporteService {
     database;
     realtime;
     notificaciones;
     impresion;
+    logger = new common_1.Logger(PedidosSoporteService_1.name);
     constructor(database, realtime, notificaciones, impresion) {
         this.database = database;
         this.realtime = realtime;
@@ -361,21 +363,38 @@ let PedidosSoporteService = class PedidosSoporteService {
         }
     }
     async notificarCocinasPorPedido(pedidoId, sucursalId) {
-        const filas = await this.database.consultar(`SELECT DISTINCT pi.cocina_id
-       FROM pedido_items pi
-       INNER JOIN pedidos p ON p.id = pi.pedido_id
-       WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`, [pedidoId, sucursalId]);
-        for (const f of filas) {
-            void this.realtime.cocinaActualizada(f.cocina_id, {
-                pedido_id: pedidoId,
-                sucursal_id: sucursalId,
-            });
+        try {
+            const filas = await this.database.consultar(`SELECT DISTINCT pi.cocina_id
+         FROM pedido_items pi
+         INNER JOIN pedidos p ON p.id = pi.pedido_id
+         WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`, [pedidoId, sucursalId]);
+            for (const f of filas) {
+                void this.realtime
+                    .cocinaActualizada(f.cocina_id, {
+                    pedido_id: pedidoId,
+                    sucursal_id: sucursalId,
+                })
+                    .catch((error) => {
+                    this.logger.warn(`Realtime de cocina falló para pedido ${pedidoId}: ${this.errorTexto(error)}`);
+                });
+            }
         }
-        void this.impresion.encolarPorPedido(pedidoId, sucursalId);
+        catch (error) {
+            this.logger.error(`No se pudieron resolver las cocinas del pedido ${pedidoId}: ${this.errorTexto(error)}`);
+        }
+        try {
+            await this.impresion.encolarPorPedido(pedidoId, sucursalId);
+        }
+        catch (error) {
+            this.logger.error(`No se pudo solicitar impresión del pedido ${pedidoId}: ${this.errorTexto(error)}`);
+        }
+    }
+    errorTexto(error) {
+        return error instanceof Error ? error.message : String(error);
     }
 };
 exports.PedidosSoporteService = PedidosSoporteService;
-exports.PedidosSoporteService = PedidosSoporteService = __decorate([
+exports.PedidosSoporteService = PedidosSoporteService = PedidosSoporteService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         realtime_broadcast_service_1.RealtimeBroadcastService,

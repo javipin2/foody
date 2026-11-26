@@ -15,6 +15,7 @@ class _AnaliticaRepositoryControlado extends AnaliticaRepository {
   final recientesCompleter = Completer<Map<String, dynamic>>();
   final cocinasCompleter = Completer<Map<String, dynamic>>();
   final inventarioCompleter = Completer<Map<String, dynamic>>();
+  final rentabilidadCompleter = Completer<Map<String, dynamic>>();
   var llamadasVentas = 0;
   var llamadasInventario = 0;
 
@@ -78,6 +79,15 @@ class _AnaliticaRepositoryControlado extends AnaliticaRepository {
     llamadasInventario++;
     return inventarioCompleter.future;
   }
+
+  @override
+  Future<Map<String, dynamic>> rentabilidad({
+    required String sucursalId,
+    String preset = 'mes',
+    bool comparar = false,
+    Map<String, dynamic>? filtros,
+  }) =>
+      rentabilidadCompleter.future;
 }
 
 void main() {
@@ -167,6 +177,49 @@ void main() {
     expect(find.textContaining('Cargando gráficos y listados'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in [
+    const Size(320, 700),
+    const Size(390, 844),
+    const Size(820, 1180),
+    const Size(1440, 900),
+  ]) {
+    testWidgets(
+        'Rentabilidad aclara que gastos no se prorratean a ${size.width}px',
+        (tester) async {
+      final repository = _AnaliticaRepositoryControlado();
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AnaliticaScreen(
+              sucursalId: 'sede-1',
+              puedeVerFinanzas: true,
+              tabInicial: 'rentabilidad',
+              repository: repository,
+            ),
+          ),
+        ),
+      );
+      repository.resumenCompleter.complete(_resumenFixture);
+      _completarDetalles(repository);
+      repository.rentabilidadCompleter.complete({
+        'gastos_por_categoria': <dynamic>[],
+        'consejos': <dynamic>[],
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Los gastos se descuentan completos para la sede'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('un fallo secundario conserva KPIs y ofrece reintentar', (
     tester,

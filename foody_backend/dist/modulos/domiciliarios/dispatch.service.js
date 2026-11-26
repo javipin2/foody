@@ -54,7 +54,7 @@ let DispatchService = DispatchService_1 = class DispatchService {
         return this.configGlobal.ofertaExpiraSeg();
     }
     async validarPedidoParaDespacho(pedidoId, sucursalId, client) {
-        const sql = `SELECT p.id, p.tipo, p.estado,
+        const sql = `SELECT p.id, p.tipo, p.estado, p.direccion_entrega,
            EXISTS (
              SELECT 1 FROM pedido_items pi WHERE pi.pedido_id = p.id
            ) AS tiene_items,
@@ -92,6 +92,17 @@ let DispatchService = DispatchService_1 = class DispatchService {
                 valido: false,
                 motivo: 'PEDIDO_NO_LISTO',
                 mensaje: 'El pedido debe estar listo para asignar un repartidor.',
+            };
+        }
+        const direccionNormalizada = (pedido.direccion_entrega ?? '')
+            .trim()
+            .toLocaleLowerCase('es');
+        if (!direccionNormalizada ||
+            /^(?:por confirmar|pendiente|por definir|n\/?a|sin direcci[oó]n)$/.test(direccionNormalizada)) {
+            return {
+                valido: false,
+                motivo: 'PEDIDO_DIRECCION_INCOMPLETA',
+                mensaje: 'Completa una dirección de entrega válida antes de asignar un repartidor.',
             };
         }
         if (pedido.tiene_items !== true) {

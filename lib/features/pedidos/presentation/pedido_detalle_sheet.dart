@@ -355,6 +355,26 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                             widget.formatoMoneda
                                 .format(_pedido.propinaRecibida),
                           ),
+                        if (_pedido.devolucionesCajaVinculadas > 0) ...[
+                          _metaFila(
+                            'Devoluciones de Caja vinculadas',
+                            widget.formatoMoneda
+                                .format(_pedido.devolucionesCajaVinculadas),
+                          ),
+                          _metaFila(
+                            'Recaudo neto de Caja vinculado',
+                            widget.formatoMoneda
+                                .format(_pedido.recaudoNetoCajaVinculado),
+                            bold: true,
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Solo incluye devoluciones asociadas a este pedido; las devoluciones sin vínculo se concilian aparte.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
                         AvisoItemsNoDisponibles(
                           cantidad: _pedido.itemsResumen
                               .where((it) => it.estadoCocina == 'no_disponible')

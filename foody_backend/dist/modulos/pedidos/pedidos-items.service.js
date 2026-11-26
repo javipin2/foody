@@ -21,6 +21,7 @@ const pedidos_soporte_service_1 = require("./pedidos-soporte.service");
 const pedidos_inventario_service_1 = require("./pedidos-inventario.service");
 const auditoria_service_1 = require("../auditoria/auditoria.service");
 const pedidos_estado_command_service_1 = require("./pedidos-estado-command.service");
+const pedido_items_cobro_util_1 = require("./pedido-items-cobro.util");
 const ESTADOS_PEDIDO_CERRADO = [
     'entregado',
     'cancelado',
@@ -185,7 +186,9 @@ let PedidosItemsService = class PedidosItemsService {
                     bebidas.reduce((s, b) => s + b.costo * b.cantidad, 0);
                 const costoProductoUnit = Number(producto.costo_calculado ?? 0);
                 const costoUnitarioExtra = item.cantidad > 0 ? costoExtras / item.cantidad : 0;
+                const pedidoItemId = (0, node_crypto_1.randomUUID)();
                 lineasPreparadas.push({
+                    pedidoItemId,
                     productoId: producto.id,
                     cantidad: item.cantidad,
                     precioUnitario: precioUnit,
@@ -197,6 +200,7 @@ let PedidosItemsService = class PedidosItemsService {
                     bebidas,
                 });
                 lineasInventario.push({
+                    pedidoItemId,
                     productoId: producto.id,
                     cantidad: item.cantidad,
                     precioVentaLinea: lineaTotal,
@@ -235,6 +239,24 @@ let PedidosItemsService = class PedidosItemsService {
                 const productosCombo = comboItems.rows
                     .filter((ci) => ci.tipo_item === 'producto')
                     .map((ci) => ({ productoId: ci.item_id, cantidad: ci.cantidad }));
+                const cocinasProductos = await client.query(`SELECT id, cocina_id FROM productos
+           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`, [productosCombo.map((pc) => pc.productoId), sucursalId]);
+                const cocinasCombo = new Set(cocinasProductos.rows
+                    .map((fila) => fila.cocina_id)
+                    .filter((id) => id != null));
+                if (cocinasCombo.size > 1) {
+                    throw new common_1.BadRequestException({
+                        error: 'COMBO_COCINAS_DIFERENTES',
+                        message: 'Este combo tiene productos de varias cocinas y todavía no se puede enviar a todas las estaciones. Reconfigúralo para usar una cocina.',
+                    });
+                }
+                const cocinaComboId = [...cocinasCombo][0] ?? producto.cocina_id;
+                if (!cocinaComboId) {
+                    throw new common_1.BadRequestException({
+                        error: 'COMBO_SIN_COCINA',
+                        message: 'No se puede enviar este combo a cocina porque ninguno de sus productos tiene una estación asignada.',
+                    });
+                }
                 const toppings = [];
                 for (const t of comboDto.toppings ?? []) {
                     const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM toppings
@@ -262,28 +284,93 @@ let PedidosItemsService = class PedidosItemsService {
                         costo: Number(beb.costo_calculado ?? 0),
                     });
                 }
+                const componentesSnapshot = [];
+                for (const ci of comboItems.rows) {
+                    if (ci.tipo_item === 'producto') {
+                        const p = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, costo_calculado FROM productos
+               WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [ci.item_id, sucursalId]);
+                        if (!p)
+                            throw new common_1.BadRequestException('PRODUCTO_NO_DISPONIBLE');
+                        componentesSnapshot.push({
+                            tipo_item: 'producto',
+                            item_id: p.id,
+                            nombre: p.nombre,
+                            cantidad: ci.cantidad,
+                            costo_unitario: Number(p.costo_calculado ?? 0),
+                        });
+                        continue;
+                    }
+                    const tipo = ci.tipo_item === 'bebida' ? 'bebida' : 'topping';
+                    const tabla = tipo === 'bebida' ? 'bebidas' : 'toppings';
+                    const c = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, costo_calculado FROM ${tabla}
+             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [ci.item_id, sucursalId]);
+                    if (!c)
+                        throw new common_1.BadRequestException(tipo === 'bebida'
+                            ? 'BEBIDA_NO_DISPONIBLE'
+                            : 'TOPPING_NO_DISPONIBLE');
+                    componentesSnapshot.push({
+                        tipo_item: tipo,
+                        item_id: c.id,
+                        nombre: c.nombre,
+                        cantidad: ci.cantidad,
+                        costo_unitario: Number(c.costo_calculado ?? 0),
+                    });
+                }
+                for (const t of toppings) {
+                    componentesSnapshot.push({
+                        tipo_item: 'topping',
+                        item_id: t.id,
+                        nombre: t.nombre,
+                        cantidad: 1,
+                        costo_unitario: t.costo,
+                    });
+                }
+                for (const b of bebidas) {
+                    componentesSnapshot.push({
+                        tipo_item: 'bebida',
+                        item_id: b.id,
+                        nombre: b.nombre,
+                        cantidad: b.cantidad,
+                        costo_unitario: b.costo,
+                    });
+                }
                 const extrasUnitario = toppings.reduce((s, t) => s + t.precio, 0) +
                     bebidas.reduce((s, b) => s + b.precio * b.cantidad, 0);
+                const itemIds = Array.from({ length: comboDto.cantidad }, () => (0, node_crypto_1.randomUUID)());
                 deltaSubtotal += (precioFijo + extrasUnitario) * comboDto.cantidad;
                 combosPreparados.push({
+                    itemIds,
                     comboId: combo.id,
                     nombre: combo.nombre,
                     cantidad: comboDto.cantidad,
                     precioFijo,
                     productoPrincipalId: producto.id,
-                    cocinaId: producto.cocina_id,
+                    cocinaId: cocinaComboId,
                     costoUnitario: 0,
                     productosCombo,
+                    componentesSnapshot,
                     toppings,
                     bebidas,
                     extrasUnitario,
                 });
-                for (const pc of productosCombo) {
-                    lineasInventario.push({
-                        productoId: pc.productoId,
-                        cantidad: pc.cantidad * comboDto.cantidad,
-                        precioVentaLinea: 1,
-                    });
+                for (const pedidoItemId of itemIds) {
+                    for (const [indice, pc] of productosCombo.entries()) {
+                        lineasInventario.push({
+                            pedidoItemId,
+                            productoId: pc.productoId,
+                            cantidad: pc.cantidad,
+                            precioVentaLinea: 1,
+                            extras: indice === 0
+                                ? componentesSnapshot
+                                    .filter((c) => c.tipo_item !== 'producto')
+                                    .map((c) => ({
+                                    tipo: c.tipo_item,
+                                    id: c.item_id,
+                                    cantidad: c.cantidad,
+                                }))
+                                : [],
+                        });
+                    }
                 }
             }
             const opcionesStock = { incluirEmpaques: pedido.tipo === 'domicilio' };
@@ -303,17 +390,22 @@ let PedidosItemsService = class PedidosItemsService {
             for (const combo of combosPreparados) {
                 let costoUnit = 0;
                 for (const pc of combo.productosCombo) {
-                    const unit = costosRecalculados.get(pc.productoId) ?? 0;
+                    const costoSnapshot = combo.componentesSnapshot.find((c) => c.tipo_item === 'producto' && c.item_id === pc.productoId)?.costo_unitario;
+                    const unit = costosRecalculados.get(pc.productoId) ?? costoSnapshot ?? 0;
                     costoUnit += unit * pc.cantidad;
                 }
+                costoUnit += combo.componentesSnapshot
+                    .filter((c) => c.tipo_item !== 'producto')
+                    .reduce((s, c) => s + c.costo_unitario * c.cantidad, 0);
                 combo.costoUnitario = costoUnit;
             }
             for (const linea of lineasPreparadas) {
                 const costoUnit = costosRecalculados.get(linea.productoId) ?? linea.costoUnitario;
-                const itemRes = await client.query(`INSERT INTO pedido_items (
-             pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
+                await client.query(`INSERT INTO pedido_items (
+             id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
              costo_unitario, observaciones
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+                    linea.pedidoItemId,
                     pedidoId,
                     linea.productoId,
                     linea.cocinaId,
@@ -322,7 +414,7 @@ let PedidosItemsService = class PedidosItemsService {
                     costoUnit,
                     linea.observaciones,
                 ]);
-                const itemId = itemRes.rows[0].id;
+                const itemId = linea.pedidoItemId;
                 const precioVenta = linea.precioVentaLinea;
                 const costoTotal = costoUnit * linea.cantidad;
                 const margenPct = precioVenta > 0
@@ -343,14 +435,14 @@ let PedidosItemsService = class PedidosItemsService {
             }
             for (const combo of combosPreparados) {
                 for (let u = 0; u < combo.cantidad; u++) {
-                    const costoExtras = combo.toppings.reduce((s, t) => s + t.costo, 0) +
-                        combo.bebidas.reduce((s, b) => s + b.costo * b.cantidad, 0);
-                    const costoUnit = combo.costoUnitario + costoExtras;
+                    const costoUnit = combo.costoUnitario;
                     const precioVenta = combo.precioFijo + combo.extrasUnitario;
-                    const itemRes = await client.query(`INSERT INTO pedido_items (
-               pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
+                    const itemId = combo.itemIds[u];
+                    await client.query(`INSERT INTO pedido_items (
+               id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
                costo_unitario, observaciones
-             ) VALUES ($1,$2,$3,1,$4,$5,$6) RETURNING id`, [
+             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7)`, [
+                        itemId,
                         pedidoId,
                         combo.productoPrincipalId,
                         combo.cocinaId,
@@ -358,10 +450,16 @@ let PedidosItemsService = class PedidosItemsService {
                         costoUnit,
                         `Combo: ${combo.nombre}`,
                     ]);
-                    const itemId = itemRes.rows[0].id;
                     await client.query(`INSERT INTO pedido_combo_selecciones (
-               pedido_item_id, combo_id, nombre_combo, precio_combo
-             ) VALUES ($1,$2,$3,$4)`, [itemId, combo.comboId, combo.nombre, combo.precioFijo]);
+               pedido_item_id, combo_id, nombre_combo, precio_combo,
+               componentes_snapshot
+             ) VALUES ($1,$2,$3,$4,$5::jsonb)`, [
+                        itemId,
+                        combo.comboId,
+                        combo.nombre,
+                        combo.precioFijo,
+                        JSON.stringify(combo.componentesSnapshot),
+                    ]);
                     for (const t of combo.toppings) {
                         await client.query(`INSERT INTO pedido_item_toppings (pedido_item_id, topping_id, nombre_topping, precio_topping)
                VALUES ($1,$2,$3,$4)`, [itemId, t.id, t.nombre, t.precio]);
@@ -454,6 +552,14 @@ let PedidosItemsService = class PedidosItemsService {
          WHERE pi.id = $1 AND pi.pedido_id = $2`, [itemId, pedidoId]);
             if (!item)
                 throw new common_1.NotFoundException('?tem de pedido no encontrado');
+            const pagoLinea = await this.soporte.consultarUnoCliente(client, `SELECT pi.estado_cobro,
+                EXISTS (
+                  SELECT 1 FROM pago_pedido_items ppi
+                  WHERE ppi.pedido_item_id = pi.id
+                ) AS tiene_pago_asociado
+         FROM pedido_items pi
+         WHERE pi.id = $1 AND pi.pedido_id = $2`, [itemId, pedidoId]);
+            (0, pedido_items_cobro_util_1.validarLineaSinCobroAsignado)(pagoLinea?.estado_cobro, pagoLinea?.tiene_pago_asociado ?? false);
             const conteoItems = await client.query(`SELECT COUNT(*)::text AS n FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
             if (Number(conteoItems.rows[0]?.n ?? 0) <= 1) {
                 throw new common_1.BadRequestException({
@@ -462,6 +568,14 @@ let PedidosItemsService = class PedidosItemsService {
                 });
             }
             const enCocina = ['preparando', 'listo'].includes(item.estado_cocina);
+            if (pedido.stock_descontado &&
+                !enCocina &&
+                item.estado_cocina !== 'no_disponible') {
+                throw new common_1.ConflictException({
+                    error: 'ITEM_REQUIERE_AJUSTE_STOCK',
+                    message: 'No se puede eliminar esta línea después del descuento de inventario porque el consumo no está ligado a la línea. Cancela el pedido completo si corresponde o solicita un ajuste administrativo.',
+                });
+            }
             if (enCocina) {
                 await this.alertasRiesgo.registrarEnTransaccion(client, {
                     sucursalId,
@@ -666,13 +780,44 @@ let PedidosItemsService = class PedidosItemsService {
             if (!item)
                 throw new common_1.NotFoundException('Ítem de pedido no encontrado');
             const cantidadNueva = dto.cantidad ?? item.cantidad;
+            const topActuales = (await client.query(`SELECT topping_id FROM pedido_item_toppings
+           WHERE pedido_item_id = $1 ORDER BY topping_id`, [itemId])).rows.map((top) => top.topping_id.toLowerCase());
+            const topSolicitados = (dto.toppings ?? [])
+                .map((top) => top.topping_id.toLowerCase())
+                .sort();
+            const toppingsCambiaron = dto.toppings !== undefined &&
+                (topActuales.length !== topSolicitados.length ||
+                    topActuales.some((id, indice) => id !== topSolicitados[indice]));
+            const cambioFinanciero = cantidadNueva !== item.cantidad || toppingsCambiaron;
+            if (pedido.stock_descontado && toppingsCambiaron) {
+                throw new common_1.ConflictException({
+                    error: 'ITEM_TOPPINGS_REQUIERE_AJUSTE_STOCK',
+                    message: 'No se pueden cambiar los toppings después del descuento de inventario en este flujo. Conserva la selección actual y solicita la corrección a administración.',
+                });
+            }
+            if (pedido.stock_descontado && cantidadNueva < item.cantidad) {
+                throw new common_1.ConflictException({
+                    error: 'ITEM_REQUIERE_AJUSTE_STOCK',
+                    message: 'No se puede reducir esta línea después del descuento de inventario porque el consumo histórico no puede identificarse por línea. Cancela el pedido completo si corresponde o solicita un ajuste administrativo.',
+                });
+            }
+            if (cambioFinanciero) {
+                const pagoLinea = await this.soporte.consultarUnoCliente(client, `SELECT pi.estado_cobro,
+                  EXISTS (
+                    SELECT 1 FROM pago_pedido_items ppi
+                    WHERE ppi.pedido_item_id = pi.id
+                  ) AS tiene_pago_asociado
+           FROM pedido_items pi
+           WHERE pi.id = $1 AND pi.pedido_id = $2`, [itemId, pedidoId]);
+                (0, pedido_items_cobro_util_1.validarLineaSinCobroAsignado)(pagoLinea?.estado_cobro, pagoLinea?.tiene_pago_asociado ?? false);
+            }
             const obsNueva = dto.observaciones !== undefined
                 ? dto.observaciones?.trim() || null
                 : item.observaciones;
             let toppingsNuevos = null;
-            if (dto.toppings !== undefined) {
+            if (toppingsCambiaron) {
                 toppingsNuevos = [];
-                for (const t of dto.toppings) {
+                for (const t of dto.toppings ?? []) {
                     const top = await this.soporte.consultarUnoCliente(client, `SELECT id, nombre, precio, costo_calculado FROM toppings
              WHERE id = $1 AND sucursal_id = $2 AND disponible = true`, [t.topping_id, sucursalId]);
                     if (!top)
@@ -687,7 +832,7 @@ let PedidosItemsService = class PedidosItemsService {
             }
             const deltaQty = cantidadNueva - item.cantidad;
             const cambiaObservaciones = obsNueva !== item.observaciones;
-            const cambiaCocina = deltaQty !== 0 || dto.toppings !== undefined || cambiaObservaciones;
+            const cambiaCocina = deltaQty !== 0 || toppingsCambiaron || cambiaObservaciones;
             if (deltaQty < 0 &&
                 ['preparando', 'listo'].includes(item.estado_cocina)) {
                 throw new common_1.BadRequestException({
@@ -735,17 +880,18 @@ let PedidosItemsService = class PedidosItemsService {
              VALUES ($1,$2,$3,$4)`, [itemId, t.id, t.nombre, t.precio]);
                 }
             }
-            const productoCosto = await this.soporte.consultarUnoCliente(client, `SELECT costo_calculado FROM productos WHERE id = $1`, [
-                item.producto_id,
-            ]);
-            const topsCosto = await client.query(`SELECT COALESCE(SUM(t.costo_calculado), 0)::text AS s
+            if (cambioFinanciero) {
+                const productoCosto = await this.soporte.consultarUnoCliente(client, `SELECT costo_calculado FROM productos WHERE id = $1`, [
+                    item.producto_id,
+                ]);
+                const topsCosto = await client.query(`SELECT COALESCE(SUM(t.costo_calculado), 0)::text AS s
          FROM pedido_item_toppings pit
          INNER JOIN toppings t ON t.id = pit.topping_id
          WHERE pit.pedido_item_id = $1`, [itemId]);
-            const costoUnit = Number(productoCosto?.costo_calculado ?? 0) +
-                Number(topsCosto.rows[0]?.s ?? 0);
-            await client.query(`UPDATE pedido_items SET costo_unitario = $1 WHERE id = $2`, [costoUnit, itemId]);
-            const precioLineaRow = await client.query(`SELECT (
+                const costoUnit = Number(productoCosto?.costo_calculado ?? 0) +
+                    Number(topsCosto.rows[0]?.s ?? 0);
+                await client.query(`UPDATE pedido_items SET costo_unitario = $1 WHERE id = $2`, [costoUnit, itemId]);
+                const precioLineaRow = await client.query(`SELECT (
            $1::numeric * pi.precio_unitario
            + COALESCE((
                SELECT SUM(pit.precio_topping) FROM pedido_item_toppings pit
@@ -758,14 +904,17 @@ let PedidosItemsService = class PedidosItemsService {
              ), 0)
          )::text AS precio
          FROM pedido_items pi WHERE pi.id = $2`, [cantidadNueva, itemId]);
-            const precioVenta = Number(precioLineaRow.rows[0]?.precio ?? 0);
-            const costoTotal = costoUnit * cantidadNueva;
-            const margenPct = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta) * 100 : 0;
-            await client.query(`UPDATE margenes_venta
+                const precioVenta = Number(precioLineaRow.rows[0]?.precio ?? 0);
+                const costoTotal = costoUnit * cantidadNueva;
+                const margenPct = precioVenta > 0
+                    ? ((precioVenta - costoTotal) / precioVenta) * 100
+                    : 0;
+                await client.query(`UPDATE margenes_venta
          SET precio_venta = $1,
              costo_al_momento = $2,
              margen_porcentaje = $3
          WHERE pedido_item_id = $4`, [precioVenta, costoTotal, margenPct, itemId]);
+            }
             const subtotalRow = await client.query(`SELECT COALESCE(SUM(
            pi.cantidad * pi.precio_unitario
            + COALESCE((

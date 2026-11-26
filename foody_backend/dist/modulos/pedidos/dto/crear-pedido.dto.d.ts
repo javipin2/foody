@@ -43,6 +43,7 @@ export declare class CrearPedidoDto {
     combos?: ComboPedidoDto[];
     codigo_promocion?: string;
     idempotency_key?: string;
+    total_esperado?: number;
     forzar_fuera_horario?: boolean;
     pagos?: PagoLineaDto[];
     propina?: number;

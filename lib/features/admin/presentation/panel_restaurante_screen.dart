@@ -13,6 +13,7 @@ import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/core/tema/tema_mode_provider.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_grupo.dart';
 import 'package:reserva_canchas/features/admin/domain/menu_admin_item.dart';
+import 'package:reserva_canchas/features/admin/domain/plan_modulos.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/api_offline_banner.dart';
 import 'package:reserva_canchas/features/admin/presentation/configuracion_admin_screen.dart';
 import 'package:reserva_canchas/features/admin/presentation/widgets/realtime_aviso_banner.dart';
@@ -655,6 +656,10 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
         return ReportesAdminScreen(
           sucursalId: sucursalId,
           onIrAnalitica: () => _seleccionarSeccion('analitica'),
+          analiticaBloqueadaPorPlan: !PlanModulosFoody.rutaPermitidaPorPlan(
+            'analitica',
+            _sesion?.modulos ?? const [],
+          ),
         );
       case 'analitica':
         return AnaliticaScreen(

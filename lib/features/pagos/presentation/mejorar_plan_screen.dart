@@ -271,6 +271,28 @@ class _MejorarPlanScreenState extends State<MejorarPlanScreen>
             ),
           );
         }
+      } else {
+        final motivo = datos['motivo'] as String?;
+        await _cargarEstado(silencioso: true);
+        if (!mounted) return;
+        final mensaje = switch (motivo) {
+          'pago_reciente_existente' =>
+            'Ya hay un pago reciente en proceso. No enviamos otro cobro; espera la confirmación de Wompi.',
+          'pago_reciente_aprobado' =>
+            'Ya se aprobó un pago reciente. No enviamos otro cobro; actualiza el estado del plan antes de volver a intentarlo.',
+          'intento_reciente' =>
+            'Ya se registró un intento reciente. Para evitar un cobro duplicado, espera su conciliación antes de volver a intentarlo.',
+          'wompi_no_configurado' =>
+            'Los pagos en línea no están disponibles en este momento. Contacta al administrador de Foody.',
+          'sin_email_cobro' =>
+            'La suscripción no tiene un correo de cobro. Actualiza el correo del administrador e inténtalo de nuevo.',
+          _ =>
+            'No se inició la renovación del plan. Revisa el estado del pago e inténtalo de nuevo más tarde.',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(mensaje), duration: const Duration(seconds: 6)),
+        );
       }
     } catch (e) {
       if (!mounted) return;

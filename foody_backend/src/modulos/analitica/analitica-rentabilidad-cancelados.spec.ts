@@ -60,4 +60,28 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
       "p.estado NOT IN ('cancelado', 'rechazado')",
     );
   });
+
+  it('aplica los mismos filtros de ítem al COGS del periodo comparado', async () => {
+    const { database, service } = crearServicio();
+    await service.rentabilidad(
+      'sucursal-1',
+      {
+        preset: 'personalizado',
+        desde: '2026-11-20',
+        hasta: '2026-11-24',
+        label: 'Actual',
+      },
+      { productoIds: ['producto-1'] },
+      { desde: '2026-11-15', hasta: '2026-11-19' },
+    );
+
+    const consultaCogsAnterior = database.consultarUno.mock.calls[2][0] as string;
+    const parametrosCogsAnterior = database.consultarUno.mock.calls[2][1] as unknown[];
+    expect(consultaCogsAnterior).toContain('p.created_at >=');
+    expect(consultaCogsAnterior).toContain('p.estado NOT IN');
+    expect(consultaCogsAnterior).toContain('pi.producto_id = ANY(');
+    expect(parametrosCogsAnterior).toContainEqual(['producto-1']);
+    expect(parametrosCogsAnterior).toContain('2026-11-15');
+    expect(parametrosCogsAnterior).toContain('2026-11-19');
+  });
 });
