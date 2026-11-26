@@ -8,9 +8,14 @@ import 'package:reserva_canchas/features/cocinas/data/cocinas_repository.dart';
 import 'package:reserva_canchas/features/inventario/data/costeo_repository.dart';
 
 class _CatalogoRepositoryFake extends CatalogoAdminRepository {
-  _CatalogoRepositoryFake({this.conProducto = false});
+  _CatalogoRepositoryFake({
+    this.conProducto = false,
+    this.conToppingTargets = false,
+  });
 
   final bool conProducto;
+  final bool conToppingTargets;
+  List<String>? productosAsociadosAlCrearTopping;
   bool disponibilidadActual = true;
   int cambiosDisponibilidad = 0;
   bool? ultimaDisponibilidad;
@@ -22,6 +27,12 @@ class _CatalogoRepositoryFake extends CatalogoAdminRepository {
         {
           'id': 'cat1',
           'nombre': 'Hamburguesas artesanales de la casa',
+          'activa': true,
+        },
+        {
+          'id': 'cat2',
+          'nombre': 'Salchipapas',
+          'activa': true,
         },
       ];
 
@@ -39,7 +50,42 @@ class _CatalogoRepositoryFake extends CatalogoAdminRepository {
                 'cocina_id': 'c1',
               },
             ]
-          : [];
+          : conToppingTargets
+              ? [
+                  {
+                    'id': 'plato-hamburguesa',
+                    'nombre': 'Hamburguesa',
+                    'categoria_id': 'cat1',
+                    'categoria_nombre': 'Hamburguesas',
+                    'bebida_origen_id': null,
+                  },
+                  {
+                    'id': 'plato-salchipapa',
+                    'nombre': 'Salchipapa',
+                    'categoria_id': 'cat2',
+                    'categoria_nombre': 'Salchipapas',
+                    'bebida_origen_id': null,
+                  },
+                  {
+                    'id': 'bebida-1',
+                    'nombre': 'Limonada',
+                    'categoria_id': 'cat3',
+                    'categoria_nombre': 'Bebidas',
+                    'bebida_origen_id': 'bebida-origen-1',
+                  },
+                ]
+              : [];
+
+  @override
+  Future<void> crearExtra({
+    required String sucursalId,
+    required String nombre,
+    required double precio,
+    required bool esBebida,
+    List<String> productoIds = const [],
+  }) async {
+    if (!esBebida) productosAsociadosAlCrearTopping = productoIds;
+  }
 
   @override
   Future<void> toggleDisponible(String productoId, bool disponible) async {
@@ -255,6 +301,52 @@ void main() {
     expect(find.text('Crea una cocina primero'), findsOneWidget);
     expect(find.text('Precio y categoría del plato que ve el cliente.'),
         findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('asocia topping a platos filtrados por categoría y omite bebidas',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final catalogo = _CatalogoRepositoryFake(conToppingTargets: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MenuAdminScreen(
+            sucursalId: 's1',
+            repository: catalogo,
+            cocinasRepository: _CocinasRepositoryFake(),
+            costeoRepository: _CosteoRepositoryFake(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Toppings ('));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nuevo topping'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hamburguesa'), findsOneWidget);
+    expect(find.text('Salchipapa'), findsOneWidget);
+    expect(find.text('Limonada'), findsNothing);
+    await tester.enterText(find.byType(TextField).at(0), 'Queso en cubos');
+    await tester.enterText(find.byType(TextField).at(1), '1200');
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Salchipapas').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hamburguesa'), findsNothing);
+    expect(find.text('Salchipapa'), findsOneWidget);
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Salchipapa'));
+    await tester.tap(find.text('Crear'));
+    await tester.pumpAndSettle();
+
+    expect(catalogo.productosAsociadosAlCrearTopping, ['plato-salchipapa']);
     expect(tester.takeException(), isNull);
   });
 

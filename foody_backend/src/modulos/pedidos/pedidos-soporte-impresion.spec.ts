@@ -72,4 +72,42 @@ describe('PedidosSoporteService kitchen side effects', () => {
       expect.stringContaining('realtime unavailable'),
     );
   });
+
+  it('notifies kitchens assigned to combo tasks even when parent kitchen differs', async () => {
+    const database = {
+      consultar: jest
+        .fn()
+        .mockResolvedValue([
+          { cocina_id: 'cocina-plato-principal' },
+          { cocina_id: 'cocina-bebidas' },
+        ]),
+    } as unknown as DatabaseService;
+    const realtime = {
+      cocinaActualizada: jest.fn().mockResolvedValue(undefined),
+    } as unknown as RealtimeBroadcastService;
+    const impresion = {
+      encolarPorPedido: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ImpresionService;
+    const service = new PedidosSoporteService(
+      database,
+      realtime,
+      {} as NotificacionesService,
+      impresion,
+    );
+
+    await service.notificarCocinasPorPedido('pedido-combo', 'sucursal-1');
+
+    const [sql, parametros] = (database.consultar as jest.Mock).mock.calls[0];
+    expect(sql).toContain('pedido_combo_tareas_cocina');
+    expect(parametros).toEqual(['pedido-combo', 'sucursal-1']);
+    expect(realtime.cocinaActualizada).toHaveBeenCalledTimes(2);
+    expect(realtime.cocinaActualizada).toHaveBeenCalledWith('cocina-bebidas', {
+      pedido_id: 'pedido-combo',
+      sucursal_id: 'sucursal-1',
+    });
+    expect(impresion.encolarPorPedido).toHaveBeenCalledWith(
+      'pedido-combo',
+      'sucursal-1',
+    );
+  });
 });

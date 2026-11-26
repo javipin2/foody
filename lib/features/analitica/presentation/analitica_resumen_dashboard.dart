@@ -128,14 +128,35 @@ class _AnaliticaResumenDashboardState extends State<AnaliticaResumenDashboard> {
           SaaSKpiGrid(
             children: [
               SaaSKpiCard(
-                etiqueta: 'Ventas netas',
-                valor: _moneda.format(_num(kpis['ventas_netas'])),
+                etiqueta: 'Valor de pedidos',
+                valor: _moneda.format(
+                  _num(kpis['valor_pedidos'] ?? kpis['ventas_netas']),
+                ),
                 deltaPct: tieneDelta ? _num(delta?['ventas_netas_pct']) : null,
                 icono: Icons.payments_outlined,
                 acento: SaaSTokens.ventas,
                 sparkline: spark,
-                tooltip: 'Ir a Ventas',
+                tooltip:
+                    'Suma de pedidos creados en el periodo, excluye cancelados y rechazados. No equivale a venta cumplida ni a recaudo.',
                 onTap: widget.onIrVentas,
+              ),
+              SaaSKpiCard(
+                etiqueta: 'Ventas cumplidas',
+                valor: _moneda.format(_num(kpis['ventas_reconocidas'])),
+                icono: Icons.check_circle_outline,
+                acento: SaaSTokens.positivo,
+                tooltip:
+                    'Domicilios entregados; salón y mostrador pagados como proxy de cierre. Excluye cargo de domicilio e impuesto registrado estimado.',
+                onTap: widget.onIrVentas,
+              ),
+              SaaSKpiCard(
+                etiqueta: 'Recaudo neto',
+                valor: _moneda.format(_num(kpis['recaudo_neto'])),
+                icono: Icons.account_balance_wallet_outlined,
+                acento: SaaSTokens.positivo,
+                tooltip:
+                    'Cobros menos devoluciones registrados en Caja durante este periodo. Se agrupa por fecha del movimiento, no por fecha de creación del pedido.',
+                onTap: widget.onIrCaja,
               ),
               SaaSKpiCard(
                 etiqueta: 'Pedidos',
@@ -223,7 +244,7 @@ class _AnaliticaResumenDashboardState extends State<AnaliticaResumenDashboard> {
             // ——— Fila 2: gráfico principal ———
             const SizedBox(height: 8),
             SaaSSectionHeader(
-              titulo: 'Ventas vs periodo anterior',
+              titulo: 'Valor de pedidos vs periodo anterior',
               subtitulo: 'Tendencia principal',
               icono: Icons.show_chart,
               trailing: _granularidadChips(context),
@@ -323,7 +344,7 @@ class _AnaliticaResumenDashboardState extends State<AnaliticaResumenDashboard> {
               columnsDesktop: 2,
               children: [
                 SaaSChartCard(
-                  titulo: 'Métodos de pago',
+                  titulo: 'Cobros por método',
                   icono: Icons.credit_card_outlined,
                   altura: 220,
                   vacio: porMetodo.isEmpty,

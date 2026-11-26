@@ -48,4 +48,23 @@ void main() {
       );
     }
   }
+
+  testWidgets('explica cuando el resumen supera la lista visible',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: GananciasEstimadasResumen(
+            total: 27200,
+            registros: 145,
+            registrosVisibles: 100,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('145 registros de asignación'), findsOneWidget);
+    expect(find.textContaining('Se muestran las 100 asignaciones'),
+        findsOneWidget);
+  });
 }

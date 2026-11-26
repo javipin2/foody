@@ -9,6 +9,7 @@ import 'package:reserva_canchas/core/layout/foody_breakpoints.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
 import 'package:reserva_canchas/core/red/manejo_error_sesion.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 import 'package:reserva_canchas/core/widgets/foody_estado_ui.dart';
 import 'package:reserva_canchas/core/widgets/foody_scroll_horizontal_fade.dart';
 import 'package:reserva_canchas/features/admin/data/pedidos_repository.dart';
@@ -102,6 +103,10 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
   Timer? _relojTimer;
   PollRealtimeRespaldo? _pollRespaldo;
   final _busquedaCtrl = TextEditingController();
+  final _estadosScrollCtrl = ScrollController();
+  // The status chips exceed a phone viewport on the initial render; scroll
+  // metrics will hide the affordance when all statuses fit.
+  bool _hayMasEstadosDesplazables = true;
   String _filtroTipo = 'todos';
 
   /// Pestaña de estado activa (clave de PedidoColumnaDef o cerrados_hoy).
@@ -133,9 +138,43 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     }
   }
 
+  void _actualizarIndicadorEstados() {
+    if (!_estadosScrollCtrl.hasClients ||
+        !_estadosScrollCtrl.position.hasContentDimensions) {
+      return;
+    }
+    final hayMas = _estadosScrollCtrl.position.extentAfter > 2;
+    if (!mounted || hayMas == _hayMasEstadosDesplazables) return;
+    setState(() => _hayMasEstadosDesplazables = hayMas);
+  }
+
+  bool _notificarMetricasEstados(ScrollMetricsNotification notification) {
+    if (notification.metrics.axis == Axis.horizontal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _actualizarIndicadorEstados();
+      });
+    }
+    return false;
+  }
+
+  void _avanzarEstados() {
+    if (!_estadosScrollCtrl.hasClients) return;
+    final posicion = _estadosScrollCtrl.position;
+    unawaited(
+      _estadosScrollCtrl.animateTo(
+        (posicion.pixels + posicion.viewportDimension * 0.72)
+            .clamp(posicion.minScrollExtent, posicion.maxScrollExtent)
+            .toDouble(),
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    _estadosScrollCtrl.addListener(_actualizarIndicadorEstados);
     WidgetsBinding.instance.addObserver(this);
     _vistaKanban = false;
     if (widget.modoMesero) {
@@ -154,6 +193,7 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
       if (mounted) setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _actualizarIndicadorEstados();
       unawaited(_abrirPedidoInicialSiHay());
     });
   }
@@ -216,6 +256,9 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
     _pollRespaldo?.detener();
     _relojTimer?.cancel();
     _busquedaCtrl.dispose();
+    _estadosScrollCtrl
+      ..removeListener(_actualizarIndicadorEstados)
+      ..dispose();
     super.dispose();
   }
 
@@ -1423,28 +1466,85 @@ class _PedidosKanbanWidgetState extends ConsumerState<PedidosKanbanWidget>
                       ),
                     ),
                     if (!mostrarKanban)
-                      FoodyScrollHorizontalFade(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                          child: Row(
-                            children: [
-                              for (var i = 0; i < tabs.length; i++) ...[
-                                if (i > 0) const SizedBox(width: 8),
-                                OperacionStatChip(
-                                  etiqueta: tabs[i].titulo,
-                                  valor:
-                                      '${_conteoTab(tabs[i], activos)}${_hayMasActivos ? '+' : ''}',
-                                  seleccionado: _tabClave == tabs[i].clave,
-                                  onTap: () => setState(() {
-                                    _tabClave = tabs[i].clave;
-                                    _vistaKanban = false;
-                                  }),
-                                ),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final mostrarPista = constraints.maxWidth < 600 &&
+                              _hayMasEstadosDesplazables;
+                          final listaEstados = SingleChildScrollView(
+                            key: const ValueKey<String>(
+                              'pedidos-state-tabs-scroll',
+                            ),
+                            controller: _estadosScrollCtrl,
+                            scrollDirection: Axis.horizontal,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              4,
+                              mostrarPista ? 60 : 16,
+                              8,
+                            ),
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < tabs.length; i++) ...[
+                                  if (i > 0) const SizedBox(width: 8),
+                                  OperacionStatChip(
+                                    etiqueta: tabs[i].titulo,
+                                    valor:
+                                        '${_conteoTab(tabs[i], activos)}${_hayMasActivos ? '+' : ''}',
+                                    seleccionado: _tabClave == tabs[i].clave,
+                                    onTap: () => setState(() {
+                                      _tabClave = tabs[i].clave;
+                                      _vistaKanban = false;
+                                    }),
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
-                        ),
+                            ),
+                          );
+                          return NotificationListener<
+                              ScrollMetricsNotification>(
+                            onNotification: _notificarMetricasEstados,
+                            child: Stack(
+                              alignment: Alignment.centerRight,
+                              children: [
+                                FoodyScrollHorizontalFade(
+                                  child: listaEstados,
+                                ),
+                                if (mostrarPista)
+                                  Positioned(
+                                    right: 6,
+                                    top: 0,
+                                    bottom: 8,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Material(
+                                        color: SaaSTokens.surface(context),
+                                        elevation: 1,
+                                        shape: CircleBorder(
+                                          side: BorderSide(
+                                            color: _scheme.outlineVariant,
+                                          ),
+                                        ),
+                                        child: IconButton(
+                                          constraints:
+                                              const BoxConstraints.tightFor(
+                                            width: 48,
+                                            height: 48,
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          tooltip: 'Ver más estados',
+                                          onPressed: _avanzarEstados,
+                                          icon: Icon(
+                                            Icons.chevron_right_rounded,
+                                            color: SaaSTokens.inkMuted(context),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     Expanded(
                       child: RefreshIndicator(

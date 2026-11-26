@@ -25,10 +25,14 @@ let DomiciliariosDocumentosService = class DomiciliariosDocumentosService {
         return domiciliarios_documentos_config_1.TIPOS_DOCUMENTO_DOMICILIARIO;
     }
     async listarPorDomiciliario(domiciliarioId) {
-        return this.database.consultar(`SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
+        const docs = await this.database.consultar(`SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
        FROM documentos_domiciliario
        WHERE domiciliario_id = $1
        ORDER BY created_at DESC`, [domiciliarioId]);
+        return Promise.all(docs.map(async (doc) => ({
+            ...doc,
+            url: await this.almacenamiento.resolverUrlDocumento(doc.url),
+        })));
     }
     async resumenCarga(domiciliarioId) {
         const docs = await this.listarPorDomiciliario(domiciliarioId);
@@ -66,7 +70,7 @@ let DomiciliariosDocumentosService = class DomiciliariosDocumentosService {
                 throw new common_1.BadRequestException('Este documento ya fue aprobado. Contacta a soporte si necesitas actualizarlo.');
             }
         }
-        const { url } = await this.almacenamiento.subirDocumentoDomiciliario(domiciliarioId, tipo, archivo);
+        const { ruta, url } = await this.almacenamiento.subirDocumentoDomiciliario(domiciliarioId, tipo, archivo);
         const existente = await this.database.consultarUno(`SELECT id FROM documentos_domiciliario
        WHERE domiciliario_id = $1 AND tipo = $2
          AND estado IN ('pendiente', 'rechazado')
@@ -78,12 +82,12 @@ let DomiciliariosDocumentosService = class DomiciliariosDocumentosService {
            estado = 'pendiente',
            motivo_rechazo = NULL,
            revisado_por = NULL
-         WHERE id = $1`, [existente.id, url]);
+         WHERE id = $1`, [existente.id, ruta]);
             return { id: existente.id, tipo, url, estado: 'pendiente' };
         }
         const fila = await this.database.consultarUno(`INSERT INTO documentos_domiciliario (domiciliario_id, tipo, url, estado)
        VALUES ($1, $2, $3, 'pendiente')
-       RETURNING id`, [domiciliarioId, tipo, url]);
+       RETURNING id`, [domiciliarioId, tipo, ruta]);
         return { id: fila.id, tipo, url, estado: 'pendiente' };
     }
 };

@@ -14,6 +14,7 @@ const class_validator_1 = require("class-validator");
 class ReimprimirComandaDto {
     pedido_id;
     sucursal_id;
+    cocina_id;
 }
 exports.ReimprimirComandaDto = ReimprimirComandaDto;
 __decorate([
@@ -25,4 +26,9 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], ReimprimirComandaDto.prototype, "sucursal_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], ReimprimirComandaDto.prototype, "cocina_id", void 0);
 //# sourceMappingURL=reimprimir.dto.js.map

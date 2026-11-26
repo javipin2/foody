@@ -71,8 +71,10 @@ export class AlmacenamientoService implements OnModuleInit {
   private readonly logger = new Logger(AlmacenamientoService.name);
   private readonly cliente: SupabaseClient | null;
   private readonly bucket: string;
+  private readonly bucketDocumentos = 'foody-documentos-privados';
   private readonly basePublica: string;
   private bucketVerificado = false;
+  private bucketDocumentosVerificado = false;
 
   constructor(
     private readonly config: ConfigService,
@@ -188,7 +190,9 @@ export class AlmacenamientoService implements OnModuleInit {
     if (!ruta || !this.cliente) return false;
     try {
       await this.asegurarBucket();
-      const { error } = await this.cliente.storage.from(this.bucket).remove([ruta]);
+      const { error } = await this.cliente.storage
+        .from(this.bucket)
+        .remove([ruta]);
       if (error) {
         this.logger.warn(`Storage remove «${ruta}»: ${error.message}`);
         return false;
@@ -224,10 +228,9 @@ export class AlmacenamientoService implements OnModuleInit {
 
     if (error) {
       this.logger.error(`Storage upload: ${error.message}`);
-      const hint =
-        error.message.toLowerCase().includes('bucket not found')
-          ? ' Crea el bucket con la migración 057 en supabase-db.'
-          : '';
+      const hint = error.message.toLowerCase().includes('bucket not found')
+        ? ' Crea el bucket con la migración 057 en supabase-db.'
+        : '';
       throw new BadRequestException(
         `No se pudo subir la imagen: ${error.message}.${hint}`,
       );
@@ -242,10 +245,12 @@ export class AlmacenamientoService implements OnModuleInit {
   ): Promise<{ ruta: string; url: string }> {
     const cliente = this.exigirCliente();
     await this.asegurarBucket();
-    const { error } = await cliente.storage.from(this.bucket).upload(ruta, buffer, {
-      contentType,
-      upsert: true,
-    });
+    const { error } = await cliente.storage
+      .from(this.bucket)
+      .upload(ruta, buffer, {
+        contentType,
+        upsert: true,
+      });
     if (error) {
       this.logger.error(`Storage upload: ${error.message}`);
       throw new BadRequestException(
@@ -318,9 +323,92 @@ export class AlmacenamientoService implements OnModuleInit {
     if (archivo.length > 5 * 1024 * 1024) {
       throw new BadRequestException('La imagen no puede superar 5 MB');
     }
-    const webp = await this.comprimirImagen(archivo);
+    let webp: Buffer;
+    try {
+      webp = await this.comprimirImagen(archivo);
+    } catch {
+      throw new BadRequestException('El archivo debe ser una imagen válida');
+    }
+
+    await this.asegurarBucketDocumentosPrivados();
     const ruta = `domiciliarios/${domiciliarioId}/${tipo}.webp`;
-    return this.subirImagenWebp(webp, ruta);
+    const cliente = this.exigirCliente();
+    const { error } = await cliente.storage
+      .from(this.bucketDocumentos)
+      .upload(ruta, webp, { contentType: 'image/webp', upsert: true });
+    if (error) {
+      this.logger.error(`Storage privado de documentos: ${error.message}`);
+      throw new ServiceUnavailableException(
+        'No se pudo guardar el documento de verificación',
+      );
+    }
+
+    const url = await this.urlFirmadaDocumentoPrivado(ruta);
+    return { ruta: `privado://${ruta}`, url };
+  }
+
+  /** Resuelve un enlace temporal solo para filas que ya usan la ruta privada. */
+  async resolverUrlDocumento(url: string): Promise<string> {
+    if (!url?.startsWith('privado://')) return url;
+    return this.urlFirmadaDocumentoPrivado(url.slice('privado://'.length));
+  }
+
+  private async asegurarBucketDocumentosPrivados(): Promise<void> {
+    if (this.bucketDocumentosVerificado) return;
+    const cliente = this.exigirCliente();
+    const { data: buckets, error: listError } =
+      await cliente.storage.listBuckets();
+    if (listError) {
+      throw new ServiceUnavailableException(
+        'No se pudo verificar el almacenamiento privado de documentos',
+      );
+    }
+
+    let bucket = buckets?.find(
+      (b) => b.id === this.bucketDocumentos || b.name === this.bucketDocumentos,
+    );
+    if (!bucket) {
+      const { error } = await cliente.storage.createBucket(
+        this.bucketDocumentos,
+        {
+          public: false,
+          fileSizeLimit: 5 * 1024 * 1024,
+          allowedMimeTypes: ['image/webp'],
+        },
+      );
+      if (error) {
+        // Dos primeras cargas concurrentes pueden intentar crearlo a la vez.
+        const refrescado = await cliente.storage.listBuckets();
+        bucket = refrescado.data?.find(
+          (b) =>
+            b.id === this.bucketDocumentos || b.name === this.bucketDocumentos,
+        );
+        if (!bucket) {
+          throw new ServiceUnavailableException(
+            'No se pudo preparar el almacenamiento privado de documentos',
+          );
+        }
+      }
+    }
+    if (bucket?.public) {
+      throw new ServiceUnavailableException(
+        'El bucket de documentos debe permanecer privado',
+      );
+    }
+    this.bucketDocumentosVerificado = true;
+  }
+
+  private async urlFirmadaDocumentoPrivado(ruta: string): Promise<string> {
+    await this.asegurarBucketDocumentosPrivados();
+    const { data, error } = await this.exigirCliente()
+      .storage.from(this.bucketDocumentos)
+      .createSignedUrl(ruta, 15 * 60);
+    if (error || !data?.signedUrl) {
+      throw new ServiceUnavailableException(
+        'No se pudo generar el enlace temporal del documento',
+      );
+    }
+    return data.signedUrl;
   }
 
   /** BN-FIX-01: ownership + upload genérico (controller delgado). */
@@ -351,7 +439,9 @@ export class AlmacenamientoService implements OnModuleInit {
       entidadId?: string;
     },
   ): Promise<{ ruta: string; url: string }> {
-    const restauranteId = await this.restauranteIdDeSucursal(opciones.sucursalId);
+    const restauranteId = await this.restauranteIdDeSucursal(
+      opciones.sucursalId,
+    );
     return this.procesarYSubir(archivo, {
       restauranteId,
       sucursalId: opciones.sucursalId,
@@ -373,7 +463,9 @@ export class AlmacenamientoService implements OnModuleInit {
     if (tipo !== 'promocion' && tipo !== 'general') {
       throw new BadRequestException('Video solo para promocion o general');
     }
-    const restauranteId = await this.restauranteIdDeSucursal(opciones.sucursalId);
+    const restauranteId = await this.restauranteIdDeSucursal(
+      opciones.sucursalId,
+    );
     const nombre = opciones.originalName || 'estado.mp4';
     const ext = nombre.includes('.')
       ? nombre.split('.').pop()!.toLowerCase()

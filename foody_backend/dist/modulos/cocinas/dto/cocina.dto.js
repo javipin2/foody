@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FalloPreparacionDto = exports.CambiarEstadoItemDto = exports.ActualizarImpresoraDto = exports.CrearImpresoraDto = exports.ActualizarCocinaDto = exports.CrearCocinaDto = void 0;
+exports.NoDisponibleTareaComboDto = exports.FalloPreparacionDto = exports.CambiarEstadoItemDto = exports.ActualizarImpresoraDto = exports.CrearImpresoraDto = exports.ActualizarCocinaDto = exports.CrearCocinaDto = void 0;
 const class_validator_1 = require("class-validator");
 class CrearCocinaDto {
     sucursal_id;
@@ -128,4 +128,14 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], FalloPreparacionDto.prototype, "motivo", void 0);
+class NoDisponibleTareaComboDto {
+    motivo;
+}
+exports.NoDisponibleTareaComboDto = NoDisponibleTareaComboDto;
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(1),
+    (0, class_validator_1.Matches)(/\S/, { message: 'Escribe el motivo para continuar.' }),
+    __metadata("design:type", String)
+], NoDisponibleTareaComboDto.prototype, "motivo", void 0);
 //# sourceMappingURL=cocina.dto.js.map

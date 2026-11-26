@@ -165,6 +165,71 @@ class PedidosRepository {
     return PedidoAdminModel.fromJson(envoltura.datos!);
   }
 
+  Future<List<Map<String, dynamic>>> listarDecisionesComboPendientes({
+    required String pedidoId,
+    String? sucursalId,
+  }) async {
+    final respuesta = await _dio.get<Map<String, dynamic>>(
+      '/pedidos/$pedidoId/combo-decisiones-pendientes',
+      queryParameters: {
+        if (sucursalId != null) 'sucursal_id': sucursalId,
+      },
+    );
+    final data = respuesta.data;
+    if (data == null) throw Exception('Respuesta vacía');
+    final envoltura = RespuestaApi<List<dynamic>>.fromJson(
+      data,
+      (raw) => raw as List<dynamic>,
+    );
+    if (!envoltura.exito || envoltura.datos == null) {
+      throw Exception(envoltura.mensaje);
+    }
+    return envoltura.datos!
+        .map((raw) => Map<String, dynamic>.from(raw as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> cotizarReemplazoCombo({
+    required String pedidoId,
+    required String decisionId,
+    required String reemplazoId,
+    String? sucursalId,
+  }) async {
+    final respuesta = await _dio.post<Map<String, dynamic>>(
+      '/pedidos/$pedidoId/combo-decisiones/$decisionId/cotizacion',
+      data: {'reemplazo_id': reemplazoId},
+      queryParameters: {
+        if (sucursalId != null) 'sucursal_id': sucursalId,
+      },
+    );
+    return _parsearMapa(respuesta.data);
+  }
+
+  Future<Map<String, dynamic>> responderDecisionCombo({
+    required String pedidoId,
+    required String decisionId,
+    required String accion,
+    String? motivo,
+    int? cotizacionVersion,
+    num? totalAceptado,
+    String? sucursalId,
+  }) async {
+    final respuesta = await _dio.patch<Map<String, dynamic>>(
+      '/pedidos/$pedidoId/combo-decisiones/$decisionId/respuesta',
+      data: {
+        'accion': accion,
+        if (motivo != null) 'motivo': motivo,
+        if (cotizacionVersion != null)
+          'cotizacion_version': cotizacionVersion,
+        if (totalAceptado != null) 'total_aceptado': totalAceptado,
+      },
+      queryParameters: {
+        if (sucursalId != null) 'sucursal_id': sucursalId,
+      },
+    );
+    return _parsearMapa(respuesta.data);
+  }
+
   Future<Map<String, dynamic>> obtenerPedidosMesa({
     required String mesaId,
     String? sucursalId,
@@ -496,7 +561,12 @@ class PedidosRepository {
       'cantidad': l.cantidad,
       'precio': l.precioUnitario,
       if (l.toppings.isNotEmpty)
-        'toppings': l.toppings.map((t) => {'topping_id': t.id}).toList(),
+        'toppings': l.toppings
+            .map((t) => {
+                  'topping_id': t.id,
+                  if (t.productoId != null) 'producto_id': t.productoId,
+                })
+            .toList(),
       if (l.bebidas.isNotEmpty)
         'bebidas': l.bebidas
             .map(

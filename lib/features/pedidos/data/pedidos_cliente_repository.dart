@@ -29,6 +29,7 @@ class PedidosClienteRepository {
     String? codigoPromocion,
     String? idempotencyKey,
     String? fechaEntregaDeseada,
+    num? totalEsperado,
   }) async {
     await DispositivoService.registrarEnBackend(dio: _dio);
     final deviceId = await DispositivoService.obtenerDeviceId();
@@ -73,6 +74,7 @@ class PedidosClienteRepository {
         'idempotency_key': idempotencyKey,
       if (fechaEntregaDeseada != null && fechaEntregaDeseada.isNotEmpty)
         'fecha_entrega_deseada': fechaEntregaDeseada,
+      if (totalEsperado != null) 'total_esperado': totalEsperado,
     };
 
     final respuesta = await _dio.post<Map<String, dynamic>>(
@@ -127,7 +129,12 @@ class PedidosClienteRepository {
       'cantidad': l.cantidad,
       'precio': l.precioUnitario,
       if (l.toppings.isNotEmpty)
-        'toppings': l.toppings.map((t) => {'topping_id': t.id}).toList(),
+        'toppings': l.toppings
+            .map((t) => {
+                  'topping_id': t.id,
+                  if (t.productoId != null) 'producto_id': t.productoId,
+                })
+            .toList(),
       if (l.bebidas.isNotEmpty)
         'bebidas': l.bebidas
             .map(

@@ -19,6 +19,7 @@ import { PedidosDescuentoService } from './pedidos-descuento.service';
 import { PedidosEstadoService } from './pedidos-estado.service';
 import { PedidosItemsService } from './pedidos-items.service';
 import { PedidosPagosService } from './pedidos-pagos.service';
+import { PedidosComboDecisionesService } from './pedidos-combo-decisiones.service';
 import { sqlWherePedidoAbiertoOperativo } from './pedido-estados';
 import {
   envolverPaginado,
@@ -38,7 +39,44 @@ export class PedidosService {
     private readonly items: PedidosItemsService,
     private readonly descuento: PedidosDescuentoService,
     private readonly pagos: PedidosPagosService,
+    private readonly decisionesCombo: PedidosComboDecisionesService,
   ) {}
+
+  listarDecisionesComboPendientes(pedidoId: string, sucursalId: string) {
+    return this.decisionesCombo.listarPendientes(pedidoId, sucursalId);
+  }
+
+  cotizarReemplazoCombo(
+    pedidoId: string,
+    decisionId: string,
+    sucursalId: string,
+    reemplazoId: string,
+    usuarioId: string,
+  ) {
+    return this.decisionesCombo.cotizarReemplazo(
+      pedidoId,
+      decisionId,
+      sucursalId,
+      reemplazoId,
+      usuarioId,
+    );
+  }
+
+  responderDecisionCombo(
+    pedidoId: string,
+    decisionId: string,
+    sucursalId: string,
+    usuarioId: string,
+    dto: Parameters<PedidosComboDecisionesService['responder']>[4],
+  ) {
+    return this.decisionesCombo.responder(
+      pedidoId,
+      decisionId,
+      sucursalId,
+      usuarioId,
+      dto,
+    );
+  }
 
   async listarPorSucursal(
     sucursalId: string,
@@ -743,6 +781,25 @@ export class PedidosService {
     usuarioId: string,
     motivo?: string,
   ) {
+    const combo = await this.database.consultarUno<{ existe: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM pedido_combo_selecciones pcs
+         JOIN pedido_items pi ON pi.id = pcs.pedido_item_id
+         WHERE pcs.pedido_item_id = $1 AND pi.pedido_id = $2
+           AND EXISTS (SELECT 1 FROM pedidos p
+                       WHERE p.id = $2 AND p.sucursal_id = $3)
+       ) AS existe`,
+      [itemId, pedidoId, sucursalId],
+    );
+    if (combo?.existe) {
+      return this.decisionesCombo.cancelarComboManual(
+        pedidoId,
+        itemId,
+        sucursalId,
+        usuarioId,
+        motivo,
+      );
+    }
     return this.items.eliminarItemPedido(
       pedidoId,
       itemId,

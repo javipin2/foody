@@ -101,13 +101,13 @@ El JS principal del cliente se descargó completo (6,48 MB; 2,68 s por túnel en
 
 **Mejora:** agregar métricas por sede en una sola consulta agrupada, o usar paralelismo acotado si una consulta no es viable. Evitar `Promise.all` sin límite para cientos de sedes porque puede saturar el pool.
 
-### P1 — Alta de pedido hace consultas seriales por producto y extra
+### ✅ PERF-PEDIDO-CATALOGO-01 — catálogo consultado por lote (fuente corregida)
 
-La creación Nest mantiene abierta una transacción mientras recorre `items` y después `combos`. Por cada producto consulta su registro; por cada topping y bebida hace otra consulta individual en bucles `await`. Para combos repite la lectura del combo, `combo_items`, producto principal y cada extra. El DTO limita a 50 líneas principales/combo, pero las listas anidadas de toppings y bebidas no declaran `ArrayMaxSize`; sus elementos sí validan UUID/cantidad. Con un pedido grande o extras numerosos, la latencia SQL crece con el número de líneas y de extras, y las rondas son seriales. Al estar dentro de una transacción, esas rondas también prolongan la ocupación de conexión.
+El hallazgo siguiente es histórico, previo a la optimización del 2026-11-25. La implementación actual de `PedidosCrearService` recolecta IDs y carga productos, toppings y bebidas con consultas agrupadas y `ANY(uuid[])`; combos y componentes se cargan por lote cuando existen. La validación y el cálculo siguen en Nest y en la transacción, y conserva orden de DTO/errores. No es cierto en el código actual que se ejecute una consulta SQL por cada línea/extras.
 
-**Evidencia estática, no medición:** bucles en `pedidos-crear.service.ts` (productos aprox. líneas 300–405, combos 429–553); `CrearPedidoDto` valida arrays anidados pero no un tope explícito por arreglo. No se hizo benchmark de una creación ni se contó SQL con trazas; los tiempos reales dependen de red, pool, índices y tamaño del pedido. El límite HTTP de cuerpo protege el tamaño total pero no evita varias rondas pequeñas.
+Prueba y medición previas: build, regresión 51 suites/128 unitarias y E2E QR 6/6; benchmark 12 muestras por tamaño (1 línea p50 12,88 ms, 30 líneas 13,69 ms). Repetición actual 26-nov en QA :3001, 8 muestras: 1 línea p50/p95 9,94/22,75 ms; 30 líneas 11,56/13,32 ms, subtotal exacto lineal y dispositivo de prueba anonimizado. Son benchmarks secuenciales, instancia/DB pequeña y caliente; no representan Tunnel ni capacidad.
 
-**Mejora recomendada:** primero acordar límites funcionales de opciones por producto/combo y aplicarlos en configuración de catálogo + DTO; luego cargar productos/opciones requeridas por lote, siempre filtrando por `sucursal_id` y disponibilidad, y reconstruir resultados en orden de entrada. Mantener precio y validación de stock en backend y la transacción. Medir p50/p95 de `POST /pedidos/staff` con carrito pequeño/mediano/máximo, extras y promoción en una BD QA aislada antes y después; no paralelizar consultas sin límite dentro del pool.
+Pendiente menor: DTO tiene límite para líneas principales, pero no se confirmó un máximo funcional explícito para arreglos anidados de toppings/bebidas; el límite del cuerpo HTTP mitiga volumen bruto sin expresar una regla de selección. Revisar la cardinalidad configurada por producto antes de imponer límites para no reducir funcionalidad.
 
 ### P1 — Búsqueda de pedidos en cliente, polling y actualización de listas
 
@@ -324,3 +324,28 @@ OPTIONS de solo lectura a `https://api.foodyy.store/api/v1/health/realtime`, sim
 ### Revalidación de CORS tras build (2026-11-25)
 
 El proceso Nest QA :3001, iniciado contra `foody_diseno_qa_codex_abonomix_20261125`, respondió al OPTIONS de `https://equipo.foodyy.store` con HTTP 204, `Access-Control-Max-Age: 300`, `Access-Control-Allow-Origin: https://equipo.foodyy.store` y `Access-Control-Allow-Credentials: true`. Esto confirma que la opción compilada funciona y conserva la configuración exacta. La llamada equivalente al API público por Tunnel sigue sin `Access-Control-Max-Age`: el Nest :3000 no se reinició, así que el rendimiento público todavía no refleja el cambio. Se apagó el proceso de QA y se eliminó el clon con cero conexiones.
+
+
+## Actualización 2026-11-26 — baseline GET anónimo local/Tunnel
+
+Se ejecutó el script existente `scripts/perf/medir-lecturas-tunel.ps1` en la PC que sirve Foody: endpoints `GET /salud` y `GET /menu/c0000000-0000-4000-8000-000000000001`; concurrencia 1, 3 y 5, dos lotes por nivel (2/6/10 muestras por condición), timeout 8 s. Las 36 lecturas por base URL devolvieron HTTP 200 (18 salud y 18 menú), sin fallos.
+
+| Ruta | Local p50 / máximo p95 | Tunnel p50 por concurrencia 1/3/5 | p95 Tunnel máximo |
+|---|---:|---:|---:|
+| Salud | 2,8–3,4 ms / 3,4 ms | 438 / 459 / 540 ms | 822 ms |
+| Menú | 1,6–1,7 ms / 2,0 ms | 404 / 419 / 552 ms | 611 ms |
+
+Warm-up fue 58 ms en salud local, 18 ms menú local, 948 ms salud Tunnel y 572 ms menú Tunnel; los warm-ups no se incluyen en percentiles. La tendencia en esta carga mínima apunta a latencia de borde/red/Tunnel como parte dominante de la diferencia local/remota en estos endpoints; no separa DNS, TLS, Cloudflare, espera del PC, Nest o DB. Las 2/6/10 muestras producen percentiles orientativos, no estadística robusta. No prueba rutas autenticadas/analítica, navegador, Flutter, consultas pesadas, pool, memoria/CPU bajo carga ni capacidad multi-tenant. No habilita una afirmación de capacidad para cientos de usuarios o un VPS de 2 vCPU/8 GB. No aplicar caché ni optimización SQL con este dato; siguiente evidencia requerida: waterfall real de una sesión autenticada con correlación servidor/SQL, y carga controlada de QA con recursos monitorizados. Script documentado como solo lectura, máximo 5 concurrentes; no se creó pedido ni se alteró configuración. API :3000 y Cloudflare Tunnel siguen activos.
+
+
+## Actualización 2026-11-26 — latencia de cotización POS en QA
+
+Se ejecutó `scripts/perf/medir-estimacion-pedidos.cjs` con `FOODY_PERF_API_BASE=http://127.0.0.1:3001/api/v1` y ocho muestras por tamaño. La API rechaza cualquier host/puerto distinto de localhost:3001. El script registra un dispositivo aleatorio, consulta `POST /pedidos/estimar` para 1 y 30 líneas, verifica subtotal lineal y en `finally` anonimiza el dispositivo. Resultado: 1 línea subtotal $14.500, p50 9,94 ms / p95 22,75 ms; 30 líneas subtotal $435.000, p50 11,56 ms / p95 13,32 ms; consistencia de suma lineal = true. Dispositivo anonimizado; no crea pedido ni cobra.
+
+Las muestras son secuenciales en una sola API con calentamiento/caché de proceso y DB QA pequeña; el p95 de ocho puntos es orientativo, y que 30 líneas midan similar no descarta costo bajo concurrencia ni otros cuellos. No se midió el mismo POST por Tunnel, autenticación de usuario, tiempo de SQL por consulta, CPU/pool, Flutter ni creación+cobro. No justifica añadir Redis ni reescribir cotización. Próximo: trazas de consulta con `EXPLAIN (ANALYZE, BUFFERS)` en fixture aislada y medición autenticada de una pantalla real, con limitación de throughput bajo a partir de evidencia; no trasladar este benchmark a :3000 o a la base diaria. QA :3001 permanece activo y no se reinició :3000/Tunnel.
+
+### Actualización 2026-11-26 — EXPLAIN de Rentabilidad en clon QA
+
+Se ejecutó `EXPLAIN (ANALYZE, BUFFERS, TIMING)` sobre la consulta SQL generada por el Nest build para ventas cumplidas (domicilio entregado, otros tipos pagados), con fechas 2026-11-01 a 2026-11-26 y la sede demo, en el clon `foody_diseno_qa_codex_ledgerfull_20261126`. Cinco ejecuciones secuenciales devolvieron Execution Time **17,322 / 15,019 / 15,722 / 15,693 / 15,306 ms**; p50 15,693 ms y p95 nearest-rank 17,322 ms. El plan observado procesó 1.704 pedidos de la sede, de los que 581 cumplieron y tenían línea; leyó 11.315 shared buffers (hits) en la primera explicación. `pedidos` usó secuencial scan y los eventos de historial se consultaron por índice de pedido una vez por pedido; el CTE se escaneó en las subconsultas de ventas, COGS, cobertura y cargo de domicilio.
+
+Es una referencia de SQL local y caliente en el clon pequeño: no incluye controller/auth, pool, red, API HTTP, CPU total ni concurrencia. No se cambia la consulta todavía; 15–17 ms no es por sí solo una regresión bajo esta muestra. El recorrido histórico crece con el número de pedidos de la sede; si p95 HTTP o CPU suben con el volumen, evaluar un timestamp de cumplimiento indexado o un diseño de agregación por fecha y verificar que las correcciones de estado/cancelaciones mantengan consistencia. No inferir que este volumen representa producción ni agregar Redis por este dato.

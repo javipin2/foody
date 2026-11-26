@@ -182,6 +182,66 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('oculta liquidar y explica permisos cuando falta alguno',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TemaFoody.claro(),
+        home: Scaffold(
+          body: DomiciliariosAdminScreen(
+            sucursalId: 'sucursal-prueba',
+            repository: _DomiciliariosDePrueba(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Fiados de planta por cobrar'),
+      280,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.byKey(const ValueKey<String>('domiciliario-liquidar')),
+        findsNothing);
+    expect(
+      find.text('Requiere permisos de domiciliarios y Caja.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('muestra liquidar con autorización conjunta', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: TemaFoody.claro(),
+        home: Scaffold(
+          body: DomiciliariosAdminScreen(
+            sucursalId: 'sucursal-prueba',
+            puedeLiquidar: true,
+            repository: _DomiciliariosDePrueba(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Fiados de planta por cobrar'),
+      280,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.byKey(const ValueKey<String>('domiciliario-liquidar')),
+        findsOneWidget);
+    expect(
+      find.text('Requiere permisos de domiciliarios y Caja.'),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('error de liquidación no se presenta como saldo cero',
       (tester) async {
     final repository = _LecturasParalelas();
@@ -256,7 +316,7 @@ void main() {
       expect(find.textContaining('4 asignaciones'), findsOneWidget);
       expect(
         find.text(
-          'Estimaciones al aceptar ofertas; pueden incluir pedidos cancelados. Aún no confirman entrega ni pago.',
+          'Estimaciones creadas al aceptar ofertas. Las canceladas quedan en el historial y se excluyen de “Por pagar”; ninguna cifra confirma entrega ni pago.',
         ),
         findsOneWidget,
       );

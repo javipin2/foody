@@ -117,6 +117,9 @@ export declare class DomiciliariosIndependientesService {
             created_at: Date;
             pedido_id: string | null;
             numero_pedido: string | null;
+            entregas_periodo: string;
+            total_ganancia_periodo: string;
+            total_comision_periodo: string;
         }[];
         resumen: {
             entregas: number;

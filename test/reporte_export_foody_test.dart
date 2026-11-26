@@ -4,7 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reserva_canchas/features/reportes/utils/reporte_export_foody.dart';
 
 const _financial = <String, dynamic>{
-  'resumen': {'ventas_total': 1200, 'pedidos': 1},
+  'resumen': {
+    'ventas_total': 1200,
+    'pedidos': 1,
+    'costo_domicilio': 200,
+  },
   'recaudo_periodo': {
     'total_neto': 1500,
     'nota':
@@ -17,8 +21,16 @@ const _financial = <String, dynamic>{
     'nota_periodo_caja':
         'Los movimientos ligados a pedidos se atribuyen por fecha de creación del pedido, aunque el cobro ocurra después del rango; los movimientos sin pedido usan su propia fecha.',
     'nota_universos':
-        'Ventas suma pedidos válidos creados en el rango, incluso si siguen abiertos o sin cobrar. Cobros netos suma ventas menos devoluciones asociados a esos pedidos; usa la fecha del pedido, aunque el pago ocurra después del rango. Los cobros posteriores pueden cambiar este saldo. No representa el efectivo recibido en el rango ni el descuadre físico de un turno.',
+        'El valor total suma pedidos e incluye el cargo de domicilio; este se desglosa aparte y no debe sumarse dos veces. No representa ingreso reconocido.',
   },
+  'por_tipo': [
+    {
+      'tipo': 'domicilio',
+      'pedidos': 1,
+      'ventas': 1200,
+      'costo_domicilio': 200,
+    },
+  ],
 };
 
 void main() {
@@ -35,10 +47,12 @@ void main() {
     final csv = utf8.decode(bytes.skip(3).toList());
 
     expect(csv, contains('cobros_netos_asociados'));
-    expect(csv, contains('ventas_menos_cobros'));
+    expect(csv, contains('valor_pedidos_menos_cobros'));
+    expect(csv, contains('valor_total_pedidos_incluye_domicilio'));
+    expect(csv, contains('cargo_domicilio_incluido_referencia'));
+    expect(csv, contains('domicilio_incluido'));
     expect(csv, contains('recaudo_neto_rango'));
-    expect(csv, contains('cobros posteriores pueden cambiar este saldo'));
-    expect(csv, contains('descuadre físico de un turno'));
+    expect(csv, contains('no debe sumarse dos veces'));
   });
 
   test('el PDF financiero se genera con contexto de fechas presente', () async {

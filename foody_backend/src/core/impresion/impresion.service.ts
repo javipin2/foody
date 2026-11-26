@@ -49,6 +49,7 @@ export class ImpresionService implements OnModuleInit {
   async reimprimirPedido(
     pedidoId: string,
     sucursalId: string,
+    cocinaId?: string,
   ): Promise<{ pedido_id: string; encolado: boolean }> {
     const pedido = await this.database.consultarUno<{ id: string }>(
       `SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2`,
@@ -60,19 +61,18 @@ export class ImpresionService implements OnModuleInit {
         message: 'Pedido no encontrado en esta sucursal',
       });
     }
-    const cocinas = await this.database.consultar<{ cocina_id: string }>(
-      `SELECT DISTINCT pi.cocina_id
-       FROM pedido_items pi
-       WHERE pi.pedido_id = $1 AND pi.cocina_id IS NOT NULL`,
-      [pedidoId],
+    const cocinas = await this.listarCocinasPedido(
+      pedidoId,
+      sucursalId,
+      cocinaId,
     );
     if (!cocinas.length) {
       throw new BadRequestException({
         error: 'IMPRESION_SIN_COCINA',
-        message: 'Este pedido no tiene ítems de cocina para imprimir',
+        message: 'No hay tareas activas de este pedido para esa cocina',
       });
     }
-    await this.encolarPorPedidoInterno(pedidoId, sucursalId);
+    await this.encolarPorPedidoInterno(pedidoId, sucursalId, cocinaId);
     return { pedido_id: pedidoId, encolado: true };
   }
 
@@ -193,17 +193,12 @@ export class ImpresionService implements OnModuleInit {
   private async encolarPorPedidoInterno(
     pedidoId: string,
     sucursalId: string,
+    cocinaId?: string,
   ): Promise<void> {
-    const cocinas = await this.database.consultar<{
-      cocina_id: string;
-      cocina_nombre: string | null;
-    }>(
-      `SELECT DISTINCT pi.cocina_id, c.nombre AS cocina_nombre
-       FROM pedido_items pi
-       INNER JOIN pedidos p ON p.id = pi.pedido_id
-       LEFT JOIN cocinas c ON c.id = pi.cocina_id
-       WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`,
-      [pedidoId, sucursalId],
+    const cocinas = await this.listarCocinasPedido(
+      pedidoId,
+      sucursalId,
+      cocinaId,
     );
     if (!cocinas.length) return;
 
@@ -253,8 +248,33 @@ export class ImpresionService implements OnModuleInit {
          INNER JOIN productos pr ON pr.id = pi.producto_id
          LEFT JOIN pedido_combo_selecciones pcs ON pcs.pedido_item_id = pi.id
          WHERE pi.pedido_id = $1 AND pi.cocina_id = $2
+           AND NOT EXISTS (
+             SELECT 1 FROM pedido_combo_tareas_cocina t
+             WHERE t.pedido_item_id = pi.id
+           )
          ORDER BY pi.created_at ASC`,
         [pedidoId, coc.cocina_id],
+      );
+
+      const tareasCombo = await this.database.consultar<{
+        nombre_combo: string | null;
+        nombre_snapshot: string;
+        cantidad: number;
+        cantidad_combo: number;
+        tipo_item: string;
+        producto_padre_nombre_snapshot: string | null;
+        componente_indice: number;
+      }>(
+        `SELECT pcs.nombre_combo, t.nombre_snapshot, t.cantidad,
+                pi.cantidad AS cantidad_combo, t.tipo_item,
+                t.producto_padre_nombre_snapshot, t.componente_indice
+         FROM pedido_combo_tareas_cocina t
+         INNER JOIN pedido_items pi ON pi.id = t.pedido_item_id
+         LEFT JOIN pedido_combo_selecciones pcs ON pcs.pedido_item_id = pi.id
+         WHERE t.pedido_id = $1 AND t.sucursal_id = $2 AND t.cocina_id = $3
+           AND t.estado NOT IN ('no_disponible', 'pausada_decision_cliente', 'cancelada')
+         ORDER BY pi.created_at ASC, t.componente_indice ASC`,
+        [pedidoId, sucursalId, coc.cocina_id],
       );
 
       const lineas = items.map((i) => {
@@ -276,6 +296,15 @@ export class ImpresionService implements OnModuleInit {
           : '';
         return `${i.cantidad}x ${i.nombre}${detalle}${nota ? ` (${nota})` : ''}`;
       });
+      const lineasCombo = tareasCombo.map((t) => {
+        const cantidad = Number(t.cantidad) * Number(t.cantidad_combo);
+        const parent =
+          t.tipo_item === 'topping' && t.producto_padre_nombre_snapshot
+            ? ` · Para ${t.producto_padre_nombre_snapshot}`
+            : '';
+        const combo = t.nombre_combo?.trim() || 'Combo';
+        return `[PREPARACIÓN COMBO: ${combo}] ${cantidad}x ${t.nombre_snapshot}${parent}`;
+      });
 
       const encabezado = [
         `=== ${coc.cocina_nombre ?? 'Cocina'} ===`,
@@ -285,6 +314,7 @@ export class ImpresionService implements OnModuleInit {
         `Fecha: ${fecha}`,
         '------------------------',
         ...lineas,
+        ...lineasCombo,
         '------------------------',
         `Copia ${nCopia}`,
         'Foody',
@@ -309,6 +339,41 @@ export class ImpresionService implements OnModuleInit {
     }
 
     void this.procesarCola();
+  }
+
+  private listarCocinasPedido(
+    pedidoId: string,
+    sucursalId: string,
+    cocinaId?: string,
+  ) {
+    return this.database.consultar<{
+      cocina_id: string;
+      cocina_nombre: string | null;
+    }>(
+      `SELECT DISTINCT origen.cocina_id, origen.cocina_nombre
+       FROM (
+         SELECT pi.cocina_id, c.nombre AS cocina_nombre
+         FROM pedido_items pi
+         INNER JOIN pedidos p ON p.id = pi.pedido_id
+         LEFT JOIN cocinas c ON c.id = pi.cocina_id
+         WHERE pi.pedido_id = $1 AND p.sucursal_id = $2
+           AND pi.cocina_id IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM pedido_combo_tareas_cocina t
+             WHERE t.pedido_item_id = pi.id
+           )
+         UNION ALL
+         SELECT t.cocina_id, c.nombre AS cocina_nombre
+         FROM pedido_combo_tareas_cocina t
+         INNER JOIN pedidos p ON p.id = t.pedido_id
+         LEFT JOIN cocinas c ON c.id = t.cocina_id
+         WHERE t.pedido_id = $1 AND t.sucursal_id = $2
+           AND t.estado NOT IN ('no_disponible', 'pausada_decision_cliente', 'cancelada')
+       ) origen
+       WHERE $3::uuid IS NULL OR origen.cocina_id = $3::uuid
+       ORDER BY origen.cocina_id`,
+      [pedidoId, sucursalId, cocinaId ?? null],
+    );
   }
 
   private async procesarCola(): Promise<void> {

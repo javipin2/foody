@@ -7,4 +7,8 @@ export class ReimprimirComandaDto {
   @IsOptional()
   @IsUUID()
   sucursal_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  cocina_id?: string;
 }

@@ -1009,60 +1009,169 @@ class _MenuAdminScreenState extends State<MenuAdminScreen>
   }
 
   Future<void> _nuevoExtra({required bool esBebida}) async {
-    final nombre = TextEditingController();
-    final precio = TextEditingController();
+    var nombre = '';
+    var precio = '';
+    const todasCategorias = '__todas__';
+    var categoriaSeleccionada = todasCategorias;
+    final productosSeleccionados = <String>{};
+    final categoriasActivasIds = _categorias
+        .where((c) => c['activa'] != false)
+        .map((c) => c['id'] as String)
+        .toSet();
+    final productosPlato = _productos
+        .where((p) =>
+            p['bebida_origen_id'] == null &&
+            categoriasActivasIds.contains(p['categoria_id']))
+        .toList();
     final ok = await FoodyDialogo.mostrar<bool>(
       context: context,
-      builder: (ctx) => FoodyDialogoShell(
-        titulo: esBebida ? 'Nueva bebida' : 'Nuevo topping',
-        maxWidth: 400,
-        contenido: FoodyFormSeccion(
-          titulo: 'Datos',
-          icono: esBebida ? Icons.local_drink_outlined : Icons.spa_outlined,
-          hijo: Column(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => FoodyDialogoShell(
+          titulo: esBebida ? 'Nueva bebida' : 'Nuevo topping',
+          subtitulo: esBebida
+              ? 'Artículo independiente para el menú.'
+              : 'Se ofrecerá solo en los platos que selecciones.',
+          maxWidth: 520,
+          contenido: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: nombre,
-                decoration: FoodyFormEstilo.campo(label: 'Nombre'),
+              FoodyFormSeccion(
+                titulo: 'Datos',
+                icono: esBebida
+                    ? Icons.local_drink_outlined
+                    : Icons.add_circle_outline,
+                hijo: Column(
+                  children: [
+                    TextField(
+                      onChanged: (value) => nombre = value,
+                      decoration: FoodyFormEstilo.campo(label: 'Nombre'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      onChanged: (value) => precio = value,
+                      keyboardType: TextInputType.number,
+                      decoration: FoodyFormEstilo.campo(label: 'Precio'),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: precio,
-                keyboardType: TextInputType.number,
-                decoration: FoodyFormEstilo.campo(label: 'Precio'),
-              ),
+              if (!esBebida) ...[
+                const SizedBox(height: 12),
+                FoodyFormSeccion(
+                  titulo: 'Platos donde estará disponible',
+                  subtitulo:
+                      'Puedes asociarlo a varios platos. Las bebidas no aparecen en esta lista.',
+                  icono: Icons.restaurant_menu_outlined,
+                  hijo: Column(
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: categoriaSeleccionada,
+                        isExpanded: true,
+                        decoration: FoodyFormEstilo.campo(label: 'Categoría'),
+                        items: [
+                          const DropdownMenuItem(
+                            value: todasCategorias,
+                            child: Text(
+                              'Todas las categorías',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          for (final categoria in _categorias.where(
+                            (c) => c['activa'] != false,
+                          ))
+                            DropdownMenuItem(
+                              value: categoria['id'] as String,
+                              child: Text(
+                                categoria['nombre'] as String? ?? '',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => setDlg(
+                          () => categoriaSeleccionada = v ?? todasCategorias,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 190,
+                        child: productosPlato.isEmpty
+                            ? const Center(
+                                child: Text(
+                                    'Crea platos antes de asociar toppings.'),
+                              )
+                            : ListView(
+                                children: productosPlato
+                                    .where((p) =>
+                                        categoriaSeleccionada ==
+                                            todasCategorias ||
+                                        p['categoria_id'] ==
+                                            categoriaSeleccionada)
+                                    .map((p) {
+                                  final id = p['id'] as String;
+                                  return CheckboxListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    value: productosSeleccionados.contains(id),
+                                    title: Text(p['nombre'] as String? ?? ''),
+                                    subtitle: Text(
+                                      p['categoria_nombre'] as String? ?? '',
+                                    ),
+                                    onChanged: (seleccionado) => setDlg(() {
+                                      if (seleccionado == true) {
+                                        productosSeleccionados.add(id);
+                                      } else {
+                                        productosSeleccionados.remove(id);
+                                      }
+                                    }),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${productosSeleccionados.length} platos seleccionados',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
-        ),
-        acciones: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: _scheme.primary,
-              foregroundColor: _scheme.onPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+          acciones: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
             ),
-            child: const Text('Crear'),
-          ),
-        ],
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: _scheme.primary,
+                foregroundColor: _scheme.onPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('Crear'),
+            ),
+          ],
+        ),
       ),
     );
-    final n = nombre.text.trim();
-    final p = double.tryParse(precio.text.replaceAll(',', '.')) ?? 0;
-    nombre.dispose();
-    precio.dispose();
+    final n = nombre.trim();
+    final p = double.tryParse(precio.replaceAll(',', '.')) ?? 0;
     if (ok != true || n.isEmpty) return;
     await _repo.crearExtra(
       sucursalId: widget.sucursalId!,
       nombre: n,
       precio: p,
       esBebida: esBebida,
+      productoIds: productosSeleccionados.toList(),
     );
     await _cargar();
   }

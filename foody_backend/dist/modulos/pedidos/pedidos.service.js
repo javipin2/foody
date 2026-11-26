@@ -19,6 +19,7 @@ const pedidos_descuento_service_1 = require("./pedidos-descuento.service");
 const pedidos_estado_service_1 = require("./pedidos-estado.service");
 const pedidos_items_service_1 = require("./pedidos-items.service");
 const pedidos_pagos_service_1 = require("./pedidos-pagos.service");
+const pedidos_combo_decisiones_service_1 = require("./pedidos-combo-decisiones.service");
 const pedido_estados_1 = require("./pedido-estados");
 const paginacion_dto_1 = require("../../compartido/dto/paginacion.dto");
 let PedidosService = class PedidosService {
@@ -30,7 +31,8 @@ let PedidosService = class PedidosService {
     items;
     descuento;
     pagos;
-    constructor(database, sucursalScope, cuentaMesa, estado, crearPedido, items, descuento, pagos) {
+    decisionesCombo;
+    constructor(database, sucursalScope, cuentaMesa, estado, crearPedido, items, descuento, pagos, decisionesCombo) {
         this.database = database;
         this.sucursalScope = sucursalScope;
         this.cuentaMesa = cuentaMesa;
@@ -39,6 +41,16 @@ let PedidosService = class PedidosService {
         this.items = items;
         this.descuento = descuento;
         this.pagos = pagos;
+        this.decisionesCombo = decisionesCombo;
+    }
+    listarDecisionesComboPendientes(pedidoId, sucursalId) {
+        return this.decisionesCombo.listarPendientes(pedidoId, sucursalId);
+    }
+    cotizarReemplazoCombo(pedidoId, decisionId, sucursalId, reemplazoId, usuarioId) {
+        return this.decisionesCombo.cotizarReemplazo(pedidoId, decisionId, sucursalId, reemplazoId, usuarioId);
+    }
+    responderDecisionCombo(pedidoId, decisionId, sucursalId, usuarioId, dto) {
+        return this.decisionesCombo.responder(pedidoId, decisionId, sucursalId, usuarioId, dto);
     }
     async listarPorSucursal(sucursalId, opciones = {}) {
         const params = [sucursalId];
@@ -435,6 +447,16 @@ let PedidosService = class PedidosService {
         return this.descuento.aplicarDescuento(pedidoId, sucursalId, usuarioId, dto, contexto);
     }
     async eliminarItemPedido(pedidoId, itemId, sucursalId, usuarioId, motivo) {
+        const combo = await this.database.consultarUno(`SELECT EXISTS (
+         SELECT 1 FROM pedido_combo_selecciones pcs
+         JOIN pedido_items pi ON pi.id = pcs.pedido_item_id
+         WHERE pcs.pedido_item_id = $1 AND pi.pedido_id = $2
+           AND EXISTS (SELECT 1 FROM pedidos p
+                       WHERE p.id = $2 AND p.sucursal_id = $3)
+       ) AS existe`, [itemId, pedidoId, sucursalId]);
+        if (combo?.existe) {
+            return this.decisionesCombo.cancelarComboManual(pedidoId, itemId, sucursalId, usuarioId, motivo);
+        }
         return this.items.eliminarItemPedido(pedidoId, itemId, sucursalId, usuarioId, motivo);
     }
 };
@@ -448,6 +470,7 @@ exports.PedidosService = PedidosService = __decorate([
         pedidos_crear_service_1.PedidosCrearService,
         pedidos_items_service_1.PedidosItemsService,
         pedidos_descuento_service_1.PedidosDescuentoService,
-        pedidos_pagos_service_1.PedidosPagosService])
+        pedidos_pagos_service_1.PedidosPagosService,
+        pedidos_combo_decisiones_service_1.PedidosComboDecisionesService])
 ], PedidosService);
 //# sourceMappingURL=pedidos.service.js.map

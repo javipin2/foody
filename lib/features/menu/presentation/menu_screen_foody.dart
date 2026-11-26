@@ -214,14 +214,17 @@ class _MenuScreenFoodyState extends ConsumerState<MenuScreenFoody> {
 
   void _agregarCombo(ComboMenuModel combo, MenuModel menu) {
     if (!combo.disponible) return;
-    final tops = <OpcionMenuModel>[];
-    final seenT = <String>{};
+    final tops = <ToppingComboDisponible>[];
     for (final ci in combo.items) {
       if (ci.tipoItem != 'producto' || ci.itemId == null) continue;
       for (final p in menu.todosLosProductos) {
         if (p.id != ci.itemId) continue;
         for (final t in p.toppings) {
-          if (seenT.add(t.id)) tops.add(t);
+          tops.add(ToppingComboDisponible(
+            productoId: p.id,
+            productoNombre: p.nombre,
+            topping: t,
+          ));
         }
       }
     }

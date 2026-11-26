@@ -20,14 +20,19 @@ let RolGuard = class RolGuard {
     }
     canActivate(context) {
         const permisosRequeridos = this.reflector.getAllAndOverride(permisos_decorator_1.PERMISOS_KEY, [context.getHandler(), context.getClass()]);
-        if (!permisosRequeridos?.length)
+        const permisosObligatorios = this.reflector.getAllAndOverride(permisos_decorator_1.PERMISOS_TODOS_KEY, [context.getHandler(), context.getClass()]);
+        if (!permisosRequeridos?.length && !permisosObligatorios?.length) {
             return true;
+        }
         const request = context.switchToHttp().getRequest();
         const usuario = request.user;
         if (!usuario)
             return false;
-        const tiene = permisosRequeridos.some((p) => usuario.permisos.includes(p));
-        if (!tiene) {
+        const cumpleCualquiera = !permisosRequeridos?.length ||
+            permisosRequeridos.some((p) => usuario.permisos.includes(p));
+        const cumpleTodos = !permisosObligatorios?.length ||
+            permisosObligatorios.every((p) => usuario.permisos.includes(p));
+        if (!cumpleCualquiera || !cumpleTodos) {
             throw new common_1.ForbiddenException('No tienes permiso para esta acción');
         }
         return true;

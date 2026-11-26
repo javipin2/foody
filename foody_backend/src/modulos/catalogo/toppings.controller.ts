@@ -17,7 +17,7 @@ import { SuscripcionActivaGuard } from '../../core/auth/guards/suscripcion-activ
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
 import { SucursalScopeService } from '../../core/auth/sucursal-scope.service';
 import { CatalogoService } from './catalogo.service';
-import { CrearExtraDto } from './dto/crear-extra.dto';
+import { CrearToppingDto } from './dto/crear-topping.dto';
 import { ActualizarExtraDto } from './dto/extras-mutacion.dto';
 
 @Controller('toppings')
@@ -40,7 +40,10 @@ export class ToppingsController {
 
   @Post()
   @Permisos('editar_productos')
-  async crear(@Body() dto: CrearExtraDto, @UsuarioActual() usuario: JwtPayload) {
+  async crear(
+    @Body() dto: CrearToppingDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
     await this.sucursalScope.validarEscritura(usuario, dto.sucursal_id);
     return this.catalogo.crearTopping(dto);
   }

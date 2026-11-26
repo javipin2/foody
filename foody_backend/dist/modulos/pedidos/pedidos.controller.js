@@ -34,6 +34,8 @@ const actualizar_comensal_dto_1 = require("./dto/actualizar-comensal.dto");
 const aprobar_pedido_mesa_dto_1 = require("./dto/aprobar-pedido-mesa.dto");
 const listar_pedidos_query_dto_1 = require("./dto/listar-pedidos-query.dto");
 const pedidos_service_1 = require("./pedidos.service");
+const cotizar_reemplazo_combo_dto_1 = require("./dto/cotizar-reemplazo-combo.dto");
+const responder_decision_combo_dto_1 = require("./dto/responder-decision-combo.dto");
 let PedidosController = class PedidosController {
     pedidosService;
     sucursalScope;
@@ -66,6 +68,18 @@ let PedidosController = class PedidosController {
     async detalle(pedidoId, usuario, sucursalId) {
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
         return this.pedidosService.obtenerDetalleAdmin(pedidoId, id);
+    }
+    async listarDecisionesComboPendientes(pedidoId, usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
+        return this.pedidosService.listarDecisionesComboPendientes(pedidoId, id);
+    }
+    async cotizarReemplazoCombo(pedidoId, decisionId, dto, usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.pedidosService.cotizarReemplazoCombo(pedidoId, decisionId, id, dto.reemplazo_id, usuario.sub);
+    }
+    async responderDecisionCombo(pedidoId, decisionId, dto, usuario, sucursalId) {
+        const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+        return this.pedidosService.responderDecisionCombo(pedidoId, decisionId, id, usuario.sub, dto);
     }
     async listarPorMesa(mesaId, usuario, sucursalId) {
         const id = await this.sucursalScope.resolverLecturaOperativa(usuario, sucursalId);
@@ -160,6 +174,42 @@ __decorate([
     __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String]),
     __metadata("design:returntype", Promise)
 ], PedidosController.prototype, "detalle", null);
+__decorate([
+    (0, common_1.Get)(':id/combo-decisiones-pendientes'),
+    (0, permisos_decorator_1.Permisos)('ver_pedidos'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(2, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "listarDecisionesComboPendientes", null);
+__decorate([
+    (0, common_1.Post)(':id/combo-decisiones/:decisionId/cotizacion'),
+    (0, permisos_decorator_1.Permisos)('crear_pedido'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('decisionId', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(4, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, cotizar_reemplazo_combo_dto_1.CotizarReemplazoComboDto,
+        jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "cotizarReemplazoCombo", null);
+__decorate([
+    (0, common_1.Patch)(':id/combo-decisiones/:decisionId/respuesta'),
+    (0, permisos_decorator_1.Permisos)('crear_pedido'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('decisionId', common_1.ParseUUIDPipe)),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __param(4, (0, common_1.Query)('sucursal_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, responder_decision_combo_dto_1.ResponderDecisionComboDto,
+        jwt_payload_1.JwtPayload, String]),
+    __metadata("design:returntype", Promise)
+], PedidosController.prototype, "responderDecisionCombo", null);
 __decorate([
     (0, common_1.Get)('mesa/:mesaId'),
     (0, permisos_decorator_1.Permisos)('ver_pedidos'),

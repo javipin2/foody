@@ -47,7 +47,9 @@ export declare class AnaliticaService {
     }>;
     private inicio;
     private inicioCaja;
+    private inicioRecaudo;
     private consultarVentasKpi;
+    private consultarFinanzasVentasCumplidas;
     resumen(sucursalId: string, periodo: PeriodoResuelto, anterior?: {
         desde: string;
         hasta: string;
@@ -56,6 +58,10 @@ export declare class AnaliticaService {
         sucursal_id: string;
         kpis: {
             ventas_netas: number;
+            valor_pedidos: number;
+            ventas_reconocidas: number;
+            costo_ventas_reconocidas: number;
+            cargo_domicilio_pedidos_cumplidos: number;
             pedidos: number;
             ticket_promedio: number;
             margen_bruto_estimado: number;
@@ -64,6 +70,7 @@ export declare class AnaliticaService {
             pct_cancelacion: number;
             pedidos_cancelados: number;
             pedidos_total_cancelacion: number;
+            recaudo_neto: number;
             efectivo_vs_digital: {
                 efectivo: number;
                 digital: number;
@@ -124,6 +131,8 @@ export declare class AnaliticaService {
             hasta: string;
         };
         ventas_netas: number;
+        valor_pedidos: number;
+        cargo_domicilio_pedidos_cumplidos: number;
         costo_ventas: number;
         utilidad_bruta: number;
         utilidad_bruta_pct: number;

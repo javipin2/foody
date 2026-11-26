@@ -39,6 +39,8 @@ import {
   ListarPedidosQueryDto,
 } from './dto/listar-pedidos-query.dto';
 import { PedidosService } from './pedidos.service';
+import { CotizarReemplazoComboDto } from './dto/cotizar-reemplazo-combo.dto';
+import { ResponderDecisionComboDto } from './dto/responder-decision-combo.dto';
 
 @Controller('pedidos')
 @UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, RolGuard)
@@ -100,6 +102,58 @@ export class PedidosController {
       sucursalId,
     );
     return this.pedidosService.obtenerDetalleAdmin(pedidoId, id);
+  }
+
+  @Get(':id/combo-decisiones-pendientes')
+  @Permisos('ver_pedidos')
+  async listarDecisionesComboPendientes(
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const id = await this.sucursalScope.resolverLecturaOperativa(
+      usuario,
+      sucursalId,
+    );
+    return this.pedidosService.listarDecisionesComboPendientes(pedidoId, id);
+  }
+
+  @Post(':id/combo-decisiones/:decisionId/cotizacion')
+  @Permisos('crear_pedido')
+  async cotizarReemplazoCombo(
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Param('decisionId', ParseUUIDPipe) decisionId: string,
+    @Body() dto: CotizarReemplazoComboDto,
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.pedidosService.cotizarReemplazoCombo(
+      pedidoId,
+      decisionId,
+      id,
+      dto.reemplazo_id,
+      usuario.sub,
+    );
+  }
+
+  @Patch(':id/combo-decisiones/:decisionId/respuesta')
+  @Permisos('crear_pedido')
+  async responderDecisionCombo(
+    @Param('id', ParseUUIDPipe) pedidoId: string,
+    @Param('decisionId', ParseUUIDPipe) decisionId: string,
+    @Body() dto: ResponderDecisionComboDto,
+    @UsuarioActual() usuario: JwtPayload,
+    @Query('sucursal_id') sucursalId?: string,
+  ) {
+    const id = await this.sucursalScope.resolverEscritura(usuario, sucursalId);
+    return this.pedidosService.responderDecisionCombo(
+      pedidoId,
+      decisionId,
+      id,
+      usuario.sub,
+      dto,
+    );
   }
 
   @Get('mesa/:mesaId')

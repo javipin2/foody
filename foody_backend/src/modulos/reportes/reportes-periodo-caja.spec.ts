@@ -41,7 +41,7 @@ describe('ReportesService — atribución de fechas de caja', () => {
     });
 
     expect(resultado.cuadre_caja).toMatchObject({
-      etiqueta_ventas_pedidos: 'Ventas de pedidos creados en el rango',
+      etiqueta_ventas_pedidos: 'Valor total de pedidos creados en el rango',
       etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
       nota_periodo_caja:
         'Los movimientos ligados a pedidos se atribuyen por fecha de creación del pedido, aunque el cobro ocurra después del rango; los movimientos sin pedido usan su propia fecha.',
@@ -57,6 +57,87 @@ describe('ReportesService — atribución de fechas de caja', () => {
     });
     expect(database.consultarUno.mock.calls[2][0]).toContain(
       'm.created_at >= ($2::date::timestamp AT TIME ZONE',
+    );
+  });
+
+  it('desglosa el cargo de domicilio por tipo sin cambiar el total de pedidos', async () => {
+    const database = {
+      consultarUno: jest
+        .fn()
+        .mockResolvedValueOnce({
+          ventas_total: '30000',
+          subtotal: '25000',
+          costo_domicilio: '5000',
+          descuentos: '0',
+          pedidos: '2',
+          ticket_promedio: '15000',
+        })
+        .mockResolvedValueOnce({ ventas_caja: '0', movimientos: '0' })
+        .mockResolvedValueOnce({ total_neto: '0', movimientos_venta: '0' }),
+      consultar: jest
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            tipo: 'domicilio',
+            pedidos: '2',
+            ventas: '30000',
+            costo_domicilio: '5000',
+          },
+        ]),
+    };
+    const service = new ReportesService(database as unknown as DatabaseService);
+
+    const resultado = await service.financiero('sucursal-1', {
+      desde: '2026-11-01',
+      hasta: '2026-11-23',
+    });
+
+    expect(resultado.por_tipo).toEqual([
+      {
+        tipo: 'domicilio',
+        pedidos: 2,
+        ventas: 30000,
+        costo_domicilio: 5000,
+      },
+    ]);
+    expect(database.consultar.mock.calls[1][0]).toContain(
+      'SUM(costo_domicilio)',
+    );
+    expect(resultado.resumen.ventas_total).toBe(30000);
+  });
+
+  it('desglosa el domicilio en la serie diaria de pedidos', async () => {
+    const database = {
+      consultar: jest
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            dia: '2026-11-23',
+            pedidos: '1',
+            ventas: '15000',
+            costo_domicilio: '5000',
+          },
+        ]),
+    };
+    const service = new ReportesService(database as unknown as DatabaseService);
+
+    const resultado = await service.pedidos('sucursal-1', {
+      desde: '2026-11-23',
+      hasta: '2026-11-23',
+    });
+
+    expect(resultado.por_dia).toEqual([
+      {
+        dia: '2026-11-23',
+        pedidos: 1,
+        ventas: 15000,
+        costo_domicilio: 5000,
+      },
+    ]);
+    expect(database.consultar.mock.calls[1][0]).toContain(
+      'SUM(costo_domicilio)',
     );
   });
 });

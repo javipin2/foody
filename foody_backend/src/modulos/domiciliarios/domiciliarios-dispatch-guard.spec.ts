@@ -113,3 +113,65 @@ describe('asignación manual de domicilio', () => {
     );
   });
 });
+
+describe('aislamiento de asignaciones del domiciliario de planta', () => {
+  function crearServicioSinAsignacionDelRepartidor() {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const database = {
+      consultarUno: jest.fn().mockResolvedValue({
+        id: 'repartidor-autenticado',
+        sucursal_id: 'sucursal-1',
+      }),
+      enTransaccion: (callback: (client: unknown) => Promise<unknown>) =>
+        callback({ query }),
+    };
+    const service = new DomiciliariosService(
+      database as unknown as DatabaseService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, database, query };
+  }
+
+  it('no permite iniciar un pedido asignado a otro repartidor', async () => {
+    const { service, database, query } =
+      crearServicioSinAsignacionDelRepartidor();
+
+    await expect(
+      service.marcarEnCamino('pedido-ajeno', 'usuario-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(database.consultarUno).toHaveBeenCalledWith(
+      expect.stringContaining('FROM domiciliarios_planta'),
+      ['usuario-1'],
+    );
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toContain('AND domiciliario_planta_id = $2');
+    expect(query.mock.calls[0][1]).toEqual([
+      'pedido-ajeno',
+      'repartidor-autenticado',
+    ]);
+  });
+
+  it('no permite confirmar la entrega de un pedido asignado a otro repartidor', async () => {
+    const { service, query } = crearServicioSinAsignacionDelRepartidor();
+
+    await expect(
+      service.confirmarEntrega('pedido-ajeno', 'usuario-1', {
+        metodo_pago: 'efectivo',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toContain('AND domiciliario_planta_id = $2');
+    expect(query.mock.calls[0][0]).toContain("estado = 'en_camino'");
+    expect(query.mock.calls[0][1]).toEqual([
+      'pedido-ajeno',
+      'repartidor-autenticado',
+    ]);
+  });
+});

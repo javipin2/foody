@@ -60,8 +60,12 @@ export declare class SuperAdminController {
     }>;
     domiciliarios(): Promise<import("pg").QueryResultRow[]>;
     domiciliarioEstado(id: string, dto: ActualizarDomiciliarioEstadoDto): Promise<import("pg").QueryResultRow | null>;
-    documentosPendientes(): Promise<import("pg").QueryResultRow[]>;
-    documentosDomiciliario(id: string): Promise<import("pg").QueryResultRow[]>;
+    documentosPendientes(): Promise<{
+        url: string;
+    }[]>;
+    documentosDomiciliario(id: string): Promise<{
+        url: string;
+    }[]>;
     aprobarDocumento(id: string, dto: AprobarDocumentoDto, usuario: JwtPayload): Promise<{
         documento_id: string;
         estado: "rechazado" | "aprobado";

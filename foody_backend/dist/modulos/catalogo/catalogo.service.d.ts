@@ -6,6 +6,7 @@ import { ActualizarProductoDto } from './dto/actualizar-producto.dto';
 import { CrearCategoriaDto } from './dto/crear-categoria.dto';
 import { CrearComboDto } from './dto/crear-combo.dto';
 import { CrearExtraDto } from './dto/crear-extra.dto';
+import { CrearToppingDto } from './dto/crear-topping.dto';
 import { CrearProductoDto } from './dto/crear-producto.dto';
 import { ConfigurarItemsIncluidosDto } from './dto/configurar-items-incluidos.dto';
 import { PlanFeaturesService } from '../../core/auth/plan-features.service';
@@ -38,7 +39,13 @@ export declare class CatalogoService {
         disponible: boolean;
     }>;
     listarToppings(sucursalId: string): Promise<import("pg").QueryResultRow[]>;
-    crearTopping(dto: CrearExtraDto): Promise<import("pg").QueryResultRow | null>;
+    crearTopping(dto: CrearToppingDto): Promise<{
+        producto_ids: string[];
+        id: string;
+        nombre: string;
+        precio: string;
+        disponible: boolean;
+    }>;
     actualizarTopping(id: string, sucursalId: string, datos: {
         nombre?: string;
         precio?: number;
@@ -110,5 +117,6 @@ export declare class CatalogoService {
     private exigirCategoriaActiva;
     private resolverCocinaActiva;
     private errorCocinaRequerida;
+    private exigirProductoPlato;
     private exigirProducto;
 }

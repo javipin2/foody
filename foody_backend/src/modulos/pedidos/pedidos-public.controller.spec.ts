@@ -13,6 +13,10 @@ describe('PedidosPublicController capability invitado', () => {
     exigirCapability: jest.Mock;
     verificarCapability: jest.Mock;
   };
+  let supabaseAuth: {
+    estaConfigurado: jest.Mock;
+    usuarioDesdeAccessToken: jest.Mock;
+  };
   let controller: PedidosPublicController;
 
   beforeEach(() => {
@@ -28,9 +32,13 @@ describe('PedidosPublicController capability invitado', () => {
       exigirCapability: jest.fn().mockResolvedValue(undefined),
       verificarCapability: jest.fn().mockResolvedValue(false),
     };
+    supabaseAuth = {
+      estaConfigurado: jest.fn().mockReturnValue(false),
+      usuarioDesdeAccessToken: jest.fn(),
+    };
     controller = new PedidosPublicController(
       pedidos as never,
-      { estaConfigurado: jest.fn().mockReturnValue(false) } as never,
+      supabaseAuth as never,
       dispositivos as never,
     );
   });
@@ -84,5 +92,44 @@ describe('PedidosPublicController capability invitado', () => {
       controller.estado('pedido-1', 'device-1', undefined, 'b'.repeat(64)),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(pedidos.obtenerEstadoPublico).not.toHaveBeenCalled();
+  });
+
+  it('incluye pedidos de dispositivos vinculados al usuario Supabase autenticado', async () => {
+    const authUid = '6ad7f4f0-5c0b-44bb-a302-0de1c30eb927';
+    supabaseAuth.estaConfigurado.mockReturnValue(true);
+    supabaseAuth.usuarioDesdeAccessToken.mockResolvedValue({ id: authUid });
+
+    await controller.listarMios(
+      'device-actual',
+      'Bearer access-token-valido',
+      capability,
+    );
+
+    expect(dispositivos.exigirCapability).toHaveBeenCalledWith(
+      'device-actual',
+      capability,
+    );
+    expect(supabaseAuth.usuarioDesdeAccessToken).toHaveBeenCalledWith(
+      'access-token-valido',
+    );
+    expect(pedidos.listarPorDevice).toHaveBeenCalledWith(
+      'device-actual',
+      authUid,
+    );
+  });
+
+  it('mantiene historial limitado al dispositivo si el token Supabase no es válido', async () => {
+    supabaseAuth.estaConfigurado.mockReturnValue(true);
+    supabaseAuth.usuarioDesdeAccessToken.mockRejectedValue(
+      new Error('token inválido'),
+    );
+
+    await controller.listarMios(
+      'device-actual',
+      'Bearer access-token-invalido',
+      capability,
+    );
+
+    expect(pedidos.listarPorDevice).toHaveBeenCalledWith('device-actual', null);
   });
 });

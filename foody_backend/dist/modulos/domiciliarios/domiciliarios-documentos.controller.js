@@ -61,6 +61,13 @@ __decorate([
     (0, permisos_decorator_1.Permisos)('domiciliario_independiente'),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('archivo', {
         limits: { fileSize: 5 * 1024 * 1024 },
+        fileFilter: (_req, archivo, cb) => {
+            if (!['image/jpeg', 'image/png', 'image/webp'].includes(archivo.mimetype)) {
+                cb(null, false);
+                return;
+            }
+            cb(null, true);
+        },
     })),
     __param(0, (0, common_1.Param)('tipo')),
     __param(1, (0, common_1.UploadedFile)()),

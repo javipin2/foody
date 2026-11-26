@@ -1,8 +1,8 @@
 import { PoolClient } from 'pg';
 import { CatalogoService } from './catalogo.service';
 
-describe('CatalogoService.crearCombo — cocina única', () => {
-  it('rechaza productos del combo asignados a cocinas distintas', async () => {
+describe('CatalogoService.crearCombo — cocina por componente', () => {
+  it('acepta productos del combo asignados a cocinas distintas', async () => {
     const query = jest.fn(async (sql: string) => {
       if (sql.includes('INSERT INTO combos')) {
         return { rows: [{ id: 'combo-1' }] };
@@ -44,9 +44,7 @@ describe('CatalogoService.crearCombo — cocina única', () => {
           { tipo_item: 'producto', item_id: 'producto-2', cantidad: 1 },
         ],
       }),
-    ).rejects.toMatchObject({
-      response: { error: 'COMBO_COCINAS_DIFERENTES' },
-    });
-    expect(menuCache.invalidar).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ id: 'combo-1', nombre: 'Combo mixto' });
+    expect(menuCache.invalidar).toHaveBeenCalledWith('sucursal-1');
   });
 });

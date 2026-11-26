@@ -26,11 +26,13 @@ class DomiciliariosAdminScreen extends StatefulWidget {
     super.key,
     this.sucursalId,
     this.onIrPedidosDomicilio,
+    this.puedeLiquidar = false,
     this.repository,
   });
 
   final String? sucursalId;
   final VoidCallback? onIrPedidosDomicilio;
+  final bool puedeLiquidar;
   final DomiciliariosRepository? repository;
 
   @override
@@ -998,15 +1000,30 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
                           ],
                         ),
                       ),
-                      FilledButton(
-                        onPressed: () => _liquidar(d),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _scheme.primary,
-                          foregroundColor: _scheme.onPrimary,
-                          visualDensity: VisualDensity.compact,
+                      if (widget.puedeLiquidar)
+                        FilledButton(
+                          key: const ValueKey<String>(
+                            'domiciliario-liquidar',
+                          ),
+                          onPressed: () => _liquidar(d),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _scheme.primary,
+                            foregroundColor: _scheme.onPrimary,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: const Text('Liquidar'),
+                        )
+                      else
+                        Flexible(
+                          child: Text(
+                            'Requiere permisos de domiciliarios y Caja.',
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: _scheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                        child: const Text('Liquidar'),
-                      ),
                     ],
                   ),
                 ),
@@ -1166,7 +1183,7 @@ class _DomiciliariosAdminScreenState extends State<DomiciliariosAdminScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              'Estimaciones al aceptar ofertas; pueden incluir pedidos cancelados. Aún no confirman entrega ni pago.',
+              'Estimaciones creadas al aceptar ofertas. Las canceladas quedan en el historial y se excluyen de “Por pagar”; ninguna cifra confirma entrega ni pago.',
               style: TextStyle(
                 fontSize: 12,
                 color: _scheme.onSurfaceVariant,

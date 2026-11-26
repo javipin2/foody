@@ -28,6 +28,10 @@ import {
   huellaIdempotenciaPedido,
   validarTotalEsperadoPedido,
 } from './pedidos-idempotencia.util';
+import {
+  resolverDestinosToppingsCombo,
+  validarToppingsAsociadosAProductos,
+} from './pedidos-combo-toppings.util';
 
 const DIAS_ANTICIPACION_ENCARGO_MIN = 2;
 
@@ -316,7 +320,11 @@ export class PedidosCrearService {
           tipo: 'bebida' | 'topping';
           id: string;
           cantidad: number;
+          comboComponenteIndice?: number;
+          comboComponenteId?: string;
         }[];
+        comboComponenteIndice?: number;
+        comboComponenteId?: string;
       }[] = [];
       const lineasPreparadas: {
         pedidoItemId: string;
@@ -339,6 +347,7 @@ export class PedidosCrearService {
           precio: number;
           cantidad: number;
           costo: number;
+          cocina_id?: string | null;
         }[];
       }[] = [];
 
@@ -358,12 +367,19 @@ export class PedidosCrearService {
           nombre: string;
           cantidad: number;
           costo_unitario: number;
+          precio_unitario: number | null;
+          cocina_id: string | null;
+          producto_padre_id?: string | null;
+          producto_padre_nombre_snapshot?: string | null;
         }[];
         toppings: {
           id: string;
           nombre: string;
           precio: number;
           costo: number;
+          productoId: string;
+          productoNombre: string;
+          cocinaId: string | null;
         }[];
         bebidas: {
           id: string;
@@ -371,6 +387,7 @@ export class PedidosCrearService {
           precio: number;
           cantidad: number;
           costo: number;
+          cocina_id?: string | null;
         }[];
         extrasUnitario: number;
       }[] = [];
@@ -393,6 +410,7 @@ export class PedidosCrearService {
         nombre: string;
         precio: string;
         costo_calculado: string | null;
+        cocina_id?: string | null;
       };
       type ComboCatalogo = {
         id: string;
@@ -497,8 +515,12 @@ export class PedidosCrearService {
       const bebidasCatalogo = new Map<string, ExtraCatalogo>();
       if (idsBebidas.length) {
         const resultado = await client.query<ExtraCatalogo>(
-          `SELECT id, nombre, precio, costo_calculado FROM bebidas
-           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2 AND disponible = true`,
+          `SELECT b.id, b.nombre, b.precio, b.costo_calculado,
+                  (SELECT p.cocina_id FROM productos p
+                   WHERE p.bebida_origen_id = b.id AND p.sucursal_id = b.sucursal_id
+                   ORDER BY p.created_at DESC LIMIT 1) AS cocina_id
+           FROM bebidas b
+           WHERE b.id = ANY($1::uuid[]) AND b.sucursal_id = $2 AND b.disponible = true`,
           [idsBebidas, dto.sucursal_id],
         );
         for (const fila of resultado.rows) {
@@ -546,6 +568,7 @@ export class PedidosCrearService {
           precio: number;
           cantidad: number;
           costo: number;
+          cocina_id?: string | null;
         }[] = [];
         for (const b of item.bebidas ?? []) {
           const beb = bebidasCatalogo.get(normalizarId(b.bebida_id));
@@ -630,14 +653,9 @@ export class PedidosCrearService {
             .map((pc) => productos.get(normalizarId(pc.productoId))?.cocina_id)
             .filter((id): id is string => id != null),
         );
-        if (cocinasCombo.size > 1) {
-          throw new BadRequestException({
-            error: 'COMBO_COCINAS_DIFERENTES',
-            message:
-              'Este combo tiene productos de varias cocinas y todavía no se puede enviar a todas las estaciones. Reconfigúralo para usar una cocina.',
-          });
-        }
-        const cocinaComboId = [...cocinasCombo][0] ?? producto.cocina_id;
+        // La línea cobrable conserva una cocina principal; las tareas de preparación
+        // usan la cocina propia de cada componente en su snapshot.
+        const cocinaComboId = producto.cocina_id ?? [...cocinasCombo][0];
         if (!cocinaComboId) {
           throw new BadRequestException({
             error: 'COMBO_SIN_COCINA',
@@ -645,7 +663,17 @@ export class PedidosCrearService {
               'No se puede enviar este combo a cocina porque ninguno de sus productos tiene una estación asignada.',
           });
         }
-        const componentesSnapshot = comboItems.map((ci) => {
+        const componentesSnapshot: {
+          tipo_item: 'producto' | 'bebida' | 'topping';
+          item_id: string;
+          nombre: string;
+          cantidad: number;
+          costo_unitario: number;
+          precio_unitario: number | null;
+          cocina_id: string | null;
+          producto_padre_id?: string | null;
+          producto_padre_nombre_snapshot?: string | null;
+        }[] = comboItems.map((ci) => {
           if (ci.tipo_item === 'producto') {
             const componente = productos.get(normalizarId(ci.item_id));
             if (!componente?.disponible) {
@@ -657,6 +685,12 @@ export class PedidosCrearService {
               nombre: componente.nombre,
               cantidad: ci.cantidad,
               costo_unitario: Number(componente.costo_calculado ?? 0),
+              precio_unitario:
+                dto.tipo === 'para_llevar' &&
+                componente.precio_para_llevar != null
+                  ? Number(componente.precio_para_llevar)
+                  : Number(componente.precio),
+              cocina_id: componente.cocina_id ?? cocinaComboId,
             };
           }
           const catalogo =
@@ -676,6 +710,11 @@ export class PedidosCrearService {
             nombre: catalogo.nombre,
             cantidad: ci.cantidad,
             costo_unitario: Number(catalogo.costo_calculado ?? 0),
+            precio_unitario: Number(catalogo.precio),
+            cocina_id:
+              ci.tipo_item === 'bebida'
+                ? (catalogo.cocina_id ?? cocinaComboId)
+                : cocinaComboId,
           };
         });
 
@@ -684,15 +723,47 @@ export class PedidosCrearService {
           nombre: string;
           precio: number;
           costo: number;
+          productoId: string;
+          productoNombre: string;
+          cocinaId: string | null;
         }[] = [];
-        for (const t of comboDto.toppings ?? []) {
-          const top = toppingsCatalogo.get(normalizarId(t.topping_id));
+        const productosComboParaTopping = [
+          ...new Set(productosCombo.map((pc) => normalizarId(pc.productoId))),
+        ].map((id) => {
+          const plato = productos.get(id);
+          if (!plato) throw new BadRequestException('PRODUCTO_NO_DISPONIBLE');
+          return plato;
+        });
+        const destinosToppings = resolverDestinosToppingsCombo(
+          comboDto.toppings ?? [],
+          productosComboParaTopping,
+        );
+        const asociacionesToppings = destinosToppings.length
+          ? await client.query<{ producto_id: string; topping_id: string }>(
+              `SELECT producto_id, topping_id FROM producto_toppings
+               WHERE producto_id = ANY($1::uuid[])
+                 AND topping_id = ANY($2::uuid[])`,
+              [
+                [...new Set(destinosToppings.map((r) => r.producto_id))],
+                [...new Set(destinosToppings.map((r) => r.topping_id))],
+              ],
+            )
+          : { rows: [] as { producto_id: string; topping_id: string }[] };
+        validarToppingsAsociadosAProductos(
+          destinosToppings,
+          asociacionesToppings.rows,
+        );
+        for (const destino of destinosToppings) {
+          const top = toppingsCatalogo.get(normalizarId(destino.topping_id));
           if (!top) throw new BadRequestException('TOPPING_NO_DISPONIBLE');
           toppings.push({
             id: top.id,
             nombre: top.nombre,
             precio: Number(top.precio),
             costo: Number(top.costo_calculado ?? 0),
+            productoId: destino.producto_id,
+            productoNombre: destino.producto_nombre,
+            cocinaId: destino.cocina_id ?? cocinaComboId,
           });
         }
         const bebidas: {
@@ -701,6 +772,7 @@ export class PedidosCrearService {
           precio: number;
           cantidad: number;
           costo: number;
+          cocina_id?: string | null;
         }[] = [];
         for (const b of comboDto.bebidas ?? []) {
           const beb = bebidasCatalogo.get(normalizarId(b.bebida_id));
@@ -711,6 +783,7 @@ export class PedidosCrearService {
             precio: Number(beb.precio),
             cantidad: b.cantidad,
             costo: Number(beb.costo_calculado ?? 0),
+            cocina_id: beb.cocina_id,
           });
         }
         for (const t of toppings) {
@@ -720,6 +793,10 @@ export class PedidosCrearService {
             nombre: t.nombre,
             cantidad: 1,
             costo_unitario: t.costo,
+            precio_unitario: t.precio,
+            cocina_id: t.cocinaId ?? cocinaComboId,
+            producto_padre_id: t.productoId,
+            producto_padre_nombre_snapshot: t.productoNombre,
           });
         }
         for (const b of bebidas) {
@@ -729,6 +806,8 @@ export class PedidosCrearService {
             nombre: b.nombre,
             cantidad: b.cantidad,
             costo_unitario: b.costo,
+            precio_unitario: b.precio,
+            cocina_id: b.cocina_id ?? cocinaComboId,
           });
         }
         const extrasUnitario =
@@ -757,21 +836,46 @@ export class PedidosCrearService {
 
         for (const pedidoItemId of itemIds) {
           for (const [indice, pc] of productosCombo.entries()) {
+            const componenteIndice = componentesSnapshot.findIndex(
+              (componente) =>
+                componente.tipo_item === 'producto' &&
+                normalizarId(componente.item_id) ===
+                  normalizarId(pc.productoId),
+            );
+            if (componenteIndice < 0) {
+              throw new BadRequestException({
+                error: 'COMBO_COMPONENTE_SIN_SNAPSHOT',
+                message:
+                  'No se puede registrar el inventario: un componente del combo no tiene snapshot.',
+              });
+            }
             lineasInventario.push({
               pedidoItemId,
               productoId: pc.productoId,
               cantidad: pc.cantidad,
               precioVentaLinea: 1,
-              extras:
-                indice === 0
-                  ? componentesSnapshot
-                      .filter((c) => c.tipo_item !== 'producto')
-                      .map((c) => ({
-                        tipo: c.tipo_item as 'bebida' | 'topping',
-                        id: c.item_id,
-                        cantidad: c.cantidad,
-                      }))
-                  : [],
+              comboComponenteIndice: componenteIndice,
+              comboComponenteId: pc.productoId,
+              extras: componentesSnapshot
+                .map((componente, snapshotIndice) => ({
+                  componente,
+                  snapshotIndice,
+                }))
+                .filter(
+                  ({ componente }) =>
+                    componente.tipo_item !== 'producto' &&
+                    (componente.producto_padre_id
+                      ? normalizarId(componente.producto_padre_id) ===
+                        normalizarId(pc.productoId)
+                      : indice === 0),
+                )
+                .map(({ componente, snapshotIndice }) => ({
+                  tipo: componente.tipo_item as 'bebida' | 'topping',
+                  id: componente.item_id,
+                  cantidad: componente.cantidad,
+                  comboComponenteIndice: snapshotIndice,
+                  comboComponenteId: componente.item_id,
+                })),
             });
           }
         }
@@ -827,7 +931,10 @@ export class PedidosCrearService {
         dto.tipo === 'para_llevar' &&
         ((dto.pagos?.length ?? 0) > 0 ||
           (dto.metodo_pago ?? 'pendiente') !== 'pendiente');
-      if (!opciones.soloEstimar && cobroInmediatoStaff) {
+      if (
+        !opciones.soloEstimar &&
+        (cobroInmediatoStaff || dto.total_esperado !== undefined)
+      ) {
         validarTotalEsperadoPedido(dto.total_esperado, total, {
           subtotal,
           costoDomicilio,
@@ -1088,6 +1195,13 @@ export class PedidosCrearService {
               combo.precioFijo,
               JSON.stringify(combo.componentesSnapshot),
             ],
+          );
+          await this.inventario.crearTareasCombo(
+            client,
+            dto.sucursal_id,
+            pedidoId,
+            itemId,
+            combo.componentesSnapshot,
           );
           for (const t of combo.toppings) {
             await client.query(

@@ -364,10 +364,23 @@ let PedidosSoporteService = PedidosSoporteService_1 = class PedidosSoporteServic
     }
     async notificarCocinasPorPedido(pedidoId, sucursalId) {
         try {
-            const filas = await this.database.consultar(`SELECT DISTINCT pi.cocina_id
-         FROM pedido_items pi
-         INNER JOIN pedidos p ON p.id = pi.pedido_id
-         WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`, [pedidoId, sucursalId]);
+            const filas = await this.database.consultar(`SELECT DISTINCT estaciones.cocina_id
+         FROM (
+           SELECT pi.cocina_id
+           FROM pedido_items pi
+           INNER JOIN pedidos p ON p.id = pi.pedido_id
+           WHERE pi.pedido_id = $1 AND p.sucursal_id = $2
+             AND pi.cocina_id IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM pedido_combo_tareas_cocina t
+               WHERE t.pedido_item_id = pi.id
+             )
+           UNION
+           SELECT t.cocina_id
+           FROM pedido_combo_tareas_cocina t
+           WHERE t.pedido_id = $1 AND t.sucursal_id = $2
+             AND t.estado <> 'cancelada'
+         ) estaciones`, [pedidoId, sucursalId]);
             for (const f of filas) {
                 void this.realtime
                     .cocinaActualizada(f.cocina_id, {

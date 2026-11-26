@@ -20,6 +20,19 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], ToppingItemDto.prototype, "topping_id", void 0);
+class ComboToppingItemDto {
+    topping_id;
+    producto_id;
+}
+__decorate([
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], ComboToppingItemDto.prototype, "topping_id", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], ComboToppingItemDto.prototype, "producto_id", void 0);
 class BebidaItemDto {
     bebida_id;
     cantidad;
@@ -101,7 +114,7 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ValidateNested)({ each: true }),
-    (0, class_transformer_1.Type)(() => ToppingItemDto),
+    (0, class_transformer_1.Type)(() => ComboToppingItemDto),
     __metadata("design:type", Array)
 ], ComboPedidoDto.prototype, "toppings", void 0);
 __decorate([

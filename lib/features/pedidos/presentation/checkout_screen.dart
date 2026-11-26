@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -9,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:reserva_canchas/core/red/dialogo_stock_insuficiente.dart';
 import 'package:reserva_canchas/core/red/mensaje_error_http.dart';
+import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
 import 'package:reserva_canchas/core/widgets/foody_pasos_pedido.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/cliente/presentation/foody_scaffold_cliente.dart';
@@ -362,6 +364,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final carrito = ref.read(carritoProvider);
     if (carrito.lineas.isEmpty) return;
 
+    if (_estimando) {
+      _mostrarErrorFormulario(
+        'Espera a que termine la verificación del total antes de confirmar.',
+      );
+      return;
+    }
+    if (_totalServidor == null || _errorEstimar != null) {
+      await _refrescarEstimar(carrito);
+      if (!mounted) return;
+      _mostrarErrorFormulario(
+        _totalServidor == null
+            ? 'No se pudo verificar el precio actual. Revisa tu conexión e inténtalo de nuevo.'
+            : 'Actualizamos el total del pedido. Revísalo y confirma nuevamente.',
+      );
+      return;
+    }
+
     setState(() {
       _errorFormulario = null;
       _errorDireccion = null;
@@ -463,6 +482,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         fechaEntregaDeseada: tipoPedido == 'encargo'
             ? DateFormat('yyyy-MM-dd').format(_fechaEncargo!)
             : null,
+        totalEsperado: _totalServidor,
       );
       TextInput.finishAutofillContext(shouldSave: true);
       await HistorialPedidosService.registrar(
@@ -481,6 +501,35 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       context.go('/pedidos/$pedidoId/seguimiento$qs');
     } catch (e) {
       if (mounted) {
+        if (codigoErrorApi(e) == 'TOTAL_PEDIDO_CAMBIO' && e is DioException) {
+          final datos = e.response?.data;
+          if (datos is Map && datos['total_actual'] is num) {
+            final anterior = datos['total_esperado'] is num
+                ? (datos['total_esperado'] as num).toDouble()
+                : _totalServidor?.toDouble();
+            final actual = (datos['total_actual'] as num).toDouble();
+            setState(() => _totalServidor = actual);
+            await FoodyDialogo.mostrar<void>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('El precio del pedido cambió'),
+                content: Text(
+                  'No se creó el pedido. '
+                  '${anterior == null ? '' : 'El total que viste era ${_formato.format(anterior)} y ahora es '}'
+                  '${_formato.format(actual)}. Revisa el nuevo valor y confirma otra vez para continuar.',
+                ),
+                actions: [
+                  FilledButton(
+                    key: const ValueKey<String>('checkout-precio-cambio-ok'),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Revisar total'),
+                  ),
+                ],
+              ),
+            );
+            return;
+          }
+        }
         final mostrado = await mostrarDialogoStockSiAplica(context, e);
         if (!mounted) return;
         if (!mostrado) {

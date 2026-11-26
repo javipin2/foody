@@ -23,6 +23,7 @@ export declare class CocinasService {
     listarCocinasParaKds(usuario: JwtPayload): Promise<import("pg").QueryResultRow[]>;
     exigirAccesoCocinaKds(usuario: JwtPayload, cocinaId: string): Promise<void>;
     exigirAccesoItemKds(usuario: JwtPayload, itemId: string): Promise<void>;
+    exigirAccesoTareaComboKds(usuario: JwtPayload, tareaId: string): Promise<void>;
     private cocinaAsignadaUsuario;
     crearCocina(dto: CrearCocinaDto): Promise<import("pg").QueryResultRow | null>;
     actualizarCocina(id: string, sucursalId: string, dto: ActualizarCocinaDto): Promise<{
@@ -42,6 +43,25 @@ export declare class CocinasService {
         activa: boolean;
     }>;
     listarTickets(cocinaId: string, sucursalId: string): Promise<import("pg").QueryResultRow[]>;
+    cambiarEstadoTareaCombo(tareaId: string, sucursalId: string, estado: EstadoItem, usuarioId: string | null): Promise<{
+        tarea_id: string;
+        pedido_item_id: string;
+        estado_cocina: "pendiente" | "listo" | "preparando";
+        estado_linea: string;
+        pedido_id: string;
+        estado_pedido: string;
+        cocina_id: string;
+        numero_pedido: string;
+        sucursal_id: string;
+    }>;
+    marcarTareaComboNoDisponible(tareaId: string, sucursalId: string, usuarioId: string | null, motivo: string): Promise<{
+        pedido_id: string;
+        pedido_item_id: string;
+        tarea_id: string;
+        decision_id: string;
+        estado_linea: string;
+        idempotente: boolean;
+    }>;
     cambiarEstadoItem(itemId: string, sucursalId: string, estado: EstadoItem, usuarioId: string | null, motivo?: string, opciones?: {
         falloPreparacion?: boolean;
     }): Promise<{

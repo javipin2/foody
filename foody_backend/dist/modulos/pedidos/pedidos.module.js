@@ -29,6 +29,7 @@ const pedidos_estado_service_1 = require("./pedidos-estado.service");
 const pedidos_pagos_service_1 = require("./pedidos-pagos.service");
 const pedidos_soporte_service_1 = require("./pedidos-soporte.service");
 const pedidos_items_service_1 = require("./pedidos-items.service");
+const pedidos_combo_decisiones_service_1 = require("./pedidos-combo-decisiones.service");
 const pedidos_descuento_service_1 = require("./pedidos-descuento.service");
 const pedidos_estado_command_service_1 = require("./pedidos-estado-command.service");
 const pedidos_inventario_service_1 = require("./pedidos-inventario.service");
@@ -65,6 +66,7 @@ exports.PedidosModule = PedidosModule = __decorate([
             pedidos_estado_service_1.PedidosEstadoService,
             pedidos_crear_service_1.PedidosCrearService,
             pedidos_items_service_1.PedidosItemsService,
+            pedidos_combo_decisiones_service_1.PedidosComboDecisionesService,
             pedidos_descuento_service_1.PedidosDescuentoService,
             pedidos_pagos_service_1.PedidosPagosService,
             pedidos_estado_command_service_1.PedidosEstadoCommandService,

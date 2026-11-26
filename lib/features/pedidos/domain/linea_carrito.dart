@@ -3,11 +3,15 @@ class ToppingLineaCarrito {
     required this.id,
     required this.nombre,
     required this.precio,
+    this.productoId,
   });
 
   final String id;
   final String nombre;
   final double precio;
+
+  /// Combo: producto del combo al que se agrega este topping.
+  final String? productoId;
 }
 
 class BebidaLineaCarrito {
@@ -46,8 +50,10 @@ class LineaCarrito {
   final String productoId;
   final String? comboId;
   final String nombre;
+
   /// Precio en local / mesa.
   final double precioUnitario;
+
   /// Precio para llevar o domicilio; null = mismo que [precioUnitario].
   final double? precioUnitarioLlevar;
   final int cantidad;

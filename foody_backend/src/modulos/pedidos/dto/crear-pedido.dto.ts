@@ -21,6 +21,16 @@ class ToppingItemDto {
   topping_id: string;
 }
 
+class ComboToppingItemDto {
+  @IsUUID()
+  topping_id: string;
+
+  /** Producto del combo al que se agrega; opcional solo para clientes legacy. */
+  @IsOptional()
+  @IsUUID()
+  producto_id?: string;
+}
+
 class BebidaItemDto {
   @IsUUID()
   bebida_id: string;
@@ -75,8 +85,8 @@ export class ComboPedidoDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ToppingItemDto)
-  toppings?: ToppingItemDto[];
+  @Type(() => ComboToppingItemDto)
+  toppings?: ComboToppingItemDto[];
 
   @IsOptional()
   @IsArray()

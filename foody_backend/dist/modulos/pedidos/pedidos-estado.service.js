@@ -163,6 +163,28 @@ let PedidosEstadoService = class PedidosEstadoService {
                 tipo: pedido.tipo,
             });
             if (nuevoEstado === 'entregado' && pedido.tipo === 'domicilio') {
+                const asignacionesCerradas = await client.query(`UPDATE asignaciones_domicilio
+           SET estado = 'entregado', entregado_at = COALESCE(entregado_at, now())
+           WHERE pedido_id = $1 AND sucursal_id = $2
+             AND estado IN ('asignado', 'en_camino')
+           RETURNING domiciliario_independiente_id`, [pedidoId, sucursalId]);
+                const independientes = [
+                    ...new Set(asignacionesCerradas.rows
+                        .map((fila) => fila.domiciliario_independiente_id)
+                        .filter((id) => Boolean(id))),
+                ];
+                if (independientes.length > 0) {
+                    await client.query(`UPDATE domiciliarios_sesiones ds
+             SET disponible = NOT EXISTS (
+               SELECT 1 FROM asignaciones_domicilio activas
+               WHERE activas.domiciliario_independiente_id = ds.domiciliario_id
+                 AND activas.estado IN ('asignado', 'en_camino')
+                 AND activas.pedido_id <> $2
+             )
+             WHERE ds.domiciliario_id = ANY($1::uuid[]) AND ds.activa = true`, [independientes, pedidoId]);
+                }
+            }
+            if (nuevoEstado === 'entregado' && pedido.tipo === 'domicilio') {
                 const totalPedido = Number(pedido.total);
                 const pagado = Number(pedido.monto_pagado ?? 0);
                 const metodo = pedido.metodo_pago?.trim() && pedido.metodo_pago !== 'pendiente'
@@ -187,7 +209,7 @@ let PedidosEstadoService = class PedidosEstadoService {
                     await this.cajaAuditoria.registrarVentaEnCaja(client, sucursalId, pedidoId, montoCaja, metodo, {
                         exigirCaja: true,
                         descripcion: `Domicilio entregado ${pedido.numero_pedido}`,
-                        usuarioId,
+                        usuarioId: usuarioId ?? undefined,
                     });
                     await client.query(`UPDATE pedidos SET monto_pagado = $2, metodo_pago = $3 WHERE id = $1`, [pedidoId, totalPedido, metodo]);
                 }
@@ -209,7 +231,7 @@ let PedidosEstadoService = class PedidosEstadoService {
                 await this.cuentaMesa.liberarMesaSiSinPedidosActivos(client, pedido.mesa_id, sucursalId);
             }
             if (nuevoEstado === 'cancelado') {
-                const reversa = await this.cajaAuditoria.revertirVentasPedido(client, pedidoId, sucursalId, usuarioId, motivo ?? 'Pedido cancelado');
+                const reversa = await this.cajaAuditoria.revertirVentasPedido(client, pedidoId, sucursalId, usuarioId ?? undefined, motivo ?? 'Pedido cancelado');
                 await client.query(`UPDATE pedidos SET monto_pagado = 0 WHERE id = $1`, [pedidoId]);
                 const domiciliariosDesasignados = await client.query(`SELECT DISTINCT dp.usuario_id,
                   ad.domiciliario_independiente_id AS independiente_id
@@ -233,7 +255,9 @@ let PedidosEstadoService = class PedidosEstadoService {
              AND ad.tipo_domiciliario = 'independiente'
              AND ad.domiciliario_independiente_id = ds.domiciliario_id
              AND ds.activa = true`, [pedidoId]);
-                await this.alertasRiesgo.evaluarCancelacionesFrecuentes(client, sucursalId, usuarioId, pedidoId);
+                if (usuarioId) {
+                    await this.alertasRiesgo.evaluarCancelacionesFrecuentes(client, sucursalId, usuarioId, pedidoId);
+                }
                 return {
                     id: pedidoId,
                     estado: nuevoEstado,
@@ -513,7 +537,7 @@ let PedidosEstadoService = class PedidosEstadoService {
             throw new common_1.NotFoundException('Pedido no encontrado');
         }
         this.soporte.validarCancelacionCliente(pedido, motivo);
-        return this.cambiarEstado(pedidoId, pedido.sucursal_id, 'cliente', 'cancelado', motivo.trim(), { rol: 'cliente', permisos: [] });
+        return this.cambiarEstado(pedidoId, pedido.sucursal_id, null, 'cancelado', `Cancelación por cliente: ${motivo.trim()}`, { rol: 'cliente', permisos: [] });
     }
     async llamarMesera(pedidoId, deviceId, mensaje) {
         const pedido = await this.database.consultarUno(`SELECT id, sucursal_id, mesa_id, estado, numero_pedido

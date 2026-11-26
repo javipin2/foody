@@ -40,6 +40,7 @@ export declare class ReportesController {
             tipo: string;
             pedidos: number;
             ventas: number;
+            costo_domicilio: number;
         }[];
     }>;
     productos(usuario: JwtPayload, query: FiltroReporteDto): Promise<{
@@ -61,6 +62,7 @@ export declare class ReportesController {
             dia: string;
             pedidos: number;
             ventas: number;
+            costo_domicilio: number;
         }[];
     }>;
 }

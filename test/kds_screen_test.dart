@@ -20,6 +20,8 @@ class _CocinasRepositoryFake extends CocinasRepository {
   int reimpresiones = 0;
   int lecturasTickets = 0;
   final List<String> cambiosEstado = [];
+  final List<String> cambiosTareasCombo = [];
+  final List<String> componentesComboNoDisponibles = [];
 
   @override
   Future<List<Map<String, dynamic>>> listarCocinas(String sucursalId) async => [
@@ -58,6 +60,45 @@ class _CocinasRepositoryFake extends CocinasRepository {
   }
 
   @override
+  Future<void> cambiarEstadoTareaCombo({
+    required String tareaId,
+    required String estadoCocina,
+  }) async {
+    cambiosTareasCombo.add(tareaId);
+    for (final ticket in listaTickets) {
+      final items = ticket['items'];
+      if (items is! List) continue;
+      for (final raw in items) {
+        if (raw is Map && raw['item_id'] == tareaId) {
+          raw['estado_cocina'] = estadoCocina;
+        }
+      }
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> marcarTareaComboNoDisponible({
+    required String tareaId,
+    required String motivo,
+  }) async {
+    componentesComboNoDisponibles.add(tareaId);
+    for (final ticket in listaTickets) {
+      final items = ticket['items'];
+      if (items is! List) continue;
+      for (final raw in items) {
+        if (raw is! Map) continue;
+        if (raw['item_id'] == tareaId) {
+          raw['estado_cocina'] = 'no_disponible';
+        } else if (raw['pedido_item_id'] == 'linea-cobrable-combo' &&
+            raw['estado_cocina'] == 'pendiente') {
+          raw['estado_cocina'] = 'pausada_decision_cliente';
+        }
+      }
+    }
+    return {'tarea_id': tareaId, 'decision_id': 'decision-1'};
+  }
+
+  @override
   Future<void> prepararCanalRealtimeCocina({
     required String cocinaId,
     String? sucursalId,
@@ -74,6 +115,7 @@ class _CocinasRepositoryFake extends CocinasRepository {
   @override
   Future<void> reimprimirPedido({
     required String pedidoId,
+    required String cocinaId,
     String? sucursalId,
   }) async {
     reimpresiones++;
@@ -300,6 +342,143 @@ void main() {
 
     expect(repository.cambiosEstado, ['item-cobrado-pendiente']);
     expect(find.text('P-COBRADO'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [
+    const Size(320, 640),
+    const Size(390, 844),
+    const Size(820, 900),
+    const Size(1440, 900),
+  ]) {
+    testWidgets(
+        'KDS cambia una tarea combo por su id propio en ${size.width}px',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      FlutterSecureStorage.setMockInitialValues({});
+      AppBackend.supabaseReady = false;
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => AppBackend.supabaseReady = false);
+      final repository = _CocinasRepositoryFake(
+        listaTickets: [
+          {
+            'pedido_id': 'pedido-combo',
+            'numero_pedido': 'P-COMBO',
+            'tipo': 'mesa',
+            'estado': 'en_cocina',
+            'cocina_desde': DateTime.now().toIso8601String(),
+            'items': [
+              {
+                'item_id': 'tarea-componente-1',
+                'pedido_item_id': 'linea-cobrable-combo',
+                'tarea_combo_id': 'tarea-componente-1',
+                'producto_padre': 'Picada',
+                'cantidad': 1,
+                'producto': 'Queso en cubos',
+                'estado_cocina': 'pendiente',
+                'observaciones': 'Para: Picada',
+                'incluidos': [],
+              },
+            ],
+          },
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: KdsScreen(sucursalId: 'sucursal-1', repository: repository),
+          ),
+        ),
+      );
+      for (var i = 0; i < 60 && find.text('P-COMBO').evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(
+          find.textContaining('Preparación de combo · Picada'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Marcar listo'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(repository.cambiosTareasCombo, ['tarea-componente-1']);
+      expect(repository.cambiosEstado, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('KDS pausa combo por falta de componente sin registrar merma',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    AppBackend.supabaseReady = false;
+    addTearDown(() => AppBackend.supabaseReady = false);
+    final repository = _CocinasRepositoryFake(
+      listaTickets: [
+        {
+          'pedido_id': 'pedido-combo',
+          'numero_pedido': 'P-COMBO-ND',
+          'tipo': 'mesa',
+          'estado': 'en_cocina',
+          'cocina_desde': DateTime.now().toIso8601String(),
+          'items': [
+            {
+              'item_id': 'tarea-componente-1',
+              'pedido_item_id': 'linea-cobrable-combo',
+              'tarea_combo_id': 'tarea-componente-1',
+              'producto_padre': 'Picada',
+              'cantidad': 1,
+              'producto': 'Queso en cubos',
+              'estado_cocina': 'pendiente',
+              'observaciones': 'Para: Picada',
+              'incluidos': [],
+            },
+            {
+              'item_id': 'tarea-componente-2',
+              'pedido_item_id': 'linea-cobrable-combo',
+              'tarea_combo_id': 'tarea-componente-2',
+              'producto_padre': 'Picada',
+              'cantidad': 1,
+              'producto': 'Tocineta',
+              'estado_cocina': 'pendiente',
+              'observaciones': 'Para: Picada',
+              'incluidos': [],
+            },
+          ],
+        },
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: KdsScreen(sucursalId: 'sucursal-1', repository: repository),
+        ),
+      ),
+    );
+    for (var i = 0; i < 60 && find.text('P-COMBO-ND').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await tester.tap(find.byTooltip('Componente no disponible').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Componente no disponible'), findsOneWidget);
+    expect(find.textContaining('No se registra merma'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('kds-motivo-fallo')),
+      'Se agotó el queso',
+    );
+    await tester.tap(find.text('Pausar y consultar'));
+    await tester.pumpAndSettle();
+
+    expect(repository.componentesComboNoDisponibles, ['tarea-componente-1']);
+    expect(repository.fallosPreparacion, 0);
+    expect(find.text('Esperando respuesta del cliente'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -710,6 +889,7 @@ void main() {
       listaTickets: [
         {
           'pedido_id': 'pedido-reimpresion',
+          'cocina_id': 'cocina-1',
           'numero_pedido': 'P-REIMP',
           'tipo': 'mesa',
           'estado': 'en_cocina',

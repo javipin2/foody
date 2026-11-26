@@ -79,6 +79,18 @@ let AnaliticaService = class AnaliticaService {
         });
         return { params, suc, fecha, extra };
     }
+    inicioRecaudo(sucursalId, desde, hasta, filtros = {}) {
+        const params = new analitica_filtros_util_1.SqlParams();
+        const suc = params.add(sucursalId);
+        const d = params.add(desde);
+        const h = params.add(hasta);
+        const fecha = (0, ventas_metricas_sql_1.sqlFechaRango)('m.created_at', d, h);
+        const extra = (0, analitica_filtros_util_1.clausulasPedidos)(params, filtros, {
+            alias: 'p',
+            excluirCanceladosPorDefecto: false,
+        });
+        return { params, suc, fecha, extra };
+    }
     async consultarVentasKpi(sucursalId, desde, hasta, filtros) {
         const usaLineas = (0, analitica_filtros_util_1.filtrosSumanPorLinea)(filtros);
         const { params, suc, fecha, extra } = this.inicio(sucursalId, desde, hasta, filtros, usaLineas ? 'p' : undefined);
@@ -102,6 +114,94 @@ let AnaliticaService = class AnaliticaService {
        LEFT JOIN productos pr ON pr.id = pi.producto_id
        WHERE p.sucursal_id = ${suc}
          AND ${fecha}${extra}${extraItems}`, params.list);
+    }
+    async consultarFinanzasVentasCumplidas(sucursalId, desde, hasta, filtros = {}) {
+        const params = new analitica_filtros_util_1.SqlParams();
+        const suc = params.add(sucursalId);
+        const d = params.add(desde);
+        const h = params.add(hasta);
+        const fecha = (0, ventas_metricas_sql_1.sqlFechaRango)('p.fecha_cumplimiento', d, h);
+        const extra = (0, analitica_filtros_util_1.clausulasPedidos)(params, filtros, {
+            alias: 'p',
+            excluirCanceladosPorDefecto: false,
+        });
+        const porLinea = (0, analitica_filtros_util_1.filtrosSumanPorLinea)(filtros);
+        const extraItems = porLinea
+            ? (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(params, filtros)
+            : '';
+        const cte = `WITH pedidos_cumplimiento AS (
+       SELECT base.*,
+              CASE WHEN base.tipo = 'domicilio' THEN (
+                SELECT MAX(h.fecha) FROM estados_pedido_historial h
+                WHERE h.pedido_id = base.id AND h.estado_nuevo = 'entregado'
+              ) ELSE (
+                SELECT MAX(h.fecha) FROM estados_pedido_historial h
+                WHERE h.pedido_id = base.id AND h.estado_nuevo = 'pagado'
+              ) END AS fecha_cumplimiento
+       FROM pedidos base
+       WHERE base.sucursal_id = ${suc}
+     )`;
+        const whereCumplido = `p.fecha_cumplimiento IS NOT NULL
+       AND p.estado NOT IN ('cancelado', 'rechazado')
+       AND ${fecha}${extra}`;
+        const joinsItems = `
+       JOIN pedido_items pi ON pi.pedido_id = p.id
+       LEFT JOIN productos pr ON pr.id = pi.producto_id`;
+        const ventaExpresion = porLinea
+            ? `COALESCE(SUM(
+           ${sql_venta_linea_item_1.SQL_VENTA_LINEA_ITEM}
+           * COALESCE(
+               GREATEST(p.subtotal - COALESCE(p.descuento, 0), 0)
+                 / NULLIF(p.subtotal, 0),
+               1
+             )
+           * COALESCE(
+               GREATEST(1 - COALESCE(p.iva_valor, 0) / NULLIF(p.total, 0), 0),
+               1
+             )
+         ), 0)`
+            : `COALESCE(SUM(
+           GREATEST(COALESCE(p.subtotal, 0) - COALESCE(p.descuento, 0), 0)
+           * COALESCE(
+               GREATEST(1 - COALESCE(p.iva_valor, 0) / NULLIF(p.total, 0), 0),
+               1
+             )
+         ), 0)`;
+        const ventaFrom = porLinea
+            ? `FROM pedidos_cumplimiento p${joinsItems}`
+            : 'FROM pedidos_cumplimiento p';
+        const extraItemsCargo = porLinea
+            ? ` AND EXISTS (
+           SELECT 1 FROM pedido_items pi
+           LEFT JOIN productos pr ON pr.id = pi.producto_id
+           WHERE pi.pedido_id = p.id${extraItems}
+         )`
+            : '';
+        return this.database.consultarUno(`${cte}
+       SELECT (
+         SELECT ${ventaExpresion}
+         ${ventaFrom}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS ventas_reconocidas,
+       (
+         SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)
+         FROM pedidos_cumplimiento p${joinsItems}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS costo_ventas_reconocidas,
+       (
+         SELECT COUNT(*) FROM pedidos_cumplimiento p${joinsItems}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS lineas_total,
+       (
+         SELECT COUNT(*) FILTER (WHERE pi.costo_unitario IS NOT NULL)
+         FROM pedidos_cumplimiento p${joinsItems}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS lineas_con_costo,
+       (
+         SELECT COALESCE(SUM(COALESCE(p.costo_domicilio, 0)), 0)
+         FROM pedidos_cumplimiento p
+         WHERE ${whereCumplido}${extraItemsCargo}
+       )::text AS cargo_domicilio_pedidos_cumplidos`, params.list);
     }
     async resumen(sucursalId, periodo, anterior, filtros = {}) {
         const kpis = await this.kpisPeriodo(sucursalId, periodo.desde, periodo.hasta, filtros);
@@ -152,17 +252,7 @@ let AnaliticaService = class AnaliticaService {
     }
     async kpisPeriodo(sucursalId, desde, hasta, filtros = {}) {
         const ventas = await this.consultarVentasKpi(sucursalId, desde, hasta, filtros);
-        const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM, } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
-        const extraItems = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pMargen, filtros);
-        const margen = await this.database.consultarUno(`SELECT COALESCE(SUM(${sql_venta_linea_item_1.SQL_VENTA_LINEA_ITEM}), 0)::text AS ingreso,
-              COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo,
-              COUNT(*)::text AS lineas_total,
-              COUNT(*) FILTER (WHERE pi.costo_unitario IS NOT NULL)::text AS lineas_con_costo
-       FROM pedido_items pi
-       JOIN pedidos p ON p.id = pi.pedido_id
-       LEFT JOIN productos pr ON pr.id = pi.producto_id
-       WHERE p.sucursal_id = ${sucM}
-         AND ${fechaM}${extraM}${extraItems}`, pMargen.list);
+        const finanzasVentas = await this.consultarFinanzasVentasCumplidas(sucursalId, desde, hasta, filtros);
         const { params: pCancel, suc: sucC, fecha: fechaC, extra: extraC, } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
             excluirCanceladosPorDefecto: false,
         });
@@ -173,15 +263,16 @@ let AnaliticaService = class AnaliticaService {
        FROM pedidos
        WHERE sucursal_id = ${sucC}
          AND ${fechaC}${extraC}`, pCancel.list);
-        const { params: pPagos, suc: sucP, fecha: fechaP, extra: extraP, } = this.inicioCaja(sucursalId, desde, hasta, filtros);
-        const pagos = await this.database.consultarUno(`SELECT COALESCE(SUM(
-                ${ventas_metricas_sql_1.SQL_NETO_MOVIMIENTO_CAJA}
-              ) FILTER (WHERE m.metodo_pago = 'efectivo'), 0)::text AS efectivo,
-              COALESCE(SUM(
-                ${ventas_metricas_sql_1.SQL_NETO_MOVIMIENTO_CAJA}
-              ) FILTER (
-                WHERE m.metodo_pago IS DISTINCT FROM 'efectivo'
-              ), 0)::text AS digital
+        const { params: pPagos, suc: sucP, fecha: fechaP, extra: extraP, } = this.inicioRecaudo(sucursalId, desde, hasta, filtros);
+        const pagos = await this.database.consultarUno(`SELECT COALESCE(SUM(m.monto) FILTER (
+                WHERE m.tipo = 'venta' AND m.metodo_pago = 'efectivo'
+              ), 0)::text AS efectivo,
+              COALESCE(SUM(m.monto) FILTER (
+                WHERE m.tipo = 'venta'
+                  AND m.metodo_pago IS DISTINCT FROM 'efectivo'
+              ), 0)::text AS digital,
+              COALESCE(SUM(m.monto) FILTER (WHERE m.tipo = 'venta'), 0)::text AS recaudado_bruto,
+              COALESCE(SUM(m.monto) FILTER (WHERE m.tipo = 'devolucion'), 0)::text AS devoluciones
        FROM movimientos_caja m
        LEFT JOIN pedidos p ON p.id = m.pedido_id
        WHERE m.sucursal_id = ${sucP}
@@ -190,11 +281,11 @@ let AnaliticaService = class AnaliticaService {
         const alertas = await this.database.consultarUno(`SELECT COUNT(*)::text AS abiertas
        FROM alertas_riesgo
        WHERE sucursal_id = $1 AND revisada = false`, [sucursalId]);
-        const ingreso = Number(margen?.ingreso ?? 0);
-        const costo = Number(margen?.costo ?? 0);
+        const ingreso = Number(finanzasVentas?.ventas_reconocidas ?? 0);
+        const costo = Number(finanzasVentas?.costo_ventas_reconocidas ?? 0);
         const margenBruto = ingreso - costo;
-        const lineasTotal = Number(margen?.lineas_total ?? 0);
-        const lineasConCosto = Number(margen?.lineas_con_costo ?? 0);
+        const lineasTotal = Number(finanzasVentas?.lineas_total ?? 0);
+        const lineasConCosto = Number(finanzasVentas?.lineas_con_costo ?? 0);
         const efectivo = Number(pagos?.efectivo ?? 0);
         const digital = Number(pagos?.digital ?? 0);
         const totalPagos = efectivo + digital;
@@ -202,6 +293,10 @@ let AnaliticaService = class AnaliticaService {
         const cancelados = Number(cancelacion?.cancelados ?? 0);
         return {
             ventas_netas: Number(ventas?.ventas_netas ?? 0),
+            valor_pedidos: Number(ventas?.ventas_netas ?? 0),
+            ventas_reconocidas: ingreso,
+            costo_ventas_reconocidas: Math.round(costo * 100) / 100,
+            cargo_domicilio_pedidos_cumplidos: Number(finanzasVentas?.cargo_domicilio_pedidos_cumplidos ?? 0),
             pedidos: Number(ventas?.pedidos ?? 0),
             ticket_promedio: Math.round(Number(ventas?.ticket_promedio ?? 0) * 100) / 100,
             margen_bruto_estimado: Math.round(margenBruto * 100) / 100,
@@ -214,6 +309,9 @@ let AnaliticaService = class AnaliticaService {
                 : 0,
             pedidos_cancelados: cancelados,
             pedidos_total_cancelacion: totalPedidos,
+            recaudo_neto: Math.round((Number(pagos?.recaudado_bruto ?? 0) -
+                Number(pagos?.devoluciones ?? 0)) *
+                100) / 100,
             efectivo_vs_digital: {
                 efectivo: totalPagos > 0
                     ? Math.round((efectivo / totalPagos) * 1000) / 1000
@@ -297,9 +395,9 @@ let AnaliticaService = class AnaliticaService {
        ${fromWhere}
        GROUP BY ${tipoCol}
        ORDER BY ventas DESC`, params.list);
-        const { params: pCaja, suc: sucCaja, fecha: fechaCaja, extra: extraCaja, } = this.inicioCaja(sucursalId, desde, hasta, filtros);
+        const { params: pCaja, suc: sucCaja, fecha: fechaCaja, extra: extraCaja, } = this.inicioRecaudo(sucursalId, desde, hasta, filtros);
         const porMetodo = await this.database.consultar(`SELECT COALESCE(m.metodo_pago, 'sin_metodo') AS metodo_pago,
-              COALESCE(SUM(${ventas_metricas_sql_1.SQL_NETO_MOVIMIENTO_CAJA}), 0)::text AS total,
+              COALESCE(SUM(m.monto) FILTER (WHERE m.tipo = 'venta'), 0)::text AS total,
               COUNT(*) FILTER (WHERE m.tipo = 'venta')::text AS movimientos
        FROM movimientos_caja m
        LEFT JOIN pedidos p ON p.id = m.pedido_id
@@ -762,15 +860,6 @@ let AnaliticaService = class AnaliticaService {
     async rentabilidad(sucursalId, periodo, filtros = {}, anterior) {
         const { desde, hasta } = periodo;
         const kpis = await this.kpisPeriodo(sucursalId, desde, hasta, filtros);
-        const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM, } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
-        const extraItems = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pMargen, filtros);
-        const cogs = await this.database.consultarUno(`SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo_ventas,
-              COALESCE(SUM(${sql_venta_linea_item_1.SQL_VENTA_LINEA_ITEM}), 0)::text AS ingreso_lineas
-       FROM pedido_items pi
-       JOIN pedidos p ON p.id = pi.pedido_id
-       LEFT JOIN productos pr ON pr.id = pi.producto_id
-       WHERE p.sucursal_id = ${sucM}
-         AND ${fechaM}${extraM}${extraItems}`, pMargen.list);
         const gastosCat = await this.database.consultar(`SELECT COALESCE(NULLIF(TRIM(categoria), ''), 'otros') AS categoria,
               COALESCE(SUM(monto), 0)::text AS total,
               COUNT(*)::text AS cantidad
@@ -794,8 +883,8 @@ let AnaliticaService = class AnaliticaService {
        WHERE sucursal_id = $1
          AND fecha_compra >= $2::timestamptz
          AND fecha_compra < ($3::date + interval '1 day')`, [sucursalId, desde, hasta]);
-        const ventasNetas = kpis.ventas_netas;
-        const costoVentas = Number(cogs?.costo_ventas ?? 0);
+        const ventasNetas = kpis.ventas_reconocidas;
+        const costoVentas = kpis.costo_ventas_reconocidas;
         const utilidadBruta = Math.round((ventasNetas - costoVentas) * 100) / 100;
         const gastosPorCategoria = gastosCat.map((g) => ({
             categoria: g.categoria,
@@ -815,17 +904,9 @@ let AnaliticaService = class AnaliticaService {
         let deltaUtilidadPct = null;
         if (anterior) {
             const prevKpis = await this.kpisPeriodo(sucursalId, anterior.desde, anterior.hasta, filtros);
-            const { params: pMargenAnt, suc: sucMAnt, fecha: fechaMAnt, extra: extraMAnt, } = this.inicio(sucursalId, anterior.desde, anterior.hasta, filtros, 'p');
-            const extraItemsAnt = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pMargenAnt, filtros);
-            const prevCogs = await this.database.consultarUno(`SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo_ventas
-         FROM pedido_items pi
-         JOIN pedidos p ON p.id = pi.pedido_id
-         LEFT JOIN productos pr ON pr.id = pi.producto_id
-         WHERE p.sucursal_id = ${sucMAnt}
-           AND ${fechaMAnt}${extraMAnt}${extraItemsAnt}`, pMargenAnt.list);
             const prevGastos = await this.database.consultarUno(`SELECT COALESCE(SUM(monto), 0)::text AS total FROM gastos
          WHERE sucursal_id = $1 AND fecha >= $2::date AND fecha <= $3::date`, [sucursalId, anterior.desde, anterior.hasta]);
-            const prevUb = prevKpis.ventas_netas - Number(prevCogs?.costo_ventas ?? 0);
+            const prevUb = prevKpis.ventas_reconocidas - prevKpis.costo_ventas_reconocidas;
             utilidadAnterior =
                 Math.round((prevUb - Number(prevGastos?.total ?? 0)) * 100) / 100;
             deltaUtilidadPct =
@@ -885,6 +966,8 @@ let AnaliticaService = class AnaliticaService {
         return {
             periodo: { label: periodo.label, desde, hasta },
             ventas_netas: ventasNetas,
+            valor_pedidos: kpis.valor_pedidos,
+            cargo_domicilio_pedidos_cumplidos: kpis.cargo_domicilio_pedidos_cumplidos,
             costo_ventas: Math.round(costoVentas * 100) / 100,
             utilidad_bruta: utilidadBruta,
             utilidad_bruta_pct: ventasNetas > 0

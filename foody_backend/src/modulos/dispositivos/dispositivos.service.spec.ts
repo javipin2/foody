@@ -123,4 +123,41 @@ describe('DispositivosService capability de cliente', () => {
       }),
     ).resolves.toBe(false);
   });
+
+  it('reclama solo pedidos del dispositivo que se vincula a la sesión Supabase', async () => {
+    database.consultarUno
+      .mockResolvedValueOnce({
+        capability_hash: createHash('sha256').update(capability).digest('hex'),
+        anonimizado: false,
+      })
+      .mockResolvedValueOnce({ n: '2' });
+    supabaseAuth.usuarioDesdeAccessToken.mockResolvedValue({
+      id: '6ad7f4f0-5c0b-44bb-a302-0de1c30eb927',
+      email: 'cliente@example.test',
+      user_metadata: { full_name: 'Cliente QA' },
+    });
+
+    await expect(
+      service.vincularAuth(
+        { device_id: ' device-propio ', access_token: 'token-supabase' },
+        capability,
+      ),
+    ).resolves.toMatchObject({
+      device_id: 'device-propio',
+      auth_uid: '6ad7f4f0-5c0b-44bb-a302-0de1c30eb927',
+      pedidos_vinculados: 2,
+    });
+
+    expect(database.consultar).toHaveBeenCalledTimes(1);
+    expect(database.consultarUno).toHaveBeenCalledTimes(2);
+    const [reclamarSql, reclamarParams] = database.consultarUno.mock.calls[1];
+    expect(reclamarSql).toContain('WHERE device_id = $1');
+    expect(reclamarSql).toContain(
+      'cliente_auth_uid IS NULL OR cliente_auth_uid = $2::uuid',
+    );
+    expect(reclamarParams).toEqual([
+      'device-propio',
+      '6ad7f4f0-5c0b-44bb-a302-0de1c30eb927',
+    ]);
+  });
 });

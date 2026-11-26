@@ -20,6 +20,7 @@ import { PedidosEstadoService } from './pedidos-estado.service';
 import { PedidosPagosService } from './pedidos-pagos.service';
 import { PedidosSoporteService } from './pedidos-soporte.service';
 import { PedidosItemsService } from './pedidos-items.service';
+import { PedidosComboDecisionesService } from './pedidos-combo-decisiones.service';
 import { PedidosDescuentoService } from './pedidos-descuento.service';
 import { PedidosEstadoCommandService } from './pedidos-estado-command.service';
 import { PedidosInventarioService } from './pedidos-inventario.service';
@@ -53,6 +54,7 @@ import { DispositivosModule } from '../dispositivos/dispositivos.module';
     PedidosEstadoService,
     PedidosCrearService,
     PedidosItemsService,
+    PedidosComboDecisionesService,
     PedidosDescuentoService,
     PedidosPagosService,
     PedidosEstadoCommandService,

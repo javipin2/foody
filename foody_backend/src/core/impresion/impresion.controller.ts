@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Post,
   Query,
@@ -18,6 +19,7 @@ import { UsuarioActivoGuard } from '../auth/guards/usuario-activo.guard';
 import { SucursalScopeService } from '../auth/sucursal-scope.service';
 import { ImpresionService } from './impresion.service';
 import { ReimprimirComandaDto } from './dto/reimprimir.dto';
+import { esRolCocina } from '../auth/roles-food';
 
 @Controller('impresion')
 @UseGuards(
@@ -62,7 +64,15 @@ export class ImpresionController {
       usuario,
       dto.sucursal_id,
     );
-    return this.impresion.reimprimirPedido(dto.pedido_id, sid);
+    if (
+      esRolCocina(usuario.rol) &&
+      (!dto.cocina_id || usuario.cocina_id !== dto.cocina_id)
+    ) {
+      throw new ForbiddenException(
+        'Solo puedes reimprimir tu estación asignada.',
+      );
+    }
+    return this.impresion.reimprimirPedido(dto.pedido_id, sid, dto.cocina_id);
   }
 
   @Post('procesar-cola')

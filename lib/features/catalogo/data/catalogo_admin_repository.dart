@@ -81,11 +81,17 @@ class CatalogoAdminRepository {
     required String nombre,
     required double precio,
     required bool esBebida,
+    List<String> productoIds = const [],
   }) async {
     final path = esBebida ? '/bebidas' : '/toppings';
     final r = await _dio.post<Map<String, dynamic>>(
       path,
-      data: {'sucursal_id': sucursalId, 'nombre': nombre, 'precio': precio},
+      data: {
+        'sucursal_id': sucursalId,
+        'nombre': nombre,
+        'precio': precio,
+        if (!esBebida) 'producto_ids': productoIds,
+      },
     );
     _validar(r.data);
   }
@@ -118,7 +124,8 @@ class CatalogoAdminRepository {
     _validar(r.data);
   }
 
-  Future<List<Map<String, dynamic>>> toppingsDeProducto(String productoId) async {
+  Future<List<Map<String, dynamic>>> toppingsDeProducto(
+      String productoId) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/productos/$productoId/toppings',
     );

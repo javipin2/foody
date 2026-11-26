@@ -168,6 +168,28 @@ class CocinasRepository {
     _validar(r.data);
   }
 
+  Future<void> cambiarEstadoTareaCombo({
+    required String tareaId,
+    required String estadoCocina,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/cocina/combo-tareas/$tareaId/estado',
+      data: {'estado_cocina': estadoCocina},
+    );
+    _validar(r.data);
+  }
+
+  Future<Map<String, dynamic>> marcarTareaComboNoDisponible({
+    required String tareaId,
+    required String motivo,
+  }) async {
+    final r = await _dio.patch<Map<String, dynamic>>(
+      '/cocina/combo-tareas/$tareaId/no-disponible',
+      data: {'motivo': motivo},
+    );
+    return _mapa(r.data);
+  }
+
   /// VIE-09 C: fallo de preparación (N/D + merma + alerta).
   Future<void> falloPreparacion({
     required String itemId,
@@ -204,12 +226,14 @@ class CocinasRepository {
 
   Future<void> reimprimirPedido({
     required String pedidoId,
+    required String cocinaId,
     String? sucursalId,
   }) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/impresion/reimprimir',
       data: {
         'pedido_id': pedidoId,
+        'cocina_id': cocinaId,
         if (sucursalId != null) 'sucursal_id': sucursalId,
       },
     );

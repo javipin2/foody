@@ -9,6 +9,10 @@
 
 ## IDENTIDAD DEL PROYECTO
 
+### Ganancias estimadas de domiciliarios independientes — decisión (2026-11-26)
+
+Una oferta aceptada crea una estimación, no acredita entrega, deuda definitiva ni pago. Si el pedido se cancela, conservar esa fila como historial y excluirla del agregado administrativo `por_pagar`. No borrar ni marcar pagado automáticamente; no existe todavía liquidación real. Separar siempre suscripción Foody, comisión del servicio de domicilio y ganancia estimada del domiciliario.
+
 ```
 Nombre: Foody
 Tipo: SaaS POS multi-restaurante

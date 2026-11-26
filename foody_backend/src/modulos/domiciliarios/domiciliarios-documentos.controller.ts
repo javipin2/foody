@@ -39,6 +39,18 @@ export class DomiciliariosDocumentosController {
   @UseInterceptors(
     FileInterceptor('archivo', {
       limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, archivo, cb) => {
+        if (
+          !['image/jpeg', 'image/png', 'image/webp'].includes(archivo.mimetype)
+        ) {
+          // Multer errors thrown from fileFilter bypass Nest's HttpException
+          // mapping in this setup and surface as 500. Reject the file normally;
+          // the handler below returns the expected 400 for a missing upload.
+          cb(null, false);
+          return;
+        }
+        cb(null, true);
+      },
     }),
   )
   subir(

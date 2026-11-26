@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
+import { randomUUID } from 'crypto';
 import { AlertasRiesgoService } from '../alertas/alertas-riesgo.service';
 import { CatalogoDisponibilidadService } from '../catalogo/catalogo-disponibilidad.service';
 import { CosteoService } from '../costeo/costeo.service';
@@ -21,6 +22,9 @@ export interface LineaStockExtra {
   id: string;
   /** Unidades a expandir (ya escaladas por cantidad del ítem de pedido). */
   cantidad: number;
+  /** Índice del componente en el snapshot de combo; ausente para pedidos normales. */
+  comboComponenteIndice?: number;
+  comboComponenteId?: string;
 }
 
 export interface LineaStock {
@@ -30,6 +34,29 @@ export interface LineaStock {
   precioVentaLinea: number;
   nombreProducto?: string;
   extras?: LineaStockExtra[];
+  comboComponenteIndice?: number;
+  comboComponenteId?: string;
+}
+
+type ExpansionComponenteStock = {
+  indice: number;
+  componenteId: string;
+  tipoItem: 'producto' | 'bebida' | 'topping';
+  ingredientes: { ingrediente_id: string; cantidad: number }[];
+};
+
+export type EventoStockCombo = 'consumo' | 'devolucion' | 'merma';
+
+export interface ComponenteComboTarea {
+  tipo_item: 'producto' | 'bebida' | 'topping';
+  item_id: string;
+  nombre: string;
+  cantidad: number;
+  costo_unitario: number;
+  precio_unitario: number | null;
+  cocina_id: string | null;
+  producto_padre_id?: string | null;
+  producto_padre_nombre_snapshot?: string | null;
 }
 
 export type CambioDisponibilidadProducto = {
@@ -60,6 +87,49 @@ export class PedidosInventarioService {
     private readonly stockMovimiento: StockMovimientoService,
     private readonly alertas?: AlertasRiesgoService,
   ) {}
+
+  /** Persiste tareas por estación sin crear líneas financieras adicionales. */
+  async crearTareasCombo(
+    client: PoolClient,
+    sucursalId: string,
+    pedidoId: string,
+    pedidoItemId: string,
+    componentes: ComponenteComboTarea[],
+  ): Promise<void> {
+    for (const [indice, componente] of componentes.entries()) {
+      if (!componente.cocina_id) {
+        throw new BadRequestException({
+          error: 'COMBO_COMPONENTE_SIN_COCINA',
+          message: `El componente «${componente.nombre}» no tiene estación asignada.`,
+        });
+      }
+      await client.query(
+        `INSERT INTO pedido_combo_tareas_cocina (
+           pedido_id, pedido_item_id, pedido_item_id_original,
+           sucursal_id, cocina_id, componente_indice,
+           tipo_item, componente_id, nombre_snapshot, cantidad,
+           precio_unitario_snapshot, costo_unitario_snapshot,
+           producto_padre_id, producto_padre_nombre_snapshot
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [
+          pedidoId,
+          pedidoItemId,
+          pedidoItemId,
+          sucursalId,
+          componente.cocina_id,
+          indice,
+          componente.tipo_item,
+          componente.item_id,
+          componente.nombre,
+          componente.cantidad,
+          componente.precio_unitario,
+          componente.costo_unitario,
+          componente.producto_padre_id ?? null,
+          componente.producto_padre_nombre_snapshot ?? null,
+        ],
+      );
+    }
+  }
 
   /** Solo comprueba stock (creación cliente QR / pendiente). */
   async validarStockDisponible(
@@ -280,7 +350,27 @@ export class PedidosInventarioService {
     linea: LineaStock,
     incluirEmpaques: boolean,
   ): Promise<{ ingrediente_id: string; cantidad: number }[]> {
+    return (
+      await this.expandirLineaConComponentes(
+        client,
+        sucursalId,
+        linea,
+        incluirEmpaques,
+      )
+    ).expandidos;
+  }
+
+  private async expandirLineaConComponentes(
+    client: PoolClient,
+    sucursalId: string,
+    linea: LineaStock,
+    incluirEmpaques: boolean,
+  ): Promise<{
+    expandidos: { ingrediente_id: string; cantidad: number }[];
+    componentes: ExpansionComponenteStock[];
+  }> {
     const acumulador = new Map<string, number>();
+    const componentes: ExpansionComponenteStock[] = [];
     const sumar = (items: { ingrediente_id: string; cantidad: number }[]) => {
       for (const i of items) {
         acumulador.set(
@@ -290,33 +380,72 @@ export class PedidosInventarioService {
       }
     };
 
-    sumar(
-      await this.costeo.expandirIngredientesProducto(
-        client,
-        linea.productoId,
-        sucursalId,
-        linea.cantidad,
-        incluirEmpaques,
-      ),
+    const producto = await this.costeo.expandirIngredientesProducto(
+      client,
+      linea.productoId,
+      sucursalId,
+      linea.cantidad,
+      incluirEmpaques,
     );
-
-    for (const extra of linea.extras ?? []) {
-      sumar(
-        await this.costeo.expandirIngredientesExtra(
-          client,
-          extra.tipo,
-          extra.id,
-          sucursalId,
-          extra.cantidad,
-          incluirEmpaques,
-        ),
-      );
+    sumar(producto);
+    if (
+      linea.comboComponenteIndice != null &&
+      linea.comboComponenteId != null
+    ) {
+      componentes.push({
+        indice: linea.comboComponenteIndice,
+        componenteId: linea.comboComponenteId,
+        tipoItem: 'producto',
+        ingredientes: producto,
+      });
+    } else {
+      componentes.push({
+        indice: 0,
+        componenteId: linea.productoId,
+        tipoItem: 'producto',
+        ingredientes: producto,
+      });
     }
 
-    return [...acumulador.entries()].map(([ingrediente_id, cantidad]) => ({
-      ingrediente_id,
-      cantidad,
-    }));
+    for (const [indiceExtra, extra] of (linea.extras ?? []).entries()) {
+      const expansionExtra = await this.costeo.expandirIngredientesExtra(
+        client,
+        extra.tipo,
+        extra.id,
+        sucursalId,
+        extra.cantidad,
+        incluirEmpaques,
+      );
+      sumar(expansionExtra);
+      if (
+        extra.comboComponenteIndice != null &&
+        extra.comboComponenteId != null
+      ) {
+        componentes.push({
+          indice: extra.comboComponenteIndice,
+          componenteId: extra.comboComponenteId,
+          tipoItem: extra.tipo,
+          ingredientes: expansionExtra,
+        });
+      } else if (
+        linea.comboComponenteIndice == null ||
+        linea.comboComponenteId == null
+      ) {
+        componentes.push({
+          indice: indiceExtra + 1,
+          componenteId: extra.id,
+          tipoItem: extra.tipo,
+          ingredientes: expansionExtra,
+        });
+      }
+    }
+
+    return {
+      expandidos: [...acumulador.entries()].map(
+        ([ingrediente_id, cantidad]) => ({ ingrediente_id, cantidad }),
+      ),
+      componentes,
+    };
   }
 
   /** Ingredientes que faltarían para las líneas indicadas (admin / preview). */
@@ -499,12 +628,13 @@ export class PedidosInventarioService {
     const incluirEmpaques = opciones.incluirEmpaques ?? false;
 
     for (const linea of lineas) {
-      const expandidos = await this.expandirLineaCompleta(
+      const expansion = await this.expandirLineaConComponentes(
         client,
         sucursalId,
         linea,
         incluirEmpaques,
       );
+      const expandidos = expansion.expandidos;
 
       if (expandidos.length === 0) {
         const costoProducto = await this.costoCalculadoProducto(
@@ -519,6 +649,15 @@ export class PedidosInventarioService {
         client,
         sucursalId,
         expandidos,
+      );
+
+      await this.registrarSnapshotStockCombo(
+        client,
+        sucursalId,
+        pedidoId,
+        linea,
+        expansion.componentes,
+        ingredientes,
       );
 
       let costoLinea = 0;
@@ -570,6 +709,22 @@ export class PedidosInventarioService {
         ing.stock_actual = stockPosterior;
       }
 
+      if (
+        linea.pedidoItemId &&
+        linea.comboComponenteIndice == null &&
+        linea.comboComponenteId == null
+      ) {
+        await this.registrarSnapshotStockItemNormal(
+          client,
+          sucursalId,
+          pedidoId,
+          linea.pedidoItemId,
+          linea.cantidad,
+          expansion.componentes,
+          ingredientes,
+        );
+      }
+
       costosPorProducto.set(linea.productoId, costoLinea / linea.cantidad);
     }
 
@@ -598,6 +753,255 @@ export class PedidosInventarioService {
     return { costos: costosPorProducto, catalogo };
   }
 
+  private async registrarSnapshotStockItemNormal(
+    client: PoolClient,
+    sucursalId: string,
+    pedidoId: string,
+    pedidoItemId: string,
+    unidadesLinea: number,
+    componentes: ExpansionComponenteStock[],
+    ingredientes: IngredienteStock[],
+  ): Promise<void> {
+    const porIngrediente = new Map(
+      ingredientes.map((i) => [i.ingrediente_id, i]),
+    );
+    const loteId = randomUUID();
+    for (const componente of componentes) {
+      for (const ingrediente of componente.ingredientes) {
+        const stock = porIngrediente.get(ingrediente.ingrediente_id);
+        if (!stock?.descontar_stock || ingrediente.cantidad <= 0) continue;
+        await client.query(
+          `INSERT INTO pedido_item_stock_ledger (
+             pedido_id, pedido_item_id, pedido_item_id_original, sucursal_id,
+             lote_id, tipo_componente, componente_id, ingrediente_id,
+             evento, cantidad, unidades_linea, costo_unitario_snapshot
+           ) VALUES ($1,$2,$2,$3,$4,$5,$6,$7,'consumo',$8,$9,$10)`,
+          [
+            pedidoId,
+            pedidoItemId,
+            sucursalId,
+            loteId,
+            componente.tipoItem,
+            componente.componenteId,
+            ingrediente.ingrediente_id,
+            ingrediente.cantidad,
+            unidadesLinea,
+            stock.costo_unitario_actual,
+          ],
+        );
+      }
+    }
+  }
+
+  /**
+   * Reversa o convierte en merma unidades usando los lotes consumidos originales.
+   * Procesa el consumo más reciente primero, conservando recetas y costos históricos.
+   */
+  async ajustarStockItemNormalDesdeSnapshot(
+    client: PoolClient,
+    params: {
+      sucursalId: string;
+      pedidoId: string;
+      pedidoItemId: string;
+      unidades: number;
+      evento: 'devolucion' | 'merma';
+      motivo: string;
+      usuarioId?: string;
+      tipoComponente?: 'producto' | 'bebida' | 'topping';
+      componenteId?: string;
+    },
+  ): Promise<void> {
+    const operacionId = randomUUID();
+    const snapshots = await client.query<{
+      id: string;
+      tipo_componente: string;
+      componente_id: string;
+      ingrediente_id: string;
+      cantidad: string;
+      unidades_linea: string;
+      unidades_ajustadas: string;
+      cantidad_ajustada: string;
+    }>(
+      `SELECT c.id, c.tipo_componente, c.componente_id, c.ingrediente_id,
+              c.cantidad::text,
+              c.unidades_linea::text,
+              COALESCE((
+                SELECT SUM(a.unidades_linea) FROM pedido_item_stock_ledger a
+                WHERE a.consumo_id = c.id AND a.evento IN ('devolucion', 'merma')
+              ), 0)::text AS unidades_ajustadas,
+              COALESCE((
+                SELECT SUM(a.cantidad) FROM pedido_item_stock_ledger a
+                WHERE a.consumo_id = c.id AND a.evento IN ('devolucion', 'merma')
+              ), 0)::text AS cantidad_ajustada
+       FROM pedido_item_stock_ledger c
+       WHERE c.pedido_item_id_original = $1 AND c.pedido_id = $2
+         AND c.sucursal_id = $3 AND c.evento = 'consumo'
+         AND ($4::text IS NULL OR c.tipo_componente = $4)
+         AND ($5::uuid IS NULL OR c.componente_id = $5)
+         AND c.unidades_linea > COALESCE((
+           SELECT SUM(a.unidades_linea) FROM pedido_item_stock_ledger a
+           WHERE a.consumo_id = c.id AND a.evento IN ('devolucion', 'merma')
+         ), 0)
+       ORDER BY c.created_at DESC, c.id DESC
+       FOR UPDATE OF c`,
+      [
+        params.pedidoItemId,
+        params.pedidoId,
+        params.sucursalId,
+        params.tipoComponente ?? null,
+        params.componenteId ?? null,
+      ],
+    );
+    const hasSnapshots = snapshots.rows.length > 0;
+    if (!hasSnapshots) {
+      const legacyMovimientos = await client.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM movimientos_ingrediente
+         WHERE pedido_id = $1 AND pedido_item_id = $2
+           AND sucursal_id = $3 AND tipo = 'venta'`,
+        [params.pedidoId, params.pedidoItemId, params.sucursalId],
+      );
+      if (Number(legacyMovimientos.rows[0]?.n ?? 0) === 0) return;
+    }
+    const ingredientesTocados = new Set<string>();
+    const grupos = new Map<string, typeof snapshots.rows>();
+    for (const snapshot of snapshots.rows) {
+      const key = `${snapshot.tipo_componente}:${snapshot.componente_id}:${snapshot.ingrediente_id}`;
+      grupos.set(key, [...(grupos.get(key) ?? []), snapshot]);
+    }
+    let gruposIncompletos = 0;
+    for (const filas of grupos.values()) {
+      let unidadesPendientes = params.unidades;
+      for (const snapshot of filas) {
+        if (unidadesPendientes <= 0) break;
+        const unidadesOriginales = Number(snapshot.unidades_linea);
+        const unidadesDisponibles =
+          unidadesOriginales - Number(snapshot.unidades_ajustadas);
+        const cantidadDisponible =
+          Number(snapshot.cantidad) - Number(snapshot.cantidad_ajustada);
+        if (unidadesDisponibles <= 0 || cantidadDisponible <= 0) continue;
+
+        const unidadesAjustar = Math.min(
+          unidadesPendientes,
+          unidadesDisponibles,
+        );
+        const cantidadAjustar =
+          cantidadDisponible * (unidadesAjustar / unidadesDisponibles);
+        const ingrediente = await client.query<{
+          stock_actual: string;
+          stock_minimo: string;
+        }>(
+          `SELECT stock_actual, stock_minimo FROM ingredientes
+         WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
+          [snapshot.ingrediente_id, params.sucursalId],
+        );
+        const fila = ingrediente.rows[0];
+        if (!fila) {
+          throw new BadRequestException({
+            error: 'STOCK_LEDGER_INGREDIENTE_INCONSISTENTE',
+            message: 'No se puede conciliar el ingrediente de esta línea.',
+          });
+        }
+        const stockAnterior = Number(fila.stock_actual);
+        const stockPosterior =
+          params.evento === 'devolucion'
+            ? stockAnterior + cantidadAjustar
+            : stockAnterior;
+        await this.stockMovimiento.aplicarMovimiento({
+          client,
+          sucursalId: params.sucursalId,
+          ingredienteId: snapshot.ingrediente_id,
+          tipo: params.evento,
+          cantidad: cantidadAjustar,
+          stockAnterior,
+          stockPosterior,
+          pedidoId: params.pedidoId,
+          pedidoItemId: params.pedidoItemId,
+          usuarioId: params.usuarioId,
+          motivo: params.motivo,
+        });
+        await client.query(
+          `INSERT INTO pedido_item_stock_ledger (
+           pedido_id, pedido_item_id, pedido_item_id_original, sucursal_id,
+           lote_id, tipo_componente, componente_id, ingrediente_id,
+           evento, cantidad, unidades_linea, costo_unitario_snapshot,
+           consumo_id, operacion_id
+         )
+         SELECT pedido_id, pedido_item_id, pedido_item_id_original, sucursal_id,
+                lote_id, tipo_componente, componente_id, ingrediente_id,
+                $2, $3, $4, costo_unitario_snapshot, id, $5
+         FROM pedido_item_stock_ledger WHERE id = $1`,
+          [
+            snapshot.id,
+            params.evento,
+            cantidadAjustar,
+            unidadesAjustar,
+            operacionId,
+          ],
+        );
+        if (params.evento === 'devolucion') {
+          ingredientesTocados.add(snapshot.ingrediente_id);
+        }
+        unidadesPendientes -= unidadesAjustar;
+      }
+      if (unidadesPendientes > 0.000001) gruposIncompletos += 1;
+    }
+
+    if (!hasSnapshots || gruposIncompletos > 0) {
+      throw new BadRequestException({
+        error: 'STOCK_LEDGER_LINEA_INCOMPLETO',
+        message:
+          'No hay snapshot completo para conciliar el inventario de esta línea. No se modificó su stock.',
+      });
+    }
+    await this.sincronizarDisponibilidadIngredientes(
+      client,
+      params.sucursalId,
+      ingredientesTocados,
+    );
+  }
+
+  /** Guarda el consumo exacto por componente usando la receta vigente al vender. */
+  private async registrarSnapshotStockCombo(
+    client: PoolClient,
+    sucursalId: string,
+    pedidoId: string,
+    linea: LineaStock,
+    componentes: ExpansionComponenteStock[],
+    ingredientesAgregados: IngredienteStock[],
+  ): Promise<void> {
+    if (!linea.pedidoItemId || linea.comboComponenteIndice == null) return;
+
+    const porIngrediente = new Map(
+      ingredientesAgregados.map((i) => [i.ingrediente_id, i]),
+    );
+    for (const componente of componentes) {
+      for (const item of componente.ingredientes) {
+        const ingredienteId = item.ingrediente_id;
+        const cantidad = item.cantidad;
+        const ingrediente = porIngrediente.get(ingredienteId);
+        if (!ingrediente || ingrediente.descontar_stock === false) continue;
+        await client.query(
+          `INSERT INTO pedido_combo_stock_ledger (
+             pedido_id, pedido_item_id, pedido_item_id_original,
+             componente_indice,
+             componente_id, ingrediente_id, evento, cantidad,
+             costo_unitario_snapshot
+           ) VALUES ($1,$2,$3,$4,$5,$6,'consumo',$7,$8)`,
+          [
+            pedidoId,
+            linea.pedidoItemId,
+            linea.pedidoItemId,
+            componente.indice,
+            componente.componenteId,
+            ingredienteId,
+            cantidad,
+            ingrediente.costo_unitario_actual,
+          ],
+        );
+      }
+    }
+  }
+
   /** Devuelve ingredientes descontados por un pedido confirmado (cancelación). */
   async restaurarStockPedido(
     client: PoolClient,
@@ -613,6 +1017,7 @@ export class PedidosInventarioService {
               GREATEST(
                 COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'venta'), 0)
                 - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'devolucion'), 0)
+                - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'merma'), 0)
                 - COALESCE(SUM(cantidad) FILTER (
                     WHERE tipo = 'ajuste'
                       AND motivo IN (
@@ -624,11 +1029,12 @@ export class PedidosInventarioService {
               )::text AS cantidad
        FROM movimientos_ingrediente
        WHERE pedido_id = $1 AND sucursal_id = $2
-         AND tipo IN ('venta', 'devolucion', 'ajuste')
+         AND tipo IN ('venta', 'devolucion', 'merma', 'ajuste')
        GROUP BY ingrediente_id
        HAVING GREATEST(
          COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'venta'), 0)
          - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'devolucion'), 0)
+         - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'merma'), 0)
          - COALESCE(SUM(cantidad) FILTER (
              WHERE tipo = 'ajuste'
                AND motivo IN (
@@ -691,6 +1097,225 @@ export class PedidosInventarioService {
     );
   }
 
+  /** Ajusta un componente desde su ledger; no reexpande el componente que se devuelve. */
+  async ajustarStockComponenteCombo(
+    client: PoolClient,
+    params: {
+      sucursalId: string;
+      pedidoId: string;
+      pedidoItemIdOriginal: string;
+      decisionId: string | null;
+      componenteIndice: number;
+      componenteId: string;
+      tipoItem: 'producto' | 'bebida' | 'topping';
+      cantidad: number;
+      evento: EventoStockCombo;
+      motivo: string;
+      usuarioId: string;
+    },
+  ): Promise<void> {
+    const {
+      sucursalId,
+      pedidoId,
+      pedidoItemIdOriginal,
+      decisionId,
+      componenteIndice,
+      componenteId,
+      tipoItem,
+      cantidad,
+      evento,
+      motivo,
+      usuarioId,
+    } = params;
+
+    if (evento === 'consumo') {
+      const expansion =
+        tipoItem === 'producto'
+          ? await this.costeo.expandirIngredientesProducto(
+              client,
+              componenteId,
+              sucursalId,
+              cantidad,
+              false,
+            )
+          : await this.costeo.expandirIngredientesExtra(
+              client,
+              tipoItem,
+              componenteId,
+              sucursalId,
+              cantidad,
+              false,
+            );
+      const ingredientes = await this.cargarStockIngredientes(
+        client,
+        sucursalId,
+        expansion,
+      );
+      const faltas = ingredientes
+        .filter((i) => i.descontar_stock && i.stock_actual < i.cantidad)
+        .map((i) => ({
+          ingrediente_id: i.ingrediente_id,
+          nombre: i.nombre,
+          necesita: i.cantidad,
+          disponible: i.stock_actual,
+          unidad: i.unidad_base,
+        }));
+      if (faltas.length) this.lanzarStockInsuficiente(faltas);
+
+      const tocados = new Set<string>();
+      for (const ingrediente of ingredientes) {
+        if (!ingrediente.descontar_stock) continue;
+        const stockPosterior = ingrediente.stock_actual - ingrediente.cantidad;
+        await this.stockMovimiento.aplicarMovimiento({
+          client,
+          sucursalId,
+          ingredienteId: ingrediente.ingrediente_id,
+          tipo: 'venta',
+          cantidad: ingrediente.cantidad,
+          stockAnterior: ingrediente.stock_actual,
+          stockPosterior,
+          pedidoId,
+          pedidoItemId: pedidoItemIdOriginal,
+          usuarioId,
+          motivo,
+        });
+        await this.insertarMovimientoLedgerCombo(client, {
+          ...params,
+          ingredienteId: ingrediente.ingrediente_id,
+          cantidadIngrediente: ingrediente.cantidad,
+          costoUnitario: ingrediente.costo_unitario_actual,
+        });
+        tocados.add(ingrediente.ingrediente_id);
+      }
+      await this.sincronizarDisponibilidadIngredientes(
+        client,
+        sucursalId,
+        tocados,
+      );
+      return;
+    }
+
+    const result = await client.query<{
+      ingrediente_id: string;
+      cantidad: string;
+      costo_unitario_snapshot: string;
+    }>(
+      `SELECT ingrediente_id,
+              GREATEST(
+                COALESCE(SUM(cantidad) FILTER (WHERE evento = 'consumo'), 0)
+                - COALESCE(SUM(cantidad) FILTER (WHERE evento IN ('devolucion', 'merma')), 0),
+                0
+              )::text AS cantidad,
+              MAX(costo_unitario_snapshot)::text AS costo_unitario_snapshot
+       FROM pedido_combo_stock_ledger
+       WHERE pedido_id = $1 AND pedido_item_id_original = $2
+         AND componente_indice = $3 AND componente_id = $4
+       GROUP BY ingrediente_id
+       HAVING GREATEST(
+         COALESCE(SUM(cantidad) FILTER (WHERE evento = 'consumo'), 0)
+         - COALESCE(SUM(cantidad) FILTER (WHERE evento IN ('devolucion', 'merma')), 0),
+         0
+       ) > 0`,
+      [pedidoId, pedidoItemIdOriginal, componenteIndice, componenteId],
+    );
+    const tocados = new Set<string>();
+    for (const fila of result.rows) {
+      const cantidadIngrediente = Number(fila.cantidad);
+      const ingrediente = await client.query<{
+        stock_actual: string;
+      }>(
+        `SELECT stock_actual FROM ingredientes
+         WHERE id = $1 AND sucursal_id = $2 FOR UPDATE`,
+        [fila.ingrediente_id, sucursalId],
+      );
+      const stockActual = Number(ingrediente.rows[0]?.stock_actual);
+      if (!ingrediente.rows[0]) {
+        throw new BadRequestException({
+          error: 'COMBO_INGREDIENTE_LEDGER_INCONSISTENTE',
+          message:
+            'No se puede conciliar el combo: un ingrediente del ledger ya no existe en la sede.',
+        });
+      }
+      const stockPosterior =
+        evento === 'devolucion'
+          ? stockActual + cantidadIngrediente
+          : stockActual;
+      await this.stockMovimiento.aplicarMovimiento({
+        client,
+        sucursalId,
+        ingredienteId: fila.ingrediente_id,
+        tipo: evento,
+        cantidad: cantidadIngrediente,
+        stockAnterior: stockActual,
+        stockPosterior,
+        pedidoId,
+        pedidoItemId: pedidoItemIdOriginal,
+        usuarioId,
+        motivo,
+      });
+      await this.insertarMovimientoLedgerCombo(client, {
+        ...params,
+        ingredienteId: fila.ingrediente_id,
+        cantidadIngrediente,
+        costoUnitario: Number(fila.costo_unitario_snapshot),
+      });
+      if (evento === 'devolucion') tocados.add(fila.ingrediente_id);
+    }
+    await this.sincronizarDisponibilidadIngredientes(
+      client,
+      sucursalId,
+      tocados,
+    );
+  }
+
+  private async insertarMovimientoLedgerCombo(
+    client: PoolClient,
+    params: {
+      pedidoId: string;
+      pedidoItemIdOriginal: string;
+      decisionId: string | null;
+      componenteIndice: number;
+      componenteId: string;
+      ingredienteId: string;
+      evento: EventoStockCombo;
+      cantidadIngrediente: number;
+      costoUnitario: number;
+    },
+  ) {
+    await client.query(
+      `INSERT INTO pedido_combo_stock_ledger (
+         pedido_id, pedido_item_id, pedido_item_id_original,
+         componente_indice, componente_id, ingrediente_id,
+         evento, cantidad, costo_unitario_snapshot, decision_id
+       ) VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        params.pedidoId,
+        params.pedidoItemIdOriginal,
+        params.componenteIndice,
+        params.componenteId,
+        params.ingredienteId,
+        params.evento,
+        params.cantidadIngrediente,
+        params.costoUnitario,
+        params.decisionId,
+      ],
+    );
+  }
+
+  private async sincronizarDisponibilidadIngredientes(
+    client: PoolClient,
+    sucursalId: string,
+    ingredientes: Set<string>,
+  ) {
+    for (const ingredienteId of ingredientes) {
+      await this.catalogoDisponibilidad.sincronizarPorIngredienteEnTransaccion(
+        client,
+        sucursalId,
+        ingredienteId,
+      );
+    }
+  }
+
   /** Registra merma (stock ya descontado; no restaura). INV-011 */
   async registrarMermaLineaProducto(
     client: PoolClient,
@@ -701,6 +1326,85 @@ export class PedidosInventarioService {
     motivo: string,
     pedidoItemId?: string,
   ): Promise<void> {
+    if (pedidoItemId) {
+      const combo = await client.query<{ existe: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM pedido_combo_selecciones WHERE pedido_item_id = $1
+         ) AS existe`,
+        [pedidoItemId],
+      );
+      if (combo.rows[0]?.existe) {
+        const tareas = await client.query<{
+          componente_indice: number;
+          componente_id: string;
+          tipo_item: 'producto' | 'bebida' | 'topping';
+          cantidad: string;
+        }>(
+          `SELECT componente_indice, componente_id, tipo_item,
+                  cantidad::text AS cantidad
+           FROM pedido_combo_tareas_cocina
+           WHERE pedido_item_id_original = $1 AND pedido_id = $2
+           ORDER BY componente_indice`,
+          [pedidoItemId, pedidoId],
+        );
+        if (tareas.rows.length === 0) {
+          throw new BadRequestException({
+            error: 'COMBO_STOCK_LEDGER_INCONSISTENTE',
+            message:
+              'No se registra merma del combo porque faltan sus snapshots de tareas por estación.',
+          });
+        }
+        for (const tarea of tareas.rows) {
+          await this.ajustarStockComponenteCombo(client, {
+            sucursalId,
+            pedidoId,
+            pedidoItemIdOriginal: pedidoItemId,
+            decisionId: null,
+            componenteIndice: tarea.componente_indice,
+            componenteId: tarea.componente_id,
+            tipoItem: tarea.tipo_item,
+            cantidad: Number(tarea.cantidad),
+            evento: 'merma',
+            motivo,
+            usuarioId: '',
+          });
+        }
+        return;
+      }
+
+      const snapshot = await client.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM pedido_item_stock_ledger
+         WHERE pedido_item_id_original = $1 AND pedido_id = $2
+           AND sucursal_id = $3 AND evento = 'consumo'`,
+        [pedidoItemId, pedidoId, sucursalId],
+      );
+      if (Number(snapshot.rows[0]?.n ?? 0) > 0) {
+        await this.ajustarStockItemNormalDesdeSnapshot(client, {
+          sucursalId,
+          pedidoId,
+          pedidoItemId,
+          unidades: cantidad,
+          evento: 'merma',
+          motivo,
+        });
+        return;
+      }
+      const movimientos = await client.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM movimientos_ingrediente
+         WHERE pedido_id = $1 AND pedido_item_id = $2
+           AND sucursal_id = $3 AND tipo = 'venta'`,
+        [pedidoId, pedidoItemId, sucursalId],
+      );
+      if (Number(movimientos.rows[0]?.n ?? 0) > 0) {
+        throw new BadRequestException({
+          error: 'STOCK_LEDGER_LINEA_INCOMPLETO',
+          message:
+            'No se registra merma automática porque esta línea no conserva el desglose de ingredientes consumido al vender.',
+        });
+      }
+      return;
+    }
+
     const expandidos = await this.costeo.expandirIngredientesProducto(
       client,
       productoId,
@@ -853,6 +1557,8 @@ export class PedidosInventarioService {
         cantidad: number;
         precioVentaLinea: number;
         extras: LineaStockExtra[];
+        comboComponenteIndice?: number;
+        comboComponenteId?: string;
       }
     >();
 
@@ -883,13 +1589,14 @@ export class PedidosInventarioService {
               tipo_item: 'producto' | 'bebida' | 'topping';
               item_id: string;
               cantidad: number;
+              producto_padre_id?: string | null;
             }[])
           : [];
         if (snapshot.length > 0) {
-          const componentesProducto = snapshot.filter(
-            (c) => c.tipo_item === 'producto',
-          );
-          for (const componente of componentesProducto) {
+          const componentesProducto = snapshot
+            .map((componente, indice) => ({ componente, indice }))
+            .filter(({ componente }) => componente.tipo_item === 'producto');
+          for (const { componente, indice } of componentesProducto) {
             const cant = Number(componente.cantidad) * row.cantidad;
             const key = `${row.item_id}:${componente.item_id}`;
             const prev = lineas.get(key);
@@ -898,19 +1605,32 @@ export class PedidosInventarioService {
               cantidad: (prev?.cantidad ?? 0) + cant,
               precioVentaLinea: prev?.precioVentaLinea ?? 0,
               extras: prev?.extras ?? [],
+              comboComponenteIndice: indice,
+              comboComponenteId: componente.item_id,
             });
           }
-          const productoAncla = componentesProducto[0]?.item_id;
+          const productoAncla = componentesProducto[0]?.componente.item_id;
           if (productoAncla) {
-            const extras = snapshot
-              .filter((c) => c.tipo_item !== 'producto')
-              .map((c) => ({
-                tipo: c.tipo_item as 'bebida' | 'topping',
-                id: c.item_id,
-                cantidad: Number(c.cantidad) * row.cantidad,
-              }));
-            const prev = lineas.get(`${row.item_id}:${productoAncla}`);
-            if (prev) prev.extras.push(...extras);
+            for (const { componente, indice } of snapshot
+              .map((componente, snapshotIndice) => ({
+                componente,
+                indice: snapshotIndice,
+              }))
+              .filter(
+                ({ componente }) => componente.tipo_item !== 'producto',
+              )) {
+              const productoDestino =
+                componente.producto_padre_id ?? productoAncla;
+              const destino = lineas.get(`${row.item_id}:${productoDestino}`);
+              if (!destino) continue;
+              destino.extras.push({
+                tipo: componente.tipo_item as 'bebida' | 'topping',
+                id: componente.item_id,
+                cantidad: Number(componente.cantidad) * row.cantidad,
+                comboComponenteIndice: indice,
+                comboComponenteId: componente.item_id,
+              });
+            }
           }
           continue;
         }
@@ -981,6 +1701,12 @@ export class PedidosInventarioService {
       cantidad: v.cantidad,
       precioVentaLinea: v.precioVentaLinea,
       extras: v.extras,
+      ...(v.comboComponenteIndice == null
+        ? {}
+        : {
+            comboComponenteIndice: v.comboComponenteIndice,
+            comboComponenteId: v.comboComponenteId,
+          }),
     }));
   }
 

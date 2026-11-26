@@ -116,6 +116,9 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
   late PedidoAdminModel _pedido;
   bool _cargando = true;
   String? _error;
+  List<Map<String, dynamic>> _decisionesCombo = const [];
+  bool _errorDecisionesCombo = false;
+  final Set<String> _decisionesComboProcesando = {};
 
   @override
   void initState() {
@@ -134,9 +137,21 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
         pedidoId: _pedido.id,
         sucursalId: widget.sucursalId,
       );
+      List<Map<String, dynamic>> decisiones = const [];
+      var falloDecisiones = false;
+      try {
+        decisiones = await _repo.listarDecisionesComboPendientes(
+          pedidoId: _pedido.id,
+          sucursalId: widget.sucursalId,
+        );
+      } catch (_) {
+        falloDecisiones = true;
+      }
       if (mounted) {
         setState(() {
           _pedido = det;
+          _decisionesCombo = decisiones;
+          _errorDecisionesCombo = falloDecisiones;
           _cargando = false;
         });
       }
@@ -147,6 +162,158 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
           _cargando = false;
         });
       }
+    }
+  }
+
+  Future<void> _resolverDecisionCombo(Map<String, dynamic> decision) async {
+    final id = '${decision['decision_id'] ?? ''}';
+    if (id.isEmpty || !_decisionesComboProcesando.add(id)) return;
+    setState(() {});
+    try {
+      final reemplazos = (decision['reemplazos'] as List<dynamic>? ?? [])
+          .map((raw) => Map<String, dynamic>.from(raw as Map))
+          .toList();
+      Map<String, dynamic>? reemplazo;
+      if (reemplazos.isNotEmpty) {
+        reemplazo = await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: const Text('Elegir reemplazo'),
+            children: reemplazos
+                .map(
+                  (opcion) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, opcion),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('${opcion['nombre']}')),
+                        Text(widget.formatoMoneda.format(
+                          opcion['precio_unitario'] as num? ?? 0,
+                        )),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+      }
+
+      // Cerrar el selector no equivale a que el cliente haya rechazado.
+      if (reemplazos.isNotEmpty && reemplazo == null) return;
+
+      if (reemplazo != null) {
+        final cotizacion = await _repo.cotizarReemplazoCombo(
+          pedidoId: _pedido.id,
+          decisionId: id,
+          reemplazoId: '${reemplazo['id']}',
+          sucursalId: widget.sucursalId,
+        );
+        if (!mounted) return;
+        final total = cotizacion['total_propuesto'] as num? ?? 0;
+        final diferencia = cotizacion['diferencia_propuesta'] as num? ?? 0;
+        final diferenciaTexto = diferencia >= 0
+            ? 'Aumenta ${widget.formatoMoneda.format(diferencia)}'
+            : 'Disminuye ${widget.formatoMoneda.format(diferencia.abs())}';
+        final accion = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Confirma el cliente'),
+            content: Text(
+              'Reemplazo: ${reemplazo!['nombre']}\n'
+              '$diferenciaTexto\n'
+              'Nuevo total del pedido: ${widget.formatoMoneda.format(total)}\n\n'
+              'Registra la aceptación explícita del cliente. Si no acepta, se cancela solo este combo.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'posponer'),
+                child: const Text('Dejar pendiente'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'cancelar_combo'),
+                child: const Text('No acepta'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, 'aceptar_sustitucion'),
+                child: const Text('Cliente acepta el total'),
+              ),
+            ],
+          ),
+        );
+        if (accion == null || accion == 'posponer') return;
+        if (accion == 'aceptar_sustitucion') {
+          await _repo.responderDecisionCombo(
+            pedidoId: _pedido.id,
+            decisionId: id,
+            accion: accion,
+            cotizacionVersion:
+                (cotizacion['cotizacion_version'] as num).toInt(),
+            totalAceptado: total,
+            sucursalId: widget.sucursalId,
+          );
+        } else {
+          await _repo.responderDecisionCombo(
+            pedidoId: _pedido.id,
+            decisionId: id,
+            accion: accion,
+            motivo: 'El cliente rechazó el reemplazo cotizado.',
+            sucursalId: widget.sucursalId,
+          );
+        }
+      } else {
+        final confirmar = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Cancelar solo este combo'),
+            content: Text(
+              reemplazos.isEmpty
+                  ? 'No hay reemplazos disponibles para ${decision['componente_anterior']?['nombre'] ?? 'este componente'}. ¿El cliente confirma cancelar únicamente este combo?'
+                  : '¿El cliente confirma que no desea un reemplazo y cancelar únicamente este combo?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Seguir consultando'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Cliente confirma cancelación'),
+              ),
+            ],
+          ),
+        );
+        if (confirmar != true) return;
+        await _repo.responderDecisionCombo(
+          pedidoId: _pedido.id,
+          decisionId: id,
+          accion: 'cancelar_combo',
+          motivo: 'El cliente rechazó el combo sin reemplazo disponible.',
+          sucursalId: widget.sucursalId,
+        );
+      }
+      widget.onCambiado?.call();
+      await _cargar();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Respuesta registrada. Se aplicarán los ajustes de pedido, Caja e inventario al completar la conciliación.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(mensajeErrorHttp(e, contexto: 'decisión del combo')),
+            backgroundColor: ColoresFoody.error,
+          ),
+        );
+      }
+    } finally {
+      _decisionesComboProcesando.remove(id);
+      if (mounted) setState(() {});
     }
   }
 
@@ -271,6 +438,8 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
         .contains(_pedido.estado);
     final puedeEditarItems =
         !widget.modoMesero || widget.permisos.contains('crear_pedido');
+    final puedeResponderDecisionCombo =
+        widget.permisos.contains('crear_pedido') && !cerrado;
 
     return SafeArea(
       child: SizedBox(
@@ -380,6 +549,131 @@ class _PedidoDetalleSheetState extends State<PedidoDetalleSheet> {
                               .where((it) => it.estadoCocina == 'no_disponible')
                               .fold<int>(0, (suma, it) => suma + it.cantidad),
                         ),
+                        if (_errorDecisionesCombo)
+                          Card(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            child: ListTile(
+                              leading: const Icon(Icons.sync_problem_outlined),
+                              title: const Text(
+                                'No se pudieron cargar las decisiones de cocina',
+                              ),
+                              trailing: IconButton(
+                                tooltip: 'Reintentar',
+                                onPressed: _cargar,
+                                icon: const Icon(Icons.refresh),
+                              ),
+                            ),
+                          ),
+                        if (_decisionesCombo.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Confirmaciones pendientes',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          ..._decisionesCombo.map((decision) {
+                            final anterior = Map<String, dynamic>.from(
+                              decision['componente_anterior'] as Map? ?? {},
+                            );
+                            final id = '${decision['decision_id'] ?? ''}';
+                            final procesando =
+                                _decisionesComboProcesando.contains(id);
+                            return Card(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .tertiaryContainer,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          Icons.hourglass_top_rounded,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onTertiaryContainer,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${anterior['nombre'] ?? 'Componente'} no disponible',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              if (decision['producto_padre'] !=
+                                                  null)
+                                                Text(
+                                                  'Plato: ${decision['producto_padre']}',
+                                                ),
+                                              Text(
+                                                'Cocina: ${decision['cocina_id'] ?? 'asignada'} · Cantidad: ${anterior['cantidad'] ?? 1}',
+                                              ),
+                                              if ('${decision['motivo_no_disponible'] ?? ''}'
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                Text(
+                                                  'Motivo: ${decision['motivo_no_disponible']}',
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (puedeResponderDecisionCombo) ...[
+                                      const SizedBox(height: 10),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: FilledButton.tonalIcon(
+                                          onPressed: procesando
+                                              ? null
+                                              : () => _resolverDecisionCombo(
+                                                    decision,
+                                                  ),
+                                          icon: procesando
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                  ),
+                                                )
+                                              : const Icon(
+                                                  Icons.chat_outlined,
+                                                ),
+                                          label: Text(
+                                            procesando
+                                                ? 'Registrando respuesta…'
+                                                : 'Consultar al cliente',
+                                          ),
+                                        ),
+                                      ),
+                                    ] else
+                                      const Padding(
+                                        padding: EdgeInsets.only(top: 8),
+                                        child: Text(
+                                          'Espera a que un mesero con permiso registre la respuesta del cliente.',
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
                         if (_pedido.saldoPendiente > 0.01)
                           _metaFila(
                             'Saldo',

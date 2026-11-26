@@ -101,6 +101,17 @@ let CocinasService = class CocinasService {
         }
         await this.exigirAccesoCocinaKds(usuario, item.cocina_id);
     }
+    async exigirAccesoTareaComboKds(usuario, tareaId) {
+        const sucursalId = usuario.sucursal_id;
+        if (!sucursalId)
+            throw new common_1.BadRequestException('Sin sucursal en sesión');
+        const tarea = await this.database.consultarUno(`SELECT cocina_id
+       FROM pedido_combo_tareas_cocina
+       WHERE id = $1 AND sucursal_id = $2`, [tareaId, sucursalId]);
+        if (!tarea)
+            throw new common_1.NotFoundException('Tarea de combo no encontrada');
+        await this.exigirAccesoCocinaKds(usuario, tarea.cocina_id);
+    }
     async cocinaAsignadaUsuario(usuario) {
         if (usuario.cocina_id)
             return usuario.cocina_id;
@@ -203,78 +214,424 @@ let CocinasService = class CocinasService {
     }
     async listarTickets(cocinaId, sucursalId) {
         await this.exigirCocina(cocinaId, sucursalId);
-        return this.database.consultar(`SELECT p.id AS pedido_id, p.numero_pedido, p.tipo, p.estado,
+        return this.database.consultar(`WITH items_kds AS (
+         SELECT pi.pedido_id, pi.id AS pedido_item_id, pi.id AS item_id,
+                NULL::uuid AS tarea_combo_id, pi.created_at,
+                pr.nombre AS producto, pi.cantidad, pi.observaciones,
+                COALESCE(pi.estado_cocina, 'pendiente') AS estado_cocina,
+                NULL::text AS producto_padre,
+                COALESCE(
+                  (SELECT json_agg(json_build_object(
+                     'nombre', pr2.nombre,
+                     'cantidad', pii.cantidad * pi.cantidad
+                   ) ORDER BY pr2.nombre)
+                   FROM producto_items_incluidos pii
+                   INNER JOIN productos pr2 ON pr2.id = pii.producto_incluido_id
+                   WHERE pii.producto_id = pi.producto_id
+                     AND pii.sucursal_id = $2),
+                  '[]'::json
+                ) AS incluidos,
+                COALESCE(
+                  (SELECT json_agg(json_build_object(
+                     'nombre', componente.value->>'nombre',
+                     'cantidad', (componente.value->>'cantidad')::numeric * pi.cantidad
+                   ) ORDER BY componente.value->>'nombre')
+                   FROM pedido_combo_selecciones pcs
+                   CROSS JOIN LATERAL jsonb_array_elements(pcs.componentes_snapshot) AS componente(value)
+                   WHERE pcs.pedido_item_id = pi.id
+                     AND componente.value->>'item_id' <> pi.producto_id::text),
+                  '[]'::json
+                ) AS combo_componentes
+         FROM pedido_items pi
+         INNER JOIN pedidos p ON p.id = pi.pedido_id
+         LEFT JOIN productos pr ON pr.id = pi.producto_id
+         WHERE p.sucursal_id = $2 AND pi.cocina_id = $1
+           AND NOT EXISTS (
+             SELECT 1 FROM pedido_combo_tareas_cocina t
+             WHERE t.pedido_item_id = pi.id
+           )
+
+         UNION ALL
+
+         SELECT pi.pedido_id, pi.id AS pedido_item_id, t.id AS item_id,
+                t.id AS tarea_combo_id, t.created_at,
+                t.nombre_snapshot AS producto, t.cantidad,
+                CASE
+                  WHEN t.producto_padre_nombre_snapshot IS NOT NULL
+                    THEN 'Para: ' || t.producto_padre_nombre_snapshot
+                  ELSE t.motivo_no_disponible
+                END AS observaciones,
+                t.estado AS estado_cocina,
+                t.producto_padre_nombre_snapshot AS producto_padre,
+                '[]'::json AS incluidos,
+                '[]'::json AS combo_componentes
+         FROM pedido_combo_tareas_cocina t
+         INNER JOIN pedido_items pi ON pi.id = t.pedido_item_id
+         INNER JOIN pedidos p ON p.id = pi.pedido_id
+         WHERE t.sucursal_id = $2 AND t.cocina_id = $1
+           AND t.estado <> 'cancelada'
+       )
+       SELECT p.id AS pedido_id, $1::uuid AS cocina_id,
+              p.numero_pedido, p.tipo, p.estado,
               p.mesa_id, m.nombre AS mesa_nombre, p.cliente_nombre,
               p.observaciones, p.created_at,
-              MIN(pi.created_at) AS cocina_desde,
+              MIN(i.created_at) AS cocina_desde,
               COALESCE(
                 json_agg(
                   json_build_object(
-                    'item_id', pi.id,
-                    'producto', pr.nombre,
-                    'cantidad', pi.cantidad,
-                    'observaciones', pi.observaciones,
-                    'estado_cocina', pi.estado_cocina,
-                    'created_at', pi.created_at,
-                    'incluidos', COALESCE(
-                      (
-                        SELECT json_agg(
-                          json_build_object(
-                            'nombre', pr2.nombre,
-                            'cantidad', pii.cantidad * pi.cantidad
-                          ) ORDER BY pr2.nombre
-                        )
-                        FROM producto_items_incluidos pii
-                        INNER JOIN productos pr2 ON pr2.id = pii.producto_incluido_id
-                        WHERE pii.producto_id = pi.producto_id
-                          AND pii.sucursal_id = p.sucursal_id
-                      ),
-                      '[]'::json
-                    ),
-                    'combo_componentes', COALESCE(
-                      (
-                        SELECT json_agg(
-                          json_build_object(
-                            'nombre', componente.value->>'nombre',
-                            'cantidad',
-                              (componente.value->>'cantidad')::numeric * pi.cantidad
-                          ) ORDER BY componente.value->>'nombre'
-                        )
-                        FROM pedido_combo_selecciones pcs
-                        CROSS JOIN LATERAL jsonb_array_elements(
-                          pcs.componentes_snapshot
-                        ) AS componente(value)
-                        WHERE pcs.pedido_item_id = pi.id
-                          AND componente.value->>'item_id' <> pi.producto_id::text
-                      ),
-                      '[]'::json
-                    )
-                  ) ORDER BY pi.created_at
-                ) FILTER (WHERE pi.id IS NOT NULL),
+                    'item_id', i.item_id,
+                    'pedido_item_id', i.pedido_item_id,
+                    'tarea_combo_id', i.tarea_combo_id,
+                    'producto', i.producto,
+                    'cantidad', i.cantidad,
+                    'observaciones', i.observaciones,
+                    'estado_cocina', i.estado_cocina,
+                    'producto_padre', i.producto_padre,
+                    'created_at', i.created_at,
+                    'incluidos', i.incluidos,
+                    'combo_componentes', i.combo_componentes
+                  ) ORDER BY i.created_at
+                ) FILTER (WHERE i.item_id IS NOT NULL),
                 '[]'
               ) AS items
        FROM pedidos p
        LEFT JOIN mesas m ON m.id = p.mesa_id
-       JOIN pedido_items pi ON pi.pedido_id = p.id AND pi.cocina_id = $1
-       LEFT JOIN productos pr ON pr.id = pi.producto_id
+       JOIN items_kds i ON i.pedido_id = p.id
        WHERE p.sucursal_id = $2
          AND (
            p.estado IN ('confirmado', 'en_cocina', 'listo', 'pagando')
            OR (
              p.estado = 'pagado'
-             AND EXISTS (
-               SELECT 1 FROM pedido_items pi_pend
-               WHERE pi_pend.pedido_id = p.id
-                 AND pi_pend.cocina_id = $1
-                 AND (
-                   pi_pend.estado_cocina IS NULL
-                   OR pi_pend.estado_cocina NOT IN ('listo', 'no_disponible')
-                 )
+             AND (
+               EXISTS (
+                 SELECT 1 FROM items_kds i_pend
+                 WHERE i_pend.pedido_id = p.id
+                   AND i_pend.estado_cocina NOT IN ('listo', 'no_disponible', 'cancelada')
+               )
+               OR EXISTS (
+                 SELECT 1 FROM pedido_combo_decisiones_cliente d
+                 JOIN pedido_items pi_d ON pi_d.id = d.pedido_item_id
+                 WHERE pi_d.pedido_id = p.id AND d.estado = 'pendiente_cliente'
+               )
              )
            )
          )
        GROUP BY p.id, m.nombre
        ORDER BY p.created_at ASC`, [cocinaId, sucursalId]);
+    }
+    async cambiarEstadoTareaCombo(tareaId, sucursalId, estado, usuarioId) {
+        if (estado === 'no_disponible') {
+            throw new common_1.ConflictException({
+                error: 'COMBO_REQUIERE_DECISION_CLIENTE',
+                message: 'La falta de un componente requiere pausar el combo y registrar la decisión del cliente.',
+            });
+        }
+        const result = await this.database.enTransaccion(async (client) => {
+            const locked = await client.query(`SELECT t.id AS tarea_id, t.pedido_item_id, p.id AS pedido_id,
+                t.cocina_id, p.numero_pedido, p.tipo,
+                p.estado AS estado_pedido, t.estado AS estado_tarea,
+                pi.estado_cocina AS estado_linea, p.total::text AS total,
+                COALESCE(p.monto_pagado, 0)::text AS monto_pagado
+         FROM pedido_combo_tareas_cocina t
+         JOIN pedido_items pi ON pi.id = t.pedido_item_id
+         JOIN pedidos p ON p.id = pi.pedido_id
+         WHERE t.id = $1 AND t.sucursal_id = $2 AND p.sucursal_id = $2
+         FOR UPDATE OF p, pi, t`, [tareaId, sucursalId]);
+            const fila = locked.rows[0];
+            if (!fila)
+                throw new common_1.NotFoundException('Tarea de combo no encontrada');
+            if (fila.estado_tarea === 'pausada_decision_cliente') {
+                throw new common_1.ConflictException({
+                    error: 'COMBO_PAUSADO_POR_DECISION',
+                    message: 'Esta tarea está pausada hasta recibir respuesta del cliente.',
+                });
+            }
+            if (fila.estado_tarea === 'cancelada') {
+                throw new common_1.ConflictException('La tarea del combo fue cancelada');
+            }
+            const puedeCompletarPagado = (0, pedido_estados_1.puedeAvanzarCocinaPedidoPagado)({
+                estadoPedido: fila.estado_pedido,
+                total: fila.total,
+                montoPagado: fila.monto_pagado,
+                estadoItem: fila.estado_linea,
+                nuevoEstadoItem: estado,
+            });
+            if (pedido_estados_1.ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA.has(fila.estado_pedido) &&
+                !puedeCompletarPagado) {
+                throw new common_1.ConflictException({
+                    error: 'PEDIDO_COCINA_CERRADO',
+                    message: 'No puedes cambiar tareas de cocina cuando el pedido está en cobro, despacho o un estado terminal.',
+                });
+            }
+            if (fila.estado_tarea !== estado) {
+                await client.query(`UPDATE pedido_combo_tareas_cocina
+           SET estado = $1, updated_at = now()
+           WHERE id = $2 AND sucursal_id = $3`, [estado, tareaId, sucursalId]);
+            }
+            const agregado = await client.query(`SELECT CASE
+           WHEN COUNT(*) FILTER (WHERE estado NOT IN ('listo', 'cancelada')) = 0 THEN 'listo'
+           WHEN COUNT(*) FILTER (WHERE estado IN ('preparando', 'listo')) > 0 THEN 'preparando'
+           ELSE 'pendiente'
+         END AS estado
+         FROM pedido_combo_tareas_cocina
+         WHERE pedido_item_id = $1 AND sucursal_id = $2`, [fila.pedido_item_id, sucursalId]);
+            const estadoLineaNuevo = agregado.rows[0].estado;
+            await client.query(`UPDATE pedido_items SET estado_cocina = $1 WHERE id = $2`, [estadoLineaNuevo, fila.pedido_item_id]);
+            const conteo = await client.query(`SELECT COUNT(*) FILTER (
+                  WHERE estado_cocina IS NULL
+                     OR estado_cocina NOT IN ('listo', 'no_disponible')
+                ) AS pendientes,
+                COUNT(*) FILTER (
+                  WHERE estado_cocina IN ('preparando', 'listo')
+                ) AS en_proceso
+         FROM pedido_items WHERE pedido_id = $1`, [fila.pedido_id]);
+            let estadoPedidoNuevo = fila.estado_pedido;
+            if (puedeCompletarPagado) {
+                estadoPedidoNuevo = 'pagado';
+            }
+            else if (pedido_estados_1.ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA.has(fila.estado_pedido)) {
+                throw new common_1.ConflictException('El pedido ya no admite cambios de cocina');
+            }
+            else if (Number(conteo.rows[0].pendientes) === 0) {
+                estadoPedidoNuevo = 'listo';
+            }
+            else {
+                estadoPedidoNuevo = 'en_cocina';
+            }
+            if (estadoPedidoNuevo !== fila.estado_pedido) {
+                await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
+                    pedidoId: fila.pedido_id,
+                    sucursalId,
+                    nuevoEstado: estadoPedidoNuevo,
+                    origen: 'cocina',
+                    usuarioId,
+                    estadoAnterior: fila.estado_pedido,
+                    tipo: fila.tipo,
+                });
+            }
+            if (estadoPedidoNuevo === 'listo' &&
+                (0, pedido_estados_1.pedidoCobradoCompletamente)(Number(fila.total), fila.monto_pagado)) {
+                await this.pedidosEstadoCommand.aplicarEstadoEnTransaccion(client, {
+                    pedidoId: fila.pedido_id,
+                    sucursalId,
+                    nuevoEstado: 'pagado',
+                    origen: 'sistema',
+                    usuarioId,
+                    motivo: 'Cocina lista — pedido ya cobrado (prepago)',
+                    estadoAnterior: 'listo',
+                    tipo: fila.tipo,
+                });
+                estadoPedidoNuevo = 'pagado';
+            }
+            return {
+                tarea_id: tareaId,
+                pedido_item_id: fila.pedido_item_id,
+                estado_cocina: estado,
+                estado_linea: estadoLineaNuevo,
+                pedido_id: fila.pedido_id,
+                estado_pedido: estadoPedidoNuevo,
+                estado_pedido_anterior: fila.estado_pedido,
+                tipo_pedido: fila.tipo,
+                cocina_id: fila.cocina_id,
+                numero_pedido: fila.numero_pedido,
+                sucursal_id: sucursalId,
+            };
+        });
+        void this.realtime.cocinaActualizada(result.cocina_id, {
+            pedido_id: result.pedido_id,
+            item_id: result.pedido_item_id,
+            tarea_combo_id: result.tarea_id,
+            sucursal_id: sucursalId,
+            accion: 'combo_tarea_estado',
+        });
+        if (result.estado_pedido !== result.estado_pedido_anterior) {
+            void this.realtime.pedidoActualizado({
+                pedido_id: result.pedido_id,
+                sucursal_id: sucursalId,
+                estado: result.estado_pedido,
+                numero_pedido: result.numero_pedido,
+            });
+            this.pedidosSoporte.emitirSeguimientoPedido(result.pedido_id, {
+                pedido_id: result.pedido_id,
+                estado: result.estado_pedido,
+            });
+        }
+        await this.intentarDispatchDomicilioSiListo(result.pedido_id, sucursalId, result.tipo_pedido, result.estado_pedido, result.estado_pedido_anterior);
+        const { estado_pedido_anterior: _, tipo_pedido: __, ...respuesta } = result;
+        return respuesta;
+    }
+    async marcarTareaComboNoDisponible(tareaId, sucursalId, usuarioId, motivo) {
+        const descMotivo = motivo.trim();
+        if (!descMotivo) {
+            throw new common_1.BadRequestException({
+                error: 'COMBO_NODISP_MOTIVO',
+                message: 'Indica por qué no está disponible el componente.',
+            });
+        }
+        const result = await this.database.enTransaccion(async (client) => {
+            const locked = await client.query(`SELECT t.id AS tarea_id, t.pedido_item_id, p.id AS pedido_id,
+                p.numero_pedido, p.estado AS estado_pedido,
+                t.cocina_id, t.estado AS estado_tarea,
+                pi.estado_cocina AS estado_linea, t.tipo_item,
+                t.componente_id, t.nombre_snapshot, t.cantidad::text,
+                t.precio_unitario_snapshot::text,
+                t.costo_unitario_snapshot::text, t.producto_padre_id,
+                t.producto_padre_nombre_snapshot, t.componente_indice,
+                p.total::text AS total,
+                COALESCE(p.monto_pagado, 0)::text AS monto_pagado
+         FROM pedido_combo_tareas_cocina t
+         JOIN pedido_items pi ON pi.id = t.pedido_item_id
+         JOIN pedidos p ON p.id = pi.pedido_id
+         WHERE t.id = $1 AND t.sucursal_id = $2 AND p.sucursal_id = $2
+         FOR UPDATE OF p, pi, t`, [tareaId, sucursalId]);
+            const fila = locked.rows[0];
+            if (!fila)
+                throw new common_1.NotFoundException('Tarea de combo no encontrada');
+            const decisionExistente = await client.query(`SELECT id, tarea_no_disponible_id
+         FROM pedido_combo_decisiones_cliente
+         WHERE pedido_item_id = $1 AND sucursal_id = $2
+           AND estado = 'pendiente_cliente'
+         FOR UPDATE`, [fila.pedido_item_id, sucursalId]);
+            const pendiente = decisionExistente.rows[0];
+            if (pendiente) {
+                if (pendiente.tarea_no_disponible_id === tareaId &&
+                    fila.estado_tarea === 'no_disponible') {
+                    return {
+                        pedido_id: fila.pedido_id,
+                        numero_pedido: fila.numero_pedido,
+                        estado_pedido: fila.estado_pedido,
+                        pedido_item_id: fila.pedido_item_id,
+                        tarea_id: tareaId,
+                        decision_id: pendiente.id,
+                        cocina_ids: [fila.cocina_id],
+                        idempotente: true,
+                    };
+                }
+                throw new common_1.ConflictException({
+                    error: 'COMBO_DECISION_PENDIENTE',
+                    message: 'Este combo ya espera una respuesta del cliente.',
+                });
+            }
+            if (['listo', 'no_disponible', 'cancelada'].includes(fila.estado_tarea)) {
+                throw new common_1.ConflictException({
+                    error: 'COMBO_TAREA_TERMINAL',
+                    message: 'La tarea ya fue finalizada o resuelta.',
+                });
+            }
+            const puedeCompletarPagado = (0, pedido_estados_1.puedeAvanzarCocinaPedidoPagado)({
+                estadoPedido: fila.estado_pedido,
+                total: fila.total,
+                montoPagado: fila.monto_pagado,
+                estadoItem: fila.estado_linea,
+                nuevoEstadoItem: 'no_disponible',
+            });
+            if (pedido_estados_1.ESTADOS_PEDIDO_INMUTABLES_DESDE_COCINA.has(fila.estado_pedido) &&
+                !puedeCompletarPagado) {
+                throw new common_1.ConflictException({
+                    error: 'PEDIDO_COCINA_CERRADO',
+                    message: 'No puedes reportar una novedad de cocina cuando el pedido está en despacho o en estado terminal.',
+                });
+            }
+            await client.query(`UPDATE pedido_combo_tareas_cocina
+         SET estado = CASE WHEN id = $1 THEN 'no_disponible'
+                            ELSE 'pausada_decision_cliente' END,
+             estado_antes_pausa = CASE WHEN id = $1 THEN estado_antes_pausa
+                                       ELSE estado END,
+             motivo_no_disponible = CASE WHEN id = $1 THEN $3
+                                         ELSE motivo_no_disponible END,
+             updated_at = now()
+         WHERE pedido_item_id = $2 AND sucursal_id = $4
+           AND estado IN ('pendiente', 'preparando')`, [tareaId, fila.pedido_item_id, descMotivo, sucursalId]);
+            const decision = await client.query(`INSERT INTO pedido_combo_decisiones_cliente (
+           pedido_id, pedido_item_id, pedido_item_id_original,
+           tarea_no_disponible_id, tarea_id_original, sucursal_id,
+           componente_anterior_snapshot, usuario_id
+         )
+         VALUES (
+           $1, $2, $2, $3, $3, $4,
+           jsonb_build_object(
+             'tarea_id', $3::uuid::text,
+             'tipo_item', $5::text,
+             'componente_id', $6::uuid::text,
+             'nombre', $7::text,
+             'cantidad', $8::numeric,
+             'precio_unitario', $9::numeric,
+             'costo_unitario', $10::numeric,
+             'producto_padre_id', $11::uuid::text,
+             'producto_padre', $12::text,
+             'cocina_id', $13::uuid::text,
+             'componente_indice', $14::integer,
+             'motivo_no_disponible', $15::text
+           ), $16
+         )
+         RETURNING id`, [
+                fila.pedido_id,
+                fila.pedido_item_id,
+                tareaId,
+                sucursalId,
+                fila.tipo_item,
+                fila.componente_id,
+                fila.nombre_snapshot,
+                fila.cantidad,
+                fila.precio_unitario_snapshot,
+                fila.costo_unitario_snapshot,
+                fila.producto_padre_id,
+                fila.producto_padre_nombre_snapshot,
+                fila.cocina_id,
+                fila.componente_indice,
+                descMotivo,
+                usuarioId,
+            ]);
+            const agregado = await client.query(`SELECT CASE
+           WHEN COUNT(*) FILTER (WHERE estado IN ('preparando', 'listo')) > 0 THEN 'preparando'
+           ELSE 'pendiente'
+         END AS estado
+         FROM pedido_combo_tareas_cocina
+         WHERE pedido_item_id = $1 AND sucursal_id = $2`, [fila.pedido_item_id, sucursalId]);
+            await client.query(`UPDATE pedido_items SET estado_cocina = $1 WHERE id = $2`, [agregado.rows[0].estado, fila.pedido_item_id]);
+            const cocinas = await client.query(`SELECT DISTINCT cocina_id
+         FROM pedido_combo_tareas_cocina
+         WHERE pedido_item_id = $1 AND sucursal_id = $2`, [fila.pedido_item_id, sucursalId]);
+            return {
+                pedido_id: fila.pedido_id,
+                numero_pedido: fila.numero_pedido,
+                estado_pedido: fila.estado_pedido,
+                pedido_item_id: fila.pedido_item_id,
+                tarea_id: tareaId,
+                decision_id: decision.rows[0].id,
+                cocina_ids: cocinas.rows.map((r) => r.cocina_id),
+                estado_linea: agregado.rows[0].estado,
+                idempotente: false,
+            };
+        });
+        for (const cocinaId of result.cocina_ids) {
+            void this.realtime.cocinaActualizada(cocinaId, {
+                pedido_id: result.pedido_id,
+                item_id: result.pedido_item_id,
+                tarea_combo_id: result.tarea_id,
+                decision_cliente_id: result.decision_id,
+                sucursal_id: sucursalId,
+                accion: 'combo_pausado_decision_cliente',
+            });
+        }
+        try {
+            await this.realtime.pedidoActualizado({
+                pedido_id: result.pedido_id,
+                sucursal_id: sucursalId,
+                estado: result.estado_pedido,
+                numero_pedido: result.numero_pedido,
+            });
+        }
+        catch {
+        }
+        return {
+            pedido_id: result.pedido_id,
+            pedido_item_id: result.pedido_item_id,
+            tarea_id: result.tarea_id,
+            decision_id: result.decision_id,
+            estado_linea: result.estado_linea ?? 'pendiente',
+            idempotente: result.idempotente,
+        };
     }
     async cambiarEstadoItem(itemId, sucursalId, estado, usuarioId, motivo, opciones) {
         if (estado === 'no_disponible' && !motivo?.trim()) {

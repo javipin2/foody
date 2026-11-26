@@ -39,6 +39,19 @@ describe('SucursalScopeService — aislamiento operativo', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('no permite que permiso de domiciliarios amplíe escritura a otra sede', async () => {
+    database.consultarUno.mockResolvedValue({ id: 'sucursal-b' });
+    const gerenteDomiciliarios: JwtPayload = {
+      ...usuario,
+      rol: 'gerente',
+      permisos: ['gestionar_domiciliarios'],
+    };
+
+    await expect(
+      service.resolverEscritura(gerenteDomiciliarios, 'sucursal-b'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('rechaza IDs de otra empresa o sucursales inactivas', async () => {
     database.consultarUno.mockResolvedValue(null);
 

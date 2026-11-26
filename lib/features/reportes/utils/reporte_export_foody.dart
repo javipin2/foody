@@ -90,14 +90,14 @@ class ReporteExportFoody {
       pw.TableHelper.fromTextArray(
         headers: ['Métrica', 'Valor'],
         data: [
-          ['Tickets (total pedidos)', _fmt(r['ventas_total'])],
+          ['Valor total pedidos (incluye domicilio)', _fmt(r['ventas_total'])],
           ['Pedidos', '${r['pedidos'] ?? 0}'],
           ['Ticket promedio', _fmt(r['ticket_promedio'])],
-          ['Domicilios', _fmt(r['costo_domicilio'])],
+          ['Cargo domicilio incluido (referencia)', _fmt(r['costo_domicilio'])],
           ['Descuentos', _fmt(r['descuentos'])],
-          ['Ventas de pedidos', _fmt(cuadre['ventas_pedidos'])],
+          ['Valor total de pedidos', _fmt(cuadre['ventas_pedidos'])],
           ['Cobros netos asociados', _fmt(cuadre['ventas_movimientos_caja'])],
-          ['Ventas menos cobros', _fmt(cuadre['diferencia'])],
+          ['Valor de pedidos menos cobros', _fmt(cuadre['diferencia'])],
           if (recaudoPeriodo != null)
             [
               'Recaudo neto del rango (fecha de movimiento)',
@@ -147,13 +147,19 @@ class ReporteExportFoody {
         pw.Text('Por tipo de pedido',
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
-          headers: ['Tipo', 'Pedidos', 'Ventas'],
+          headers: [
+            'Tipo',
+            'Pedidos',
+            'Valor total pedido',
+            'Domicilio incluido'
+          ],
           data: porTipo.map((e) {
             final m = e as Map<String, dynamic>;
             return [
               '${m['tipo']}',
               '${m['pedidos']}',
               _fmt(m['ventas']),
+              _fmt(m['costo_domicilio']),
             ];
           }).toList(),
         ),
@@ -220,13 +226,19 @@ class ReporteExportFoody {
         pw.SizedBox(height: 8),
         pw.Text('Por día', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
-          headers: ['Día', 'Pedidos', 'Ventas'],
+          headers: [
+            'Día',
+            'Pedidos',
+            'Valor total pedidos',
+            'Domicilio incluido'
+          ],
           data: porDia.map((e) {
             final m = e as Map<String, dynamic>;
             return [
               '${m['dia']}',
               '${m['pedidos']}',
               _fmt(m['ventas']),
+              _fmt(m['costo_domicilio']),
             ];
           }).toList(),
         ),
@@ -261,14 +273,14 @@ class ReporteExportFoody {
           financiero['recaudo_periodo'] as Map<String, dynamic>?;
       bloque('Financiero - resumen', [
         ['metrica', 'valor'],
-        ['ventas_total', _num(r['ventas_total'])],
+        ['valor_total_pedidos_incluye_domicilio', _num(r['ventas_total'])],
         ['pedidos', r['pedidos'] ?? 0],
         ['ticket_promedio', _num(r['ticket_promedio'])],
-        ['costo_domicilio', _num(r['costo_domicilio'])],
+        ['cargo_domicilio_incluido_referencia', _num(r['costo_domicilio'])],
         ['descuentos', _num(r['descuentos'])],
-        ['ventas_de_pedidos', _num(cuadre['ventas_pedidos'])],
+        ['valor_total_de_pedidos', _num(cuadre['ventas_pedidos'])],
         ['cobros_netos_asociados', _num(cuadre['ventas_movimientos_caja'])],
-        ['ventas_menos_cobros', _num(cuadre['diferencia'])],
+        ['valor_pedidos_menos_cobros', _num(cuadre['diferencia'])],
         if (recaudoPeriodo != null) ...[
           ['recaudo_neto_rango', _num(recaudoPeriodo['total_neto'])],
           ['nota_recaudo_rango', recaudoPeriodo['nota']],
@@ -283,10 +295,15 @@ class ReporteExportFoody {
       final porTipo = financiero['por_tipo'] as List<dynamic>? ?? [];
       if (porTipo.isNotEmpty) {
         bloque('Financiero - por tipo', [
-          ['tipo', 'pedidos', 'ventas'],
+          ['tipo', 'pedidos', 'valor_total_pedido', 'domicilio_incluido'],
           ...porTipo.map((e) {
             final m = e as Map<String, dynamic>;
-            return [m['tipo'], m['pedidos'], _num(m['ventas'])];
+            return [
+              m['tipo'],
+              m['pedidos'],
+              _num(m['ventas']),
+              _num(m['costo_domicilio']),
+            ];
           }),
         ]);
       }
@@ -317,10 +334,15 @@ class ReporteExportFoody {
       final porDia = pedidos['por_dia'] as List<dynamic>? ?? [];
       if (porDia.isNotEmpty) {
         bloque('Pedidos - por dia', [
-          ['dia', 'pedidos', 'ventas'],
+          ['dia', 'pedidos', 'valor_total_pedidos', 'domicilio_incluido'],
           ...porDia.map((e) {
             final m = e as Map<String, dynamic>;
-            return [m['dia'], m['pedidos'], _num(m['ventas'])];
+            return [
+              m['dia'],
+              m['pedidos'],
+              _num(m['ventas']),
+              _num(m['costo_domicilio']),
+            ];
           }),
         ]);
       }

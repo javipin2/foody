@@ -99,13 +99,45 @@ export class DomiciliariosIndependientesService {
   }
 
   async cerrarSesion(domiciliarioId: string) {
-    await this.database.consultar(
-      `UPDATE domiciliarios_sesiones
-       SET activa = false, disponible = false, cerrada_at = now()
-       WHERE domiciliario_id = $1 AND activa = true`,
-      [domiciliarioId],
-    );
-    return { ok: true };
+    return this.database.enTransaccion(async (client) => {
+      // Serializa el cierre con la aceptación de ofertas, que bloquea este mismo
+      // registro antes de crear una asignación independiente.
+      const domiciliario = await this.consultarUnoCliente<{ id: string }>(
+        client,
+        `SELECT id FROM domiciliarios_independientes
+         WHERE id = $1 FOR UPDATE`,
+        [domiciliarioId],
+      );
+      if (!domiciliario) {
+        throw new NotFoundException('Domiciliario no encontrado');
+      }
+
+      const asignacionActiva = await this.consultarUnoCliente<{
+        id: string;
+        estado: string;
+      }>(
+        client,
+        `SELECT id, estado FROM asignaciones_domicilio
+         WHERE domiciliario_independiente_id = $1
+           AND estado IN ('asignado', 'en_camino')
+         ORDER BY asignado_at DESC
+         LIMIT 1 FOR UPDATE`,
+        [domiciliarioId],
+      );
+      if (asignacionActiva) {
+        throw new BadRequestException(
+          'Completa o cancela la entrega activa antes de cerrar tu turno',
+        );
+      }
+
+      await client.query(
+        `UPDATE domiciliarios_sesiones
+         SET activa = false, disponible = false, cerrada_at = now()
+         WHERE domiciliario_id = $1 AND activa = true`,
+        [domiciliarioId],
+      );
+      return { ok: true };
+    });
   }
 
   async estadoSesion(domiciliarioId: string) {
@@ -785,10 +817,16 @@ export class DomiciliariosIndependientesService {
       created_at: Date;
       pedido_id: string | null;
       numero_pedido: string | null;
+      entregas_periodo: string;
+      total_ganancia_periodo: string;
+      total_comision_periodo: string;
     }>(
       `SELECT g.id, g.valor_domicilio, g.comision_foody, g.ganancia_domiciliario,
               g.pagado, g.created_at, ad.pedido_id, ad.estado AS estado_asignacion,
-              p.numero_pedido
+              p.numero_pedido,
+              COUNT(*) OVER () AS entregas_periodo,
+              SUM(g.ganancia_domiciliario) OVER () AS total_ganancia_periodo,
+              SUM(g.comision_foody) OVER () AS total_comision_periodo
        FROM ganancias_domiciliario g
        LEFT JOIN asignaciones_domicilio ad ON ad.id = g.asignacion_id
        LEFT JOIN pedidos p ON p.id = ad.pedido_id
@@ -797,22 +835,14 @@ export class DomiciliariosIndependientesService {
        LIMIT 100`,
       params,
     );
-
-    const totalGanancia = filas.reduce(
-      (s, f) => s + Number(f.ganancia_domiciliario ?? 0),
-      0,
-    );
-    const totalComision = filas.reduce(
-      (s, f) => s + Number(f.comision_foody ?? 0),
-      0,
-    );
+    const resumen = filas[0];
 
     return {
       items: filas,
       resumen: {
-        entregas: filas.length,
-        total_ganancia: totalGanancia,
-        total_comision: totalComision,
+        entregas: Number(resumen?.entregas_periodo ?? 0),
+        total_ganancia: Number(resumen?.total_ganancia_periodo ?? 0),
+        total_comision: Number(resumen?.total_comision_periodo ?? 0),
       },
     };
   }

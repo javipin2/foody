@@ -9,7 +9,10 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Permisos } from '../../compartido/decoradores/permisos.decorator';
+import {
+  Permisos,
+  PermisosTodos,
+} from '../../compartido/decoradores/permisos.decorator';
 import { UsuarioActual } from '../../compartido/decoradores/usuario-actual.decorator';
 import { JwtPayload } from '../../core/auth/jwt-payload';
 import { DomiciliarioIndependienteGuard } from '../../core/auth/guards/domiciliario-independiente.guard';
@@ -91,7 +94,7 @@ export class DomiciliariosPlantaController {
   }
 
   @Post('liquidar/:domiciliario_planta_id')
-  @Permisos('gestionar_domiciliarios', 'gestionar_caja')
+  @PermisosTodos('gestionar_domiciliarios', 'gestionar_caja')
   async liquidar(
     @Param('domiciliario_planta_id', ParseUUIDPipe)
     domiciliarioPlantaId: string,

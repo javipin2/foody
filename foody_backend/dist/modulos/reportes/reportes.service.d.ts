@@ -40,6 +40,7 @@ export declare class ReportesService {
             tipo: string;
             pedidos: number;
             ventas: number;
+            costo_domicilio: number;
         }[];
     }>;
     productos(sucursalId: string, rango: RangoFechas): Promise<{
@@ -61,6 +62,7 @@ export declare class ReportesService {
             dia: string;
             pedidos: number;
             ventas: number;
+            costo_domicilio: number;
         }[];
     }>;
     resolverRango(desde?: string, hasta?: string): RangoFechas;

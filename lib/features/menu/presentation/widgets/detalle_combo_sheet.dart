@@ -9,6 +9,20 @@ import 'package:reserva_canchas/features/menu/presentation/widgets/opcion_upsell
 import 'package:reserva_canchas/features/pedidos/domain/linea_carrito.dart';
 
 /// Combo + toppings (extras de ítems) + bebidas como productos.
+class ToppingComboDisponible {
+  const ToppingComboDisponible({
+    required this.productoId,
+    required this.productoNombre,
+    required this.topping,
+  });
+
+  final String productoId;
+  final String productoNombre;
+  final OpcionMenuModel topping;
+
+  String get clave => '$productoId:${topping.id}';
+}
+
 class DetalleComboSheet extends StatefulWidget {
   const DetalleComboSheet({
     super.key,
@@ -20,14 +34,14 @@ class DetalleComboSheet extends StatefulWidget {
 
   final ComboMenuModel combo;
   final void Function(List<LineaCarrito> lineas) onAgregar;
-  final List<OpcionMenuModel> toppingsDisponibles;
+  final List<ToppingComboDisponible> toppingsDisponibles;
   final List<ProductoMenuModel> sugerenciasBebidas;
 
   static Future<void> mostrar(
     BuildContext context, {
     required ComboMenuModel combo,
     required void Function(List<LineaCarrito> lineas) onAgregar,
-    List<OpcionMenuModel> toppingsDisponibles = const [],
+    List<ToppingComboDisponible> toppingsDisponibles = const [],
     List<ProductoMenuModel> sugerenciasBebidas = const [],
   }) {
     return showModalBottomSheet<void>(
@@ -67,9 +81,11 @@ class _DetalleComboSheetState extends State<DetalleComboSheet> {
   /// ponytail: UI-only hint en sheet; total autoritativo = POST /pedidos/estimar.
   double get _precioPreview {
     var total = widget.combo.precioFijo.toDouble() * _cantidad;
-    for (final t in widget.toppingsDisponibles) {
-      final q = _toppingsQty[t.id] ?? 0;
-      if (q > 0) total += t.precio.toDouble() * _cantidad * q;
+    for (final disponible in widget.toppingsDisponibles) {
+      final q = _toppingsQty[disponible.clave] ?? 0;
+      if (q > 0) {
+        total += disponible.topping.precio.toDouble() * _cantidad * q;
+      }
     }
     for (final p in widget.sugerenciasBebidas) {
       final q = _bebidasQty[p.id] ?? 0;
@@ -88,23 +104,48 @@ class _DetalleComboSheetState extends State<DetalleComboSheet> {
     });
   }
 
+  List<Widget> _seccionesToppings() {
+    final grupos = <String, List<ToppingComboDisponible>>{};
+    for (final disponible in widget.toppingsDisponibles) {
+      grupos.putIfAbsent(disponible.productoId, () => []).add(disponible);
+    }
+    return [
+      for (final grupo in grupos.values)
+        SeccionUpsellOpciones(
+          titulo: 'Para ${grupo.first.productoNombre}',
+          subtitulo: 'Toppings disponibles para este plato',
+          opciones: grupo
+              .map((d) => OpcionMenuModel(
+                    id: d.clave,
+                    nombre: d.topping.nombre,
+                    precio: d.topping.precio,
+                  ))
+              .toList(),
+          cantidades: _toppingsQty,
+          formato: _formato,
+          acento: AnaliticaTokens.ink,
+          maxCantidad: 1,
+          onCambiar: (id, q) => _setQty(_toppingsQty, id, q),
+        ),
+    ];
+  }
+
   void _confirmar() {
     HapticFeedback.mediumImpact();
     final tops = widget.toppingsDisponibles
-        .where((t) => (_toppingsQty[t.id] ?? 0) > 0)
-        .map(
-          (t) => ToppingLineaCarrito(
-            id: t.id,
-            nombre: t.nombre,
-            precio: t.precio.toDouble(),
-          ),
-        )
+        .where((d) => (_toppingsQty[d.clave] ?? 0) > 0)
+        .map((d) => ToppingLineaCarrito(
+              id: d.topping.id,
+              nombre: d.topping.nombre,
+              precio: d.topping.precio.toDouble(),
+              productoId: d.productoId,
+            ))
         .toList();
     final lineas = <LineaCarrito>[
       LineaCarrito(
         clave: LineaCarrito.generarClaveCombo(
           widget.combo.id,
-          toppingIds: tops.map((t) => t.id).toList(),
+          toppingIds: tops.map((t) => '${t.productoId ?? ''}:${t.id}').toList(),
         ),
         comboId: widget.combo.id,
         nombre: widget.combo.nombre,
@@ -196,11 +237,12 @@ class _DetalleComboSheetState extends State<DetalleComboSheet> {
                       const SizedBox(height: 16),
                     Text(
                       combo.nombre,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AnaliticaTokens.ink,
-                            letterSpacing: -0.4,
-                          ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: AnaliticaTokens.ink,
+                                letterSpacing: -0.4,
+                              ),
                     ),
                     if ((combo.descripcion ?? '').isNotEmpty) ...[
                       const SizedBox(height: 8),
@@ -254,16 +296,7 @@ class _DetalleComboSheetState extends State<DetalleComboSheet> {
                         combo.resumenItems,
                         style: const TextStyle(color: AnaliticaTokens.inkMuted),
                       ),
-                    SeccionUpsellOpciones(
-                      titulo: 'Toppings',
-                      subtitulo: 'Extras opcionales',
-                      opciones: widget.toppingsDisponibles,
-                      cantidades: _toppingsQty,
-                      formato: _formato,
-                      acento: AnaliticaTokens.ink,
-                      maxCantidad: 1,
-                      onCambiar: (id, q) => _setQty(_toppingsQty, id, q),
-                    ),
+                    ..._seccionesToppings(),
                     SeccionUpsellOpciones(
                       titulo: 'Bebidas',
                       subtitulo: 'Productos del menú',

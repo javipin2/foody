@@ -22,6 +22,10 @@ import { PedidosInventarioService } from './pedidos-inventario.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PedidosEstadoCommandService } from './pedidos-estado-command.service';
 import { validarLineaSinCobroAsignado } from './pedido-items-cobro.util';
+import {
+  resolverDestinosToppingsCombo,
+  validarToppingsAsociadosAProductos,
+} from './pedidos-combo-toppings.util';
 
 const ESTADOS_PEDIDO_CERRADO = [
   'entregado',
@@ -279,12 +283,19 @@ export class PedidosItemsService {
           nombre: string;
           cantidad: number;
           costo_unitario: number;
+          precio_unitario: number | null;
+          cocina_id: string | null;
+          producto_padre_id?: string | null;
+          producto_padre_nombre_snapshot?: string | null;
         }[];
         toppings: {
           id: string;
           nombre: string;
           precio: number;
           costo: number;
+          productoId: string;
+          productoNombre: string;
+          cocinaId: string | null;
         }[];
         bebidas: {
           id: string;
@@ -466,9 +477,10 @@ export class PedidosItemsService {
           .map((ci) => ({ productoId: ci.item_id, cantidad: ci.cantidad }));
         const cocinasProductos = await client.query<{
           id: string;
+          nombre: string;
           cocina_id: string | null;
         }>(
-          `SELECT id, cocina_id FROM productos
+          `SELECT id, nombre, cocina_id FROM productos
            WHERE id = ANY($1::uuid[]) AND sucursal_id = $2`,
           [productosCombo.map((pc) => pc.productoId), sucursalId],
         );
@@ -477,14 +489,9 @@ export class PedidosItemsService {
             .map((fila) => fila.cocina_id)
             .filter((id): id is string => id != null),
         );
-        if (cocinasCombo.size > 1) {
-          throw new BadRequestException({
-            error: 'COMBO_COCINAS_DIFERENTES',
-            message:
-              'Este combo tiene productos de varias cocinas y todavía no se puede enviar a todas las estaciones. Reconfigúralo para usar una cocina.',
-          });
-        }
-        const cocinaComboId = [...cocinasCombo][0] ?? producto.cocina_id;
+        // La línea cobrable conserva una cocina principal; las tareas de preparación
+        // usan la cocina propia de cada componente en su snapshot.
+        const cocinaComboId = producto.cocina_id ?? [...cocinasCombo][0];
         if (!cocinaComboId) {
           throw new BadRequestException({
             error: 'COMBO_SIN_COCINA',
@@ -498,8 +505,24 @@ export class PedidosItemsService {
           nombre: string;
           precio: number;
           costo: number;
+          productoId: string;
+          productoNombre: string;
+          cocinaId: string | null;
         }[] = [];
-        for (const t of comboDto.toppings ?? []) {
+        const destinosToppings = resolverDestinosToppingsCombo(
+          comboDto.toppings ?? [],
+          cocinasProductos.rows,
+        );
+        const toppingPorId = new Map<
+          string,
+          {
+            id: string;
+            nombre: string;
+            precio: string;
+            costo_calculado: string | null;
+          }
+        >();
+        for (const destino of destinosToppings) {
           const top = await this.soporte.consultarUnoCliente<{
             id: string;
             nombre: string;
@@ -509,14 +532,37 @@ export class PedidosItemsService {
             client,
             `SELECT id, nombre, precio, costo_calculado FROM toppings
              WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
-            [t.topping_id, sucursalId],
+            [destino.topping_id, sucursalId],
           );
+          if (!top) throw new BadRequestException('TOPPING_NO_DISPONIBLE');
+          toppingPorId.set(destino.topping_id.toLowerCase(), top);
+        }
+        const asociacionesToppings = destinosToppings.length
+          ? await client.query<{ producto_id: string; topping_id: string }>(
+              `SELECT producto_id, topping_id FROM producto_toppings
+               WHERE producto_id = ANY($1::uuid[])
+                 AND topping_id = ANY($2::uuid[])`,
+              [
+                [...new Set(destinosToppings.map((r) => r.producto_id))],
+                [...new Set(destinosToppings.map((r) => r.topping_id))],
+              ],
+            )
+          : { rows: [] as { producto_id: string; topping_id: string }[] };
+        validarToppingsAsociadosAProductos(
+          destinosToppings,
+          asociacionesToppings.rows,
+        );
+        for (const destino of destinosToppings) {
+          const top = toppingPorId.get(destino.topping_id.toLowerCase());
           if (!top) throw new BadRequestException('TOPPING_NO_DISPONIBLE');
           toppings.push({
             id: top.id,
             nombre: top.nombre,
             precio: Number(top.precio),
             costo: Number(top.costo_calculado ?? 0),
+            productoId: destino.producto_id,
+            productoNombre: destino.producto_nombre,
+            cocinaId: destino.cocina_id ?? cocinaComboId,
           });
         }
         const bebidas: {
@@ -525,6 +571,7 @@ export class PedidosItemsService {
           precio: number;
           cantidad: number;
           costo: number;
+          cocina_id?: string | null;
         }[] = [];
         for (const b of comboDto.bebidas ?? []) {
           const beb = await this.soporte.consultarUnoCliente<{
@@ -532,10 +579,15 @@ export class PedidosItemsService {
             nombre: string;
             precio: string;
             costo_calculado: string | null;
+            cocina_id: string | null;
           }>(
             client,
-            `SELECT id, nombre, precio, costo_calculado FROM bebidas
-             WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
+            `SELECT b.id, b.nombre, b.precio, b.costo_calculado,
+                    (SELECT p.cocina_id FROM productos p
+                     WHERE p.bebida_origen_id = b.id AND p.sucursal_id = b.sucursal_id
+                     ORDER BY p.created_at DESC LIMIT 1) AS cocina_id
+             FROM bebidas b
+             WHERE b.id = $1 AND b.sucursal_id = $2 AND b.disponible = true`,
             [b.bebida_id, sucursalId],
           );
           if (!beb) throw new BadRequestException('BEBIDA_NO_DISPONIBLE');
@@ -545,6 +597,7 @@ export class PedidosItemsService {
             precio: Number(beb.precio),
             cantidad: b.cantidad,
             costo: Number(beb.costo_calculado ?? 0),
+            cocina_id: beb.cocina_id,
           });
         }
         const componentesSnapshot: {
@@ -553,16 +606,23 @@ export class PedidosItemsService {
           nombre: string;
           cantidad: number;
           costo_unitario: number;
+          precio_unitario: number | null;
+          cocina_id: string | null;
+          producto_padre_id?: string | null;
+          producto_padre_nombre_snapshot?: string | null;
         }[] = [];
         for (const ci of comboItems.rows) {
           if (ci.tipo_item === 'producto') {
             const p = await this.soporte.consultarUnoCliente<{
               id: string;
               nombre: string;
+              precio: string;
+              precio_para_llevar: string | null;
+              cocina_id: string | null;
               costo_calculado: string | null;
             }>(
               client,
-              `SELECT id, nombre, costo_calculado FROM productos
+              `SELECT id, nombre, precio, precio_para_llevar, cocina_id, costo_calculado FROM productos
                WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
               [ci.item_id, sucursalId],
             );
@@ -573,6 +633,11 @@ export class PedidosItemsService {
               nombre: p.nombre,
               cantidad: ci.cantidad,
               costo_unitario: Number(p.costo_calculado ?? 0),
+              precio_unitario:
+                pedido.tipo === 'para_llevar' && p.precio_para_llevar != null
+                  ? Number(p.precio_para_llevar)
+                  : Number(p.precio),
+              cocina_id: p.cocina_id ?? cocinaComboId,
             });
             continue;
           }
@@ -581,10 +646,14 @@ export class PedidosItemsService {
           const c = await this.soporte.consultarUnoCliente<{
             id: string;
             nombre: string;
+            precio: string;
             costo_calculado: string | null;
+            cocina_id: string | null;
           }>(
             client,
-            `SELECT id, nombre, costo_calculado FROM ${tabla}
+            `SELECT id, nombre, precio, costo_calculado,
+                    ${tipo === 'bebida' ? '(SELECT p.cocina_id FROM productos p WHERE p.bebida_origen_id = bebidas.id AND p.sucursal_id = bebidas.sucursal_id ORDER BY p.created_at DESC LIMIT 1)' : 'NULL'} AS cocina_id
+             FROM ${tabla} AS bebidas
              WHERE id = $1 AND sucursal_id = $2 AND disponible = true`,
             [ci.item_id, sucursalId],
           );
@@ -600,6 +669,11 @@ export class PedidosItemsService {
             nombre: c.nombre,
             cantidad: ci.cantidad,
             costo_unitario: Number(c.costo_calculado ?? 0),
+            precio_unitario: Number(c.precio),
+            cocina_id:
+              tipo === 'bebida'
+                ? (c.cocina_id ?? cocinaComboId)
+                : cocinaComboId,
           });
         }
         for (const t of toppings) {
@@ -609,6 +683,10 @@ export class PedidosItemsService {
             nombre: t.nombre,
             cantidad: 1,
             costo_unitario: t.costo,
+            precio_unitario: t.precio,
+            cocina_id: t.cocinaId,
+            producto_padre_id: t.productoId,
+            producto_padre_nombre_snapshot: t.productoNombre,
           });
         }
         for (const b of bebidas) {
@@ -618,6 +696,8 @@ export class PedidosItemsService {
             nombre: b.nombre,
             cantidad: b.cantidad,
             costo_unitario: b.costo,
+            precio_unitario: b.precio,
+            cocina_id: b.cocina_id ?? cocinaComboId,
           });
         }
         const extrasUnitario =
@@ -650,16 +730,20 @@ export class PedidosItemsService {
               productoId: pc.productoId,
               cantidad: pc.cantidad,
               precioVentaLinea: 1,
-              extras:
-                indice === 0
-                  ? componentesSnapshot
-                      .filter((c) => c.tipo_item !== 'producto')
-                      .map((c) => ({
-                        tipo: c.tipo_item as 'bebida' | 'topping',
-                        id: c.item_id,
-                        cantidad: c.cantidad,
-                      }))
-                  : [],
+              extras: componentesSnapshot
+                .filter(
+                  (c) =>
+                    c.tipo_item !== 'producto' &&
+                    (c.producto_padre_id
+                      ? c.producto_padre_id.toLowerCase() ===
+                        pc.productoId.toLowerCase()
+                      : indice === 0),
+                )
+                .map((c) => ({
+                  tipo: c.tipo_item as 'bebida' | 'topping',
+                  id: c.item_id,
+                  cantidad: c.cantidad,
+                })),
             });
           }
         }
@@ -792,6 +876,13 @@ export class PedidosItemsService {
               combo.precioFijo,
               JSON.stringify(combo.componentesSnapshot),
             ],
+          );
+          await this.inventario.crearTareasCombo(
+            client,
+            sucursalId,
+            pedidoId,
+            itemId,
+            combo.componentesSnapshot,
           );
           for (const t of combo.toppings) {
             await client.query(
@@ -973,9 +1064,11 @@ export class PedidosItemsService {
         estado_cocina: string;
         cocina_id: string | null;
         nombre_producto: string;
+        stock_snapshot_version: number | null;
       }>(
         client,
         `SELECT pi.id, pi.producto_id, pi.cantidad, pi.precio_unitario,
+                pi.stock_snapshot_version,
                 pi.estado_cocina, pi.cocina_id, pr.nombre AS nombre_producto
          FROM pedido_items pi
          INNER JOIN productos pr ON pr.id = pi.producto_id
@@ -1016,16 +1109,34 @@ export class PedidosItemsService {
       }
 
       const enCocina = ['preparando', 'listo'].includes(item.estado_cocina);
+      const esCombo = await this.soporte.consultarUnoCliente<{
+        existe: boolean;
+      }>(
+        client,
+        `SELECT EXISTS (
+           SELECT 1 FROM pedido_combo_selecciones WHERE pedido_item_id = $1
+         ) AS existe`,
+        [itemId],
+      );
+      if (esCombo?.existe) {
+        throw new ConflictException({
+          error: 'COMBO_ELIMINACION_REQUIERE_DECISION',
+          message:
+            'Un combo completo requiere una operación de cancelación con su conciliación de Caja, cocina e inventario.',
+        });
+      }
       if (
         pedido.stock_descontado &&
         !enCocina &&
         item.estado_cocina !== 'no_disponible'
       ) {
-        throw new ConflictException({
-          error: 'ITEM_REQUIERE_AJUSTE_STOCK',
-          message:
-            'No se puede eliminar esta línea después del descuento de inventario porque el consumo no está ligado a la línea. Cancela el pedido completo si corresponde o solicita un ajuste administrativo.',
-        });
+        if (item.stock_snapshot_version == null) {
+          throw new ConflictException({
+            error: 'ITEM_REQUIERE_AJUSTE_STOCK',
+            message:
+              'Esta línea no tiene un snapshot de inventario conciliable. No se puede devolver stock automáticamente.',
+          });
+        }
       }
       if (enCocina) {
         await this.alertasRiesgo.registrarEnTransaccion(client, {
@@ -1040,26 +1151,26 @@ export class PedidosItemsService {
 
       if (pedido.stock_descontado) {
         if (enCocina) {
-          await this.inventario.registrarMermaLineaProducto(
-            client,
+          await this.inventario.ajustarStockItemNormalDesdeSnapshot(client, {
             sucursalId,
             pedidoId,
-            item.producto_id,
-            item.cantidad,
-            motivo ?? `?tem eliminado en cocina (${item.estado_cocina})`,
-            itemId,
-          );
+            pedidoItemId: itemId,
+            unidades: item.cantidad,
+            evento: 'merma',
+            motivo:
+              motivo ?? `Ítem eliminado en cocina (${item.estado_cocina})`,
+            usuarioId,
+          });
         } else if (item.estado_cocina !== 'no_disponible') {
-          // Cocina ya registró la merma al marcar N/D; restaurar aquí
-          // convertiría una línea desperdiciada en stock disponible.
-          await this.inventario.restaurarStockLineaProducto(
-            client,
+          await this.inventario.ajustarStockItemNormalDesdeSnapshot(client, {
             sucursalId,
             pedidoId,
-            item.producto_id,
-            item.cantidad,
-            { incluirEmpaques: pedido.tipo === 'domicilio' },
-          );
+            pedidoItemId: itemId,
+            unidades: item.cantidad,
+            evento: 'devolucion',
+            motivo: 'Devolución por ítem eliminado del pedido',
+            usuarioId,
+          });
         }
       }
 
@@ -1408,10 +1519,12 @@ export class PedidosItemsService {
         cocina_id: string | null;
         observaciones: string | null;
         nombre_producto: string;
+        stock_snapshot_version: number | null;
       }>(
         client,
         `SELECT pi.id, pi.producto_id, pi.cantidad, pi.precio_unitario,
-                pi.costo_unitario, pi.estado_cocina, pi.cocina_id, pi.observaciones,
+                pi.costo_unitario, pi.stock_snapshot_version,
+                pi.estado_cocina, pi.cocina_id, pi.observaciones,
                 pr.nombre AS nombre_producto
          FROM pedido_items pi
          INNER JOIN productos pr ON pr.id = pi.producto_id
@@ -1437,18 +1550,26 @@ export class PedidosItemsService {
           topActuales.some((id, indice) => id !== topSolicitados[indice]));
       const cambioFinanciero =
         cantidadNueva !== item.cantidad || toppingsCambiaron;
-      if (pedido.stock_descontado && toppingsCambiaron) {
+      if (
+        pedido.stock_descontado &&
+        toppingsCambiaron &&
+        item.stock_snapshot_version == null
+      ) {
         throw new ConflictException({
           error: 'ITEM_TOPPINGS_REQUIERE_AJUSTE_STOCK',
           message:
-            'No se pueden cambiar los toppings después del descuento de inventario en este flujo. Conserva la selección actual y solicita la corrección a administración.',
+            'Esta línea no tiene snapshot de consumo por componente. No se pueden cambiar sus toppings con seguridad.',
         });
       }
-      if (pedido.stock_descontado && cantidadNueva < item.cantidad) {
+      if (
+        pedido.stock_descontado &&
+        cantidadNueva < item.cantidad &&
+        item.stock_snapshot_version == null
+      ) {
         throw new ConflictException({
           error: 'ITEM_REQUIERE_AJUSTE_STOCK',
           message:
-            'No se puede reducir esta línea después del descuento de inventario porque el consumo histórico no puede identificarse por línea. Cancela el pedido completo si corresponde o solicita un ajuste administrativo.',
+            'Esta línea no tiene snapshot de consumo por componente. No se puede reducir su cantidad con seguridad.',
         });
       }
       if (cambioFinanciero) {
@@ -1513,37 +1634,94 @@ export class PedidosItemsService {
       const cambiaObservaciones = obsNueva !== item.observaciones;
       const cambiaCocina =
         deltaQty !== 0 || toppingsCambiaron || cambiaObservaciones;
-
-      // VIE-QTY-01 C: no bajar qty si ya en cocina (solo DELETE + motivo)
-      if (
-        deltaQty < 0 &&
-        ['preparando', 'listo'].includes(item.estado_cocina)
-      ) {
-        throw new BadRequestException({
-          error: 'CANTIDAD_COCINA_INMUTABLE',
+      const esCombo = await this.soporte.consultarUnoCliente<{
+        existe: boolean;
+      }>(
+        client,
+        `SELECT EXISTS (
+           SELECT 1 FROM pedido_combo_selecciones WHERE pedido_item_id = $1
+         ) AS existe`,
+        [itemId],
+      );
+      if (esCombo?.existe && (deltaQty !== 0 || toppingsCambiaron)) {
+        throw new ConflictException({
+          error: 'COMBO_EDICION_REQUIERE_FLUJO_ESPECIAL',
           message:
-            'No se puede bajar la cantidad de un ítem en preparación o listo. Elimínalo con motivo (merma).',
+            'La cantidad y los componentes de un combo deben ajustarse desde su flujo de cocina para conservar la línea cobrable y las tareas por estación.',
         });
       }
 
-      if (pedido.stock_descontado && deltaQty !== 0) {
-        if (deltaQty > 0) {
-          const extras =
-            toppingsNuevos?.map((t) => ({
-              tipo: 'topping' as const,
-              id: t.id,
-              cantidad: deltaQty,
-            })) ??
-            (
-              await client.query<{ topping_id: string }>(
-                `SELECT topping_id FROM pedido_item_toppings WHERE pedido_item_id = $1`,
-                [itemId],
-              )
-            ).rows.map((r) => ({
-              tipo: 'topping' as const,
-              id: r.topping_id,
-              cantidad: deltaQty,
-            }));
+      // Once preparation starts, inventory- or price-affecting edits need a separate correction flow.
+      if (
+        (deltaQty !== 0 || toppingsCambiaron) &&
+        ['preparando', 'listo'].includes(item.estado_cocina)
+      ) {
+        throw new ConflictException({
+          error: 'ITEM_COCINA_INMUTABLE',
+          message:
+            'No se puede cambiar cantidad o toppings cuando la línea está en preparación o lista. Registra una cancelación o merma con motivo.',
+        });
+      }
+
+      if (pedido.stock_descontado && (deltaQty !== 0 || toppingsCambiaron)) {
+        if (toppingsCambiaron) {
+          await this.inventario.ajustarStockItemNormalDesdeSnapshot(client, {
+            sucursalId,
+            pedidoId,
+            pedidoItemId: itemId,
+            unidades: item.cantidad,
+            evento: 'devolucion',
+            motivo: 'Reversión del snapshot antes de reemplazar toppings',
+            usuarioId,
+          });
+        } else if (deltaQty < 0) {
+          await this.inventario.ajustarStockItemNormalDesdeSnapshot(client, {
+            sucursalId,
+            pedidoId,
+            pedidoItemId: itemId,
+            unidades: Math.abs(deltaQty),
+            evento: 'devolucion',
+            motivo: 'Devolución por reducción de cantidad antes de cocina',
+            usuarioId,
+          });
+        }
+
+        if (toppingsCambiaron || deltaQty > 0) {
+          const toppingsStock = toppingsCambiaron
+            ? (toppingsNuevos ?? []).map((t) => ({
+                tipo: 'topping' as const,
+                id: t.id,
+                cantidad: cantidadNueva,
+              }))
+            : (
+                await client.query<{ topping_id: string }>(
+                  `SELECT topping_id FROM pedido_item_toppings WHERE pedido_item_id = $1`,
+                  [itemId],
+                )
+              ).rows.map((r) => ({
+                tipo: 'topping' as const,
+                id: r.topping_id,
+                cantidad: deltaQty,
+              }));
+          const bebidas = await client.query<{
+            bebida_id: string;
+            cantidad: string;
+          }>(
+            `SELECT bebida_id, cantidad::text AS cantidad
+             FROM pedido_item_bebidas WHERE pedido_item_id = $1`,
+            [itemId],
+          );
+          const extras = [
+            ...toppingsStock,
+            ...bebidas.rows.map((b) => ({
+              tipo: 'bebida' as const,
+              id: b.bebida_id,
+              cantidad:
+                Number(b.cantidad) *
+                (toppingsCambiaron ? cantidadNueva : deltaQty),
+            })),
+          ];
+          const cantidadConsumo = toppingsCambiaron ? cantidadNueva : deltaQty;
           await this.inventario.descontarStockPedido(
             client,
             sucursalId,
@@ -1552,21 +1730,13 @@ export class PedidosItemsService {
               {
                 pedidoItemId: itemId,
                 productoId: item.producto_id,
-                cantidad: deltaQty,
-                precioVentaLinea: Number(item.precio_unitario) * deltaQty,
+                cantidad: cantidadConsumo,
+                precioVentaLinea:
+                  Number(item.precio_unitario) * cantidadConsumo,
                 nombreProducto: item.nombre_producto,
                 extras,
               },
             ],
-            { incluirEmpaques: pedido.tipo === 'domicilio' },
-          );
-        } else {
-          await this.inventario.restaurarStockLineaProducto(
-            client,
-            sucursalId,
-            pedidoId,
-            item.producto_id,
-            Math.abs(deltaQty),
             { incluirEmpaques: pedido.tipo === 'domicilio' },
           );
         }

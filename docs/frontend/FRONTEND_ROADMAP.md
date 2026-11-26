@@ -1,5 +1,25 @@
 # Foody — Roadmap Frontend (documento maestro)
 
+### 2026-11-26 — UI-PEDIDOS-STATE-SCROLL-01 · tabs móviles de estado
+
+En móvil, la fila de estados del Kanban de Pedidos ahora tiene un botón accesible “Ver más estados” y desplazamiento animado para hacer evidente que hay más opciones fuera de pantalla; escritorio/tablet conserva la fila actual. Se mantuvo estable el wrapper para no recrear el scroll al ocultar la flecha al final. Suite widget 12/12; responsive 320/390/820/1440 y `dart analyze` focal pasan. Fake local evita HTTP real en detalle. Sin cambios en API.
+
+### 2026-11-26 — PED-RBAC-DOMI-LIQ-OR-01 · CTA según permisos conjuntos
+
+La sección de Fiados muestra “Liquidar” solo si la sesión incluye `gestionar_domiciliarios` y `gestionar_caja`; si no, indica qué autorizaciones faltan. Panel pasa los permisos del JWT al módulo. Widget Domiciliarios 10/10 en 320/390/820/1440; analyzer limpio. Nest sigue como validación autoritativa. La API activa no se reinició y aún requiere E2E HTTP con el build nuevo.
+
+### 2026-11-26 — KDS-COMBO-STATE-MOTION-01 · transición accesible de tareas combo
+
+Los estados `preparando` y `pausada_decision_cliente` ahora cambian suavemente el fondo/borde de la tarea KDS con los tokens semánticos existentes; se respeta la preferencia del sistema para reducir movimiento. Se eliminó la duplicación de colores de estado en la vista, sin cambiar las acciones ni el contrato del repositorio. Prueba `kds_screen_test.dart`: 22/22, incluye la acción de tarea combo en 320/390/820/1440 px; `dart analyze` focalizado limpio. Sin conexión a API ni cambios backend.
+
+### 2026-11-26 — PED-COMBO-IMPRESION-01 · KDS identifica y reimprime estación
+
+El endpoint de tickets agrega `cocina_id` para que KDS reimprima su propia comanda; el repositorio envía ese ID y Nest limita el rol cocina a su estación asignada. No cambia el diseño visual. Verificación Flutter KDS+repositorio: 24/24, incluye confirmación/cancelación de reimpresión y payload con cocina; E2E API/DB QA 8/8 prueba ticket del combo, autoencolado, reimpresión admin/cocina y 403 para otra cocina. `PED-COMBO-KDS-UI-01` anterior 23/23 queda ampliado por este recorrido. Impresora real no probada.
+
+### 2026-11-26 — PED-COMBO-KDS-UI-01 · tareas de combos por estación
+
+KDS muestra cada componente como tarea con el plato asociado y conserva el identificador de tarea separado del ítem cobrable. Cambios individuales y “marcar todo listo” usan endpoint de tarea. “Componente no disponible” explica que pausará el combo y pedirá al mesero consultar; no llama al fallo de preparación (merma/apagado de producto). Prioridad/notas siguen ocultas hasta definirlas por tarea. Flutter repositorio+KDS 23/23 y analyzer limpio. Pendiente recorrido autenticado con Nest/PostgreSQL QA y responsive visual con datos reales.
+
 ### 2026-11-25 — REP-ANALYTICS-PLAN-LINK-01 · requisito Pro visible desde Reportes
 
 El acceso al Centro de Análisis desde Reportes ahora muestra «Análisis · Pro» si el módulo no está habilitado en la sesión. El bloqueo y la pantalla de mejora de plan existentes se conservan. Prueba Reportes 11/11 y analyzer limpio. Cliente/Equipo publicados; rutas públicas y FCM 200; SHA público/local de Equipo coincide. Cloudflare Tunnel sigue activo.

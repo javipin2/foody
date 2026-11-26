@@ -27,3 +27,6 @@ export declare class CambiarEstadoItemDto {
 export declare class FalloPreparacionDto {
     motivo: string;
 }
+export declare class NoDisponibleTareaComboDto {
+    motivo: string;
+}

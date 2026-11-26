@@ -1,5 +1,17 @@
 # Auditoría — Domicilios (Prompt 16)
 
+## PED-DOMI-SESSION-CLOSE-ACTIVE-01 — cierre seguro de turno independiente
+
+La sesión de ubicación es requisito para registrar y emitir posición GPS. El endpoint de cierre antes no consultaba despachos activos; el cliente Flutter además ignoraba el error de cerrar turno al cerrar autenticación. Se aplicó la opción recomendada tras no recibir respuesta a la pregunta: impedir el cierre de sesión con asignaciones `asignado` o `en_camino`. La regla corre en transacción y bloquea el registro del domiciliario, serializándose con aceptación de ofertas antes de revisar despachos. Flutter conserva la sesión autenticada y presenta el mensaje backend si el cierre falla. No modifica pedido, pago, tarifa ni ganancia.
+
+Verificación: `domiciliarios-independientes-dispatch-guard.spec.ts` 9/9; `npm run build` OK; analyzer Dart focal limpio; Prettier TS OK. E2E de denegación, continuidad GPS y cierre después de cancelar añadido a `test/flujos/domicilio.e2e-spec.ts`, aún no ejecutado: la API QA :3001 usa el artefacto anterior y el `.env` del checkout contiene un usuario PostgreSQL de ejemplo inválido para el clon; el inicio de runtime temporal QA alterno no fue autorizado por control de ejecución. :3000 y Tunnel preservados. Requiere repetir smoke HTTP con conexión QA segura/autorizada.
+
+## DOMI-GANANCIAS-RESUMEN-100-01 — integridad de totales del historial
+
+`ganancias()` devolvía como `resumen` solo la suma/conteo de la lista truncada con `LIMIT 100`. Para rangos con más de cien asignaciones el total de ganancias estimadas y la comisión eran incompletos. El query ahora añade ventanas `COUNT/SUM OVER()` antes del límite; conserva 100 filas recientes para no descargar todo el historial. Flutter informa al usuario cuando hay más registros en el total que filas visibles. Se mantienen todas las estimaciones en el historial, incluidas las canceladas; `por_pagar` y liquidaciones no cambian.
+
+Verificación: Jest `domiciliarios-ganancias-resumen.spec.ts` 2/2; build Nest OK; `ganancias_estimadas_resumen_test.dart` 9/9 en 320/390/820/1440, tema claro/oscuro y aviso de recorte; analyzer focal limpio. En el clon QA, EXPLAIN validó columnas SQL y `generate_series(1,125)` con ventana + `LIMIT 1` devolvió 125 y 7.875. Endpoint no probado con dist actualizado; :3000/Tunnel intactos.
+
 > **Fecha:** 2026-11-25 (revisión adicional)
 > **Alcance:** flujo pedido→asignación→entrega→cobro; estado domiciliario vs admin; cancel mid-ruta.  
 > **Verificación:** `scripts/verificar-domicilios-ciclo.ps1` (OK, exit 0).  
@@ -227,3 +239,22 @@ Analítica etiqueta el filtro como «Solo pendiente de pago»; `clausulasPedidos
 **Decisión comercial/contable pendiente:** precisar si `monto_pagado` registra cuánto entregó el cliente a cualquier actor, o cuánto dinero rindió el courier a Foody/restaurante. Son magnitudes distintas. La solución puede requerir separar pago del cliente, deuda por rendir del courier y cargo domicilio fuera de Caja, además de adaptar estados, filtro de Analítica, detalle de pedido y conciliación. No cambiar importes, marcar el pedido pagado ni crear pagos para el domicilio hasta decidir beneficiario/custodia y momento de reconocimiento. La E2E anterior de abono $2.000 + CxC producto $6.000 confirmó el caso mixto, pero no decide su semántica comercial.
 
 **Entorno QA de esta revisión:** se creó el clon temporal `foody_diseno_qa_codex_cxcgate_99405849` desde `foody_diseno_qa` y se eliminó tras confirmar cero sesiones. El intento de lanzar Nest QA `:3001` mediante `Start-Process` fue rechazado por revisión automática con “blocked by policy”; no se usó otra vía. No se ejecutó E2E nueva ni se modificó QA fuente, pedidos, credenciales, OAuth o Tunnel. API diario :3000 permaneció con PID 7584.
+## DOM-CANCEL-PAYOUT-01 — decisión del propietario (26-nov-2026)
+
+Ganancias estimadas de pedidos cancelados: conservar en historial, excluir de `por_pagar`. El estimado no es pago ni obligación liquidada. El fix filtra solo el agregado pendiente; no altera registros. Unit test 1/1, build y E2E 1/1 pasan en clon QA temporal :3002 (9 omitidos por filtro); el endpoint de historial conserva la fila cancelada. El flujo formal de liquidación sigue fuera del alcance de esta decisión.
+
+
+
+## PED-DOMI-SESSION-CLOSE-ACTIVE-01 — revisión de 6C (26-nov-2026)
+
+Hallazgo de línea base: `cerrarSesion()` cerraba sesiones sin revisar asignaciones y GPS requería una sesión activa. La pregunta al propietario quedó sin respuesta y, por su instrucción posterior de aplicar la recomendación si no respondía, se implementó bloqueo transaccional para estados `asignado/en_camino`; ver el registro actualizado al inicio de este documento. La E2E HTTP añadida sigue pendiente de ejecución con Nest actualizado y clon QA.
+
+
+## PED-DOMI-GPS-OWNER-01 — evidencia E2E (26-nov-2026)
+
+E2E `domicilio.e2e-spec.ts` crea/acepta una oferta y marca el despacho `en_camino`; `POST /domiciliarios/sesion/ubicacion` con un `pedido_id` ajeno responde `registrado=false`, mientras el pedido asignado al courier responde `registrado=true`. Caso focal 1/1 aprobado en instancia temporal :3002, usando el clon QA y `FOODY_QA_SIN_EFECTOS=1`; la instancia temporal se cerró, no se tocó :3000 ni Tunnel.
+
+
+### Extensión PED-DOMI-GPS-OWNER-01 — courier de planta (26-nov-2026)
+
+El endpoint `POST /domiciliario/ubicacion` confirma que una asignación `en_camino` del courier autenticado registra/broadcast su ubicación (`registrado=true`), mientras un `pedido_id` distinto devuelve `registrado=false`. E2E `domicilio.e2e-spec.ts` 1/1 aprobada contra API QA :3001/clon existente; Prettier OK. El runtime diario :3000/Tunnel intactos.

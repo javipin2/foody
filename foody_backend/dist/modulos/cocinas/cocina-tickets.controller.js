@@ -42,6 +42,14 @@ let CocinaTicketsController = class CocinaTicketsController {
         await this.cocinas.exigirAccesoItemKds(usuario, itemId);
         return this.cocinas.cambiarEstadoItem(itemId, usuario.sucursal_id, dto.estado_cocina, usuario.sub ?? null, dto.motivo);
     }
+    async cambiarEstadoTareaCombo(tareaId, dto, usuario) {
+        await this.cocinas.exigirAccesoTareaComboKds(usuario, tareaId);
+        return this.cocinas.cambiarEstadoTareaCombo(tareaId, usuario.sucursal_id, dto.estado_cocina, usuario.sub ?? null);
+    }
+    async marcarTareaComboNoDisponible(tareaId, dto, usuario) {
+        await this.cocinas.exigirAccesoTareaComboKds(usuario, tareaId);
+        return this.cocinas.marcarTareaComboNoDisponible(tareaId, usuario.sucursal_id, usuario.sub ?? null, dto.motivo);
+    }
     async falloPreparacion(itemId, dto, usuario) {
         await this.cocinas.exigirAccesoItemKds(usuario, itemId);
         return this.cocinas.falloPreparacion(itemId, usuario.sucursal_id, usuario.sub ?? null, dto.motivo);
@@ -84,6 +92,28 @@ __decorate([
         jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], CocinaTicketsController.prototype, "cambiarEstadoItem", null);
+__decorate([
+    (0, common_1.Patch)('combo-tareas/:tarea_id/estado'),
+    (0, permisos_decorator_1.Permisos)('ver_cocina'),
+    __param(0, (0, common_1.Param)('tarea_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, cocina_dto_1.CambiarEstadoItemDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], CocinaTicketsController.prototype, "cambiarEstadoTareaCombo", null);
+__decorate([
+    (0, common_1.Patch)('combo-tareas/:tarea_id/no-disponible'),
+    (0, permisos_decorator_1.Permisos)('ver_cocina'),
+    __param(0, (0, common_1.Param)('tarea_id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, usuario_actual_decorator_1.UsuarioActual)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, cocina_dto_1.NoDisponibleTareaComboDto,
+        jwt_payload_1.JwtPayload]),
+    __metadata("design:returntype", Promise)
+], CocinaTicketsController.prototype, "marcarTareaComboNoDisponible", null);
 __decorate([
     (0, common_1.Post)('items/:item_id/fallo-preparacion'),
     (0, permisos_decorator_1.Permisos)('ver_cocina'),

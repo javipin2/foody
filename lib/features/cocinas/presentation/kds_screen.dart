@@ -9,6 +9,7 @@ import 'package:reserva_canchas/core/realtime/poll_realtime_respaldo.dart';
 import 'package:reserva_canchas/core/rutas/redireccion_staff.dart';
 import 'package:reserva_canchas/core/sesion/sesion_staff_service.dart';
 import 'package:reserva_canchas/core/widgets/foody_dialogo.dart';
+import 'package:reserva_canchas/core/saas_ui/saas_tokens.dart';
 import 'package:reserva_canchas/features/analitica/presentation/widgets/analitica_tokens.dart';
 import 'package:reserva_canchas/features/cocinas/data/cocinas_repository.dart';
 import 'package:reserva_canchas/services/app_backend.dart';
@@ -63,9 +64,9 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   /// false = Cocina (activos) · true = Listos
   bool _pestanaListos = false;
 
-  static const _amber = Color(0xFFD97706);
-  static const _rojo = Color(0xFFDC2626);
-  static const _verde = Color(0xFF16A34A);
+  static const _amber = SaaSTokens.prioridadMedia;
+  static const _rojo = SaaSTokens.alertas;
+  static const _verde = SaaSTokens.positivo;
 
   @override
   void initState() {
@@ -227,6 +228,24 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _guardarEstadoCocinaItem(
+    Map<String, dynamic> item,
+    String estado,
+  ) async {
+    final itemId = item['item_id']?.toString();
+    if (itemId == null || itemId.isEmpty) {
+      throw StateError('El ítem de cocina no tiene identificador.');
+    }
+    if (item['tarea_combo_id'] != null) {
+      await _repo.cambiarEstadoTareaCombo(
+        tareaId: itemId,
+        estadoCocina: estado,
+      );
+    } else {
+      await _repo.cambiarEstadoItem(itemId: itemId, estadoCocina: estado);
+    }
+  }
+
   Future<void> _cambiarEstado(
     String itemId,
     String estado, {
@@ -234,11 +253,26 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
   }) async {
     await _conLockItem(itemId, () async {
       try {
-        await _repo.cambiarEstadoItem(
-          itemId: itemId,
-          estadoCocina: estado,
-          motivo: motivo,
-        );
+        Map<String, dynamic>? comboItem;
+        for (final ticket in _tickets) {
+          for (final item in _itemsDe(ticket)) {
+            if (item['item_id']?.toString() == itemId &&
+                item['tarea_combo_id'] != null) {
+              comboItem = item;
+              break;
+            }
+          }
+          if (comboItem != null) break;
+        }
+        if (comboItem != null) {
+          await _guardarEstadoCocinaItem(comboItem, estado);
+        } else {
+          await _repo.cambiarEstadoItem(
+            itemId: itemId,
+            estadoCocina: estado,
+            motivo: motivo,
+          );
+        }
         await _cargarTickets(silencioso: true);
         if (!mounted) return;
         // Solo avisar si el ticket completo salió de Cocina.
@@ -327,7 +361,8 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
 
   Future<void> _reimprimir(Map<String, dynamic> ticket) async {
     final pedidoId = ticket['pedido_id'] as String?;
-    if (pedidoId == null || pedidoId.isEmpty) return;
+    final cocinaId = ticket['cocina_id'] as String?;
+    if (pedidoId == null || pedidoId.isEmpty || cocinaId == null) return;
     final confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -352,6 +387,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     try {
       await _repo.reimprimirPedido(
         pedidoId: pedidoId,
+        cocinaId: cocinaId,
         sucursalId: widget.sucursalId,
       );
       if (!mounted) return;
@@ -376,8 +412,18 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     if (pedidoId.isEmpty || _marcandoTodo.contains(pedidoId)) return;
     final itemsPendientes = _itemsDe(ticket).where((item) {
       final estado = item['estado_cocina'] as String? ?? 'pendiente';
-      return estado != 'listo' && estado != 'no_disponible';
+      return !{
+        'listo',
+        'no_disponible',
+        'cancelada',
+        'pausada_decision_cliente',
+      }.contains(estado);
     }).toList();
+    final esperandoCliente = _itemsDe(ticket)
+        .where(
+          (item) => item['estado_cocina'] == 'pausada_decision_cliente',
+        )
+        .length;
     var actualizados = 0;
     var omitidos = 0;
     Object? error;
@@ -391,10 +437,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
         }
         setState(() => _itemsEnVuelo.add(itemId));
         try {
-          await _repo.cambiarEstadoItem(
-            itemId: itemId,
-            estadoCocina: 'listo',
-          );
+          await _guardarEstadoCocinaItem(item, 'listo');
           actualizados++;
         } catch (e) {
           error = e;
@@ -412,10 +455,12 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       }
     }
     if (!mounted) return;
-    if (error != null || omitidos > 0) {
-      final detalle = error == null
-          ? 'Algunos ítems ya estaban en proceso o no tienen identificador.'
-          : mensajeErrorHttp(error, contexto: 'marcar todo listo');
+    if (error != null || omitidos > 0 || esperandoCliente > 0) {
+      final detalle = error != null
+          ? mensajeErrorHttp(error, contexto: 'marcar todo listo')
+          : esperandoCliente > 0
+              ? '$esperandoCliente componente(s) esperan respuesta del cliente.'
+              : 'Algunos ítems ya estaban en proceso o no tienen identificador.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -462,10 +507,7 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
         }
         setState(() => _itemsEnVuelo.add(itemId));
         try {
-          await _repo.cambiarEstadoItem(
-            itemId: itemId,
-            estadoCocina: 'preparando',
-          );
+          await _guardarEstadoCocinaItem(item, 'preparando');
           actualizados++;
         } catch (e) {
           error = e;
@@ -1396,23 +1438,44 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
       'preparando' => _amber,
       'listo' => _verde,
       'no_disponible' => _rojo,
+      'pausada_decision_cliente' => _amber,
       _ => _scheme.onSurfaceVariant,
     };
     final itemId = item['item_id']?.toString();
     if (itemId == null || itemId.isEmpty) {
       return const SizedBox.shrink();
     }
-    final cerrado = estado == 'listo' || estado == 'no_disponible';
+    final esTareaCombo = item['tarea_combo_id'] != null;
+    final esperandoCliente = estado == 'pausada_decision_cliente';
+    final cerrado = estado == 'listo' ||
+        estado == 'no_disponible' ||
+        estado == 'cancelada' ||
+        esperandoCliente;
     final obsItem = item['observaciones'] as String? ?? '';
     final itemUrgente = obsItem.contains('[URGENTE]');
     final enVuelo = _itemsEnVuelo.contains(itemId);
 
-    return Container(
+    final fondoEstado = esperandoCliente
+        ? _amber.withValues(alpha: 0.08)
+        : estado == 'preparando'
+            ? _scheme.primary.withValues(alpha: 0.05)
+            : _scheme.surfaceContainerHighest;
+    final duracionEstado = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : SaaSTokens.duracionControl;
+
+    return AnimatedContainer(
+      duration: duracionEstado,
+      curve: Curves.easeOutCubic,
       padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
       decoration: BoxDecoration(
-        color: _scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _scheme.outlineVariant),
+        color: fondoEstado,
+        borderRadius: BorderRadius.circular(AnaliticaTokens.r8),
+        border: Border.all(
+          color: esperandoCliente
+              ? _amber.withValues(alpha: 0.4)
+              : _scheme.outlineVariant,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1444,6 +1507,22 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                             : _scheme.onSurface,
                       ),
                     ),
+                    if (esTareaCombo)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          esperandoCliente
+                              ? 'Esperando respuesta del cliente'
+                              : 'Preparación de combo · ${item['producto_padre'] ?? 'Plato asociado'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: esperandoCliente ? _amber : _scheme.primary,
+                          ),
+                        ),
+                      ),
                     if (item['incluidos'] is List &&
                         (item['incluidos'] as List).isNotEmpty)
                       Padding(
@@ -1551,49 +1630,68 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
                           : _scheme.onSurfaceVariant,
                     ),
                   ),
-                  IconButton.outlined(
-                    tooltip: itemUrgente ? 'Quitar urgente' : 'Marcar urgente',
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    onPressed: enVuelo
-                        ? null
-                        : () => _togglePrioridad(itemId, !itemUrgente),
-                    icon: Icon(
-                      Icons.priority_high,
-                      color: itemUrgente ? _amber : _scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  IconButton.outlined(
-                    tooltip: 'Nota cocina',
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    onPressed: enVuelo
-                        ? null
-                        : () => _editarObservacionesItem(itemId, obsItem),
-                    icon: Icon(
-                      Icons.sticky_note_2_outlined,
-                      color: obsItem
-                              .replaceFirst(RegExp(r'^\[URGENTE\]\s*'), '')
-                              .isNotEmpty
-                          ? AnaliticaTokens.pedidos
-                          : _scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  IconButton.outlined(
-                    tooltip: 'Fallo / No se pudo',
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    onPressed:
-                        enVuelo ? null : () => _dialogoNoDisponible(itemId),
-                    icon: const Icon(Icons.block, color: _rojo),
-                  ),
                 ];
+                if (!esTareaCombo) {
+                  acciones.addAll([
+                    IconButton.outlined(
+                      tooltip:
+                          itemUrgente ? 'Quitar urgente' : 'Marcar urgente',
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      onPressed: enVuelo
+                          ? null
+                          : () => _togglePrioridad(itemId, !itemUrgente),
+                      icon: Icon(
+                        Icons.priority_high,
+                        color: itemUrgente ? _amber : _scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    IconButton.outlined(
+                      tooltip: 'Nota cocina',
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      onPressed: enVuelo
+                          ? null
+                          : () => _editarObservacionesItem(itemId, obsItem),
+                      icon: Icon(
+                        Icons.sticky_note_2_outlined,
+                        color: obsItem
+                                .replaceFirst(RegExp(r'^\[URGENTE\]\s*'), '')
+                                .isNotEmpty
+                            ? AnaliticaTokens.pedidos
+                            : _scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    IconButton.outlined(
+                      tooltip: 'Fallo / No se pudo',
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      onPressed:
+                          enVuelo ? null : () => _dialogoNoDisponible(itemId),
+                      icon: const Icon(Icons.block, color: _rojo),
+                    ),
+                  ]);
+                } else {
+                  acciones.add(
+                    IconButton.outlined(
+                      tooltip: 'Componente no disponible',
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      onPressed: enVuelo
+                          ? null
+                          : () => _dialogoNoDisponible(itemId, combo: true),
+                      icon: const Icon(Icons.block, color: _rojo),
+                    ),
+                  );
+                }
                 if (narrow) {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1635,21 +1733,36 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _dialogoNoDisponible(String itemId) async {
+  Future<void> _dialogoNoDisponible(
+    String itemId, {
+    bool combo = false,
+  }) async {
     final motivo = await FoodyDialogo.mostrar<String>(
       context: context,
-      builder: (ctx) => const _DialogoNoDisponible(),
+      builder: (ctx) => _DialogoNoDisponible(combo: combo),
     );
     if (motivo == null) return;
     await _conLockItem(itemId, () async {
       try {
-        await _repo.falloPreparacion(itemId: itemId, motivo: motivo);
+        if (combo) {
+          await _repo.marcarTareaComboNoDisponible(
+            tareaId: itemId,
+            motivo: motivo,
+          );
+        } else {
+          await _repo.falloPreparacion(itemId: itemId, motivo: motivo);
+        }
         await _cargarTickets(silencioso: true);
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(mensajeErrorHttp(e, contexto: 'fallo preparación')),
+            content: Text(
+              mensajeErrorHttp(
+                e,
+                contexto: combo ? 'pausar combo' : 'fallo preparación',
+              ),
+            ),
             backgroundColor: AnaliticaTokens.alertas,
           ),
         );
@@ -1709,7 +1822,9 @@ class _KdsScreenState extends State<KdsScreen> with WidgetsBindingObserver {
 }
 
 class _DialogoNoDisponible extends StatefulWidget {
-  const _DialogoNoDisponible();
+  const _DialogoNoDisponible({this.combo = false});
+
+  final bool combo;
 
   @override
   State<_DialogoNoDisponible> createState() => _DialogoNoDisponibleState();
@@ -1737,7 +1852,9 @@ class _DialogoNoDisponibleState extends State<_DialogoNoDisponible> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Fallo de preparación'),
+      title: Text(
+        widget.combo ? 'Componente no disponible' : 'Fallo de preparación',
+      ),
       content: Form(
         key: _formKey,
         autovalidateMode: _autovalidateMode,
@@ -1745,9 +1862,13 @@ class _DialogoNoDisponibleState extends State<_DialogoNoDisponible> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Se registrará una alerta, una posible merma si el inventario '
-              'ya se descontó y el producto dejará de ofrecerse en el menú.',
+            Text(
+              widget.combo
+                  ? 'Se pausarán las demás estaciones de este combo para que '
+                      'el mesero consulte al cliente. No se registra merma ni '
+                      'se desactiva el producto del menú.'
+                  : 'Se registrará una alerta, una posible merma si el inventario '
+                      'ya se descontó y el producto dejará de ofrecerse en el menú.',
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -1776,7 +1897,9 @@ class _DialogoNoDisponibleState extends State<_DialogoNoDisponible> {
         ),
         FilledButton(
           onPressed: _confirmar,
-          child: const Text('Confirmar'),
+          child: Text(
+            widget.combo ? 'Pausar y consultar' : 'Confirmar',
+          ),
         ),
       ],
     );

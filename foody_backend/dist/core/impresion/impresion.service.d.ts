@@ -9,7 +9,7 @@ export declare class ImpresionService implements OnModuleInit {
     private readonly LOCK_IMPRESION_COLA;
     constructor(database: DatabaseService, config: ConfigService);
     onModuleInit(): void;
-    reimprimirPedido(pedidoId: string, sucursalId: string): Promise<{
+    reimprimirPedido(pedidoId: string, sucursalId: string, cocinaId?: string): Promise<{
         pedido_id: string;
         encolado: boolean;
     }>;
@@ -27,6 +27,7 @@ export declare class ImpresionService implements OnModuleInit {
         mensaje: string;
     }>;
     private encolarPorPedidoInterno;
+    private listarCocinasPedido;
     private procesarCola;
     private procesarJob;
     private registrarFalloJob;

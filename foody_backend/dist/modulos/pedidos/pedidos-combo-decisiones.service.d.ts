@@ -1,0 +1,90 @@
+import { DatabaseService } from '../../core/database/database.service';
+import { RealtimeBroadcastService } from '../../core/realtime/realtime-broadcast.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { CajaMovimientosService } from '../../core/caja/caja-movimientos.service';
+import { FacturacionService } from '../facturacion/facturacion.service';
+import { PedidosCuentaMesaService } from './pedidos-cuenta-mesa.service';
+import { PedidosEstadoCommandService } from './pedidos-estado-command.service';
+import { PedidosInventarioService } from './pedidos-inventario.service';
+type TipoComponenteCombo = 'producto' | 'bebida' | 'topping';
+type SnapshotComponente = {
+    tipo_item: TipoComponenteCombo;
+    componente_id: string;
+    nombre: string;
+    cantidad: number;
+    precio_unitario: number | null;
+    costo_unitario: number;
+    cocina_id: string | null;
+    producto_padre_id: string | null;
+    producto_padre: string | null;
+};
+export declare class PedidosComboDecisionesService {
+    private readonly database;
+    private readonly auditoria;
+    private readonly realtime;
+    private readonly inventario;
+    private readonly facturacion;
+    private readonly caja;
+    private readonly estadoCommand;
+    private readonly cuentaMesa;
+    constructor(database: DatabaseService, auditoria: AuditoriaService, realtime: RealtimeBroadcastService, inventario: PedidosInventarioService, facturacion: FacturacionService, caja: CajaMovimientosService, estadoCommand: PedidosEstadoCommandService, cuentaMesa: PedidosCuentaMesaService);
+    listarPendientes(pedidoId: string, sucursalId: string): Promise<Record<string, unknown>[]>;
+    cancelarComboManual(pedidoId: string, pedidoItemId: string, sucursalId: string, usuarioId: string, motivo?: string): Promise<{
+        pedido_id: string;
+        item_id: string;
+        numero_pedido: string;
+        estado: string;
+        cancelado: boolean;
+    }>;
+    cotizarReemplazo(pedidoId: string, decisionId: string, sucursalId: string, reemplazoId: string, usuarioId: string): Promise<{
+        decision_id: string;
+        pedido_id: string;
+        componente_reemplazo: SnapshotComponente;
+        diferencia_propuesta: number;
+        total_anterior: number;
+        total_propuesto: number;
+        cotizacion_version: number;
+        pago_adicional_estimado: number;
+        devolucion_estimada: number;
+        aplicado: boolean;
+    }>;
+    responder(pedidoId: string, decisionId: string, sucursalId: string, usuarioId: string, dto: {
+        accion: 'aceptar_sustitucion' | 'cancelar_combo';
+        cotizacion_version?: number;
+        total_aceptado?: number;
+        motivo?: string;
+    }): Promise<{
+        decision_id: string;
+        pedido_id: string;
+        estado: string;
+        idempotente: boolean;
+        aplicado: boolean;
+        respuesta_accion?: undefined;
+        total_aceptado?: undefined;
+        delta_propuesto?: undefined;
+    } | {
+        decision_id: string;
+        pedido_id: string;
+        estado: string;
+        respuesta_accion: "aceptar_sustitucion" | "cancelar_combo";
+        total_aceptado: number | null;
+        delta_propuesto: number | null;
+        aplicado: boolean;
+        idempotente: boolean;
+    }>;
+    private aplicarSustitucionEnTransaccion;
+    private cancelarComboEnTransaccion;
+    private ajustarTotalesPedidoEnTransaccion;
+    private cargarDecisionBloqueada;
+    private listarReemplazos;
+    private obtenerReemplazoDisponible;
+    private recalcularDescuento;
+    private mapaCandidato;
+    private snapshot;
+    private exigirPendiente;
+    private exigirPedidoEditable;
+    private mismaMoneda;
+    private redondearMoneda;
+    private notificarDecision;
+}
+export {};

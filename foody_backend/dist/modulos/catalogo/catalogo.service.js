@@ -81,6 +81,7 @@ let CatalogoService = class CatalogoService {
         const opts = (0, paginacion_dto_1.opcionesListado)(query, 50);
         const select = `SELECT p.id, p.nombre, p.descripcion, p.precio, p.precio_para_llevar,
               p.disponible, p.orden, p.categoria_id, p.imagen_url,
+              p.bebida_origen_id,
               c.nombre AS categoria_nombre, p.cocina_id
        FROM productos p
        LEFT JOIN categorias c ON c.id = p.categoria_id
@@ -203,9 +204,32 @@ let CatalogoService = class CatalogoService {
        LIMIT $2`, [sucursalId, paginacion_dto_1.LIMITE_LISTADO_SIN_PAGINA]);
     }
     async crearTopping(dto) {
-        const fila = await this.database.consultarUno(`INSERT INTO toppings (sucursal_id, nombre, precio, disponible)
-       VALUES ($1,$2,$3,true)
-       RETURNING id, nombre, precio, disponible`, [dto.sucursal_id, dto.nombre, dto.precio]);
+        const productoIds = [...new Set(dto.producto_ids ?? [])];
+        const fila = await this.database.enTransaccion(async (client) => {
+            if (productoIds.length) {
+                const productos = await client.query(`SELECT p.id FROM productos p
+           INNER JOIN categorias c ON c.id = p.categoria_id AND c.activa = true
+           WHERE p.id = ANY($1::uuid[]) AND p.sucursal_id = $2
+             AND p.bebida_origen_id IS NULL`, [productoIds, dto.sucursal_id]);
+                if (productos.rows.length !== productoIds.length) {
+                    throw new common_1.BadRequestException({
+                        error: 'TOPPING_PRODUCTO_INVALIDO',
+                        message: 'Solo puedes asociar toppings a platos de esta sede.',
+                    });
+                }
+            }
+            const creado = await client.query(`INSERT INTO toppings (sucursal_id, nombre, precio, disponible)
+         VALUES ($1,$2,$3,true)
+         RETURNING id, nombre, precio, disponible`, [dto.sucursal_id, dto.nombre, dto.precio]);
+            const topping = creado.rows[0];
+            if (productoIds.length) {
+                await client.query(`INSERT INTO producto_toppings (producto_id, topping_id)
+           SELECT u.producto_id, $2
+           FROM unnest($1::uuid[]) AS u(producto_id)
+           ON CONFLICT (producto_id, topping_id) DO NOTHING`, [productoIds, topping.id]);
+            }
+            return { ...topping, producto_ids: productoIds };
+        });
         this.invalidarMenu(dto.sucursal_id);
         return fila;
     }
@@ -311,7 +335,7 @@ let CatalogoService = class CatalogoService {
         return { id, ...datos };
     }
     async vincularToppingProducto(productoId, toppingId, sucursalId) {
-        await this.exigirProducto(productoId, sucursalId);
+        await this.exigirProductoPlato(productoId, sucursalId);
         await this.exigirTopping(toppingId, sucursalId);
         await this.database.consultarUno(`INSERT INTO producto_toppings (producto_id, topping_id)
        VALUES ($1,$2)
@@ -320,7 +344,7 @@ let CatalogoService = class CatalogoService {
         return { producto_id: productoId, topping_id: toppingId };
     }
     async listarToppingsProducto(productoId, sucursalId) {
-        await this.exigirProducto(productoId, sucursalId);
+        await this.exigirProductoPlato(productoId, sucursalId);
         return this.database.consultar(`SELECT t.id, t.nombre, t.precio, t.disponible
        FROM producto_toppings pt
        INNER JOIN toppings t ON t.id = pt.topping_id
@@ -328,7 +352,7 @@ let CatalogoService = class CatalogoService {
        ORDER BY t.nombre ASC`, [productoId, sucursalId]);
     }
     async configurarToppingsProducto(productoId, sucursalId, toppingIds) {
-        await this.exigirProducto(productoId, sucursalId);
+        await this.exigirProductoPlato(productoId, sucursalId);
         const unicos = [...new Set(toppingIds.filter(Boolean))];
         for (const tid of unicos) {
             await this.exigirTopping(tid, sucursalId);
@@ -399,12 +423,6 @@ let CatalogoService = class CatalogoService {
                 throw new common_1.BadRequestException({
                     error: 'COMBO_SIN_COCINA',
                     message: 'Asigna una cocina a los productos antes de crear un combo.',
-                });
-            }
-            if (cocinasAsignadas.size > 1) {
-                throw new common_1.BadRequestException({
-                    error: 'COMBO_COCINAS_DIFERENTES',
-                    message: 'Los productos de un combo deben prepararse en la misma cocina. El enrutamiento a varias cocinas aún no está disponible.',
                 });
             }
             return { id: comboId, nombre: dto.nombre, precio_fijo: dto.precio_fijo };
@@ -779,6 +797,18 @@ let CatalogoService = class CatalogoService {
             error: 'COCINA_REQUERIDA',
             message: 'Asigna una cocina activa de esta sede antes de ofrecer el producto a los clientes.',
         });
+    }
+    async exigirProductoPlato(id, sucursalId) {
+        const producto = await this.database.consultarUno(`SELECT p.id FROM productos p
+       INNER JOIN categorias c ON c.id = p.categoria_id AND c.activa = true
+       WHERE p.id = $1 AND p.sucursal_id = $2
+         AND p.bebida_origen_id IS NULL`, [id, sucursalId]);
+        if (!producto) {
+            throw new common_1.BadRequestException({
+                error: 'TOPPING_PRODUCTO_INVALIDO',
+                message: 'Los toppings solo se pueden asociar a platos activos de esta sede, no a bebidas.',
+            });
+        }
     }
     async exigirProducto(id, sucursalId) {
         const p = await this.database.consultarUno(`SELECT id, disponible, cocina_id FROM productos

@@ -621,6 +621,9 @@ class _PanelRestauranteScreenState extends State<PanelRestauranteScreen>
       case 'domiciliarios':
         return DomiciliariosAdminScreen(
           sucursalId: sucursalId,
+          puedeLiquidar:
+              _sesion?.permisos.contains('gestionar_domiciliarios') == true &&
+                  _sesion?.permisos.contains('gestionar_caja') == true,
           onIrPedidosDomicilio: () {
             // Filtro tipo se aplica al abrir kanban via query no soportada;
             // al menos salta a pedidos (ADM2-14).

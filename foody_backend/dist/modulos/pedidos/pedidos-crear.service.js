@@ -25,6 +25,7 @@ const pedidos_cuenta_mesa_service_1 = require("./pedidos-cuenta-mesa.service");
 const pedidos_inventario_service_1 = require("./pedidos-inventario.service");
 const pedido_estados_1 = require("./pedido-estados");
 const pedidos_idempotencia_util_1 = require("./pedidos-idempotencia.util");
+const pedidos_combo_toppings_util_1 = require("./pedidos-combo-toppings.util");
 const DIAS_ANTICIPACION_ENCARGO_MIN = 2;
 let PedidosCrearService = class PedidosCrearService {
     database;
@@ -301,8 +302,12 @@ let PedidosCrearService = class PedidosCrearService {
             ];
             const bebidasCatalogo = new Map();
             if (idsBebidas.length) {
-                const resultado = await client.query(`SELECT id, nombre, precio, costo_calculado FROM bebidas
-           WHERE id = ANY($1::uuid[]) AND sucursal_id = $2 AND disponible = true`, [idsBebidas, dto.sucursal_id]);
+                const resultado = await client.query(`SELECT b.id, b.nombre, b.precio, b.costo_calculado,
+                  (SELECT p.cocina_id FROM productos p
+                   WHERE p.bebida_origen_id = b.id AND p.sucursal_id = b.sucursal_id
+                   ORDER BY p.created_at DESC LIMIT 1) AS cocina_id
+           FROM bebidas b
+           WHERE b.id = ANY($1::uuid[]) AND b.sucursal_id = $2 AND b.disponible = true`, [idsBebidas, dto.sucursal_id]);
                 for (const fila of resultado.rows) {
                     bebidasCatalogo.set(normalizarId(fila.id), fila);
                 }
@@ -408,13 +413,7 @@ let PedidosCrearService = class PedidosCrearService {
                 const cocinasCombo = new Set(productosCombo
                     .map((pc) => productos.get(normalizarId(pc.productoId))?.cocina_id)
                     .filter((id) => id != null));
-                if (cocinasCombo.size > 1) {
-                    throw new common_1.BadRequestException({
-                        error: 'COMBO_COCINAS_DIFERENTES',
-                        message: 'Este combo tiene productos de varias cocinas y todavía no se puede enviar a todas las estaciones. Reconfigúralo para usar una cocina.',
-                    });
-                }
-                const cocinaComboId = [...cocinasCombo][0] ?? producto.cocina_id;
+                const cocinaComboId = producto.cocina_id ?? [...cocinasCombo][0];
                 if (!cocinaComboId) {
                     throw new common_1.BadRequestException({
                         error: 'COMBO_SIN_COCINA',
@@ -433,6 +432,11 @@ let PedidosCrearService = class PedidosCrearService {
                             nombre: componente.nombre,
                             cantidad: ci.cantidad,
                             costo_unitario: Number(componente.costo_calculado ?? 0),
+                            precio_unitario: dto.tipo === 'para_llevar' &&
+                                componente.precio_para_llevar != null
+                                ? Number(componente.precio_para_llevar)
+                                : Number(componente.precio),
+                            cocina_id: componente.cocina_id ?? cocinaComboId,
                         };
                     }
                     const catalogo = ci.tipo_item === 'bebida'
@@ -449,11 +453,33 @@ let PedidosCrearService = class PedidosCrearService {
                         nombre: catalogo.nombre,
                         cantidad: ci.cantidad,
                         costo_unitario: Number(catalogo.costo_calculado ?? 0),
+                        precio_unitario: Number(catalogo.precio),
+                        cocina_id: ci.tipo_item === 'bebida'
+                            ? (catalogo.cocina_id ?? cocinaComboId)
+                            : cocinaComboId,
                     };
                 });
                 const toppings = [];
-                for (const t of comboDto.toppings ?? []) {
-                    const top = toppingsCatalogo.get(normalizarId(t.topping_id));
+                const productosComboParaTopping = [
+                    ...new Set(productosCombo.map((pc) => normalizarId(pc.productoId))),
+                ].map((id) => {
+                    const plato = productos.get(id);
+                    if (!plato)
+                        throw new common_1.BadRequestException('PRODUCTO_NO_DISPONIBLE');
+                    return plato;
+                });
+                const destinosToppings = (0, pedidos_combo_toppings_util_1.resolverDestinosToppingsCombo)(comboDto.toppings ?? [], productosComboParaTopping);
+                const asociacionesToppings = destinosToppings.length
+                    ? await client.query(`SELECT producto_id, topping_id FROM producto_toppings
+               WHERE producto_id = ANY($1::uuid[])
+                 AND topping_id = ANY($2::uuid[])`, [
+                        [...new Set(destinosToppings.map((r) => r.producto_id))],
+                        [...new Set(destinosToppings.map((r) => r.topping_id))],
+                    ])
+                    : { rows: [] };
+                (0, pedidos_combo_toppings_util_1.validarToppingsAsociadosAProductos)(destinosToppings, asociacionesToppings.rows);
+                for (const destino of destinosToppings) {
+                    const top = toppingsCatalogo.get(normalizarId(destino.topping_id));
                     if (!top)
                         throw new common_1.BadRequestException('TOPPING_NO_DISPONIBLE');
                     toppings.push({
@@ -461,6 +487,9 @@ let PedidosCrearService = class PedidosCrearService {
                         nombre: top.nombre,
                         precio: Number(top.precio),
                         costo: Number(top.costo_calculado ?? 0),
+                        productoId: destino.producto_id,
+                        productoNombre: destino.producto_nombre,
+                        cocinaId: destino.cocina_id ?? cocinaComboId,
                     });
                 }
                 const bebidas = [];
@@ -474,6 +503,7 @@ let PedidosCrearService = class PedidosCrearService {
                         precio: Number(beb.precio),
                         cantidad: b.cantidad,
                         costo: Number(beb.costo_calculado ?? 0),
+                        cocina_id: beb.cocina_id,
                     });
                 }
                 for (const t of toppings) {
@@ -483,6 +513,10 @@ let PedidosCrearService = class PedidosCrearService {
                         nombre: t.nombre,
                         cantidad: 1,
                         costo_unitario: t.costo,
+                        precio_unitario: t.precio,
+                        cocina_id: t.cocinaId ?? cocinaComboId,
+                        producto_padre_id: t.productoId,
+                        producto_padre_nombre_snapshot: t.productoNombre,
                     });
                 }
                 for (const b of bebidas) {
@@ -492,6 +526,8 @@ let PedidosCrearService = class PedidosCrearService {
                         nombre: b.nombre,
                         cantidad: b.cantidad,
                         costo_unitario: b.costo,
+                        precio_unitario: b.precio,
+                        cocina_id: b.cocina_id ?? cocinaComboId,
                     });
                 }
                 const extrasUnitario = toppings.reduce((s, t) => s + t.precio, 0) +
@@ -515,20 +551,39 @@ let PedidosCrearService = class PedidosCrearService {
                 });
                 for (const pedidoItemId of itemIds) {
                     for (const [indice, pc] of productosCombo.entries()) {
+                        const componenteIndice = componentesSnapshot.findIndex((componente) => componente.tipo_item === 'producto' &&
+                            normalizarId(componente.item_id) ===
+                                normalizarId(pc.productoId));
+                        if (componenteIndice < 0) {
+                            throw new common_1.BadRequestException({
+                                error: 'COMBO_COMPONENTE_SIN_SNAPSHOT',
+                                message: 'No se puede registrar el inventario: un componente del combo no tiene snapshot.',
+                            });
+                        }
                         lineasInventario.push({
                             pedidoItemId,
                             productoId: pc.productoId,
                             cantidad: pc.cantidad,
                             precioVentaLinea: 1,
-                            extras: indice === 0
-                                ? componentesSnapshot
-                                    .filter((c) => c.tipo_item !== 'producto')
-                                    .map((c) => ({
-                                    tipo: c.tipo_item,
-                                    id: c.item_id,
-                                    cantidad: c.cantidad,
-                                }))
-                                : [],
+                            comboComponenteIndice: componenteIndice,
+                            comboComponenteId: pc.productoId,
+                            extras: componentesSnapshot
+                                .map((componente, snapshotIndice) => ({
+                                componente,
+                                snapshotIndice,
+                            }))
+                                .filter(({ componente }) => componente.tipo_item !== 'producto' &&
+                                (componente.producto_padre_id
+                                    ? normalizarId(componente.producto_padre_id) ===
+                                        normalizarId(pc.productoId)
+                                    : indice === 0))
+                                .map(({ componente, snapshotIndice }) => ({
+                                tipo: componente.tipo_item,
+                                id: componente.item_id,
+                                cantidad: componente.cantidad,
+                                comboComponenteIndice: snapshotIndice,
+                                comboComponenteId: componente.item_id,
+                            })),
                         });
                     }
                 }
@@ -559,7 +614,8 @@ let PedidosCrearService = class PedidosCrearService {
                 dto.tipo === 'para_llevar' &&
                 ((dto.pagos?.length ?? 0) > 0 ||
                     (dto.metodo_pago ?? 'pendiente') !== 'pendiente');
-            if (!opciones.soloEstimar && cobroInmediatoStaff) {
+            if (!opciones.soloEstimar &&
+                (cobroInmediatoStaff || dto.total_esperado !== undefined)) {
                 (0, pedidos_idempotencia_util_1.validarTotalEsperadoPedido)(dto.total_esperado, total, {
                     subtotal,
                     costoDomicilio,
@@ -746,6 +802,7 @@ let PedidosCrearService = class PedidosCrearService {
                         combo.precioFijo,
                         JSON.stringify(combo.componentesSnapshot),
                     ]);
+                    await this.inventario.crearTareasCombo(client, dto.sucursal_id, pedidoId, itemId, combo.componentesSnapshot);
                     for (const t of combo.toppings) {
                         await client.query(`INSERT INTO pedido_item_toppings (pedido_item_id, topping_id, nombre_topping, precio_topping)
                VALUES ($1,$2,$3,$4)`, [itemId, t.id, t.nombre, t.precio]);

@@ -2,14 +2,16 @@ import { DatabaseService } from '../../core/database/database.service';
 import { ConfiguracionGlobalService } from '../../core/config/configuracion-global.module';
 import { OnboardingRestauranteService } from '../../core/onboarding/onboarding-restaurante.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { AlmacenamientoService } from '../almacenamiento/almacenamiento.service';
 import { ActualizarCiudadDto, ActualizarConfiguracionDto, ActualizarDomiciliarioEstadoDto, ActualizarRestauranteDto, ActualizarSuscripcionDto, ActualizarUsuarioSuperDto, AprobarDocumentoDto, CambiarContrasenaSuperDto, CambiarEstadoUsuarioSuperDto, CrearCiudadDto, CrearRestauranteDto, CrearUsuarioSuperDto, RechazarDocumentoDto } from './dto/super-admin.dto';
 export declare class SuperAdminService {
     private readonly database;
     private readonly onboarding;
     private readonly notificaciones;
     private readonly configGlobal;
+    private readonly almacenamiento;
     private readonly logger;
-    constructor(database: DatabaseService, onboarding: OnboardingRestauranteService, notificaciones: NotificacionesService, configGlobal: ConfiguracionGlobalService);
+    constructor(database: DatabaseService, onboarding: OnboardingRestauranteService, notificaciones: NotificacionesService, configGlobal: ConfiguracionGlobalService, almacenamiento: AlmacenamientoService);
     resumenGlobal(): Promise<{
         ciudades_activas: number;
         restaurantes_activos: number;
@@ -79,8 +81,12 @@ export declare class SuperAdminService {
         id: string;
         activo: boolean;
     }>;
-    listarDocumentosPendientes(): Promise<import("pg").QueryResultRow[]>;
-    listarDocumentosDomiciliario(domiciliarioId: string): Promise<import("pg").QueryResultRow[]>;
+    listarDocumentosPendientes(): Promise<{
+        url: string;
+    }[]>;
+    listarDocumentosDomiciliario(domiciliarioId: string): Promise<{
+        url: string;
+    }[]>;
     aprobarDocumento(domiciliarioId: string, dto: AprobarDocumentoDto, revisorId: string): Promise<{
         documento_id: string;
         estado: "rechazado" | "aprobado";

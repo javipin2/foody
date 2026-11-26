@@ -7,7 +7,15 @@ export declare class DomiciliariosDocumentosController {
         tipos: readonly ["cedula_frente", "cedula_reverso", "foto_vehiculo"];
     };
     misDocumentos(usuario: JwtPayload): Promise<{
-        documentos: import("pg").QueryResultRow[];
+        documentos: {
+            url: string;
+            id: string;
+            tipo: string;
+            estado: string;
+            motivo_rechazo: string | null;
+            created_at: Date | string;
+            revisado_por: string | null;
+        }[];
         faltantes: ("cedula_frente" | "cedula_reverso" | "foto_vehiculo")[];
         completo: boolean;
         pendientes_revision: number;

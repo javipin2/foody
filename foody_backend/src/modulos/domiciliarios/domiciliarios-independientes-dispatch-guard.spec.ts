@@ -4,6 +4,77 @@ import { DomiciliariosIndependientesService } from './domiciliarios-independient
 import { DispatchService } from './dispatch.service';
 
 describe('aceptación de oferta independiente', () => {
+  it.each(['asignado', 'en_camino'])(
+    'bloquea el cierre de sesión con asignación %s',
+    async (estado) => {
+      const queries: string[] = [];
+      const query = jest.fn(async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes('FROM domiciliarios_independientes')) {
+          return { rows: [{ id: 'dom-1' }] };
+        }
+        if (sql.includes('FROM asignaciones_domicilio')) {
+          return { rows: [{ id: 'asignacion-1', estado }] };
+        }
+        return { rows: [] };
+      });
+      const client = { query };
+      const database = {
+        enTransaccion: jest.fn((fn: (tx: never) => unknown) =>
+          fn(client as never),
+        ),
+      };
+      const service = new DomiciliariosIndependientesService(
+        database as unknown as DatabaseService,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      await expect(service.cerrarSesion('dom-1')).rejects.toThrow(
+        'Completa o cancela la entrega activa antes de cerrar tu turno',
+      );
+      expect(
+        queries.some((sql) => sql.includes('UPDATE domiciliarios_sesiones')),
+      ).toBe(false);
+      expect(database.enTransaccion).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('cierra el turno sin entregas activas', async () => {
+    const queries: string[] = [];
+    const query = jest.fn(async (sql: string) => {
+      queries.push(sql);
+      if (sql.includes('FROM domiciliarios_independientes')) {
+        return { rows: [{ id: 'dom-1' }] };
+      }
+      return { rows: [] };
+    });
+    const client = { query };
+    const database = {
+      enTransaccion: jest.fn((fn: (tx: never) => unknown) =>
+        fn(client as never),
+      ),
+    };
+    const service = new DomiciliariosIndependientesService(
+      database as unknown as DatabaseService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.cerrarSesion('dom-1')).resolves.toEqual({ ok: true });
+    expect(
+      queries.some((sql) => sql.includes('UPDATE domiciliarios_sesiones')),
+    ).toBe(true);
+  });
+
   it('cancela ofertas activas hermanas al confirmar una asignación', async () => {
     const queries: Array<{ sql: string; params: unknown[] }> = [];
     const query = jest.fn(async (sql: string, params: unknown[] = []) => {

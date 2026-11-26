@@ -8,9 +8,13 @@ import 'package:reserva_canchas/features/reportes/data/reportes_repository.dart'
 import 'package:reserva_canchas/features/reportes/presentation/reportes_admin_screen.dart';
 
 class _ReportesRepositoryFake extends ReportesRepository {
-  _ReportesRepositoryFake({this.financieroData = const {}});
+  _ReportesRepositoryFake({
+    this.financieroData = const {},
+    this.pedidosData = const {},
+  });
 
   final Map<String, dynamic> financieroData;
+  final Map<String, dynamic> pedidosData;
 
   @override
   Future<Map<String, dynamic>> financiero({
@@ -34,7 +38,7 @@ class _ReportesRepositoryFake extends ReportesRepository {
     required String desde,
     required String hasta,
   }) async =>
-      {};
+      pedidosData;
 }
 
 class _AuditoriaRepositoryFake extends AuditoriaRepository {
@@ -211,6 +215,97 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Reporte financiero identifica domicilio como parte del total',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportesAdminScreen(
+            sucursalId: 's1',
+            repository: _ReportesRepositoryFake(
+              financieroData: {
+                'resumen': {
+                  'ventas_total': 30000,
+                  'pedidos': 2,
+                  'ticket_promedio': 15000,
+                  'costo_domicilio': 5000,
+                },
+                'por_tipo': [
+                  {
+                    'tipo': 'domicilio',
+                    'pedidos': 2,
+                    'ventas': 30000,
+                    'costo_domicilio': 5000,
+                  },
+                ],
+              },
+            ),
+            auditoriaRepository: _AuditoriaRepositoryFake(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Valor total pedidos'), findsOneWidget);
+    expect(find.text('Cargo domicilio'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Por tipo de pedido'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.scrollUntilVisible(
+      find.textContaining('Incluye'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining('pedidos · Valor total'), findsOneWidget);
+    expect(find.textContaining('Incluye 5.000'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('detalle diario muestra el cargo incluido sin sumarlo al total',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportesAdminScreen(
+            sucursalId: 's1',
+            repository: _ReportesRepositoryFake(
+              pedidosData: {
+                'por_dia': [
+                  {
+                    'dia': '2026-11-23',
+                    'pedidos': 1,
+                    'ventas': 15000,
+                    'costo_domicilio': 5000,
+                  },
+                ],
+              },
+            ),
+            auditoriaRepository: _AuditoriaRepositoryFake(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pedidos').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('pedidos · Valor total'), findsOneWidget);
+    expect(find.textContaining('Incluye 5.000'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('respuesta tardía de otro periodo no reemplaza el timeline nuevo',
       (tester) async {
     final respuestaAnterior = Completer<Map<String, dynamic>>();
@@ -304,10 +399,10 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
 
-    expect(find.text('Ventas y cobros asociados'), findsOneWidget);
-    expect(find.text('Ventas de pedidos'), findsOneWidget);
+    expect(find.text('Pedidos y cobros asociados'), findsOneWidget);
+    expect(find.text('Valor total de pedidos'), findsOneWidget);
     expect(find.text('Cobros netos asociados'), findsOneWidget);
-    expect(find.text('Ventas menos cobros'), findsOneWidget);
+    expect(find.text('Valor de pedidos menos cobros'), findsOneWidget);
     expect(find.text('Recaudo registrado en el rango'), findsOneWidget);
     expect(
       find.text('Ventas menos devoluciones por fecha de movimiento'),

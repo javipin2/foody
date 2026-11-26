@@ -23,7 +23,7 @@ export declare class PedidosEstadoService {
     private readonly auditoria;
     private readonly notificaciones;
     constructor(database: DatabaseService, dispatchHooks: PedidosDispatchHooksService, alertasRiesgo: AlertasRiesgoService, costeo: CosteoService, cajaAuditoria: PedidosCajaAuditoriaService, cuentaMesa: PedidosCuentaMesaService, soporte: PedidosSoporteService, estadoCommand: PedidosEstadoCommandService, inventario: PedidosInventarioService, auditoria: AuditoriaService, notificaciones: NotificacionesService);
-    cambiarEstado(pedidoId: string, sucursalId: string, usuarioId: string, nuevoEstado: string, motivo?: string, contexto?: {
+    cambiarEstado(pedidoId: string, sucursalId: string, usuarioId: string | null, nuevoEstado: string, motivo?: string, contexto?: {
         rol: string;
         permisos: string[];
     }): Promise<{

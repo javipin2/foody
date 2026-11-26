@@ -26,6 +26,7 @@ const usuario_activo_guard_1 = require("../auth/guards/usuario-activo.guard");
 const sucursal_scope_service_1 = require("../auth/sucursal-scope.service");
 const impresion_service_1 = require("./impresion.service");
 const reimprimir_dto_1 = require("./dto/reimprimir.dto");
+const roles_food_1 = require("../auth/roles-food");
 let ImpresionController = class ImpresionController {
     impresion;
     sucursalScope;
@@ -40,7 +41,11 @@ let ImpresionController = class ImpresionController {
     }
     async reimprimir(usuario, dto) {
         const sid = await this.sucursalScope.resolverLecturaOperativa(usuario, dto.sucursal_id);
-        return this.impresion.reimprimirPedido(dto.pedido_id, sid);
+        if ((0, roles_food_1.esRolCocina)(usuario.rol) &&
+            (!dto.cocina_id || usuario.cocina_id !== dto.cocina_id)) {
+            throw new common_1.ForbiddenException('Solo puedes reimprimir tu estación asignada.');
+        }
+        return this.impresion.reimprimirPedido(dto.pedido_id, sid, dto.cocina_id);
     }
     async procesarColaManual() {
         await this.impresion.procesarColaManual();

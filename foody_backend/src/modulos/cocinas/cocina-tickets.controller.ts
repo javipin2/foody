@@ -18,14 +18,24 @@ import { PlanFeaturesGuard } from '../../core/auth/guards/plan-features.guard';
 import { RequiereModulo } from '../../compartido/decoradores/requiere-modulo.decorator';
 import { UsuarioActivoGuard } from '../../core/auth/guards/usuario-activo.guard';
 import { CocinasService } from './cocinas.service';
-import { CambiarEstadoItemDto, FalloPreparacionDto } from './dto/cocina.dto';
+import {
+  CambiarEstadoItemDto,
+  FalloPreparacionDto,
+  NoDisponibleTareaComboDto,
+} from './dto/cocina.dto';
 import {
   ActualizarObservacionesItemDto,
   PrioridadItemCocinaDto,
 } from './dto/item-kds-mutacion.dto';
 
 @Controller('cocina')
-@UseGuards(JwtAuthGuard, UsuarioActivoGuard, SuscripcionActivaGuard, PlanFeaturesGuard, RolGuard)
+@UseGuards(
+  JwtAuthGuard,
+  UsuarioActivoGuard,
+  SuscripcionActivaGuard,
+  PlanFeaturesGuard,
+  RolGuard,
+)
 @RequiereModulo('cocina')
 export class CocinaTicketsController {
   constructor(private readonly cocinas: CocinasService) {}
@@ -58,6 +68,38 @@ export class CocinaTicketsController {
       itemId,
       usuario.sucursal_id!,
       dto.estado_cocina,
+      usuario.sub ?? null,
+      dto.motivo,
+    );
+  }
+
+  @Patch('combo-tareas/:tarea_id/estado')
+  @Permisos('ver_cocina')
+  async cambiarEstadoTareaCombo(
+    @Param('tarea_id', ParseUUIDPipe) tareaId: string,
+    @Body() dto: CambiarEstadoItemDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    await this.cocinas.exigirAccesoTareaComboKds(usuario, tareaId);
+    return this.cocinas.cambiarEstadoTareaCombo(
+      tareaId,
+      usuario.sucursal_id!,
+      dto.estado_cocina,
+      usuario.sub ?? null,
+    );
+  }
+
+  @Patch('combo-tareas/:tarea_id/no-disponible')
+  @Permisos('ver_cocina')
+  async marcarTareaComboNoDisponible(
+    @Param('tarea_id', ParseUUIDPipe) tareaId: string,
+    @Body() dto: NoDisponibleTareaComboDto,
+    @UsuarioActual() usuario: JwtPayload,
+  ) {
+    await this.cocinas.exigirAccesoTareaComboKds(usuario, tareaId);
+    return this.cocinas.marcarTareaComboNoDisponible(
+      tareaId,
+      usuario.sucursal_id!,
       usuario.sub ?? null,
       dto.motivo,
     );

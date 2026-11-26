@@ -100,6 +100,13 @@ class _PedidosRepositoryFake extends PedidosRepository {
     String? sucursalId,
   }) async =>
       pedidos.firstWhere((pedido) => pedido.id == pedidoId);
+
+  @override
+  Future<List<Map<String, dynamic>>> listarDecisionesComboPendientes({
+    required String pedidoId,
+    String? sucursalId,
+  }) async =>
+      [];
 }
 
 class _DomiciliariosRepositoryFake extends DomiciliariosRepository {
@@ -160,6 +167,10 @@ void main() {
           tester.getTopLeft(find.text('Todos')).dy,
           tester.getTopLeft(find.text('Para llevar')).dy,
         );
+        final pistaEstados = find.byTooltip('Ver más estados');
+        expect(pistaEstados, findsOneWidget);
+        await tester.tap(pistaEstados);
+        await tester.pumpAndSettle();
       }
       if (width >= 720) {
         await tester.tap(find.byTooltip('Vista columnas'));
@@ -683,8 +694,26 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
 
-    await tester.ensureVisible(find.text('Cerrados'));
-    await tester.pumpAndSettle();
+    final estados = find.byKey(
+      const ValueKey<String>('pedidos-state-tabs-scroll'),
+    );
+    final areaEstados = tester.getRect(estados);
+    for (var i = 0; i < 8; i++) {
+      final label = tester.getRect(find.text('Cerrados'));
+      if (label.left >= areaEstados.left && label.right <= areaEstados.right) {
+        break;
+      }
+      final arrow = find.byTooltip('Ver más estados');
+      if (arrow.evaluate().isEmpty) break;
+      await tester.tap(arrow);
+      await tester.pumpAndSettle();
+    }
+    final labelCerrados = tester.getRect(find.text('Cerrados'));
+    expect(
+      labelCerrados.left >= areaEstados.left &&
+          labelCerrados.right <= areaEstados.right,
+      isTrue,
+    );
     await tester.tap(find.text('Cerrados'));
     await tester.pumpAndSettle();
     expect(find.text('Reintentar'), findsOneWidget);

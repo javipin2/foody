@@ -62,8 +62,10 @@ let AlmacenamientoService = AlmacenamientoService_1 = class AlmacenamientoServic
     logger = new common_1.Logger(AlmacenamientoService_1.name);
     cliente;
     bucket;
+    bucketDocumentos = 'foody-documentos-privados';
     basePublica;
     bucketVerificado = false;
+    bucketDocumentosVerificado = false;
     constructor(config, database, menuCache) {
         this.config = config;
         this.database = database;
@@ -158,7 +160,9 @@ let AlmacenamientoService = AlmacenamientoService_1 = class AlmacenamientoServic
             return false;
         try {
             await this.asegurarBucket();
-            const { error } = await this.cliente.storage.from(this.bucket).remove([ruta]);
+            const { error } = await this.cliente.storage
+                .from(this.bucket)
+                .remove([ruta]);
             if (error) {
                 this.logger.warn(`Storage remove «${ruta}»: ${error.message}`);
                 return false;
@@ -195,7 +199,9 @@ let AlmacenamientoService = AlmacenamientoService_1 = class AlmacenamientoServic
     async subirArchivoCrudo(buffer, ruta, contentType) {
         const cliente = this.exigirCliente();
         await this.asegurarBucket();
-        const { error } = await cliente.storage.from(this.bucket).upload(ruta, buffer, {
+        const { error } = await cliente.storage
+            .from(this.bucket)
+            .upload(ruta, buffer, {
             contentType,
             upsert: true,
         });
@@ -239,9 +245,68 @@ let AlmacenamientoService = AlmacenamientoService_1 = class AlmacenamientoServic
         if (archivo.length > 5 * 1024 * 1024) {
             throw new common_1.BadRequestException('La imagen no puede superar 5 MB');
         }
-        const webp = await this.comprimirImagen(archivo);
+        let webp;
+        try {
+            webp = await this.comprimirImagen(archivo);
+        }
+        catch {
+            throw new common_1.BadRequestException('El archivo debe ser una imagen válida');
+        }
+        await this.asegurarBucketDocumentosPrivados();
         const ruta = `domiciliarios/${domiciliarioId}/${tipo}.webp`;
-        return this.subirImagenWebp(webp, ruta);
+        const cliente = this.exigirCliente();
+        const { error } = await cliente.storage
+            .from(this.bucketDocumentos)
+            .upload(ruta, webp, { contentType: 'image/webp', upsert: true });
+        if (error) {
+            this.logger.error(`Storage privado de documentos: ${error.message}`);
+            throw new common_1.ServiceUnavailableException('No se pudo guardar el documento de verificación');
+        }
+        const url = await this.urlFirmadaDocumentoPrivado(ruta);
+        return { ruta: `privado://${ruta}`, url };
+    }
+    async resolverUrlDocumento(url) {
+        if (!url?.startsWith('privado://'))
+            return url;
+        return this.urlFirmadaDocumentoPrivado(url.slice('privado://'.length));
+    }
+    async asegurarBucketDocumentosPrivados() {
+        if (this.bucketDocumentosVerificado)
+            return;
+        const cliente = this.exigirCliente();
+        const { data: buckets, error: listError } = await cliente.storage.listBuckets();
+        if (listError) {
+            throw new common_1.ServiceUnavailableException('No se pudo verificar el almacenamiento privado de documentos');
+        }
+        let bucket = buckets?.find((b) => b.id === this.bucketDocumentos || b.name === this.bucketDocumentos);
+        if (!bucket) {
+            const { error } = await cliente.storage.createBucket(this.bucketDocumentos, {
+                public: false,
+                fileSizeLimit: 5 * 1024 * 1024,
+                allowedMimeTypes: ['image/webp'],
+            });
+            if (error) {
+                const refrescado = await cliente.storage.listBuckets();
+                bucket = refrescado.data?.find((b) => b.id === this.bucketDocumentos || b.name === this.bucketDocumentos);
+                if (!bucket) {
+                    throw new common_1.ServiceUnavailableException('No se pudo preparar el almacenamiento privado de documentos');
+                }
+            }
+        }
+        if (bucket?.public) {
+            throw new common_1.ServiceUnavailableException('El bucket de documentos debe permanecer privado');
+        }
+        this.bucketDocumentosVerificado = true;
+    }
+    async urlFirmadaDocumentoPrivado(ruta) {
+        await this.asegurarBucketDocumentosPrivados();
+        const { data, error } = await this.exigirCliente()
+            .storage.from(this.bucketDocumentos)
+            .createSignedUrl(ruta, 15 * 60);
+        if (error || !data?.signedUrl) {
+            throw new common_1.ServiceUnavailableException('No se pudo generar el enlace temporal del documento');
+        }
+        return data.signedUrl;
     }
     async restauranteIdDeSucursal(sucursalId) {
         const fila = await this.database.consultarUno(`SELECT restaurante_id FROM sucursales WHERE id = $1`, [sucursalId]);

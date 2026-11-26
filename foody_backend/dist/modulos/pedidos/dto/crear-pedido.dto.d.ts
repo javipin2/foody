@@ -2,6 +2,10 @@ import { PagoLineaDto } from './cobrar-mesa.dto';
 declare class ToppingItemDto {
     topping_id: string;
 }
+declare class ComboToppingItemDto {
+    topping_id: string;
+    producto_id?: string;
+}
 declare class BebidaItemDto {
     bebida_id: string;
     cantidad: number;
@@ -18,7 +22,7 @@ export declare class ComboPedidoDto {
     combo_id: string;
     cantidad: number;
     precio: number;
-    toppings?: ToppingItemDto[];
+    toppings?: ComboToppingItemDto[];
     bebidas?: BebidaItemDto[];
 }
 export declare class CrearPedidoDto {

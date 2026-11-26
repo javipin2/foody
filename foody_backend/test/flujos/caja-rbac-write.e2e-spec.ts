@@ -9,6 +9,7 @@ import {
   SID,
   TokenBundle,
 } from '../helpers/foody-e2e';
+import { randomUUID } from 'crypto';
 
 describe('E2E permisos de lectura/escritura de Caja', () => {
   let admin: TokenBundle;
@@ -33,6 +34,31 @@ describe('E2E permisos de lectura/escritura de Caja', () => {
       .send({});
     expect(escritura.status).toBe(403);
     expect(escritura.body.mensaje).toMatch(/permiso/i);
+  });
+
+  it('niega todas las mutaciones de Caja al perfil de solo lectura', async () => {
+    const id = randomUUID();
+    const mutaciones = [
+      api().post('/api/v1/caja/abrir'),
+      api().post('/api/v1/caja/cerrar'),
+      api().post('/api/v1/caja/cuentas-por-cobrar'),
+      api().patch(`/api/v1/caja/cuentas-por-cobrar/${id}/pagar`),
+      api().post('/api/v1/caja/retiro-parcial'),
+      api().post('/api/v1/caja/devolucion'),
+      api().post('/api/v1/caja/gastos'),
+    ];
+    const respuestas = await Promise.all(
+      mutaciones.map((peticion) =>
+        peticion.set(cajeroSoloLectura.auth).send({}),
+      ),
+    );
+
+    expect(respuestas.map((respuesta) => respuesta.status)).toEqual(
+      Array(mutaciones.length).fill(403),
+    );
+    expect(
+      respuestas.every((respuesta) => /permiso/i.test(respuesta.body.mensaje)),
+    ).toBe(true);
   });
 
   it('el rol admin obtiene permiso de escritura con migración 094 aplicada', async () => {

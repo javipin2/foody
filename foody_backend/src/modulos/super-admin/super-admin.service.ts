@@ -11,6 +11,7 @@ import { ConfiguracionGlobalService } from '../../core/config/configuracion-glob
 import { OnboardingRestauranteService } from '../../core/onboarding/onboarding-restaurante.service';
 import { SQL_PEDIDO_ES_HOY } from '../../compartido/sql/ventas-metricas.sql';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
+import { AlmacenamientoService } from '../almacenamiento/almacenamiento.service';
 import {
   ActualizarCiudadDto,
   ActualizarConfiguracionDto,
@@ -36,6 +37,7 @@ export class SuperAdminService {
     private readonly onboarding: OnboardingRestauranteService,
     private readonly notificaciones: NotificacionesService,
     private readonly configGlobal: ConfiguracionGlobalService,
+    private readonly almacenamiento: AlmacenamientoService,
   ) {}
 
   async resumenGlobal() {
@@ -207,12 +209,7 @@ export class SuperAdminService {
          fecha_vencimiento = COALESCE($4, fecha_vencimiento)
        WHERE id = $1
        RETURNING *`,
-      [
-        id,
-        dto.estado ?? null,
-        dto.plan ?? null,
-        dto.fecha_vencimiento ?? null,
-      ],
+      [id, dto.estado ?? null, dto.plan ?? null, dto.fecha_vencimiento ?? null],
     );
   }
 
@@ -431,10 +428,12 @@ export class SuperAdminService {
   }
 
   async actualizarUsuario(id: string, dto: ActualizarUsuarioSuperDto) {
-    const usuario = await this.database.consultarUno<{ id: string; rol: string }>(
-      `SELECT id, rol FROM usuarios WHERE id = $1 AND rol <> 'super_admin'`,
-      [id],
-    );
+    const usuario = await this.database.consultarUno<{
+      id: string;
+      rol: string;
+    }>(`SELECT id, rol FROM usuarios WHERE id = $1 AND rol <> 'super_admin'`, [
+      id,
+    ]);
     if (!usuario) throw new NotFoundException('Usuario no encontrado');
 
     if (dto.email) {
@@ -499,7 +498,7 @@ export class SuperAdminService {
   }
 
   async listarDocumentosPendientes() {
-    return this.database.consultar(
+    const docs = await this.database.consultar(
       `SELECT d.id, d.tipo, d.url, d.estado, d.created_at,
               di.id AS domiciliario_id, di.nombre AS domiciliario_nombre,
               di.email AS domiciliario_email, di.telefono, di.tipo_vehiculo,
@@ -512,6 +511,12 @@ export class SuperAdminService {
        ORDER BY d.created_at ASC
        LIMIT 200`,
     );
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...doc,
+        url: await this.almacenamiento.resolverUrlDocumento(doc.url),
+      })),
+    );
   }
 
   async listarDocumentosDomiciliario(domiciliarioId: string) {
@@ -521,12 +526,18 @@ export class SuperAdminService {
     );
     if (!dom) throw new NotFoundException('Domiciliario no encontrado');
 
-    return this.database.consultar(
+    const docs = await this.database.consultar(
       `SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
        FROM documentos_domiciliario
        WHERE domiciliario_id = $1
        ORDER BY created_at DESC`,
       [domiciliarioId],
+    );
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...doc,
+        url: await this.almacenamiento.resolverUrlDocumento(doc.url),
+      })),
     );
   }
 
@@ -569,7 +580,8 @@ export class SuperAdminService {
        WHERE id = $1 AND domiciliario_id = $2 AND estado = 'pendiente'`,
       [documentoId, domiciliarioId],
     );
-    if (!doc) throw new NotFoundException('Documento no encontrado o ya revisado');
+    if (!doc)
+      throw new NotFoundException('Documento no encontrado o ya revisado');
 
     await this.database.consultar(
       `UPDATE documentos_domiciliario SET

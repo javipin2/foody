@@ -38,7 +38,7 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
         }
         setInterval(() => void this.database.intentarAdvisoryLock(this.LOCK_IMPRESION_COLA, () => this.procesarCola()), INTERVALO_COLA_MS);
     }
-    async reimprimirPedido(pedidoId, sucursalId) {
+    async reimprimirPedido(pedidoId, sucursalId, cocinaId) {
         const pedido = await this.database.consultarUno(`SELECT id FROM pedidos WHERE id = $1 AND sucursal_id = $2`, [pedidoId, sucursalId]);
         if (!pedido) {
             throw new common_1.NotFoundException({
@@ -46,16 +46,14 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
                 message: 'Pedido no encontrado en esta sucursal',
             });
         }
-        const cocinas = await this.database.consultar(`SELECT DISTINCT pi.cocina_id
-       FROM pedido_items pi
-       WHERE pi.pedido_id = $1 AND pi.cocina_id IS NOT NULL`, [pedidoId]);
+        const cocinas = await this.listarCocinasPedido(pedidoId, sucursalId, cocinaId);
         if (!cocinas.length) {
             throw new common_1.BadRequestException({
                 error: 'IMPRESION_SIN_COCINA',
-                message: 'Este pedido no tiene ítems de cocina para imprimir',
+                message: 'No hay tareas activas de este pedido para esa cocina',
             });
         }
-        await this.encolarPorPedidoInterno(pedidoId, sucursalId);
+        await this.encolarPorPedidoInterno(pedidoId, sucursalId, cocinaId);
         return { pedido_id: pedidoId, encolado: true };
     }
     async encolarPorPedido(pedidoId, sucursalId) {
@@ -145,12 +143,8 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
             };
         }
     }
-    async encolarPorPedidoInterno(pedidoId, sucursalId) {
-        const cocinas = await this.database.consultar(`SELECT DISTINCT pi.cocina_id, c.nombre AS cocina_nombre
-       FROM pedido_items pi
-       INNER JOIN pedidos p ON p.id = pi.pedido_id
-       LEFT JOIN cocinas c ON c.id = pi.cocina_id
-       WHERE pi.pedido_id = $1 AND p.sucursal_id = $2 AND pi.cocina_id IS NOT NULL`, [pedidoId, sucursalId]);
+    async encolarPorPedidoInterno(pedidoId, sucursalId, cocinaId) {
+        const cocinas = await this.listarCocinasPedido(pedidoId, sucursalId, cocinaId);
         if (!cocinas.length)
             return;
         const copiaRow = await this.database.consultarUno(`UPDATE pedidos
@@ -176,7 +170,20 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
          INNER JOIN productos pr ON pr.id = pi.producto_id
          LEFT JOIN pedido_combo_selecciones pcs ON pcs.pedido_item_id = pi.id
          WHERE pi.pedido_id = $1 AND pi.cocina_id = $2
+           AND NOT EXISTS (
+             SELECT 1 FROM pedido_combo_tareas_cocina t
+             WHERE t.pedido_item_id = pi.id
+           )
          ORDER BY pi.created_at ASC`, [pedidoId, coc.cocina_id]);
+            const tareasCombo = await this.database.consultar(`SELECT pcs.nombre_combo, t.nombre_snapshot, t.cantidad,
+                pi.cantidad AS cantidad_combo, t.tipo_item,
+                t.producto_padre_nombre_snapshot, t.componente_indice
+         FROM pedido_combo_tareas_cocina t
+         INNER JOIN pedido_items pi ON pi.id = t.pedido_item_id
+         LEFT JOIN pedido_combo_selecciones pcs ON pcs.pedido_item_id = pi.id
+         WHERE t.pedido_id = $1 AND t.sucursal_id = $2 AND t.cocina_id = $3
+           AND t.estado NOT IN ('no_disponible', 'pausada_decision_cliente', 'cancelada')
+         ORDER BY pi.created_at ASC, t.componente_indice ASC`, [pedidoId, sucursalId, coc.cocina_id]);
             const lineas = items.map((i) => {
                 const nota = i.observaciones?.trim();
                 const componentes = Array.isArray(i.componentes_snapshot)
@@ -189,6 +196,14 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
                     : '';
                 return `${i.cantidad}x ${i.nombre}${detalle}${nota ? ` (${nota})` : ''}`;
             });
+            const lineasCombo = tareasCombo.map((t) => {
+                const cantidad = Number(t.cantidad) * Number(t.cantidad_combo);
+                const parent = t.tipo_item === 'topping' && t.producto_padre_nombre_snapshot
+                    ? ` · Para ${t.producto_padre_nombre_snapshot}`
+                    : '';
+                const combo = t.nombre_combo?.trim() || 'Combo';
+                return `[PREPARACIÓN COMBO: ${combo}] ${cantidad}x ${t.nombre_snapshot}${parent}`;
+            });
             const encabezado = [
                 `=== ${coc.cocina_nombre ?? 'Cocina'} ===`,
                 `Pedido #${pedido?.numero_pedido ?? '?'}`,
@@ -197,6 +212,7 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
                 `Fecha: ${fecha}`,
                 '------------------------',
                 ...lineas,
+                ...lineasCombo,
                 '------------------------',
                 `Copia ${nCopia}`,
                 'Foody',
@@ -216,6 +232,30 @@ let ImpresionService = ImpresionService_1 = class ImpresionService {
             ]);
         }
         void this.procesarCola();
+    }
+    listarCocinasPedido(pedidoId, sucursalId, cocinaId) {
+        return this.database.consultar(`SELECT DISTINCT origen.cocina_id, origen.cocina_nombre
+       FROM (
+         SELECT pi.cocina_id, c.nombre AS cocina_nombre
+         FROM pedido_items pi
+         INNER JOIN pedidos p ON p.id = pi.pedido_id
+         LEFT JOIN cocinas c ON c.id = pi.cocina_id
+         WHERE pi.pedido_id = $1 AND p.sucursal_id = $2
+           AND pi.cocina_id IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM pedido_combo_tareas_cocina t
+             WHERE t.pedido_item_id = pi.id
+           )
+         UNION ALL
+         SELECT t.cocina_id, c.nombre AS cocina_nombre
+         FROM pedido_combo_tareas_cocina t
+         INNER JOIN pedidos p ON p.id = t.pedido_id
+         LEFT JOIN cocinas c ON c.id = t.cocina_id
+         WHERE t.pedido_id = $1 AND t.sucursal_id = $2
+           AND t.estado NOT IN ('no_disponible', 'pausada_decision_cliente', 'cancelada')
+       ) origen
+       WHERE $3::uuid IS NULL OR origen.cocina_id = $3::uuid
+       ORDER BY origen.cocina_id`, [pedidoId, sucursalId, cocinaId ?? null]);
     }
     async procesarCola() {
         if ((0, qa_safety_1.esQaSinEfectosExternos)()) {

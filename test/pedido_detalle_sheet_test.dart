@@ -8,6 +8,13 @@ import 'package:reserva_canchas/features/pedidos/presentation/pedido_detalle_she
 
 class _PedidosFake extends PedidosRepository {
   @override
+  Future<List<Map<String, dynamic>>> listarDecisionesComboPendientes({
+    required String pedidoId,
+    String? sucursalId,
+  }) async =>
+      [];
+
+  @override
   Future<PedidoAdminModel> obtenerDetalle({
     required String pedidoId,
     String? sucursalId,

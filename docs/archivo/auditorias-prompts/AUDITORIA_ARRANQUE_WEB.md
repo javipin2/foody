@@ -1,5 +1,13 @@
 # Arranque web del panel Equipo
 
+## Revalidación del lanzador de subdominios — 2026-11-26
+
+Desde `scripts/iniciar1/iniciar-foody-subdominios.bat` se ejecutó el wrapper vigente con `FOODY_NOPAUSE=1`. La API `:3000` pasó healthcheck. Aunque se solicitó `-SkipBuild`, el script detectó que los artefactos Cliente/Equipo estaban ausentes o desactualizados y, correctamente, compiló ambos en staging antes de publicarlos. Cliente y Equipo quedaron disponibles en `:8081` y `:8080`; los servidores SPA reiniciaron con PID 10960 y 16620. Las seis comprobaciones GET (API, Equipo y Cliente local y público) devolvieron HTTP 200. El proceso `node dist/main.js` en `:3000` conservó PID 16876 y `cloudflared` conservó PID 17128. El wrapper terminó con exit code 0 y confirmó acceso público.
+
+La salida mostró avisos no bloqueantes del ensayo WebAssembly (dependencias que importan `dart:html`/`dart:js_util` y dos lint de `image`), advertencia de fuente `CupertinoIcons` no incluida y 173 paquetes con versiones más nuevas fuera de las restricciones actuales. Ambos builds terminaron correctamente; no se actualizaron dependencias ni configuraciones por esos avisos. La salida de `sincronizar-entorno.ps1` indicó «Flutter entorno sin cambios»; no se cambió OAuth, CORS, credenciales, configuración del túnel ni datos. `git diff --check` pasó y el estado no muestra cambios en archivos lock.
+
+**Conclusión:** el error antiguo de “Falta `build/web_cliente` — quita `-SkipBuild`” no se reprodujo con el launcher del workspace actual; este reconoce artefactos desactualizados y reconstruye en staging aun en ese modo. Si reaparece, revisar que el BAT usado realmente delegue a este checkout y que su ruta apunte al `servir-web-tunel-release.ps1` vigente. El build de Equipo reportó 78,9 s de compilación; puede volver a ejecutarse desde `scripts/iniciar1` de forma normal, sin necesidad de arrancar Cloudflare por separado.
+
 **Fecha:** 2026-11-25  
 **Alcance:** build `APP_FLAVOR=equipo`, arranque en el subdominio de túnel y navegación KDS. No se cambió OAuth, credenciales ni configuración Cloudflare.
 

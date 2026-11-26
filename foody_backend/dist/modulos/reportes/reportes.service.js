@@ -56,7 +56,8 @@ let ReportesService = class ReportesService {
        ORDER BY total DESC`, [sucursalId, rango.desde, rango.hasta]);
         const porTipo = await this.database.consultar(`SELECT tipo,
               COUNT(*)::text AS pedidos,
-              COALESCE(SUM(total), 0)::text AS ventas
+              COALESCE(SUM(total), 0)::text AS ventas,
+              COALESCE(SUM(costo_domicilio), 0)::text AS costo_domicilio
        FROM pedidos
        WHERE sucursal_id = $1
          AND ${ventas_metricas_sql_1.SQL_FECHA_PEDIDOS_P2_P3}
@@ -78,10 +79,10 @@ let ReportesService = class ReportesService {
                 ventas_movimientos_caja: ventasCaja,
                 diferencia: Math.round((ventasPedidos - ventasCaja) * 100) / 100,
                 movimientos_venta: Number(caja?.movimientos ?? 0),
-                etiqueta_ventas_pedidos: 'Ventas de pedidos creados en el rango',
+                etiqueta_ventas_pedidos: 'Valor total de pedidos creados en el rango',
                 etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
                 nota_periodo_caja: 'Los movimientos ligados a pedidos se atribuyen por fecha de creación del pedido, aunque el cobro ocurra después del rango; los movimientos sin pedido usan su propia fecha.',
-                nota_universos: 'Ventas suma pedidos válidos creados en el rango, incluso si siguen abiertos o sin cobrar. Cobros netos suma ventas menos devoluciones asociados a esos pedidos; usa la fecha del pedido, aunque el pago ocurra después del rango. Los cobros posteriores pueden cambiar este saldo. No representa el efectivo recibido en el rango ni el descuadre físico de un turno.',
+                nota_universos: 'El valor total suma pedidos válidos creados en el rango e incluye el cargo de domicilio; se muestra como valor de pedidos, no como ingreso reconocido del restaurante. El cargo de domicilio se desglosa aparte y no debe sumarse dos veces. Puede incluir pedidos sin cobrar. Cobros netos resta devoluciones asociados a esos pedidos; usa la fecha del pedido, aunque el cobro ocurra después del rango. No representa el efectivo recibido en el rango ni el descuadre físico de un turno.',
                 por_metodo_caja: porMetodoCaja.map((f) => ({
                     metodo_pago: f.metodo_pago,
                     total: Number(f.total),
@@ -97,6 +98,7 @@ let ReportesService = class ReportesService {
                 tipo: f.tipo,
                 pedidos: Number(f.pedidos),
                 ventas: Number(f.ventas),
+                costo_domicilio: Number(f.costo_domicilio),
             })),
         };
     }
@@ -152,7 +154,10 @@ let ReportesService = class ReportesService {
               COUNT(*)::text AS pedidos,
               COALESCE(SUM(total) FILTER (
                 WHERE ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
-              ), 0)::text AS ventas
+              ), 0)::text AS ventas,
+              COALESCE(SUM(costo_domicilio) FILTER (
+                WHERE ${ventas_metricas_sql_1.SQL_PEDIDOS_VALIDOS}
+              ), 0)::text AS costo_domicilio
        FROM pedidos
        WHERE sucursal_id = $1
          AND ${ventas_metricas_sql_1.SQL_FECHA_PEDIDOS_P2_P3}
@@ -168,6 +173,7 @@ let ReportesService = class ReportesService {
                 dia: f.dia,
                 pedidos: Number(f.pedidos),
                 ventas: Number(f.ventas),
+                costo_domicilio: Number(f.costo_domicilio),
             })),
         };
     }

@@ -14,6 +14,7 @@ void main() {
               'periodo': {'label': 'Últimos 7 días'},
               'kpis': {
                 'pedidos': 0,
+                'recaudo_neto': 5000,
                 'cobertura_costo_pct': 100,
                 'alertas_abiertas': 0,
                 'pedidos_cancelados': 39,
@@ -30,6 +31,9 @@ void main() {
     );
 
     expect(find.text('Pedidos recientes'), findsOneWidget);
+    expect(find.text('Valor de pedidos'), findsOneWidget);
+    expect(find.text('Ventas cumplidas'), findsOneWidget);
+    expect(find.text('Recaudo neto'), findsOneWidget);
     expect(find.text('Pedidos activos'), findsNothing);
     expect(find.text('Cobertura de costos'), findsOneWidget);
     expect(find.text('Sin pedidos en el periodo'), findsOneWidget);

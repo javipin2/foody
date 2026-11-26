@@ -51,17 +51,20 @@ const configuracion_global_module_1 = require("../../core/config/configuracion-g
 const onboarding_restaurante_service_1 = require("../../core/onboarding/onboarding-restaurante.service");
 const ventas_metricas_sql_1 = require("../../compartido/sql/ventas-metricas.sql");
 const notificaciones_service_1 = require("../notificaciones/notificaciones.service");
+const almacenamiento_service_1 = require("../almacenamiento/almacenamiento.service");
 let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
     database;
     onboarding;
     notificaciones;
     configGlobal;
+    almacenamiento;
     logger = new common_1.Logger(SuperAdminService_1.name);
-    constructor(database, onboarding, notificaciones, configGlobal) {
+    constructor(database, onboarding, notificaciones, configGlobal, almacenamiento) {
         this.database = database;
         this.onboarding = onboarding;
         this.notificaciones = notificaciones;
         this.configGlobal = configGlobal;
+        this.almacenamiento = almacenamiento;
     }
     async resumenGlobal() {
         const ciudades = await this.database.consultarUno(`SELECT COUNT(*)::text AS total FROM ciudades WHERE activa = true`);
@@ -171,12 +174,7 @@ let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
          plan = COALESCE($3, plan),
          fecha_vencimiento = COALESCE($4, fecha_vencimiento)
        WHERE id = $1
-       RETURNING *`, [
-            id,
-            dto.estado ?? null,
-            dto.plan ?? null,
-            dto.fecha_vencimiento ?? null,
-        ]);
+       RETURNING *`, [id, dto.estado ?? null, dto.plan ?? null, dto.fecha_vencimiento ?? null]);
     }
     async listarDomiciliarios() {
         return this.database.consultar(`SELECT di.id, di.nombre, di.email, di.telefono,
@@ -325,7 +323,9 @@ let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
         });
     }
     async actualizarUsuario(id, dto) {
-        const usuario = await this.database.consultarUno(`SELECT id, rol FROM usuarios WHERE id = $1 AND rol <> 'super_admin'`, [id]);
+        const usuario = await this.database.consultarUno(`SELECT id, rol FROM usuarios WHERE id = $1 AND rol <> 'super_admin'`, [
+            id,
+        ]);
         if (!usuario)
             throw new common_1.NotFoundException('Usuario no encontrado');
         if (dto.email) {
@@ -368,7 +368,7 @@ let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
         return { id, activo: dto.activo };
     }
     async listarDocumentosPendientes() {
-        return this.database.consultar(`SELECT d.id, d.tipo, d.url, d.estado, d.created_at,
+        const docs = await this.database.consultar(`SELECT d.id, d.tipo, d.url, d.estado, d.created_at,
               di.id AS domiciliario_id, di.nombre AS domiciliario_nombre,
               di.email AS domiciliario_email, di.telefono, di.tipo_vehiculo,
               di.placa, di.estado_cuenta,
@@ -379,15 +379,23 @@ let SuperAdminService = SuperAdminService_1 = class SuperAdminService {
        WHERE d.estado = 'pendiente'
        ORDER BY d.created_at ASC
        LIMIT 200`);
+        return Promise.all(docs.map(async (doc) => ({
+            ...doc,
+            url: await this.almacenamiento.resolverUrlDocumento(doc.url),
+        })));
     }
     async listarDocumentosDomiciliario(domiciliarioId) {
         const dom = await this.database.consultarUno(`SELECT id FROM domiciliarios_independientes WHERE id = $1`, [domiciliarioId]);
         if (!dom)
             throw new common_1.NotFoundException('Domiciliario no encontrado');
-        return this.database.consultar(`SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
+        const docs = await this.database.consultar(`SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
        FROM documentos_domiciliario
        WHERE domiciliario_id = $1
        ORDER BY created_at DESC`, [domiciliarioId]);
+        return Promise.all(docs.map(async (doc) => ({
+            ...doc,
+            url: await this.almacenamiento.resolverUrlDocumento(doc.url),
+        })));
     }
     async aprobarDocumento(domiciliarioId, dto, revisorId) {
         return this.revisarDocumento(domiciliarioId, dto.documento_id, revisorId, 'aprobado');
@@ -444,6 +452,7 @@ exports.SuperAdminService = SuperAdminService = SuperAdminService_1 = __decorate
     __metadata("design:paramtypes", [database_service_1.DatabaseService,
         onboarding_restaurante_service_1.OnboardingRestauranteService,
         notificaciones_service_1.NotificacionesService,
-        configuracion_global_module_1.ConfiguracionGlobalService])
+        configuracion_global_module_1.ConfiguracionGlobalService,
+        almacenamiento_service_1.AlmacenamientoService])
 ], SuperAdminService);
 //# sourceMappingURL=super-admin.service.js.map

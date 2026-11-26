@@ -1172,7 +1172,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           if (porMetodo.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(
-              'Detalle método de pago',
+              'Cobros por método de pago',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -1841,7 +1841,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           AnaliticaKpiGrid(
             children: [
               AnaliticaKpiCard(
-                etiqueta: 'Ventas netas',
+                etiqueta: 'Ventas cumplidas',
                 valor: _moneda.format(_num(data['ventas_netas'])),
                 icono: Icons.trending_up_rounded,
                 acento: AnaliticaTokens.ventas,
@@ -1875,7 +1875,7 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
           const SizedBox(height: 16),
           const SaaSInsightCard(
             texto:
-                'Con filtros predeterminados, incluye pedidos pendientes o impagos; no equivale a cobros en caja. Los gastos se descuentan completos para la sede y el período; no se prorratean entre los pedidos filtrados.',
+                'Ventas cumplidas: domicilio entregado y salón/mostrador cobrado (proxy de cierre). Se excluye el impuesto registrado estimado y el cargo de domicilio; este último se muestra aparte. No equivale al recaudo de caja. Los gastos se descuentan completos para la sede y el período.',
             icono: Icons.info_outline_rounded,
           ),
           const SizedBox(height: 12),
@@ -1891,7 +1891,16 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                       ),
                 ),
                 const SizedBox(height: 12),
-                _filaPl('Ventas netas', _num(data['ventas_netas'])),
+                _filaPl('Ventas cumplidas (sin impuesto estimado)',
+                    _num(data['ventas_netas'])),
+                _filaPl(
+                  'Valor de pedidos del período',
+                  _num(data['valor_pedidos']),
+                ),
+                _filaPl(
+                  'Cargo de domicilio excluido',
+                  _num(data['cargo_domicilio_pedidos_cumplidos']),
+                ),
                 _filaPl(
                   '− Costo de lo vendido (COGS)',
                   _num(data['costo_ventas']),

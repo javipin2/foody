@@ -23,7 +23,7 @@ const suscripcion_activa_guard_1 = require("../../core/auth/guards/suscripcion-a
 const usuario_activo_guard_1 = require("../../core/auth/guards/usuario-activo.guard");
 const sucursal_scope_service_1 = require("../../core/auth/sucursal-scope.service");
 const catalogo_service_1 = require("./catalogo.service");
-const crear_extra_dto_1 = require("./dto/crear-extra.dto");
+const crear_topping_dto_1 = require("./dto/crear-topping.dto");
 const extras_mutacion_dto_1 = require("./dto/extras-mutacion.dto");
 let ToppingsController = class ToppingsController {
     catalogo;
@@ -61,7 +61,8 @@ __decorate([
     __param(0, (0, common_1.Body)()),
     __param(1, (0, usuario_actual_decorator_1.UsuarioActual)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [crear_extra_dto_1.CrearExtraDto, jwt_payload_1.JwtPayload]),
+    __metadata("design:paramtypes", [crear_topping_dto_1.CrearToppingDto,
+        jwt_payload_1.JwtPayload]),
     __metadata("design:returntype", Promise)
 ], ToppingsController.prototype, "crear", null);
 __decorate([

@@ -12,6 +12,8 @@ import { ActualizarComensalDto } from './dto/actualizar-comensal.dto';
 import { AprobarPedidoMesaDto } from './dto/aprobar-pedido-mesa.dto';
 import { ListarCerradosHoyQueryDto, ListarPedidosQueryDto } from './dto/listar-pedidos-query.dto';
 import { PedidosService } from './pedidos.service';
+import { CotizarReemplazoComboDto } from './dto/cotizar-reemplazo-combo.dto';
+import { ResponderDecisionComboDto } from './dto/responder-decision-combo.dto';
 export declare class PedidosController {
     private readonly pedidosService;
     private readonly sucursalScope;
@@ -33,6 +35,48 @@ export declare class PedidosController {
     detalle(pedidoId: string, usuario: JwtPayload, sucursalId?: string): Promise<Record<string, unknown> & {
         id: string;
         items_resumen: unknown[];
+    }>;
+    listarDecisionesComboPendientes(pedidoId: string, usuario: JwtPayload, sucursalId?: string): Promise<Record<string, unknown>[]>;
+    cotizarReemplazoCombo(pedidoId: string, decisionId: string, dto: CotizarReemplazoComboDto, usuario: JwtPayload, sucursalId?: string): Promise<{
+        decision_id: string;
+        pedido_id: string;
+        componente_reemplazo: {
+            tipo_item: "producto" | "bebida" | "topping";
+            componente_id: string;
+            nombre: string;
+            cantidad: number;
+            precio_unitario: number | null;
+            costo_unitario: number;
+            cocina_id: string | null;
+            producto_padre_id: string | null;
+            producto_padre: string | null;
+        };
+        diferencia_propuesta: number;
+        total_anterior: number;
+        total_propuesto: number;
+        cotizacion_version: number;
+        pago_adicional_estimado: number;
+        devolucion_estimada: number;
+        aplicado: boolean;
+    }>;
+    responderDecisionCombo(pedidoId: string, decisionId: string, dto: ResponderDecisionComboDto, usuario: JwtPayload, sucursalId?: string): Promise<{
+        decision_id: string;
+        pedido_id: string;
+        estado: string;
+        idempotente: boolean;
+        aplicado: boolean;
+        respuesta_accion?: undefined;
+        total_aceptado?: undefined;
+        delta_propuesto?: undefined;
+    } | {
+        decision_id: string;
+        pedido_id: string;
+        estado: string;
+        respuesta_accion: "aceptar_sustitucion" | "cancelar_combo";
+        total_aceptado: number | null;
+        delta_propuesto: number | null;
+        aplicado: boolean;
+        idempotente: boolean;
     }>;
     listarPorMesa(mesaId: string, usuario: JwtPayload, sucursalId?: string): Promise<{
         mesa_id: string;
@@ -204,6 +248,12 @@ export declare class PedidosController {
         reimprimir: boolean;
     }>;
     eliminarItem(pedidoId: string, itemId: string, usuario: JwtPayload, body: EliminarItemPedidoDto, sucursalId?: string): Promise<{
+        pedido_id: string;
+        item_id: string;
+        numero_pedido: string;
+        estado: string;
+        cancelado: boolean;
+    } | {
         pedido_id: string;
         item_id: string;
         estado: string;

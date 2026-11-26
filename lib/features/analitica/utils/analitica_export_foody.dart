@@ -59,7 +59,12 @@ class AnaliticaExportFoody {
           pw.TableHelper.fromTextArray(
             headers: ['Métrica', 'Valor'],
             data: [
-              ['Ventas netas', _fmt(kpis['ventas_netas'])],
+              [
+                'Valor de pedidos',
+                _fmt(kpis['valor_pedidos'] ?? kpis['ventas_netas']),
+              ],
+              ['Ventas cumplidas', _fmt(kpis['ventas_reconocidas'])],
+              ['Recaudo neto en caja', _fmt(kpis['recaudo_neto'])],
               ['Pedidos', '${kpis['pedidos'] ?? 0}'],
               ['Ticket promedio', _fmt(kpis['ticket_promedio'])],
               [
@@ -78,7 +83,7 @@ class AnaliticaExportFoody {
           if (delta != null) ...[
             pw.SizedBox(height: 8),
             pw.Text(
-              'vs periodo anterior: ${delta['ventas_netas_pct']}% (${delta['tendencia']})',
+              'Valor de pedidos vs periodo anterior: ${delta['ventas_netas_pct']}% (${delta['tendencia']})',
             ),
           ],
           pw.SizedBox(height: 12),

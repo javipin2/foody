@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsIn,
   IsOptional,
+  Matches,
   IsString,
   IsUUID,
   MinLength,
@@ -82,5 +83,13 @@ export class CambiarEstadoItemDto {
 /** VIE-09 C: fallo de preparación (motivo obligatorio). */
 export class FalloPreparacionDto {
   @IsString()
+  motivo: string;
+}
+
+/** No disponibilidad de un componente de combo; requiere consultar al cliente. */
+export class NoDisponibleTareaComboDto {
+  @IsString()
+  @MinLength(1)
+  @Matches(/\S/, { message: 'Escribe el motivo para continuar.' })
   motivo: string;
 }

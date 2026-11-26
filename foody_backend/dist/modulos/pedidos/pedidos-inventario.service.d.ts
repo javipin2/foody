@@ -7,6 +7,8 @@ export interface LineaStockExtra {
     tipo: 'bebida' | 'topping';
     id: string;
     cantidad: number;
+    comboComponenteIndice?: number;
+    comboComponenteId?: string;
 }
 export interface LineaStock {
     pedidoItemId?: string;
@@ -15,6 +17,20 @@ export interface LineaStock {
     precioVentaLinea: number;
     nombreProducto?: string;
     extras?: LineaStockExtra[];
+    comboComponenteIndice?: number;
+    comboComponenteId?: string;
+}
+export type EventoStockCombo = 'consumo' | 'devolucion' | 'merma';
+export interface ComponenteComboTarea {
+    tipo_item: 'producto' | 'bebida' | 'topping';
+    item_id: string;
+    nombre: string;
+    cantidad: number;
+    costo_unitario: number;
+    precio_unitario: number | null;
+    cocina_id: string | null;
+    producto_padre_id?: string | null;
+    producto_padre_nombre_snapshot?: string | null;
 }
 export type CambioDisponibilidadProducto = {
     producto_id: string;
@@ -35,6 +51,7 @@ export declare class PedidosInventarioService {
     private readonly stockMovimiento;
     private readonly alertas?;
     constructor(costeo: CosteoService, catalogoDisponibilidad: CatalogoDisponibilidadService, stockMovimiento: StockMovimientoService, alertas?: AlertasRiesgoService | undefined);
+    crearTareasCombo(client: PoolClient, sucursalId: string, pedidoId: string, pedidoItemId: string, componentes: ComponenteComboTarea[]): Promise<void>;
     validarStockDisponible(client: PoolClient, sucursalId: string, lineas: LineaStock[], opciones?: {
         incluirEmpaques?: boolean;
         considerarReservaQrPendiente?: boolean;
@@ -46,6 +63,7 @@ export declare class PedidosInventarioService {
     private nombreProducto;
     private fmtCantidad;
     private expandirLineaCompleta;
+    private expandirLineaConComponentes;
     detectarFaltasStock(client: PoolClient, sucursalId: string, lineas: LineaStock[], opciones?: {
         incluirEmpaques?: boolean;
         considerarReservaQrPendiente?: boolean;
@@ -62,7 +80,35 @@ export declare class PedidosInventarioService {
     descontarStockPedido(client: PoolClient, sucursalId: string, pedidoId: string, lineas: LineaStock[], opciones?: {
         incluirEmpaques?: boolean;
     }): Promise<ResultadoDescontarStock>;
+    private registrarSnapshotStockItemNormal;
+    ajustarStockItemNormalDesdeSnapshot(client: PoolClient, params: {
+        sucursalId: string;
+        pedidoId: string;
+        pedidoItemId: string;
+        unidades: number;
+        evento: 'devolucion' | 'merma';
+        motivo: string;
+        usuarioId?: string;
+        tipoComponente?: 'producto' | 'bebida' | 'topping';
+        componenteId?: string;
+    }): Promise<void>;
+    private registrarSnapshotStockCombo;
     restaurarStockPedido(client: PoolClient, sucursalId: string, pedidoId: string): Promise<CambioDisponibilidadProducto[]>;
+    ajustarStockComponenteCombo(client: PoolClient, params: {
+        sucursalId: string;
+        pedidoId: string;
+        pedidoItemIdOriginal: string;
+        decisionId: string | null;
+        componenteIndice: number;
+        componenteId: string;
+        tipoItem: 'producto' | 'bebida' | 'topping';
+        cantidad: number;
+        evento: EventoStockCombo;
+        motivo: string;
+        usuarioId: string;
+    }): Promise<void>;
+    private insertarMovimientoLedgerCombo;
+    private sincronizarDisponibilidadIngredientes;
     registrarMermaLineaProducto(client: PoolClient, sucursalId: string, pedidoId: string, productoId: string, cantidad: number, motivo: string, pedidoItemId?: string): Promise<void>;
     pedidoRequiereMermaAlCancelar(client: PoolClient, pedidoId: string, estadoAnterior: string): Promise<boolean>;
     registrarMermaPedidoCompleto(client: PoolClient, sucursalId: string, pedidoId: string, motivo: string): Promise<void>;

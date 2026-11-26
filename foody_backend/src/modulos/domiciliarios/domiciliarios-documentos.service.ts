@@ -10,6 +10,17 @@ import {
   esTipoDocumentoDomiciliario,
 } from './domiciliarios-documentos.config';
 
+type DocumentoDomiciliarioRow = {
+  [key: string]: unknown;
+  id: string;
+  tipo: string;
+  url: string;
+  estado: string;
+  motivo_rechazo: string | null;
+  created_at: Date | string;
+  revisado_por: string | null;
+};
+
 @Injectable()
 export class DomiciliariosDocumentosService {
   constructor(
@@ -22,12 +33,18 @@ export class DomiciliariosDocumentosService {
   }
 
   async listarPorDomiciliario(domiciliarioId: string) {
-    return this.database.consultar(
+    const docs = await this.database.consultar<DocumentoDomiciliarioRow>(
       `SELECT id, tipo, url, estado, motivo_rechazo, created_at, revisado_por
        FROM documentos_domiciliario
        WHERE domiciliario_id = $1
        ORDER BY created_at DESC`,
       [domiciliarioId],
+    );
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...doc,
+        url: await this.almacenamiento.resolverUrlDocumento(doc.url),
+      })),
     );
   }
 
@@ -58,11 +75,7 @@ export class DomiciliariosDocumentosService {
     };
   }
 
-  async subir(
-    domiciliarioId: string,
-    tipo: string,
-    archivo: Buffer,
-  ) {
+  async subir(domiciliarioId: string, tipo: string, archivo: Buffer) {
     if (!esTipoDocumentoDomiciliario(tipo)) {
       throw new BadRequestException('Tipo de documento no válido');
     }
@@ -86,7 +99,7 @@ export class DomiciliariosDocumentosService {
       }
     }
 
-    const { url } = await this.almacenamiento.subirDocumentoDomiciliario(
+    const { ruta, url } = await this.almacenamiento.subirDocumentoDomiciliario(
       domiciliarioId,
       tipo,
       archivo,
@@ -109,7 +122,7 @@ export class DomiciliariosDocumentosService {
            motivo_rechazo = NULL,
            revisado_por = NULL
          WHERE id = $1`,
-        [existente.id, url],
+        [existente.id, ruta],
       );
       return { id: existente.id, tipo, url, estado: 'pendiente' };
     }
@@ -118,7 +131,7 @@ export class DomiciliariosDocumentosService {
       `INSERT INTO documentos_domiciliario (domiciliario_id, tipo, url, estado)
        VALUES ($1, $2, $3, 'pendiente')
        RETURNING id`,
-      [domiciliarioId, tipo, url],
+      [domiciliarioId, tipo, ruta],
     );
 
     return { id: fila!.id, tipo, url, estado: 'pendiente' };

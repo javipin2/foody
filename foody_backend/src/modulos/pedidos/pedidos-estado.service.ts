@@ -63,7 +63,7 @@ export class PedidosEstadoService {
   async cambiarEstado(
     pedidoId: string,
     sucursalId: string,
-    usuarioId: string,
+    usuarioId: string | null,
     nuevoEstado: string,
     motivo?: string,
     contexto?: { rol: string; permisos: string[] },
@@ -252,6 +252,42 @@ export class PedidosEstadoService {
         tipo: pedido.tipo,
       });
 
+      // Si Admin confirma manualmente una entrega, cierra la asignación
+      // asociada en la misma transacción. Las ganancias independientes ya
+      // nacen al aceptar la oferta; aquí no se duplican ni se marcan pagadas.
+      if (nuevoEstado === 'entregado' && pedido.tipo === 'domicilio') {
+        const asignacionesCerradas = await client.query<{
+          domiciliario_independiente_id: string | null;
+        }>(
+          `UPDATE asignaciones_domicilio
+           SET estado = 'entregado', entregado_at = COALESCE(entregado_at, now())
+           WHERE pedido_id = $1 AND sucursal_id = $2
+             AND estado IN ('asignado', 'en_camino')
+           RETURNING domiciliario_independiente_id`,
+          [pedidoId, sucursalId],
+        );
+        const independientes = [
+          ...new Set(
+            asignacionesCerradas.rows
+              .map((fila) => fila.domiciliario_independiente_id)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        if (independientes.length > 0) {
+          await client.query(
+            `UPDATE domiciliarios_sesiones ds
+             SET disponible = NOT EXISTS (
+               SELECT 1 FROM asignaciones_domicilio activas
+               WHERE activas.domiciliario_independiente_id = ds.domiciliario_id
+                 AND activas.estado IN ('asignado', 'en_camino')
+                 AND activas.pedido_id <> $2
+             )
+             WHERE ds.domiciliario_id = ANY($1::uuid[]) AND ds.activa = true`,
+            [independientes, pedidoId],
+          );
+        }
+      }
+
       // Domicilio marcado entregado sin app domiciliario: cobrar saldo pendiente en caja.
       if (nuevoEstado === 'entregado' && pedido.tipo === 'domicilio') {
         const totalPedido = Number(pedido.total);
@@ -301,7 +337,7 @@ export class PedidosEstadoService {
             {
               exigirCaja: true,
               descripcion: `Domicilio entregado ${pedido.numero_pedido}`,
-              usuarioId,
+              usuarioId: usuarioId ?? undefined,
             },
           );
           await client.query(
@@ -361,7 +397,7 @@ export class PedidosEstadoService {
           client,
           pedidoId,
           sucursalId,
-          usuarioId,
+          usuarioId ?? undefined,
           motivo ?? 'Pedido cancelado',
         );
         await client.query(
@@ -405,12 +441,14 @@ export class PedidosEstadoService {
              AND ds.activa = true`,
           [pedidoId],
         );
-        await this.alertasRiesgo.evaluarCancelacionesFrecuentes(
-          client,
-          sucursalId,
-          usuarioId,
-          pedidoId,
-        );
+        if (usuarioId) {
+          await this.alertasRiesgo.evaluarCancelacionesFrecuentes(
+            client,
+            sucursalId,
+            usuarioId,
+            pedidoId,
+          );
+        }
         return {
           id: pedidoId,
           estado: nuevoEstado,
@@ -902,9 +940,9 @@ export class PedidosEstadoService {
     return this.cambiarEstado(
       pedidoId,
       pedido.sucursal_id,
-      'cliente',
+      null,
       'cancelado',
-      motivo.trim(),
+      `Cancelación por cliente: ${motivo.trim()}`,
       { rol: 'cliente', permisos: [] },
     );
   }

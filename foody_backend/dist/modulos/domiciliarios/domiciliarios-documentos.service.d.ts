@@ -5,9 +5,25 @@ export declare class DomiciliariosDocumentosService {
     private readonly almacenamiento;
     constructor(database: DatabaseService, almacenamiento: AlmacenamientoService);
     listarTiposRequeridos(): readonly ["cedula_frente", "cedula_reverso", "foto_vehiculo"];
-    listarPorDomiciliario(domiciliarioId: string): Promise<import("pg").QueryResultRow[]>;
+    listarPorDomiciliario(domiciliarioId: string): Promise<{
+        url: string;
+        id: string;
+        tipo: string;
+        estado: string;
+        motivo_rechazo: string | null;
+        created_at: Date | string;
+        revisado_por: string | null;
+    }[]>;
     resumenCarga(domiciliarioId: string): Promise<{
-        documentos: import("pg").QueryResultRow[];
+        documentos: {
+            url: string;
+            id: string;
+            tipo: string;
+            estado: string;
+            motivo_rechazo: string | null;
+            created_at: Date | string;
+            revisado_por: string | null;
+        }[];
         faltantes: ("cedula_frente" | "cedula_reverso" | "foto_vehiculo")[];
         completo: boolean;
         pendientes_revision: number;

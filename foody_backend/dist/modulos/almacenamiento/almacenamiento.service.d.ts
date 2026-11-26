@@ -11,8 +11,10 @@ export declare class AlmacenamientoService implements OnModuleInit {
     private readonly logger;
     private readonly cliente;
     private readonly bucket;
+    private readonly bucketDocumentos;
     private readonly basePublica;
     private bucketVerificado;
+    private bucketDocumentosVerificado;
     constructor(config: ConfigService, database: DatabaseService, menuCache: MenuCacheService);
     onModuleInit(): Promise<void>;
     private asegurarBucket;
@@ -53,6 +55,9 @@ export declare class AlmacenamientoService implements OnModuleInit {
         ruta: string;
         url: string;
     }>;
+    resolverUrlDocumento(url: string): Promise<string>;
+    private asegurarBucketDocumentosPrivados;
+    private urlFirmadaDocumentoPrivado;
     restauranteIdDeSucursal(sucursalId: string): Promise<string>;
     parseTipoImagen(tipoQuery?: string): TipoImagenFoody;
     subirImagenDesdeSucursal(archivo: Buffer, opciones: {

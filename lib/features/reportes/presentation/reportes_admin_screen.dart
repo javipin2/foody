@@ -512,13 +512,13 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         const AnaliticaSectionHeader(
           titulo: 'Resumen financiero',
           subtitulo:
-              'Tickets = total de pedidos del período (pueden incluir sin cobrar)',
+              'El valor total incluye domicilios; el cargo se muestra aparte como referencia, no lo sumes dos veces.',
           icono: Icons.payments_outlined,
         ),
         AnaliticaKpiGrid(
           children: [
             AnaliticaKpiCard(
-              etiqueta: 'Tickets',
+              etiqueta: 'Valor total pedidos',
               valor: _moneda.format(_num(r['ventas_total'])),
               icono: Icons.payments_outlined,
               acento: AnaliticaTokens.ventas,
@@ -538,7 +538,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
               acento: AnaliticaTokens.clientes,
             ),
             AnaliticaKpiCard(
-              etiqueta: 'Domicilios',
+              etiqueta: 'Cargo domicilio',
               valor: _moneda.format(_num(r['costo_domicilio'])),
               icono: Icons.delivery_dining_outlined,
               acento: _scheme.onSurfaceVariant,
@@ -547,9 +547,9 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         ),
         const SizedBox(height: 16),
         const AnaliticaSectionHeader(
-          titulo: 'Ventas y cobros asociados',
+          titulo: 'Pedidos y cobros asociados',
           subtitulo:
-              'Pedidos creados en el rango y cobros vinculados a esos pedidos',
+              'Valor total de pedidos creados en el rango y cobros vinculados a ellos',
           icono: Icons.balance_outlined,
         ),
         AnaliticaSurface(
@@ -558,7 +558,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _filaCuadre(
-                'Ventas de pedidos',
+                'Valor total de pedidos',
                 _moneda.format(_num(cuadre['ventas_pedidos'])),
               ),
               _filaCuadre(
@@ -567,7 +567,7 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
               ),
               Divider(height: 20, color: _scheme.outlineVariant),
               _filaCuadre(
-                'Ventas menos cobros',
+                'Valor de pedidos menos cobros',
                 _moneda.format(diferencia),
                 destacado: true,
                 color: _scheme.onSurfaceVariant,
@@ -683,6 +683,8 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         const SizedBox(height: 16),
         const AnaliticaSectionHeader(
           titulo: 'Por tipo de pedido',
+          subtitulo:
+              'El total incluye el cargo de domicilio; aquí se muestra aparte.',
           icono: Icons.hub_outlined,
         ),
         if (porTipo.isEmpty)
@@ -700,18 +702,24 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                   horizontal: 12,
                   vertical: 10,
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        '${m['tipo']}'.replaceAll('_', ' '),
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ),
                     Text(
-                      '${m['pedidos']} · ${_moneda.format(_num(m['ventas']))}',
+                      '${m['tipo']}'.replaceAll('_', ' '),
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
+                    Text(
+                      '${m['pedidos']} pedidos · Valor total ${_moneda.format(_num(m['ventas']))}',
+                    ),
+                    if (_num(m['costo_domicilio']) > 0)
+                      Text(
+                        'Incluye ${_moneda.format(_num(m['costo_domicilio']))} de domicilio',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _scheme.onSurfaceVariant,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -816,12 +824,12 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
         if (porDia.length >= 2) ...[
           const AnaliticaSectionHeader(
             titulo: 'Tendencia',
-            subtitulo: 'Ventas por día',
+            subtitulo: 'Valor total de pedidos por día; incluye domicilio.',
             icono: Icons.timeline,
           ),
           AnaliticaChartCard(
             titulo: 'Tendencia por día',
-            subtitulo: 'Serie del período',
+            subtitulo: 'El cargo de domicilio está incluido en el total.',
             icono: Icons.show_chart,
             child: LineChart(AnaliticaCharts.lineaDia(porDia)),
           ),
@@ -883,16 +891,25 @@ class _ReportesAdminScreenState extends State<ReportesAdminScreen>
                   horizontal: 12,
                   vertical: 10,
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: Text('${m['dia']}')),
+                    Text('${m['dia']}'),
                     Text(
-                      '${m['pedidos']} ped. · ${_moneda.format(_num(m['ventas']))}',
+                      '${m['pedidos']} pedidos · Valor total ${_moneda.format(_num(m['ventas']))}',
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
                     ),
+                    if (_num(m['costo_domicilio']) > 0)
+                      Text(
+                        'Incluye ${_moneda.format(_num(m['costo_domicilio']))} de domicilio',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _scheme.onSurfaceVariant,
+                        ),
+                      ),
                   ],
                 ),
               ),

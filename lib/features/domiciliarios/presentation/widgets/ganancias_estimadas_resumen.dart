@@ -6,11 +6,13 @@ class GananciasEstimadasResumen extends StatelessWidget {
   const GananciasEstimadasResumen({
     required this.total,
     required this.registros,
+    this.registrosVisibles,
     super.key,
   });
 
   final num total;
   final int registros;
+  final int? registrosVisibles;
 
   static final _moneda = NumberFormat.currency(
     locale: 'es_CO',
@@ -49,6 +51,15 @@ class GananciasEstimadasResumen extends StatelessWidget {
                   color: scheme.onSurfaceVariant,
                 ),
           ),
+          if (registrosVisibles != null && registros > registrosVisibles!) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Se muestran las $registrosVisibles asignaciones más recientes; el resumen incluye todas las del periodo.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
           const SizedBox(height: 12),
           DecoratedBox(
             decoration: BoxDecoration(

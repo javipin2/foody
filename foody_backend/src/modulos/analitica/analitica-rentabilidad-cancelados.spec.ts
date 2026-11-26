@@ -4,10 +4,7 @@ import { AnaliticaService } from './analitica.service';
 describe('AnaliticaService rentabilidad: estados de pedidos', () => {
   const crearServicio = () => {
     const database = {
-      consultarUno: jest
-        .fn()
-        .mockResolvedValueOnce({ costo_ventas: '100', ingreso_lineas: '500' })
-        .mockResolvedValueOnce({ total: '0' }),
+      consultarUno: jest.fn().mockResolvedValueOnce({ total: '0' }),
       consultar: jest.fn().mockResolvedValue([]),
     };
     const service = new AnaliticaService(
@@ -16,12 +13,16 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
     );
     jest.spyOn(service as never, 'kpisPeriodo' as never).mockResolvedValue({
       ventas_netas: 500,
+      valor_pedidos: 500,
+      ventas_reconocidas: 450,
+      costo_ventas_reconocidas: 100,
+      cargo_domicilio_pedidos_cumplidos: 20,
       cobertura_costo_pct: 100,
     } as never);
     return { database, service };
   };
 
-  it('excluye cancelados/rechazados por defecto en el costo de ventas', async () => {
+  it('calcula rentabilidad con ventas cumplidas sin mezclar el domicilio', async () => {
     const { database, service } = crearServicio();
     const result = await service.rentabilidad('sucursal-1', {
       preset: 'personalizado',
@@ -30,19 +31,19 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
       label: 'Periodo',
     });
 
-    expect(database.consultarUno.mock.calls[0][0]).toContain(
-      "p.estado NOT IN ('cancelado', 'rechazado')",
-    );
     expect(result).toMatchObject({
-      ventas_netas: 500,
+      ventas_netas: 450,
+      valor_pedidos: 500,
+      cargo_domicilio_pedidos_cumplidos: 20,
       costo_ventas: 100,
-      utilidad_bruta: 400,
-      utilidad_neta: 400,
+      utilidad_bruta: 350,
+      utilidad_neta: 350,
     });
+    expect(database.consultarUno).toHaveBeenCalledTimes(1);
   });
 
-  it('respeta el filtro explícito de estados sin añadir exclusiones contradictorias', async () => {
-    const { database, service } = crearServicio();
+  it('pasa los filtros a la métrica de ventas cumplidas', async () => {
+    const { service } = crearServicio();
     await service.rentabilidad(
       'sucursal-1',
       {
@@ -54,15 +55,34 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
       { estados: ['cancelado'] } as never,
     );
 
-    const consultaCogs = database.consultarUno.mock.calls[0][0] as string;
-    expect(consultaCogs).toContain('p.estado = ANY(');
-    expect(consultaCogs).not.toContain(
-      "p.estado NOT IN ('cancelado', 'rechazado')",
+    expect(service['kpisPeriodo']).toHaveBeenCalledWith(
+      'sucursal-1',
+      '2026-11-01',
+      '2026-11-24',
+      { estados: ['cancelado'] },
     );
   });
 
-  it('aplica los mismos filtros de ítem al COGS del periodo comparado', async () => {
-    const { database, service } = crearServicio();
+  it('compara utilidad usando la misma base de ventas cumplidas del período previo', async () => {
+    const { service } = crearServicio();
+    const kpisSpy = jest.spyOn(service as never, 'kpisPeriodo' as never);
+    kpisSpy
+      .mockResolvedValueOnce({
+        ventas_netas: 500,
+        valor_pedidos: 500,
+        ventas_reconocidas: 450,
+        costo_ventas_reconocidas: 100,
+        cargo_domicilio_pedidos_cumplidos: 20,
+        cobertura_costo_pct: 100,
+      } as never)
+      .mockResolvedValueOnce({
+        ventas_netas: 400,
+        valor_pedidos: 400,
+        ventas_reconocidas: 360,
+        costo_ventas_reconocidas: 80,
+        cargo_domicilio_pedidos_cumplidos: 0,
+        cobertura_costo_pct: 100,
+      } as never);
     await service.rentabilidad(
       'sucursal-1',
       {
@@ -75,13 +95,12 @@ describe('AnaliticaService rentabilidad: estados de pedidos', () => {
       { desde: '2026-11-15', hasta: '2026-11-19' },
     );
 
-    const consultaCogsAnterior = database.consultarUno.mock.calls[2][0] as string;
-    const parametrosCogsAnterior = database.consultarUno.mock.calls[2][1] as unknown[];
-    expect(consultaCogsAnterior).toContain('p.created_at >=');
-    expect(consultaCogsAnterior).toContain('p.estado NOT IN');
-    expect(consultaCogsAnterior).toContain('pi.producto_id = ANY(');
-    expect(parametrosCogsAnterior).toContainEqual(['producto-1']);
-    expect(parametrosCogsAnterior).toContain('2026-11-15');
-    expect(parametrosCogsAnterior).toContain('2026-11-19');
+    expect(kpisSpy).toHaveBeenNthCalledWith(
+      2,
+      'sucursal-1',
+      '2026-11-15',
+      '2026-11-19',
+      { productoIds: ['producto-1'] },
+    );
   });
 });

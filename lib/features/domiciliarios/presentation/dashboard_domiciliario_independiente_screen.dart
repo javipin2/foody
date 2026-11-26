@@ -402,7 +402,13 @@ class _DashboardDomiciliarioIndependienteScreenState
   Future<void> _cerrarSesion() async {
     try {
       if (_turnoActivo) await _repo.cerrarSesion();
-    } catch (_) {}
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(mensajeErrorHttp(e, contexto: 'turno'))),
+      );
+      return;
+    }
     await AuthRepository().logout();
     if (!mounted) return;
     context.go('/domiciliario/login');
@@ -830,6 +836,9 @@ class _DashboardDomiciliarioIndependienteScreenState
     final resumen = _gananciasResumen ?? {};
     final total = num.tryParse('${resumen['total_ganancia']}') ?? 0;
     final entregas = resumen['entregas'] ?? _gananciasItems.length;
+    final totalEntregas = entregas is num
+        ? entregas.toInt()
+        : int.tryParse('$entregas') ?? _gananciasItems.length;
 
     return Column(
       children: [
@@ -872,9 +881,8 @@ class _DashboardDomiciliarioIndependienteScreenState
               children: [
                 GananciasEstimadasResumen(
                   total: total,
-                  registros: entregas is num
-                      ? entregas.toInt()
-                      : int.tryParse('$entregas') ?? _gananciasItems.length,
+                  registros: totalEntregas,
+                  registrosVisibles: _gananciasItems.length,
                 ),
                 if (_gananciasItems.isEmpty)
                   Padding(

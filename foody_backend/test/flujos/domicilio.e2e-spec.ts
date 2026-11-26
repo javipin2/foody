@@ -37,6 +37,32 @@ describe('E2E domicilio', () => {
     await ensureCajaAbierta(admin.auth);
   });
 
+  it('separa el acceso de domiciliario de planta e independiente', async () => {
+    const [
+      plantaAsignados,
+      independienteSesion,
+      plantaEnSesionIndependiente,
+      independienteAsignados,
+      independienteCaja,
+    ] = await Promise.all([
+      api().get('/api/v1/domiciliario/pedidos-asignados').set(domi.auth),
+      api().get('/api/v1/domiciliarios/sesion/estado').set(independiente.auth),
+      api().get('/api/v1/domiciliarios/sesion/estado').set(domi.auth),
+      api()
+        .get('/api/v1/domiciliario/pedidos-asignados')
+        .set(independiente.auth),
+      api().get(`/api/v1/caja/activa/${SID}`).set(independiente.auth),
+    ]);
+
+    expect(plantaAsignados.status).toBe(200);
+    expect(plantaAsignados.body.exito).toBe(true);
+    expect(independienteSesion.status).toBe(200);
+    expect(independienteSesion.body.exito).toBe(true);
+    expect(plantaEnSesionIndependiente.status).toBe(403);
+    expect(independienteAsignados.status).toBe(403);
+    expect(independienteCaja.status).toBe(403);
+  });
+
   it('bloquea listo→entregado sin asignación (P0.2)', async () => {
     const crear = await crearPedidoStaff(admin.auth, {
       sucursal_id: SID,
@@ -104,6 +130,28 @@ describe('E2E domicilio', () => {
       .patch(`/api/v1/domiciliario/pedidos/${id}/en-camino`)
       .set(domi.auth);
     expect(camino.body.exito).toBe(true);
+
+    const ubicacionPedidoAjeno = await api()
+      .post('/api/v1/domiciliario/ubicacion')
+      .set(domi.auth)
+      .send({
+        lat: 10.4642,
+        lng: -73.2526,
+        pedido_id: 'c0000000-0000-4000-8000-000000000099',
+      });
+    expect(ubicacionPedidoAjeno.body.datos).toMatchObject({
+      ok: true,
+      registrado: false,
+    });
+    const ubicacionPedidoPropio = await api()
+      .post('/api/v1/domiciliario/ubicacion')
+      .set(domi.auth)
+      .send({ lat: 10.4643, lng: -73.2527, pedido_id: id });
+    expect(ubicacionPedidoPropio.body.datos).toMatchObject({
+      ok: true,
+      registrado: true,
+      pedido_id: id,
+    });
 
     const entrega = await api()
       .patch(`/api/v1/domiciliario/pedidos/${id}/confirmar-entrega`)
@@ -271,6 +319,16 @@ describe('E2E domicilio', () => {
     const entregaManual = await setEstado(admin.auth, id, 'entregado');
     expect(entregaManual.body.exito).toBe(true);
 
+    const historialDomi = await api()
+      .get('/api/v1/domiciliario/historial')
+      .set(domi.auth);
+    expect(historialDomi.body.exito).toBe(true);
+    expect(
+      (historialDomi.body.datos as Array<{ id: string }>).some(
+        (item) => item.id === id,
+      ),
+    ).toBe(true);
+
     const detalle = await api()
       .get(`/api/v1/pedidos/${id}/detalle?sucursal_id=${SID}`)
       .set(admin.auth);
@@ -361,6 +419,15 @@ describe('E2E domicilio', () => {
   });
 
   it('cancela un pedido de independiente y refresca su sesión disponible', async () => {
+    const resumenAntes = await api()
+      .get(`/api/v1/domiciliarios-planta/comisiones-independientes/${SID}`)
+      .set(admin.auth);
+    expect(resumenAntes.body.exito).toBe(true);
+    const suma = (rows: Array<Record<string, unknown>>, key: string) =>
+      rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+    const historialAntes = suma(resumenAntes.body.datos, 'ganancia_total');
+    const porPagarAntes = suma(resumenAntes.body.datos, 'por_pagar');
+
     const crear = await crearPedidoStaff(admin.auth, {
       sucursal_id: SID,
       tipo: 'domicilio',
@@ -406,17 +473,104 @@ describe('E2E domicilio', () => {
       .send({ respuesta: 'aceptada' });
     expect(aceptar.body.exito).toBe(true);
 
+    const enCamino = await api()
+      .patch(`/api/v1/domiciliarios/pedidos/${id}/en-camino`)
+      .set(independiente.auth);
+    expect(enCamino.body.exito).toBe(true);
+    const ubicacionPedidoAjeno = await api()
+      .post('/api/v1/domiciliarios/sesion/ubicacion')
+      .set(independiente.auth)
+      .send({
+        lat: 10.4642,
+        lng: -73.2526,
+        pedido_id: 'c0000000-0000-4000-8000-000000000099',
+      });
+    expect(ubicacionPedidoAjeno.body.datos).toMatchObject({
+      ok: true,
+      registrado: false,
+    });
+    const ubicacionPedidoPropio = await api()
+      .post('/api/v1/domiciliarios/sesion/ubicacion')
+      .set(independiente.auth)
+      .send({ lat: 10.4643, lng: -73.2527, pedido_id: id });
+    expect(ubicacionPedidoPropio.body.datos).toMatchObject({
+      ok: true,
+      registrado: true,
+    });
+
+    const cierreDuranteEntrega = await api()
+      .post('/api/v1/domiciliarios/sesion/cerrar')
+      .set(independiente.auth);
+    expect(cierreDuranteEntrega.status).toBe(400);
+    expect(cierreDuranteEntrega.body.exito).toBe(false);
+    expect(cierreDuranteEntrega.body.mensaje).toContain(
+      'Completa o cancela la entrega activa',
+    );
+    const ubicacionTrasCierreBloqueado = await api()
+      .post('/api/v1/domiciliarios/sesion/ubicacion')
+      .set(independiente.auth)
+      .send({ lat: 10.4644, lng: -73.2528, pedido_id: id });
+    expect(ubicacionTrasCierreBloqueado.body.datos).toMatchObject({
+      ok: true,
+      registrado: true,
+    });
+
     const cancelado = await setEstado(admin.auth, id, 'cancelado', {
       motivo: 'QA E2E: cancelar asignación independiente',
     });
     expect(cancelado.body.exito).toBe(true);
 
+    const estadoTrasCancelar = await api()
+      .get('/api/v1/domiciliarios/sesion/estado')
+      .set(independiente.auth);
+    expect(estadoTrasCancelar.body.datos).toMatchObject({
+      activa: true,
+      disponible: true,
+    });
+
+    const cierreTrasCancelar = await api()
+      .post('/api/v1/domiciliarios/sesion/cerrar')
+      .set(independiente.auth);
+    expect(cierreTrasCancelar.body).toMatchObject({
+      exito: true,
+      datos: { ok: true },
+    });
+
+    const ganancias = await api()
+      .get('/api/v1/domiciliarios/ganancias')
+      .set(independiente.auth);
+    expect(ganancias.body.exito).toBe(true);
+    const gananciaCancelada = (
+      ganancias.body.datos.items as Array<Record<string, unknown>>
+    ).find((row) => row.pedido_id === id);
+    expect(gananciaCancelada).toMatchObject({
+      estado_asignacion: 'cancelado',
+      pagado: false,
+    });
+    const estimadoCancelado = Number(
+      gananciaCancelada?.ganancia_domiciliario ?? 0,
+    );
+    expect(estimadoCancelado).toBeGreaterThan(0);
+
+    const resumenDespues = await api()
+      .get(`/api/v1/domiciliarios-planta/comisiones-independientes/${SID}`)
+      .set(admin.auth);
+    expect(resumenDespues.body.exito).toBe(true);
+    expect(suma(resumenDespues.body.datos, 'ganancia_total')).toBeCloseTo(
+      historialAntes + estimadoCancelado,
+      2,
+    );
+    expect(suma(resumenDespues.body.datos, 'por_pagar')).toBeCloseTo(
+      porPagarAntes,
+      2,
+    );
+
     const estadoSesion = await api()
       .get('/api/v1/domiciliarios/sesion/estado')
       .set(independiente.auth);
     expect(estadoSesion.body.datos).toMatchObject({
-      activa: true,
-      disponible: true,
+      activa: false,
+      disponible: false,
     });
     const activos = await api()
       .get('/api/v1/domiciliarios/pedidos-activos')
@@ -425,6 +579,167 @@ describe('E2E domicilio', () => {
     expect(
       (activos.body.datos as Array<{ id: string }>).some((p) => p.id === id),
     ).toBe(false);
+  });
+
+  it('cancelación Admin cierra asignación de planta y libera al domiciliario', async () => {
+    const crear = await crearPedidoStaff(admin.auth, {
+      sucursal_id: SID,
+      tipo: 'domicilio',
+      device_id: `jest-domi-planta-cancel-${Date.now()}`,
+      cliente_nombre: 'Jest Planta Cancelado',
+      cliente_telefono: '3000000088',
+      direccion_entrega: 'Calle QA Planta Cancelado',
+      metodo_pago: 'pendiente',
+      items: [itemBody()],
+    });
+    expect(crear.body.exito).toBe(true);
+    const id = pedidoId(crear);
+    expect((await setEstado(admin.auth, id, 'en_cocina')).body.exito).toBe(
+      true,
+    );
+    await marcarItemsCocinaListos(cocina.auth, id, admin.auth);
+    expect((await setEstado(admin.auth, id, 'listo')).body.exito).toBe(true);
+
+    // Auto-dispatch puede asignar al domiciliario al marcar el pedido listo.
+    const asignadosAntes = await api()
+      .get('/api/v1/domiciliario/pedidos-asignados')
+      .set(domi.auth);
+    expect(asignadosAntes.body.exito).toBe(true);
+    const asignado = (asignadosAntes.body.datos as Array<{ id: string }>).some(
+      (pedido) => pedido.id === id,
+    );
+    if (!asignado) {
+      const asignar = await api()
+        .post('/api/v1/domiciliarios-planta/asignar')
+        .set(admin.auth)
+        .send({
+          pedido_id: id,
+          sucursal_id: SID,
+          domiciliario_planta_id: DOMI_PLANTA,
+        });
+      expect(asignar.body.exito).toBe(true);
+    }
+
+    const activosAntes = await api()
+      .get('/api/v1/domiciliario/pedidos-asignados')
+      .set(domi.auth);
+    expect(
+      (activosAntes.body.datos as Array<{ id: string }>).some(
+        (pedido) => pedido.id === id,
+      ),
+    ).toBe(true);
+
+    const enCamino = await api()
+      .patch(`/api/v1/domiciliario/pedidos/${id}/en-camino`)
+      .set(domi.auth);
+    expect(enCamino.body.exito).toBe(true);
+
+    const cancelar = await setEstado(admin.auth, id, 'cancelado', {
+      motivo: 'QA E2E: Admin cancela pedido de planta en camino',
+    });
+    expect(cancelar.body.exito).toBe(true);
+
+    const [activosDespues, disponibles] = await Promise.all([
+      api().get('/api/v1/domiciliario/pedidos-asignados').set(domi.auth),
+      api()
+        .get(`/api/v1/domiciliarios-planta/disponibles/${SID}`)
+        .set(admin.auth),
+    ]);
+    expect(activosDespues.body.exito).toBe(true);
+    expect(
+      (activosDespues.body.datos as Array<{ id: string }>).some(
+        (pedido) => pedido.id === id,
+      ),
+    ).toBe(false);
+    expect(disponibles.body.exito).toBe(true);
+    const domiciliario = (
+      disponibles.body.datos as Array<{ id: string; ocupado: boolean }>
+    ).find((fila) => fila.id === DOMI_PLANTA);
+    expect(domiciliario).toMatchObject({ ocupado: false });
+  });
+
+  it('cierre manual Admin cierra asignación independiente y conserva ganancia sin pagar', async () => {
+    const crear = await crearPedidoStaff(admin.auth, {
+      sucursal_id: SID,
+      tipo: 'domicilio',
+      device_id: `jest-domi-indep-admin-${Date.now()}`,
+      cliente_nombre: 'Jest Independiente Admin',
+      cliente_telefono: '3000000092',
+      direccion_entrega: 'Calle QA Independiente Admin',
+      metodo_pago: 'pendiente',
+      items: [itemBody()],
+    });
+    expect(crear.body.exito).toBe(true);
+    const id = pedidoId(crear);
+    expect((await setEstado(admin.auth, id, 'en_cocina')).body.exito).toBe(
+      true,
+    );
+    await marcarItemsCocinaListos(cocina.auth, id, admin.auth);
+    expect((await setEstado(admin.auth, id, 'listo')).body.exito).toBe(true);
+
+    const sesion = await api()
+      .post('/api/v1/domiciliarios/sesion/iniciar')
+      .set(independiente.auth)
+      .send({ lat: 10.4641, lng: -73.2525 });
+    expect(sesion.body.exito).toBe(true);
+    const dispatch = await api()
+      .post(
+        `/api/v1/domiciliarios-planta/dispatch-independiente/${id}?sucursal_id=${SID}`,
+      )
+      .set(admin.auth);
+    expect(dispatch.body.exito).toBe(true);
+    const ofertas = await api()
+      .get('/api/v1/domiciliarios/ofertas-activas')
+      .set(independiente.auth);
+    const oferta = (
+      ofertas.body.datos as Array<{ oferta_id: string; pedido_id: string }>
+    ).find((item) => item.pedido_id === id);
+    expect(oferta).toBeTruthy();
+    const aceptar = await api()
+      .post(`/api/v1/domiciliarios/ofertas/${oferta!.oferta_id}/responder`)
+      .set(independiente.auth)
+      .send({ respuesta: 'aceptada' });
+    expect(aceptar.body.exito).toBe(true);
+    expect(
+      (
+        await api()
+          .patch(`/api/v1/domiciliarios/pedidos/${id}/en-camino`)
+          .set(independiente.auth)
+      ).body.exito,
+    ).toBe(true);
+
+    const entregaManual = await setEstado(admin.auth, id, 'entregado', {
+      motivo: 'QA E2E: administrador confirma entrega verificada',
+    });
+    expect(entregaManual.body.exito).toBe(true);
+
+    const [activos, estadoSesion, ganancias] = await Promise.all([
+      api()
+        .get('/api/v1/domiciliarios/pedidos-activos')
+        .set(independiente.auth),
+      api().get('/api/v1/domiciliarios/sesion/estado').set(independiente.auth),
+      api().get('/api/v1/domiciliarios/ganancias').set(independiente.auth),
+    ]);
+    expect(activos.body.exito).toBe(true);
+    expect(
+      (activos.body.datos as Array<{ id: string }>).some((p) => p.id === id),
+    ).toBe(false);
+    expect(estadoSesion.body.datos).toMatchObject({
+      activa: true,
+      disponible: true,
+    });
+    const gananciasPedido = (
+      ganancias.body.datos.items as Array<{
+        pedido_id: string;
+        estado_asignacion: string;
+        pagado: boolean;
+      }>
+    ).filter((item) => item.pedido_id === id);
+    expect(gananciasPedido).toHaveLength(1);
+    expect(gananciasPedido[0]).toMatchObject({
+      estado_asignacion: 'entregado',
+      pagado: false,
+    });
   });
 
   it('completa entrega de independiente y concilia pedido, caja y ganancias', async () => {

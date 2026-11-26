@@ -133,6 +133,26 @@ export class AnaliticaService {
     return { params, suc, fecha, extra };
   }
 
+  /** Recaudo del periodo por fecha del movimiento (no por fecha de creación del pedido). */
+  private inicioRecaudo(
+    sucursalId: string,
+    desde: string,
+    hasta: string,
+    filtros: FiltrosAnalitica = {},
+  ) {
+    const params = new SqlParams();
+    const suc = params.add(sucursalId);
+    const d = params.add(desde);
+    const h = params.add(hasta);
+    const fecha = sqlFechaRango('m.created_at', d, h);
+    // Un reembolso de un pedido cancelado sigue siendo flujo de caja del periodo.
+    const extra = clausulasPedidos(params, filtros, {
+      alias: 'p',
+      excluirCanceladosPorDefecto: false,
+    });
+    return { params, suc, fecha, extra };
+  }
+
   /** ANA-FILT-PROD-01: con filtro de ítem, SUM de líneas no de `pedidos.total`. */
   private async consultarVentasKpi(
     sucursalId: string,
@@ -180,6 +200,115 @@ export class AnaliticaService {
        LEFT JOIN productos pr ON pr.id = pi.producto_id
        WHERE p.sucursal_id = ${suc}
          AND ${fecha}${extra}${extraItems}`,
+      params.list,
+    );
+  }
+
+  /**
+   * Bases de gestión por cumplimiento: domicilio al entregarse; salón/mostrador
+   * al cerrarse pagado (proxy operativo porque aún no guardan entrega física).
+   * Excluye la tarifa de domicilio y el IVA incluido; no es un libro contable.
+   */
+  private async consultarFinanzasVentasCumplidas(
+    sucursalId: string,
+    desde: string,
+    hasta: string,
+    filtros: FiltrosAnalitica = {},
+  ) {
+    const params = new SqlParams();
+    const suc = params.add(sucursalId);
+    const d = params.add(desde);
+    const h = params.add(hasta);
+    const fecha = sqlFechaRango('p.fecha_cumplimiento', d, h);
+    const extra = clausulasPedidos(params, filtros, {
+      alias: 'p',
+      excluirCanceladosPorDefecto: false,
+    });
+    const porLinea = filtrosSumanPorLinea(filtros);
+    const extraItems = porLinea
+      ? clausulasItemsYaJoineados(params, filtros)
+      : '';
+    const cte = `WITH pedidos_cumplimiento AS (
+       SELECT base.*,
+              CASE WHEN base.tipo = 'domicilio' THEN (
+                SELECT MAX(h.fecha) FROM estados_pedido_historial h
+                WHERE h.pedido_id = base.id AND h.estado_nuevo = 'entregado'
+              ) ELSE (
+                SELECT MAX(h.fecha) FROM estados_pedido_historial h
+                WHERE h.pedido_id = base.id AND h.estado_nuevo = 'pagado'
+              ) END AS fecha_cumplimiento
+       FROM pedidos base
+       WHERE base.sucursal_id = ${suc}
+     )`;
+    const whereCumplido = `p.fecha_cumplimiento IS NOT NULL
+       AND p.estado NOT IN ('cancelado', 'rechazado')
+       AND ${fecha}${extra}`;
+    const joinsItems = `
+       JOIN pedido_items pi ON pi.pedido_id = p.id
+       LEFT JOIN productos pr ON pr.id = pi.producto_id`;
+    const ventaExpresion = porLinea
+      ? `COALESCE(SUM(
+           ${SQL_VENTA_LINEA_ITEM}
+           * COALESCE(
+               GREATEST(p.subtotal - COALESCE(p.descuento, 0), 0)
+                 / NULLIF(p.subtotal, 0),
+               1
+             )
+           * COALESCE(
+               GREATEST(1 - COALESCE(p.iva_valor, 0) / NULLIF(p.total, 0), 0),
+               1
+             )
+         ), 0)`
+      : `COALESCE(SUM(
+           GREATEST(COALESCE(p.subtotal, 0) - COALESCE(p.descuento, 0), 0)
+           * COALESCE(
+               GREATEST(1 - COALESCE(p.iva_valor, 0) / NULLIF(p.total, 0), 0),
+               1
+             )
+         ), 0)`;
+    const ventaFrom = porLinea
+      ? `FROM pedidos_cumplimiento p${joinsItems}`
+      : 'FROM pedidos_cumplimiento p';
+    const extraItemsCargo = porLinea
+      ? ` AND EXISTS (
+           SELECT 1 FROM pedido_items pi
+           LEFT JOIN productos pr ON pr.id = pi.producto_id
+           WHERE pi.pedido_id = p.id${extraItems}
+         )`
+      : '';
+
+    return this.database.consultarUno<{
+      ventas_reconocidas: string;
+      costo_ventas_reconocidas: string;
+      lineas_total: string;
+      lineas_con_costo: string;
+      cargo_domicilio_pedidos_cumplidos: string;
+    }>(
+      `${cte}
+       SELECT (
+         SELECT ${ventaExpresion}
+         ${ventaFrom}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS ventas_reconocidas,
+       (
+         SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)
+         FROM pedidos_cumplimiento p${joinsItems}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS costo_ventas_reconocidas,
+       (
+         SELECT COUNT(*) FROM pedidos_cumplimiento p${joinsItems}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS lineas_total,
+       (
+         SELECT COUNT(*) FILTER (WHERE pi.costo_unitario IS NOT NULL)
+         FROM pedidos_cumplimiento p${joinsItems}
+         WHERE ${whereCumplido}${extraItems}
+       )::text AS lineas_con_costo,
+       (
+         SELECT COALESCE(SUM(COALESCE(p.costo_domicilio, 0)), 0)
+         FROM pedidos_cumplimiento p
+         WHERE ${whereCumplido}${extraItemsCargo}
+       )::text AS cargo_domicilio_pedidos_cumplidos`,
       params.list,
     );
   }
@@ -284,30 +413,11 @@ export class AnaliticaService {
       filtros,
     );
 
-    const {
-      params: pMargen,
-      suc: sucM,
-      fecha: fechaM,
-      extra: extraM,
-    } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
-    const extraItems = clausulasItemsYaJoineados(pMargen, filtros);
-
-    const margen = await this.database.consultarUno<{
-      ingreso: string;
-      costo: string;
-      lineas_total: string;
-      lineas_con_costo: string;
-    }>(
-      `SELECT COALESCE(SUM(${SQL_VENTA_LINEA_ITEM}), 0)::text AS ingreso,
-              COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo,
-              COUNT(*)::text AS lineas_total,
-              COUNT(*) FILTER (WHERE pi.costo_unitario IS NOT NULL)::text AS lineas_con_costo
-       FROM pedido_items pi
-       JOIN pedidos p ON p.id = pi.pedido_id
-       LEFT JOIN productos pr ON pr.id = pi.producto_id
-       WHERE p.sucursal_id = ${sucM}
-         AND ${fechaM}${extraM}${extraItems}`,
-      pMargen.list,
+    const finanzasVentas = await this.consultarFinanzasVentasCumplidas(
+      sucursalId,
+      desde,
+      hasta,
+      filtros,
     );
 
     const {
@@ -338,20 +448,23 @@ export class AnaliticaService {
       suc: sucP,
       fecha: fechaP,
       extra: extraP,
-    } = this.inicioCaja(sucursalId, desde, hasta, filtros);
+    } = this.inicioRecaudo(sucursalId, desde, hasta, filtros);
 
     const pagos = await this.database.consultarUno<{
       efectivo: string;
       digital: string;
+      recaudado_bruto: string;
+      devoluciones: string;
     }>(
-      `SELECT COALESCE(SUM(
-                ${SQL_NETO_MOVIMIENTO_CAJA}
-              ) FILTER (WHERE m.metodo_pago = 'efectivo'), 0)::text AS efectivo,
-              COALESCE(SUM(
-                ${SQL_NETO_MOVIMIENTO_CAJA}
-              ) FILTER (
-                WHERE m.metodo_pago IS DISTINCT FROM 'efectivo'
-              ), 0)::text AS digital
+      `SELECT COALESCE(SUM(m.monto) FILTER (
+                WHERE m.tipo = 'venta' AND m.metodo_pago = 'efectivo'
+              ), 0)::text AS efectivo,
+              COALESCE(SUM(m.monto) FILTER (
+                WHERE m.tipo = 'venta'
+                  AND m.metodo_pago IS DISTINCT FROM 'efectivo'
+              ), 0)::text AS digital,
+              COALESCE(SUM(m.monto) FILTER (WHERE m.tipo = 'venta'), 0)::text AS recaudado_bruto,
+              COALESCE(SUM(m.monto) FILTER (WHERE m.tipo = 'devolucion'), 0)::text AS devoluciones
        FROM movimientos_caja m
        LEFT JOIN pedidos p ON p.id = m.pedido_id
        WHERE m.sucursal_id = ${sucP}
@@ -367,11 +480,11 @@ export class AnaliticaService {
       [sucursalId],
     );
 
-    const ingreso = Number(margen?.ingreso ?? 0);
-    const costo = Number(margen?.costo ?? 0);
+    const ingreso = Number(finanzasVentas?.ventas_reconocidas ?? 0);
+    const costo = Number(finanzasVentas?.costo_ventas_reconocidas ?? 0);
     const margenBruto = ingreso - costo;
-    const lineasTotal = Number(margen?.lineas_total ?? 0);
-    const lineasConCosto = Number(margen?.lineas_con_costo ?? 0);
+    const lineasTotal = Number(finanzasVentas?.lineas_total ?? 0);
+    const lineasConCosto = Number(finanzasVentas?.lineas_con_costo ?? 0);
 
     const efectivo = Number(pagos?.efectivo ?? 0);
     const digital = Number(pagos?.digital ?? 0);
@@ -382,6 +495,12 @@ export class AnaliticaService {
 
     return {
       ventas_netas: Number(ventas?.ventas_netas ?? 0),
+      valor_pedidos: Number(ventas?.ventas_netas ?? 0),
+      ventas_reconocidas: ingreso,
+      costo_ventas_reconocidas: Math.round(costo * 100) / 100,
+      cargo_domicilio_pedidos_cumplidos: Number(
+        finanzasVentas?.cargo_domicilio_pedidos_cumplidos ?? 0,
+      ),
       pedidos: Number(ventas?.pedidos ?? 0),
       ticket_promedio:
         Math.round(Number(ventas?.ticket_promedio ?? 0) * 100) / 100,
@@ -398,6 +517,12 @@ export class AnaliticaService {
           : 0,
       pedidos_cancelados: cancelados,
       pedidos_total_cancelacion: totalPedidos,
+      recaudo_neto:
+        Math.round(
+          (Number(pagos?.recaudado_bruto ?? 0) -
+            Number(pagos?.devoluciones ?? 0)) *
+            100,
+        ) / 100,
       efectivo_vs_digital: {
         efectivo:
           totalPagos > 0
@@ -542,7 +667,7 @@ export class AnaliticaService {
       suc: sucCaja,
       fecha: fechaCaja,
       extra: extraCaja,
-    } = this.inicioCaja(sucursalId, desde, hasta, filtros);
+    } = this.inicioRecaudo(sucursalId, desde, hasta, filtros);
 
     const porMetodo = await this.database.consultar<{
       metodo_pago: string;
@@ -550,7 +675,7 @@ export class AnaliticaService {
       movimientos: string;
     }>(
       `SELECT COALESCE(m.metodo_pago, 'sin_metodo') AS metodo_pago,
-              COALESCE(SUM(${SQL_NETO_MOVIMIENTO_CAJA}), 0)::text AS total,
+              COALESCE(SUM(m.monto) FILTER (WHERE m.tipo = 'venta'), 0)::text AS total,
               COUNT(*) FILTER (WHERE m.tipo = 'venta')::text AS movimientos
        FROM movimientos_caja m
        LEFT JOIN pedidos p ON p.id = m.pedido_id
@@ -1325,28 +1450,6 @@ export class AnaliticaService {
     const { desde, hasta } = periodo;
     const kpis = await this.kpisPeriodo(sucursalId, desde, hasta, filtros);
 
-    const {
-      params: pMargen,
-      suc: sucM,
-      fecha: fechaM,
-      extra: extraM,
-    } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
-    const extraItems = clausulasItemsYaJoineados(pMargen, filtros);
-
-    const cogs = await this.database.consultarUno<{
-      costo_ventas: string;
-      ingreso_lineas: string;
-    }>(
-      `SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo_ventas,
-              COALESCE(SUM(${SQL_VENTA_LINEA_ITEM}), 0)::text AS ingreso_lineas
-       FROM pedido_items pi
-       JOIN pedidos p ON p.id = pi.pedido_id
-       LEFT JOIN productos pr ON pr.id = pi.producto_id
-       WHERE p.sucursal_id = ${sucM}
-         AND ${fechaM}${extraM}${extraItems}`,
-      pMargen.list,
-    );
-
     const gastosCat = await this.database.consultar<{
       categoria: string;
       total: string;
@@ -1390,8 +1493,8 @@ export class AnaliticaService {
       [sucursalId, desde, hasta],
     );
 
-    const ventasNetas = kpis.ventas_netas;
-    const costoVentas = Number(cogs?.costo_ventas ?? 0);
+    const ventasNetas = kpis.ventas_reconocidas;
+    const costoVentas = kpis.costo_ventas_reconocidas;
     const utilidadBruta = Math.round((ventasNetas - costoVentas) * 100) / 100;
     const gastosPorCategoria = gastosCat.map((g) => ({
       categoria: g.categoria,
@@ -1420,31 +1523,13 @@ export class AnaliticaService {
         anterior.hasta,
         filtros,
       );
-      const {
-        params: pMargenAnt,
-        suc: sucMAnt,
-        fecha: fechaMAnt,
-        extra: extraMAnt,
-      } = this.inicio(sucursalId, anterior.desde, anterior.hasta, filtros, 'p');
-      const extraItemsAnt = clausulasItemsYaJoineados(pMargenAnt, filtros);
-      const prevCogs = await this.database.consultarUno<{
-        costo_ventas: string;
-      }>(
-        `SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo_ventas
-         FROM pedido_items pi
-         JOIN pedidos p ON p.id = pi.pedido_id
-         LEFT JOIN productos pr ON pr.id = pi.producto_id
-         WHERE p.sucursal_id = ${sucMAnt}
-           AND ${fechaMAnt}${extraMAnt}${extraItemsAnt}`,
-        pMargenAnt.list,
-      );
       const prevGastos = await this.database.consultarUno<{ total: string }>(
         `SELECT COALESCE(SUM(monto), 0)::text AS total FROM gastos
          WHERE sucursal_id = $1 AND fecha >= $2::date AND fecha <= $3::date`,
         [sucursalId, anterior.desde, anterior.hasta],
       );
       const prevUb =
-        prevKpis.ventas_netas - Number(prevCogs?.costo_ventas ?? 0);
+        prevKpis.ventas_reconocidas - prevKpis.costo_ventas_reconocidas;
       utilidadAnterior =
         Math.round((prevUb - Number(prevGastos?.total ?? 0)) * 100) / 100;
       deltaUtilidadPct =
@@ -1513,6 +1598,8 @@ export class AnaliticaService {
     return {
       periodo: { label: periodo.label, desde, hasta },
       ventas_netas: ventasNetas,
+      valor_pedidos: kpis.valor_pedidos,
+      cargo_domicilio_pedidos_cumplidos: kpis.cargo_domicilio_pedidos_cumplidos,
       costo_ventas: Math.round(costoVentas * 100) / 100,
       utilidad_bruta: utilidadBruta,
       utilidad_bruta_pct:

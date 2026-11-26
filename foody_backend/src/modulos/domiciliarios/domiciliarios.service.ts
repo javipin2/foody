@@ -1141,7 +1141,10 @@ export class DomiciliariosService {
               COALESCE(SUM(gd.comision_foody), 0) AS comision_foody,
               COALESCE(SUM(gd.ganancia_domiciliario), 0) AS ganancia_total,
               COALESCE(
-                SUM(gd.ganancia_domiciliario) FILTER (WHERE gd.pagado = false),
+                SUM(gd.ganancia_domiciliario) FILTER (
+                  WHERE gd.pagado = false
+                    AND ad.estado IS DISTINCT FROM 'cancelado'
+                ),
                 0
               ) AS por_pagar
        FROM ganancias_domiciliario gd

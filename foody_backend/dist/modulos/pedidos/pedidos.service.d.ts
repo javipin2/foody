@@ -13,6 +13,7 @@ import { PedidosDescuentoService } from './pedidos-descuento.service';
 import { PedidosEstadoService } from './pedidos-estado.service';
 import { PedidosItemsService } from './pedidos-items.service';
 import { PedidosPagosService } from './pedidos-pagos.service';
+import { PedidosComboDecisionesService } from './pedidos-combo-decisiones.service';
 import { ResultadoPaginado } from '../../compartido/dto/paginacion.dto';
 import { OpcionesStaffPedido } from './pedidos-soporte.service';
 export declare class PedidosService {
@@ -24,7 +25,50 @@ export declare class PedidosService {
     private readonly items;
     private readonly descuento;
     private readonly pagos;
-    constructor(database: DatabaseService, sucursalScope: SucursalScopeService, cuentaMesa: PedidosCuentaMesaService, estado: PedidosEstadoService, crearPedido: PedidosCrearService, items: PedidosItemsService, descuento: PedidosDescuentoService, pagos: PedidosPagosService);
+    private readonly decisionesCombo;
+    constructor(database: DatabaseService, sucursalScope: SucursalScopeService, cuentaMesa: PedidosCuentaMesaService, estado: PedidosEstadoService, crearPedido: PedidosCrearService, items: PedidosItemsService, descuento: PedidosDescuentoService, pagos: PedidosPagosService, decisionesCombo: PedidosComboDecisionesService);
+    listarDecisionesComboPendientes(pedidoId: string, sucursalId: string): Promise<Record<string, unknown>[]>;
+    cotizarReemplazoCombo(pedidoId: string, decisionId: string, sucursalId: string, reemplazoId: string, usuarioId: string): Promise<{
+        decision_id: string;
+        pedido_id: string;
+        componente_reemplazo: {
+            tipo_item: "producto" | "bebida" | "topping";
+            componente_id: string;
+            nombre: string;
+            cantidad: number;
+            precio_unitario: number | null;
+            costo_unitario: number;
+            cocina_id: string | null;
+            producto_padre_id: string | null;
+            producto_padre: string | null;
+        };
+        diferencia_propuesta: number;
+        total_anterior: number;
+        total_propuesto: number;
+        cotizacion_version: number;
+        pago_adicional_estimado: number;
+        devolucion_estimada: number;
+        aplicado: boolean;
+    }>;
+    responderDecisionCombo(pedidoId: string, decisionId: string, sucursalId: string, usuarioId: string, dto: Parameters<PedidosComboDecisionesService['responder']>[4]): Promise<{
+        decision_id: string;
+        pedido_id: string;
+        estado: string;
+        idempotente: boolean;
+        aplicado: boolean;
+        respuesta_accion?: undefined;
+        total_aceptado?: undefined;
+        delta_propuesto?: undefined;
+    } | {
+        decision_id: string;
+        pedido_id: string;
+        estado: string;
+        respuesta_accion: "aceptar_sustitucion" | "cancelar_combo";
+        total_aceptado: number | null;
+        delta_propuesto: number | null;
+        aplicado: boolean;
+        idempotente: boolean;
+    }>;
     listarPorSucursal(sucursalId: string, opciones?: {
         soloActivos?: boolean;
         limite?: number;
@@ -501,6 +545,12 @@ export declare class PedidosService {
         iva_valor: number;
     }>;
     eliminarItemPedido(pedidoId: string, itemId: string, sucursalId: string, usuarioId: string, motivo?: string): Promise<{
+        pedido_id: string;
+        item_id: string;
+        numero_pedido: string;
+        estado: string;
+        cancelado: boolean;
+    } | {
         pedido_id: string;
         item_id: string;
         estado: string;
