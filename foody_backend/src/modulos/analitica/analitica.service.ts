@@ -11,7 +11,11 @@ import {
   parseFiltrosDesdeDto,
   SqlParams,
 } from './analitica-filtros.util';
-import { PeriodoResuelto, diasEntre, resolverPeriodoAnalitica } from './analitica-periodo.util';
+import {
+  PeriodoResuelto,
+  diasEntre,
+  resolverPeriodoAnalitica,
+} from './analitica-periodo.util';
 import {
   SQL_DIA_LOCAL,
   SQL_DIA_LOCAL_P,
@@ -215,8 +219,7 @@ export class AnaliticaService {
         },
         delta: {
           ventas_netas_pct: deltaPct,
-          tendencia:
-            deltaPct > 0 ? 'sube' : deltaPct < 0 ? 'baja' : 'igual',
+          tendencia: deltaPct > 0 ? 'sube' : deltaPct < 0 ? 'baja' : 'igual',
         },
       };
     }
@@ -281,8 +284,12 @@ export class AnaliticaService {
       filtros,
     );
 
-    const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM } =
-      this.inicio(sucursalId, desde, hasta, filtros, 'p');
+    const {
+      params: pMargen,
+      suc: sucM,
+      fecha: fechaM,
+      extra: extraM,
+    } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
     const extraItems = clausulasItemsYaJoineados(pMargen, filtros);
 
     const margen = await this.database.consultarUno<{
@@ -303,10 +310,14 @@ export class AnaliticaService {
       pMargen.list,
     );
 
-    const { params: pCancel, suc: sucC, fecha: fechaC, extra: extraC } =
-      this.inicio(sucursalId, desde, hasta, filtros, undefined, {
-        excluirCanceladosPorDefecto: false,
-      });
+    const {
+      params: pCancel,
+      suc: sucC,
+      fecha: fechaC,
+      extra: extraC,
+    } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
+      excluirCanceladosPorDefecto: false,
+    });
 
     const cancelacion = await this.database.consultarUno<{
       total: string;
@@ -322,8 +333,12 @@ export class AnaliticaService {
       pCancel.list,
     );
 
-    const { params: pPagos, suc: sucP, fecha: fechaP, extra: extraP } =
-      this.inicioCaja(sucursalId, desde, hasta, filtros);
+    const {
+      params: pPagos,
+      suc: sucP,
+      fecha: fechaP,
+      extra: extraP,
+    } = this.inicioCaja(sucursalId, desde, hasta, filtros);
 
     const pagos = await this.database.consultarUno<{
       efectivo: string;
@@ -368,12 +383,11 @@ export class AnaliticaService {
     return {
       ventas_netas: Number(ventas?.ventas_netas ?? 0),
       pedidos: Number(ventas?.pedidos ?? 0),
-      ticket_promedio: Math.round(Number(ventas?.ticket_promedio ?? 0) * 100) / 100,
+      ticket_promedio:
+        Math.round(Number(ventas?.ticket_promedio ?? 0) * 100) / 100,
       margen_bruto_estimado: Math.round(margenBruto * 100) / 100,
       margen_bruto_pct:
-        ingreso > 0
-          ? Math.round((margenBruto / ingreso) * 1000) / 10
-          : 0,
+        ingreso > 0 ? Math.round((margenBruto / ingreso) * 1000) / 10 : 0,
       cobertura_costo_pct:
         lineasTotal > 0
           ? Math.round((lineasConCosto / lineasTotal) * 1000) / 10
@@ -390,9 +404,7 @@ export class AnaliticaService {
             ? Math.round((efectivo / totalPagos) * 1000) / 1000
             : 0,
         digital:
-          totalPagos > 0
-            ? Math.round((digital / totalPagos) * 1000) / 1000
-            : 0,
+          totalPagos > 0 ? Math.round((digital / totalPagos) * 1000) / 1000 : 0,
       },
       alertas_abiertas: Number(alertas?.abiertas ?? 0),
     };
@@ -550,8 +562,12 @@ export class AnaliticaService {
       pCaja.list,
     );
 
-    const { params: pCat, suc: sucCat, fecha: fechaCat, extra: extraCat } =
-      this.inicio(sucursalId, desde, hasta, filtros, 'p');
+    const {
+      params: pCat,
+      suc: sucCat,
+      fecha: fechaCat,
+      extra: extraCat,
+    } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
     const extraItemsCat = clausulasItemsYaJoineados(pCat, filtros);
 
     const porCategoria = await this.database.consultar<{
@@ -576,32 +592,38 @@ export class AnaliticaService {
       pCat.list,
     );
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      por_dia: porDia.map((f) => ({
-        dia: f.dia,
-        pedidos: Number(f.pedidos),
-        ventas: Number(f.ventas),
-      })),
-      por_hora: porHora,
-      por_tipo: porTipo.map((f) => ({
-        tipo: f.tipo,
-        pedidos: Number(f.pedidos),
-        ventas: Number(f.ventas),
-      })),
-      por_metodo: porMetodo.map((f) => ({
-        metodo_pago: f.metodo_pago,
-        total: Number(f.total),
-        movimientos: Number(f.movimientos),
-      })),
-      por_categoria: porCategoria.map((f) => ({
-        categoria_id: f.categoria_id,
-        nombre: f.nombre,
-        unidades: Number(f.unidades),
-        ventas: Number(f.ventas),
-      })),
-    });
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        por_dia: porDia.map((f) => ({
+          dia: f.dia,
+          pedidos: Number(f.pedidos),
+          ventas: Number(f.ventas),
+        })),
+        por_hora: porHora,
+        por_tipo: porTipo.map((f) => ({
+          tipo: f.tipo,
+          pedidos: Number(f.pedidos),
+          ventas: Number(f.ventas),
+        })),
+        por_metodo: porMetodo.map((f) => ({
+          metodo_pago: f.metodo_pago,
+          total: Number(f.total),
+          movimientos: Number(f.movimientos),
+        })),
+        por_categoria: porCategoria.map((f) => ({
+          categoria_id: f.categoria_id,
+          nombre: f.nombre,
+          unidades: Number(f.unidades),
+          ventas: Number(f.ventas),
+        })),
+      },
+    );
   }
 
   async productos(
@@ -722,17 +744,23 @@ export class AnaliticaService {
       params.list,
     );
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      por_cantidad: mapRanking(porCantidad),
-      por_ingresos: mapRanking(porIngresos),
-      por_margen: mapRanking(porMargen),
-      sin_rotacion: sinRotacion.map((f) => ({
-        producto_id: f.producto_id,
-        nombre: f.nombre,
-      })),
-    });
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        por_cantidad: mapRanking(porCantidad),
+        por_ingresos: mapRanking(porIngresos),
+        por_margen: mapRanking(porMargen),
+        sin_rotacion: sinRotacion.map((f) => ({
+          producto_id: f.producto_id,
+          nombre: f.nombre,
+        })),
+      },
+    );
   }
 
   async cocinas(
@@ -854,7 +882,12 @@ export class AnaliticaService {
     );
     const topsPorCocina = new Map<
       string,
-      { producto_id: string; nombre: string; unidades: number; ingresos: number }[]
+      {
+        producto_id: string;
+        nombre: string;
+        unidades: number;
+        ingresos: number;
+      }[]
     >();
     for (const row of topProductos) {
       const lista = topsPorCocina.get(row.cocina_id) ?? [];
@@ -867,30 +900,36 @@ export class AnaliticaService {
       topsPorCocina.set(row.cocina_id, lista);
     }
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      cocinas: resumen.map((c) => {
-        const ingresos = Number(c.ingresos);
-        const costo = Number(c.costo);
-        const margen = ingresos - costo;
-        const tiemposC = tiempoPorCocina.get(c.cocina_id);
-        return {
-          cocina_id: c.cocina_id,
-          nombre: c.nombre,
-          unidades: Number(c.unidades),
-          ingresos,
-          costo,
-          margen: Math.round(margen * 100) / 100,
-          margen_pct:
-            ingresos > 0 ? Math.round((margen / ingresos) * 1000) / 10 : 0,
-          tiempo_prep_minutos: Math.round((tiemposC?.avg ?? 0) * 10) / 10,
-          tiempo_prep_min: Math.round((tiemposC?.min ?? 0) * 10) / 10,
-          tiempo_prep_max: Math.round((tiemposC?.max ?? 0) * 10) / 10,
-          top_productos: topsPorCocina.get(c.cocina_id) ?? [],
-        };
-      }),
-    });
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        cocinas: resumen.map((c) => {
+          const ingresos = Number(c.ingresos);
+          const costo = Number(c.costo);
+          const margen = ingresos - costo;
+          const tiemposC = tiempoPorCocina.get(c.cocina_id);
+          return {
+            cocina_id: c.cocina_id,
+            nombre: c.nombre,
+            unidades: Number(c.unidades),
+            ingresos,
+            costo,
+            margen: Math.round(margen * 100) / 100,
+            margen_pct:
+              ingresos > 0 ? Math.round((margen / ingresos) * 1000) / 10 : 0,
+            tiempo_prep_minutos: Math.round((tiemposC?.avg ?? 0) * 10) / 10,
+            tiempo_prep_min: Math.round((tiemposC?.min ?? 0) * 10) / 10,
+            tiempo_prep_max: Math.round((tiemposC?.max ?? 0) * 10) / 10,
+            top_productos: topsPorCocina.get(c.cocina_id) ?? [],
+          };
+        }),
+      },
+    );
   }
 
   async inventario(
@@ -909,6 +948,7 @@ export class AnaliticaService {
     const resumen = await this.database.consultarUno<{
       consumo_unidades: string;
       consumo_valor: string;
+      stock_devuelto_valor: string;
       merma_valor: string;
       ajuste_neto: string;
       diferencia_conteo: string;
@@ -917,6 +957,7 @@ export class AnaliticaService {
       `SELECT
          COALESCE(SUM(ABS(m.cantidad)) FILTER (WHERE m.tipo = 'venta'), 0)::text AS consumo_unidades,
          COALESCE(SUM(ABS(m.cantidad) * i.costo_unitario_actual) FILTER (WHERE m.tipo = 'venta'), 0)::text AS consumo_valor,
+         COALESCE(SUM(ABS(m.cantidad) * i.costo_unitario_actual) FILTER (WHERE m.tipo = 'devolucion'), 0)::text AS stock_devuelto_valor,
          COALESCE(SUM(ABS(m.cantidad) * i.costo_unitario_actual) FILTER (WHERE m.tipo = 'merma'), 0)::text AS merma_valor,
          COALESCE(SUM(m.stock_posterior - m.stock_anterior) FILTER (WHERE m.tipo = 'ajuste'), 0)::text AS ajuste_neto,
          (
@@ -981,40 +1022,50 @@ export class AnaliticaService {
       [sucursalId],
     );
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      // CONS-COSTO-SNAPSHOT-01: valorización de movimientos usa costo_unitario_actual (vivo).
-      // COGS histórico / P&L / rentabilidad = pedido_items.costo_unitario (snapshot venta).
-      fuentes_cogs: {
-        consumo_inventario: 'ingredientes.costo_unitario_actual',
-        cogs_ventas: 'pedido_items.costo_unitario',
-        ledger_margen: 'margenes_venta.costo_al_momento',
-        nota:
-          'consumo_valor/merma_valor ≈ costo actual del insumo. ' +
-          'No comparar 1:1 con COGS de ventas (snapshot al crear/editar ítem).',
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        // CONS-COSTO-SNAPSHOT-01: valorización de movimientos usa costo_unitario_actual (vivo).
+        // COGS histórico / P&L / rentabilidad = pedido_items.costo_unitario (snapshot venta).
+        fuentes_cogs: {
+          consumo_inventario: 'ingredientes.costo_unitario_actual',
+          stock_devuelto: 'ingredientes.costo_unitario_actual',
+          cogs_ventas: 'pedido_items.costo_unitario',
+          ledger_margen: 'margenes_venta.costo_al_momento',
+          nota:
+            'consumo_valor/stock_devuelto_valor/merma_valor ≈ costo actual del insumo; las devoluciones se informan aparte y no reescriben el consumo histórico. ' +
+            'No comparar 1:1 con COGS de ventas (snapshot al crear/editar ítem).',
+        },
+        resumen: {
+          consumo_unidades: Number(resumen?.consumo_unidades ?? 0),
+          consumo_valor: Number(resumen?.consumo_valor ?? 0),
+          stock_devuelto_valor: Number(resumen?.stock_devuelto_valor ?? 0),
+          merma_valor: Number(resumen?.merma_valor ?? 0),
+          ajuste_neto: Number(resumen?.ajuste_neto ?? 0),
+          diferencia_conteo: Number(resumen?.diferencia_conteo ?? 0),
+          valor_inventario_actual: Number(
+            resumen?.valor_inventario_actual ?? 0,
+          ),
+        },
+        top_consumo: topConsumo.map((f) => ({
+          ingrediente_id: f.ingrediente_id,
+          nombre: f.nombre,
+          unidades: Number(f.unidades),
+          valor: Number(f.valor),
+        })),
+        bajo_minimo: bajoMinimo.map((f) => ({
+          ingrediente_id: f.ingrediente_id,
+          nombre: f.nombre,
+          stock_actual: Number(f.stock_actual),
+          stock_minimo: Number(f.stock_minimo),
+        })),
       },
-      resumen: {
-        consumo_unidades: Number(resumen?.consumo_unidades ?? 0),
-        consumo_valor: Number(resumen?.consumo_valor ?? 0),
-        merma_valor: Number(resumen?.merma_valor ?? 0),
-        ajuste_neto: Number(resumen?.ajuste_neto ?? 0),
-        diferencia_conteo: Number(resumen?.diferencia_conteo ?? 0),
-        valor_inventario_actual: Number(resumen?.valor_inventario_actual ?? 0),
-      },
-      top_consumo: topConsumo.map((f) => ({
-        ingrediente_id: f.ingrediente_id,
-        nombre: f.nombre,
-        unidades: Number(f.unidades),
-        valor: Number(f.valor),
-      })),
-      bajo_minimo: bajoMinimo.map((f) => ({
-        ingrediente_id: f.ingrediente_id,
-        nombre: f.nombre,
-        stock_actual: Number(f.stock_actual),
-        stock_minimo: Number(f.stock_minimo),
-      })),
-    });
+    );
   }
 
   async domiciliarios(
@@ -1095,29 +1146,34 @@ export class AnaliticaService {
       params.list,
     );
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      umbrales: { demora_entrega_multiplo: umbralTardia },
-      totales: {
-        entregas: Number(totales?.entregas ?? 0),
-        tiempo_promedio_min: Math.round(
-          Number(totales?.tiempo_promedio_min ?? 0) * 10,
-        ) / 10,
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        umbrales: { demora_entrega_multiplo: umbralTardia },
+        totales: {
+          entregas: Number(totales?.entregas ?? 0),
+          tiempo_promedio_min:
+            Math.round(Number(totales?.tiempo_promedio_min ?? 0) * 10) / 10,
+        },
+        ranking: ranking.map((r) => ({
+          repartidor_id: r.repartidor_id,
+          nombre: r.nombre,
+          tipo: r.tipo,
+          entregas: Number(r.entregas),
+          tiempo_promedio_min:
+            Math.round(Number(r.tiempo_promedio_min) * 10) / 10,
+          pct_tardias: Math.round(Number(r.pct_tardias) * 10) / 10,
+          ingresos_domicilio: Number(r.ingresos_domicilio),
+          distancia_promedio_km:
+            Math.round(Number(r.distancia_promedio_km) * 100) / 100,
+        })),
       },
-      ranking: ranking.map((r) => ({
-        repartidor_id: r.repartidor_id,
-        nombre: r.nombre,
-        tipo: r.tipo,
-        entregas: Number(r.entregas),
-        tiempo_promedio_min:
-          Math.round(Number(r.tiempo_promedio_min) * 10) / 10,
-        pct_tardias: Math.round(Number(r.pct_tardias) * 10) / 10,
-        ingresos_domicilio: Number(r.ingresos_domicilio),
-        distancia_promedio_km:
-          Math.round(Number(r.distancia_promedio_km) * 100) / 100,
-      })),
-    });
+    );
   }
 
   async caja(
@@ -1178,7 +1234,10 @@ export class AnaliticaService {
       paramsGastos.list,
     );
 
-    const cxc = await this.database.consultarUno<{ pendiente: string; cantidad: string }>(
+    const cxc = await this.database.consultarUno<{
+      pendiente: string;
+      cantidad: string;
+    }>(
       `SELECT COALESCE(SUM(monto), 0)::text AS pendiente,
               COUNT(*)::text AS cantidad
        FROM cuentas_por_cobrar
@@ -1206,41 +1265,50 @@ export class AnaliticaService {
     const ventasCaja = Number(movimientos?.ventas_caja ?? 0);
     const diferenciaCuadre = ventasPedidos - ventasCaja;
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      cuadre: {
-        ventas_pedidos: ventasPedidos,
-        ventas_movimientos_caja: ventasCaja,
-        diferencia: Math.round(diferenciaCuadre * 100) / 100,
-        etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
-        nota_periodo_caja:
-          'Compara ventas de pedidos creados en el rango con cobros netos asociados a esos pedidos. Los movimientos vinculados usan la fecha del pedido, aunque el pago ocurra después del rango; por eso esta diferencia puede cambiar con cobros posteriores y no representa el descuadre físico de un turno.',
-        umbral_relevante_cop: UMBRALES_ALERTA.cuadreCajaCOP,
-        descuadre_relevante:
-          Math.abs(diferenciaCuadre) >= UMBRALES_ALERTA.cuadreCajaCOP,
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        cuadre: {
+          ventas_pedidos: ventasPedidos,
+          ventas_movimientos_caja: ventasCaja,
+          diferencia: Math.round(diferenciaCuadre * 100) / 100,
+          etiqueta_ventas_caja: 'Cobros netos asociados a pedidos',
+          nota_periodo_caja:
+            'Compara ventas de pedidos creados en el rango con cobros netos asociados a esos pedidos. Los movimientos vinculados usan la fecha del pedido, aunque el pago ocurra después del rango; por eso esta diferencia puede cambiar con cobros posteriores y no representa el descuadre físico de un turno.',
+          umbral_relevante_cop: UMBRALES_ALERTA.cuadreCajaCOP,
+          descuadre_relevante:
+            Math.abs(diferenciaCuadre) >= UMBRALES_ALERTA.cuadreCajaCOP,
+        },
+        retiros_total: Number(movimientos?.retiros ?? 0),
+        // El egreso de caja ya se refleja también en el libro `gastos`.
+        // El total contable viene del libro; el movimiento de caja se expone
+        // separado para conciliación y no se suma por segunda vez.
+        gastos_total: gastosPorCategoria.reduce(
+          (s, g) => s + Number(g.total),
+          0,
+        ),
+        gastos_movimientos_caja: Number(movimientos?.gastos_mov ?? 0),
+        gastos_por_categoria: gastosPorCategoria.map((g) => ({
+          categoria: g.categoria,
+          total: Number(g.total),
+          cantidad: Number(g.cantidad),
+        })),
+        cuentas_por_cobrar: {
+          pendiente: Number(cxc?.pendiente ?? 0),
+          cantidad: Number(cxc?.cantidad ?? 0),
+        },
+        cierres: cierres.map((c) => ({
+          caja_id: c.caja_id,
+          diferencia: Number(c.diferencia),
+          cierre_at: c.cierre_at,
+        })),
       },
-      retiros_total: Number(movimientos?.retiros ?? 0),
-      // El egreso de caja ya se refleja también en el libro `gastos`.
-      // El total contable viene del libro; el movimiento de caja se expone
-      // separado para conciliación y no se suma por segunda vez.
-      gastos_total: gastosPorCategoria.reduce((s, g) => s + Number(g.total), 0),
-      gastos_movimientos_caja: Number(movimientos?.gastos_mov ?? 0),
-      gastos_por_categoria: gastosPorCategoria.map((g) => ({
-        categoria: g.categoria,
-        total: Number(g.total),
-        cantidad: Number(g.cantidad),
-      })),
-      cuentas_por_cobrar: {
-        pendiente: Number(cxc?.pendiente ?? 0),
-        cantidad: Number(cxc?.cantidad ?? 0),
-      },
-      cierres: cierres.map((c) => ({
-        caja_id: c.caja_id,
-        diferencia: Number(c.diferencia),
-        cierre_at: c.cierre_at,
-      })),
-    });
+    );
   }
 
   /**
@@ -1257,8 +1325,12 @@ export class AnaliticaService {
     const { desde, hasta } = periodo;
     const kpis = await this.kpisPeriodo(sucursalId, desde, hasta, filtros);
 
-    const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM } =
-      this.inicio(sucursalId, desde, hasta, filtros, 'p');
+    const {
+      params: pMargen,
+      suc: sucM,
+      fecha: fechaM,
+      extra: extraM,
+    } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
     const extraItems = clausulasItemsYaJoineados(pMargen, filtros);
 
     const cogs = await this.database.consultarUno<{
@@ -1353,13 +1425,7 @@ export class AnaliticaService {
         suc: sucMAnt,
         fecha: fechaMAnt,
         extra: extraMAnt,
-      } = this.inicio(
-        sucursalId,
-        anterior.desde,
-        anterior.hasta,
-        filtros,
-        'p',
-      );
+      } = this.inicio(sucursalId, anterior.desde, anterior.hasta, filtros, 'p');
       const extraItemsAnt = clausulasItemsYaJoineados(pMargenAnt, filtros);
       const prevCogs = await this.database.consultarUno<{
         costo_ventas: string;
@@ -1389,8 +1455,7 @@ export class AnaliticaService {
               ? -100
               : 0
           : Math.round(
-              ((utilidadNeta - utilidadAnterior) /
-                Math.abs(utilidadAnterior)) *
+              ((utilidadNeta - utilidadAnterior) / Math.abs(utilidadAnterior)) *
                 1000,
             ) / 10;
     }
@@ -1430,11 +1495,7 @@ export class AnaliticaService {
         mensaje: 'Gastos > 40% de ventas. Revisa fijos y nómina.',
       });
     }
-    if (
-      utilidadNeta > 0 &&
-      deltaUtilidadPct != null &&
-      deltaUtilidadPct > 0
-    ) {
+    if (utilidadNeta > 0 && deltaUtilidadPct != null && deltaUtilidadPct > 0) {
       consejos.push({
         codigo: 'mejor_que_anterior',
         nivel: 'info',
@@ -1522,10 +1583,14 @@ export class AnaliticaService {
       paramsFecha.list,
     );
 
-    const { params: pDesc, suc: sucD, fecha: fechaD, extra: extraD } =
-      this.inicio(sucursalId, desde, hasta, filtros, undefined, {
-        excluirCanceladosPorDefecto: false,
-      });
+    const {
+      params: pDesc,
+      suc: sucD,
+      fecha: fechaD,
+      extra: extraD,
+    } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
+      excluirCanceladosPorDefecto: false,
+    });
     const umbralDesc = pDesc.add(UMBRALES_ALERTA.descuentoPorcentajeAlto);
 
     const descuentosAtipicos = await this.database.consultar<{
@@ -1583,7 +1648,9 @@ export class AnaliticaService {
       paramsFecha.list,
     );
 
-    const alertasSalioSinPagar = await this.database.consultarUno<{ total: string }>(
+    const alertasSalioSinPagar = await this.database.consultarUno<{
+      total: string;
+    }>(
       `SELECT COUNT(*)::text AS total
        FROM alertas_riesgo
        WHERE sucursal_id = ${suc}
@@ -1606,10 +1673,14 @@ export class AnaliticaService {
       paramsFecha.list,
     );
 
-    const { params: pCancelPost, suc: sucCp, fecha: fechaCp, extra: extraCp } =
-      this.inicio(sucursalId, desde, hasta, filtros, 'p', {
-        excluirCanceladosPorDefecto: false,
-      });
+    const {
+      params: pCancelPost,
+      suc: sucCp,
+      fecha: fechaCp,
+      extra: extraCp,
+    } = this.inicio(sucursalId, desde, hasta, filtros, 'p', {
+      excluirCanceladosPorDefecto: false,
+    });
     const extraItemsCp = clausulasItemsYaJoineados(pCancelPost, filtros);
     const estadosPostSql = ESTADOS_POST_COCINA.map((e) => `'${e}'`).join(', ');
 
@@ -1652,53 +1723,57 @@ export class AnaliticaService {
         ])
       : [[], []];
 
-    return this.adjuntarComparativaKpis(sucursalId, periodo, anterior, filtros, {
+    return this.adjuntarComparativaKpis(
+      sucursalId,
       periodo,
-      sucursal_id: sucursalId,
-      umbrales: UMBRALES_ALERTA,
-      alertas_por_nivel: porNivel.map((a) => ({
-        nivel: a.nivel,
-        total: Number(a.total),
-        abiertas: Number(a.abiertas),
-      })),
-      descuentos_atipicos: descuentosAtipicos.map((d) => ({
-        pedido_id: d.pedido_id,
-        numero_pedido: d.numero_pedido,
-        pct_descuento: Number(d.pct_descuento),
-        descuento: Number(d.descuento),
-        created_at: d.created_at,
-      })),
-      cancelaciones_por_usuario: cancelacionesUsuario.map((c) => ({
-        usuario_id: c.usuario_id,
-        nombre: c.nombre,
-        cancelaciones: Number(c.cancelaciones),
-        supera_umbral_diario:
-          Number(c.cancelaciones) >= UMBRALES_ALERTA.cancelacionesPorDia,
-      })),
-      productos_cancelados_post_cocina_aprox: productosCanceladosPostCocina.map(
-        (p) => ({
-          producto_id: p.producto_id,
-          nombre: p.nombre,
-          cantidad: Number(p.cantidad),
-        }),
-      ),
-      cocinas_prep_delta: cocinasPrepDelta,
-      categorias_caida: categoriasCaida,
-      senales: {
-        transferencias_mesa: Number(transferencias?.total ?? 0),
-        transferencias_umbral: UMBRALES_ALERTA.transferenciasMesa,
-        salio_sin_pagar: Number(alertasSalioSinPagar?.total ?? 0),
-        usuarios_cancelacion_alerta: cancelacionesSospechosas.length,
-        cocinas_prep_alerta: cocinasPrepDelta.filter(
-          (c) => c.alerta_subida,
-        ).length,
-        categorias_caida_alerta: categoriasCaida.length,
+      anterior,
+      filtros,
+      {
+        periodo,
+        sucursal_id: sucursalId,
+        umbrales: UMBRALES_ALERTA,
+        alertas_por_nivel: porNivel.map((a) => ({
+          nivel: a.nivel,
+          total: Number(a.total),
+          abiertas: Number(a.abiertas),
+        })),
+        descuentos_atipicos: descuentosAtipicos.map((d) => ({
+          pedido_id: d.pedido_id,
+          numero_pedido: d.numero_pedido,
+          pct_descuento: Number(d.pct_descuento),
+          descuento: Number(d.descuento),
+          created_at: d.created_at,
+        })),
+        cancelaciones_por_usuario: cancelacionesUsuario.map((c) => ({
+          usuario_id: c.usuario_id,
+          nombre: c.nombre,
+          cancelaciones: Number(c.cancelaciones),
+          supera_umbral_diario:
+            Number(c.cancelaciones) >= UMBRALES_ALERTA.cancelacionesPorDia,
+        })),
+        productos_cancelados_post_cocina_aprox:
+          productosCanceladosPostCocina.map((p) => ({
+            producto_id: p.producto_id,
+            nombre: p.nombre,
+            cantidad: Number(p.cantidad),
+          })),
+        cocinas_prep_delta: cocinasPrepDelta,
+        categorias_caida: categoriasCaida,
+        senales: {
+          transferencias_mesa: Number(transferencias?.total ?? 0),
+          transferencias_umbral: UMBRALES_ALERTA.transferenciasMesa,
+          salio_sin_pagar: Number(alertasSalioSinPagar?.total ?? 0),
+          usuarios_cancelacion_alerta: cancelacionesSospechosas.length,
+          cocinas_prep_alerta: cocinasPrepDelta.filter((c) => c.alerta_subida)
+            .length,
+          categorias_caida_alerta: categoriasCaida.length,
+        },
+        auditoria_por_accion: auditoriaReciente.map((a) => ({
+          accion: a.accion,
+          total: Number(a.total),
+        })),
       },
-      auditoria_por_accion: auditoriaReciente.map((a) => ({
-        accion: a.accion,
-        total: Number(a.total),
-      })),
-    });
+    );
   }
 
   /** Últimos pedidos del periodo (tabla dashboard Resumen). */
@@ -1899,9 +1974,7 @@ export class AnaliticaService {
         const uAct = Number(a?.unidades ?? 0);
         if (uAnt < 5) return null;
         const deltaPct =
-          uAnt === 0
-            ? 0
-            : Math.round(((uAct - uAnt) / uAnt) * 1000) / 10;
+          uAnt === 0 ? 0 : Math.round(((uAct - uAnt) / uAnt) * 1000) / 10;
         if (deltaPct > -umbral) return null;
         return {
           categoria_id: p.categoria_id,
@@ -1949,7 +2022,9 @@ export class AnaliticaService {
     };
 
     filas.push(this.csvRow(['Foody - Analítica']));
-    filas.push(this.csvRow(['Periodo', periodo.label, periodo.desde, periodo.hasta]));
+    filas.push(
+      this.csvRow(['Periodo', periodo.label, periodo.desde, periodo.hasta]),
+    );
     filas.push('');
 
     const kpis = resumenData.kpis as Record<string, unknown>;
@@ -1969,7 +2044,14 @@ export class AnaliticaService {
       const ant = comp.anterior as Record<string, unknown>;
       const delta = comp.delta as Record<string, unknown>;
       bloque('Comparativa', [
-        ['desde', 'hasta', 'ventas_anterior', 'delta_ventas_pct', 'delta_pedidos_pct', 'tendencia'],
+        [
+          'desde',
+          'hasta',
+          'ventas_anterior',
+          'delta_ventas_pct',
+          'delta_pedidos_pct',
+          'tendencia',
+        ],
         [
           ant.desde,
           ant.hasta,
@@ -1981,7 +2063,11 @@ export class AnaliticaService {
       ]);
     }
 
-    const porTipo = ventasData.por_tipo as { tipo: string; pedidos: number; ventas: number }[];
+    const porTipo = ventasData.por_tipo as {
+      tipo: string;
+      pedidos: number;
+      ventas: number;
+    }[];
     if (porTipo.length) {
       bloque('Por tipo', [
         ['tipo', 'pedidos', 'ventas'],
@@ -2029,9 +2115,10 @@ export class AnaliticaService {
       Buffer.from([0xef, 0xbb, 0xbf]),
       Buffer.from(csv, 'utf8'),
     ]);
-    const slug = periodo.desde === periodo.hasta
-      ? periodo.desde
-      : `${periodo.desde}_${periodo.hasta}`;
+    const slug =
+      periodo.desde === periodo.hasta
+        ? periodo.desde
+        : `${periodo.desde}_${periodo.hasta}`;
 
     return {
       filename: `foody-analitica-${slug}.csv`,

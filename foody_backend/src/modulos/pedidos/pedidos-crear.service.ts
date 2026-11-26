@@ -1000,8 +1000,8 @@ export class PedidosCrearService {
         await client.query(
           `INSERT INTO pedido_items (
              id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
-             costo_unitario, observaciones
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+             costo_unitario, observaciones, stock_snapshot_version
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
           [
             linea.pedidoItemId,
             pedidoId,
@@ -1011,6 +1011,7 @@ export class PedidosCrearService {
             linea.precioUnitario,
             costoUnit,
             linea.observaciones,
+            debeDescontarAhora ? 1 : null,
           ],
         );
         const itemId = linea.pedidoItemId;
@@ -1061,8 +1062,8 @@ export class PedidosCrearService {
           await client.query(
             `INSERT INTO pedido_items (
                id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
-               costo_unitario, observaciones
-             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7)`,
+               costo_unitario, observaciones, stock_snapshot_version
+             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8)`,
             [
               itemId,
               pedidoId,
@@ -1071,6 +1072,7 @@ export class PedidosCrearService {
               combo.precioFijo,
               costoUnit,
               `Combo: ${combo.nombre}`,
+              debeDescontarAhora ? 1 : null,
             ],
           );
 

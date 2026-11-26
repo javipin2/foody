@@ -130,6 +130,7 @@ let PedidosEstadoService = class PedidosEstadoService {
                 const stock = await this.inventario.descontarStockPedido(client, sucursalId, pedidoId, lineas, { incluirEmpaques: pedido.tipo === 'domicilio' });
                 catalogoCambios.push(...stock.catalogo);
                 await client.query(`UPDATE pedidos SET stock_descontado = true WHERE id = $1`, [pedidoId]);
+                await client.query(`UPDATE pedido_items SET stock_snapshot_version = 1 WHERE pedido_id = $1`, [pedidoId]);
             }
             if (nuevoEstado === 'cancelado' && pedido.stock_descontado) {
                 const requiereMerma = await this.inventario.pedidoRequiereMermaAlCancelar(client, pedidoId, anterior);
@@ -363,6 +364,7 @@ let PedidosEstadoService = class PedidosEstadoService {
                 const stock = await this.inventario.descontarStockPedido(client, sucursalId, pedidoId, lineas, { incluirEmpaques: pedido.tipo === 'domicilio' });
                 catalogoCambios.push(...stock.catalogo);
                 await client.query(`UPDATE pedidos SET stock_descontado = true WHERE id = $1`, [pedidoId]);
+                await client.query(`UPDATE pedido_items SET stock_snapshot_version = 1 WHERE pedido_id = $1`, [pedidoId]);
             }
             await this.estadoCommand.aplicarEstadoEnTransaccion(client, {
                 pedidoId,

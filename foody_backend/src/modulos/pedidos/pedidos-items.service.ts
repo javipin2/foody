@@ -715,8 +715,8 @@ export class PedidosItemsService {
         await client.query(
           `INSERT INTO pedido_items (
              id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
-             costo_unitario, observaciones
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+             costo_unitario, observaciones, stock_snapshot_version
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
           [
             linea.pedidoItemId,
             pedidoId,
@@ -726,6 +726,7 @@ export class PedidosItemsService {
             linea.precioUnitario,
             costoUnit,
             linea.observaciones,
+            pedido.stock_descontado ? 1 : null,
           ],
         );
         const itemId = linea.pedidoItemId;
@@ -766,8 +767,8 @@ export class PedidosItemsService {
           await client.query(
             `INSERT INTO pedido_items (
                id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
-               costo_unitario, observaciones
-             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7)`,
+               costo_unitario, observaciones, stock_snapshot_version
+             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8)`,
             [
               itemId,
               pedidoId,
@@ -776,6 +777,7 @@ export class PedidosItemsService {
               combo.precioFijo,
               costoUnit,
               `Combo: ${combo.nombre}`,
+              pedido.stock_descontado ? 1 : null,
             ],
           );
           await client.query(
@@ -1045,6 +1047,7 @@ export class PedidosItemsService {
             item.producto_id,
             item.cantidad,
             motivo ?? `?tem eliminado en cocina (${item.estado_cocina})`,
+            itemId,
           );
         } else if (item.estado_cocina !== 'no_disponible') {
           // Cocina ya registró la merma al marcar N/D; restaurar aquí
@@ -1547,6 +1550,7 @@ export class PedidosItemsService {
             pedidoId,
             [
               {
+                pedidoItemId: itemId,
                 productoId: item.producto_id,
                 cantidad: deltaQty,
                 precioVentaLinea: Number(item.precio_unitario) * deltaQty,

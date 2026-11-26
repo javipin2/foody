@@ -294,9 +294,35 @@ let PedidosInventarioService = class PedidosInventarioService {
     }
     async restaurarStockPedido(client, sucursalId, pedidoId) {
         const catalogoPorProducto = new Map();
-        const movs = await client.query(`SELECT ingrediente_id, cantidad
+        const movs = await client.query(`SELECT ingrediente_id,
+              GREATEST(
+                COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'venta'), 0)
+                - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'devolucion'), 0)
+                - COALESCE(SUM(cantidad) FILTER (
+                    WHERE tipo = 'ajuste'
+                      AND motivo IN (
+                        'Devolución por cancelación/rechazo de pedido',
+                        'Devolución por ítem eliminado del pedido'
+                      )
+                  ), 0),
+                0
+              )::text AS cantidad
        FROM movimientos_ingrediente
-       WHERE pedido_id = $1 AND sucursal_id = $2 AND tipo = 'venta'`, [pedidoId, sucursalId]);
+       WHERE pedido_id = $1 AND sucursal_id = $2
+         AND tipo IN ('venta', 'devolucion', 'ajuste')
+       GROUP BY ingrediente_id
+       HAVING GREATEST(
+         COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'venta'), 0)
+         - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'devolucion'), 0)
+         - COALESCE(SUM(cantidad) FILTER (
+             WHERE tipo = 'ajuste'
+               AND motivo IN (
+                 'Devolución por cancelación/rechazo de pedido',
+                 'Devolución por ítem eliminado del pedido'
+               )
+           ), 0),
+         0
+       ) > 0`, [pedidoId, sucursalId]);
         const ingredientesTocados = new Set();
         for (const mov of movs.rows) {
             const cantidad = Number(mov.cantidad);
@@ -311,11 +337,12 @@ let PedidosInventarioService = class PedidosInventarioService {
                 client,
                 sucursalId,
                 ingredienteId: mov.ingrediente_id,
-                tipo: 'ajuste',
+                tipo: 'devolucion',
                 cantidad,
                 stockAnterior,
                 stockPosterior,
                 pedidoId,
+                pedidoItemId: null,
                 motivo: 'Devolución por cancelación/rechazo de pedido',
             });
             ingredientesTocados.add(mov.ingrediente_id);
@@ -328,7 +355,7 @@ let PedidosInventarioService = class PedidosInventarioService {
         }
         return [...catalogoPorProducto.entries()].map(([producto_id, disponible]) => ({ producto_id, disponible }));
     }
-    async registrarMermaLineaProducto(client, sucursalId, pedidoId, productoId, cantidad, motivo) {
+    async registrarMermaLineaProducto(client, sucursalId, pedidoId, productoId, cantidad, motivo, pedidoItemId) {
         const expandidos = await this.costeo.expandirIngredientesProducto(client, productoId, sucursalId, cantidad, false);
         if (expandidos.length === 0)
             return;
@@ -346,6 +373,7 @@ let PedidosInventarioService = class PedidosInventarioService {
                 stockAnterior: stock,
                 stockPosterior: stock,
                 pedidoId,
+                pedidoItemId,
                 motivo,
             });
         }
@@ -365,12 +393,12 @@ let PedidosInventarioService = class PedidosInventarioService {
         return Number(items.rows[0]?.n ?? 0) > 0;
     }
     async registrarMermaPedidoCompleto(client, sucursalId, pedidoId, motivo) {
-        const items = await client.query(`SELECT producto_id, cantidad, estado_cocina
+        const items = await client.query(`SELECT id AS item_id, producto_id, cantidad, estado_cocina
        FROM pedido_items WHERE pedido_id = $1`, [pedidoId]);
         for (const item of items.rows) {
             if (item.estado_cocina === 'no_disponible')
                 continue;
-            await this.registrarMermaLineaProducto(client, sucursalId, pedidoId, item.producto_id, Number(item.cantidad), motivo);
+            await this.registrarMermaLineaProducto(client, sucursalId, pedidoId, item.producto_id, Number(item.cantidad), motivo, item.item_id);
         }
     }
     async restaurarStockLineaProducto(client, sucursalId, pedidoId, productoId, cantidad, opciones = {}) {

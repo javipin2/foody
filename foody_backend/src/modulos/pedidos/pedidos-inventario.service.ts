@@ -609,9 +609,35 @@ export class PedidosInventarioService {
       ingrediente_id: string;
       cantidad: string;
     }>(
-      `SELECT ingrediente_id, cantidad
+      `SELECT ingrediente_id,
+              GREATEST(
+                COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'venta'), 0)
+                - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'devolucion'), 0)
+                - COALESCE(SUM(cantidad) FILTER (
+                    WHERE tipo = 'ajuste'
+                      AND motivo IN (
+                        'Devolución por cancelación/rechazo de pedido',
+                        'Devolución por ítem eliminado del pedido'
+                      )
+                  ), 0),
+                0
+              )::text AS cantidad
        FROM movimientos_ingrediente
-       WHERE pedido_id = $1 AND sucursal_id = $2 AND tipo = 'venta'`,
+       WHERE pedido_id = $1 AND sucursal_id = $2
+         AND tipo IN ('venta', 'devolucion', 'ajuste')
+       GROUP BY ingrediente_id
+       HAVING GREATEST(
+         COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'venta'), 0)
+         - COALESCE(SUM(cantidad) FILTER (WHERE tipo = 'devolucion'), 0)
+         - COALESCE(SUM(cantidad) FILTER (
+             WHERE tipo = 'ajuste'
+               AND motivo IN (
+                 'Devolución por cancelación/rechazo de pedido',
+                 'Devolución por ítem eliminado del pedido'
+               )
+           ), 0),
+         0
+       ) > 0`,
       [pedidoId, sucursalId],
     );
 
@@ -636,11 +662,12 @@ export class PedidosInventarioService {
         client,
         sucursalId,
         ingredienteId: mov.ingrediente_id,
-        tipo: 'ajuste',
+        tipo: 'devolucion',
         cantidad,
         stockAnterior,
         stockPosterior,
         pedidoId,
+        pedidoItemId: null,
         motivo: 'Devolución por cancelación/rechazo de pedido',
       });
 
@@ -672,6 +699,7 @@ export class PedidosInventarioService {
     productoId: string,
     cantidad: number,
     motivo: string,
+    pedidoItemId?: string,
   ): Promise<void> {
     const expandidos = await this.costeo.expandirIngredientesProducto(
       client,
@@ -701,6 +729,7 @@ export class PedidosInventarioService {
         stockAnterior: stock,
         stockPosterior: stock,
         pedidoId,
+        pedidoItemId,
         motivo,
       });
     }
@@ -736,11 +765,12 @@ export class PedidosInventarioService {
     motivo: string,
   ): Promise<void> {
     const items = await client.query<{
+      item_id: string;
       producto_id: string;
       cantidad: string;
       estado_cocina: string;
     }>(
-      `SELECT producto_id, cantidad, estado_cocina
+      `SELECT id AS item_id, producto_id, cantidad, estado_cocina
        FROM pedido_items WHERE pedido_id = $1`,
       [pedidoId],
     );
@@ -754,6 +784,7 @@ export class PedidosInventarioService {
         item.producto_id,
         Number(item.cantidad),
         motivo,
+        item.item_id,
       );
     }
   }

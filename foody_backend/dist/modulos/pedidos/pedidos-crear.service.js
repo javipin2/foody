@@ -680,8 +680,8 @@ let PedidosCrearService = class PedidosCrearService {
                 const costoUnit = costosRecalculados.get(linea.productoId) ?? linea.costoUnitario;
                 await client.query(`INSERT INTO pedido_items (
              id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
-             costo_unitario, observaciones
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+             costo_unitario, observaciones, stock_snapshot_version
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [
                     linea.pedidoItemId,
                     pedidoId,
                     linea.productoId,
@@ -690,6 +690,7 @@ let PedidosCrearService = class PedidosCrearService {
                     linea.precioUnitario,
                     costoUnit,
                     linea.observaciones,
+                    debeDescontarAhora ? 1 : null,
                 ]);
                 const itemId = linea.pedidoItemId;
                 const precioVenta = linea.precioVentaLinea;
@@ -724,8 +725,8 @@ let PedidosCrearService = class PedidosCrearService {
                     const itemId = combo.itemIds[u];
                     await client.query(`INSERT INTO pedido_items (
                id, pedido_id, producto_id, cocina_id, cantidad, precio_unitario,
-               costo_unitario, observaciones
-             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7)`, [
+               costo_unitario, observaciones, stock_snapshot_version
+             ) VALUES ($1,$2,$3,$4,1,$5,$6,$7,$8)`, [
                         itemId,
                         pedidoId,
                         combo.productoPrincipalId,
@@ -733,6 +734,7 @@ let PedidosCrearService = class PedidosCrearService {
                         combo.precioFijo,
                         costoUnit,
                         `Combo: ${combo.nombre}`,
+                        debeDescontarAhora ? 1 : null,
                     ]);
                     await client.query(`INSERT INTO pedido_combo_selecciones (
                pedido_item_id, combo_id, nombre_combo, precio_combo,

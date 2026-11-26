@@ -1451,6 +1451,15 @@ class _AnaliticaScreenState extends State<AnaliticaScreen>
                 valor: _moneda.format(_num(r['consumo_valor'])),
                 icono: Icons.shopping_cart_outlined,
                 acento: AnaliticaTokens.ventas,
+                tooltip: 'Valor bruto de movimientos tipo venta en el periodo.',
+              ),
+              AnaliticaKpiCard(
+                etiqueta: 'Stock devuelto',
+                valor: _moneda.format(_num(r['stock_devuelto_valor'])),
+                icono: Icons.assignment_return_outlined,
+                acento: AnaliticaTokens.pedidos,
+                tooltip:
+                    'Reposiciones registradas por cancelaciones, valorizadas al costo actual del insumo.',
               ),
               AnaliticaKpiCard(
                 etiqueta: 'Mermas (costo actual)',

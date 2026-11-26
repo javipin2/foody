@@ -25,6 +25,9 @@ export type DeviceCapability = {
   headers: { 'X-Foody-Device-Capability': string };
 };
 const dispositivosClienteE2e = new Map<string, string>();
+const registrosClienteE2e = new Map<string, Promise<DeviceCapability>>();
+const cotizacionesStaffE2e = new Map<string, Promise<number>>();
+const devicesStaffIdsE2e = new Map<string, string>();
 
 export function api() {
   return request(E2E_HOST);
@@ -33,22 +36,34 @@ export function api() {
 /** Crea en la BD QA un device invitado con la misma capability que exige Flutter. */
 export async function registrarDispositivoCliente(
   prefijo = 'jest-cliente',
+  deviceIdSolicitado?: string,
 ): Promise<DeviceCapability> {
-  const deviceId = `${prefijo}-${randomUUID()}`;
-  const capability = randomBytes(32).toString('hex');
-  const fcmToken = randomBytes(32).toString('base64url');
-  const headers = { 'X-Foody-Device-Capability': capability };
-  const r = await api()
-    .post('/api/v1/dispositivos/registrar')
-    .set(headers)
-    .send({ device_id: deviceId, fcm_token: fcmToken, plataforma: 'web' });
-  if (!r.body?.exito || r.body?.datos?.registrado === false) {
-    throw new Error(
-      `Registro de device E2E falló: ${r.body?.mensaje || r.status}`,
-    );
+  const deviceId = deviceIdSolicitado || `${prefijo}-${randomUUID()}`;
+  const existente = registrosClienteE2e.get(deviceId);
+  if (existente) return existente;
+  const registro = (async () => {
+    const capability = randomBytes(32).toString('hex');
+    const fcmToken = randomBytes(32).toString('base64url');
+    const headers = { 'X-Foody-Device-Capability': capability };
+    const r = await api()
+      .post('/api/v1/dispositivos/registrar')
+      .set(headers)
+      .send({ device_id: deviceId, fcm_token: fcmToken, plataforma: 'web' });
+    if (!r.body?.exito || r.body?.datos?.registrado === false) {
+      throw new Error(
+        `Registro de device E2E falló: ${r.body?.mensaje || r.status}`,
+      );
+    }
+    dispositivosClienteE2e.set(deviceId, fcmToken);
+    return { deviceId, capability, fcmToken, headers };
+  })();
+  registrosClienteE2e.set(deviceId, registro);
+  try {
+    return await registro;
+  } catch (error) {
+    registrosClienteE2e.delete(deviceId);
+    throw error;
   }
-  dispositivosClienteE2e.set(deviceId, fcmToken);
-  return { deviceId, capability, fcmToken, headers };
 }
 
 /** Anonimiza los dispositivos sintéticos creados por la suite, sin borrar pedidos QA. */
@@ -64,6 +79,7 @@ export async function limpiarDispositivosClienteE2e(): Promise<void> {
       );
     }
     dispositivosClienteE2e.delete(deviceId);
+    registrosClienteE2e.delete(deviceId);
   }
 }
 
@@ -164,7 +180,43 @@ export async function crearPedidoStaff(
   auth: TokenBundle['auth'],
   body: Record<string, unknown>,
 ) {
-  return api().post('/api/v1/pedidos/staff').set(auth).send(body);
+  let payload = { ...body };
+  if (typeof payload.total_esperado !== 'number') {
+    const deviceIdOrigen =
+      typeof payload.device_id === 'string'
+        ? payload.device_id
+        : `jest-qr-staff-${randomUUID()}`;
+    let deviceId = devicesStaffIdsE2e.get(deviceIdOrigen);
+    if (!deviceId) {
+      deviceId = `jest-qr-staff-${randomUUID()}`;
+      devicesStaffIdsE2e.set(deviceIdOrigen, deviceId);
+    }
+    const device = await registrarDispositivoCliente('jest-qr-staff', deviceId);
+    payload.device_id = deviceId;
+    const { pagos: _pagos, propina: _propina, ...cotizacion } = payload;
+    delete cotizacion.idempotency_key;
+    cotizacion.metodo_pago = 'pendiente';
+    const clave = JSON.stringify(cotizacion);
+    let totalEstimado = cotizacionesStaffE2e.get(clave);
+    if (!totalEstimado) {
+      totalEstimado = (async () => {
+        const respuesta = await api()
+          .post('/api/v1/pedidos/estimar')
+          .set(device.headers)
+          .send(cotizacion);
+        const total = respuesta.body?.datos?.total;
+        if (!respuesta.body?.exito || typeof total !== 'number') {
+          throw new Error(
+            `Cotización staff E2E falló: ${respuesta.body?.mensaje || respuesta.status}`,
+          );
+        }
+        return total;
+      })();
+      cotizacionesStaffE2e.set(clave, totalEstimado);
+    }
+    payload.total_esperado = await totalEstimado;
+  }
+  return api().post('/api/v1/pedidos/staff').set(auth).send(payload);
 }
 
 export function pedidoId(res: {

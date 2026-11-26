@@ -152,7 +152,7 @@ let AnaliticaService = class AnaliticaService {
     }
     async kpisPeriodo(sucursalId, desde, hasta, filtros = {}) {
         const ventas = await this.consultarVentasKpi(sucursalId, desde, hasta, filtros);
-        const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
+        const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM, } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
         const extraItems = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pMargen, filtros);
         const margen = await this.database.consultarUno(`SELECT COALESCE(SUM(${sql_venta_linea_item_1.SQL_VENTA_LINEA_ITEM}), 0)::text AS ingreso,
               COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo,
@@ -163,7 +163,7 @@ let AnaliticaService = class AnaliticaService {
        LEFT JOIN productos pr ON pr.id = pi.producto_id
        WHERE p.sucursal_id = ${sucM}
          AND ${fechaM}${extraM}${extraItems}`, pMargen.list);
-        const { params: pCancel, suc: sucC, fecha: fechaC, extra: extraC } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
+        const { params: pCancel, suc: sucC, fecha: fechaC, extra: extraC, } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
             excluirCanceladosPorDefecto: false,
         });
         const cancelacion = await this.database.consultarUno(`SELECT COUNT(*)::text AS total,
@@ -173,7 +173,7 @@ let AnaliticaService = class AnaliticaService {
        FROM pedidos
        WHERE sucursal_id = ${sucC}
          AND ${fechaC}${extraC}`, pCancel.list);
-        const { params: pPagos, suc: sucP, fecha: fechaP, extra: extraP } = this.inicioCaja(sucursalId, desde, hasta, filtros);
+        const { params: pPagos, suc: sucP, fecha: fechaP, extra: extraP, } = this.inicioCaja(sucursalId, desde, hasta, filtros);
         const pagos = await this.database.consultarUno(`SELECT COALESCE(SUM(
                 ${ventas_metricas_sql_1.SQL_NETO_MOVIMIENTO_CAJA}
               ) FILTER (WHERE m.metodo_pago = 'efectivo'), 0)::text AS efectivo,
@@ -205,9 +205,7 @@ let AnaliticaService = class AnaliticaService {
             pedidos: Number(ventas?.pedidos ?? 0),
             ticket_promedio: Math.round(Number(ventas?.ticket_promedio ?? 0) * 100) / 100,
             margen_bruto_estimado: Math.round(margenBruto * 100) / 100,
-            margen_bruto_pct: ingreso > 0
-                ? Math.round((margenBruto / ingreso) * 1000) / 10
-                : 0,
+            margen_bruto_pct: ingreso > 0 ? Math.round((margenBruto / ingreso) * 1000) / 10 : 0,
             cobertura_costo_pct: lineasTotal > 0
                 ? Math.round((lineasConCosto / lineasTotal) * 1000) / 10
                 : 100,
@@ -220,9 +218,7 @@ let AnaliticaService = class AnaliticaService {
                 efectivo: totalPagos > 0
                     ? Math.round((efectivo / totalPagos) * 1000) / 1000
                     : 0,
-                digital: totalPagos > 0
-                    ? Math.round((digital / totalPagos) * 1000) / 1000
-                    : 0,
+                digital: totalPagos > 0 ? Math.round((digital / totalPagos) * 1000) / 1000 : 0,
             },
             alertas_abiertas: Number(alertas?.abiertas ?? 0),
         };
@@ -312,7 +308,7 @@ let AnaliticaService = class AnaliticaService {
          AND ${fechaCaja}${extraCaja}
        GROUP BY m.metodo_pago
        ORDER BY total DESC`, pCaja.list);
-        const { params: pCat, suc: sucCat, fecha: fechaCat, extra: extraCat } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
+        const { params: pCat, suc: sucCat, fecha: fechaCat, extra: extraCat, } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
         const extraItemsCat = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pCat, filtros);
         const porCategoria = await this.database.consultar(`SELECT COALESCE(cat.id::text, 'sin_categoria') AS categoria_id,
               COALESCE(cat.nombre, 'Sin categoría') AS nombre,
@@ -543,6 +539,7 @@ let AnaliticaService = class AnaliticaService {
         const resumen = await this.database.consultarUno(`SELECT
          COALESCE(SUM(ABS(m.cantidad)) FILTER (WHERE m.tipo = 'venta'), 0)::text AS consumo_unidades,
          COALESCE(SUM(ABS(m.cantidad) * i.costo_unitario_actual) FILTER (WHERE m.tipo = 'venta'), 0)::text AS consumo_valor,
+         COALESCE(SUM(ABS(m.cantidad) * i.costo_unitario_actual) FILTER (WHERE m.tipo = 'devolucion'), 0)::text AS stock_devuelto_valor,
          COALESCE(SUM(ABS(m.cantidad) * i.costo_unitario_actual) FILTER (WHERE m.tipo = 'merma'), 0)::text AS merma_valor,
          COALESCE(SUM(m.stock_posterior - m.stock_anterior) FILTER (WHERE m.tipo = 'ajuste'), 0)::text AS ajuste_neto,
          (
@@ -591,14 +588,16 @@ let AnaliticaService = class AnaliticaService {
             sucursal_id: sucursalId,
             fuentes_cogs: {
                 consumo_inventario: 'ingredientes.costo_unitario_actual',
+                stock_devuelto: 'ingredientes.costo_unitario_actual',
                 cogs_ventas: 'pedido_items.costo_unitario',
                 ledger_margen: 'margenes_venta.costo_al_momento',
-                nota: 'consumo_valor/merma_valor ≈ costo actual del insumo. ' +
+                nota: 'consumo_valor/stock_devuelto_valor/merma_valor ≈ costo actual del insumo; las devoluciones se informan aparte y no reescriben el consumo histórico. ' +
                     'No comparar 1:1 con COGS de ventas (snapshot al crear/editar ítem).',
             },
             resumen: {
                 consumo_unidades: Number(resumen?.consumo_unidades ?? 0),
                 consumo_valor: Number(resumen?.consumo_valor ?? 0),
+                stock_devuelto_valor: Number(resumen?.stock_devuelto_valor ?? 0),
                 merma_valor: Number(resumen?.merma_valor ?? 0),
                 ajuste_neto: Number(resumen?.ajuste_neto ?? 0),
                 diferencia_conteo: Number(resumen?.diferencia_conteo ?? 0),
@@ -763,7 +762,7 @@ let AnaliticaService = class AnaliticaService {
     async rentabilidad(sucursalId, periodo, filtros = {}, anterior) {
         const { desde, hasta } = periodo;
         const kpis = await this.kpisPeriodo(sucursalId, desde, hasta, filtros);
-        const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
+        const { params: pMargen, suc: sucM, fecha: fechaM, extra: extraM, } = this.inicio(sucursalId, desde, hasta, filtros, 'p');
         const extraItems = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pMargen, filtros);
         const cogs = await this.database.consultarUno(`SELECT COALESCE(SUM(pi.cantidad * COALESCE(pi.costo_unitario, 0)), 0)::text AS costo_ventas,
               COALESCE(SUM(${sql_venta_linea_item_1.SQL_VENTA_LINEA_ITEM}), 0)::text AS ingreso_lineas
@@ -836,8 +835,7 @@ let AnaliticaService = class AnaliticaService {
                         : utilidadNeta < 0
                             ? -100
                             : 0
-                    : Math.round(((utilidadNeta - utilidadAnterior) /
-                        Math.abs(utilidadAnterior)) *
+                    : Math.round(((utilidadNeta - utilidadAnterior) / Math.abs(utilidadAnterior)) *
                         1000) / 10;
         }
         const cobertura = kpis.cobertura_costo_pct;
@@ -870,9 +868,7 @@ let AnaliticaService = class AnaliticaService {
                 mensaje: 'Gastos > 40% de ventas. Revisa fijos y nómina.',
             });
         }
-        if (utilidadNeta > 0 &&
-            deltaUtilidadPct != null &&
-            deltaUtilidadPct > 0) {
+        if (utilidadNeta > 0 && deltaUtilidadPct != null && deltaUtilidadPct > 0) {
             consejos.push({
                 codigo: 'mejor_que_anterior',
                 nivel: 'info',
@@ -941,7 +937,7 @@ let AnaliticaService = class AnaliticaService {
        GROUP BY nivel
        ORDER BY CASE nivel
          WHEN 'critico' THEN 1 WHEN 'alto' THEN 2 WHEN 'medio' THEN 3 ELSE 4 END`, paramsFecha.list);
-        const { params: pDesc, suc: sucD, fecha: fechaD, extra: extraD } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
+        const { params: pDesc, suc: sucD, fecha: fechaD, extra: extraD, } = this.inicio(sucursalId, desde, hasta, filtros, undefined, {
             excluirCanceladosPorDefecto: false,
         });
         const umbralDesc = pDesc.add(alertas_riesgo_service_1.UMBRALES_ALERTA.descuentoPorcentajeAlto);
@@ -990,7 +986,7 @@ let AnaliticaService = class AnaliticaService {
        GROUP BY accion
        ORDER BY total DESC
        LIMIT 15`, paramsFecha.list);
-        const { params: pCancelPost, suc: sucCp, fecha: fechaCp, extra: extraCp } = this.inicio(sucursalId, desde, hasta, filtros, 'p', {
+        const { params: pCancelPost, suc: sucCp, fecha: fechaCp, extra: extraCp, } = this.inicio(sucursalId, desde, hasta, filtros, 'p', {
             excluirCanceladosPorDefecto: false,
         });
         const extraItemsCp = (0, analitica_filtros_util_1.clausulasItemsYaJoineados)(pCancelPost, filtros);
@@ -1056,7 +1052,8 @@ let AnaliticaService = class AnaliticaService {
                 transferencias_umbral: alertas_riesgo_service_1.UMBRALES_ALERTA.transferenciasMesa,
                 salio_sin_pagar: Number(alertasSalioSinPagar?.total ?? 0),
                 usuarios_cancelacion_alerta: cancelacionesSospechosas.length,
-                cocinas_prep_alerta: cocinasPrepDelta.filter((c) => c.alerta_subida).length,
+                cocinas_prep_alerta: cocinasPrepDelta.filter((c) => c.alerta_subida)
+                    .length,
                 categorias_caida_alerta: categoriasCaida.length,
             },
             auditoria_por_accion: auditoriaReciente.map((a) => ({
@@ -1189,9 +1186,7 @@ let AnaliticaService = class AnaliticaService {
             const uAct = Number(a?.unidades ?? 0);
             if (uAnt < 5)
                 return null;
-            const deltaPct = uAnt === 0
-                ? 0
-                : Math.round(((uAct - uAnt) / uAnt) * 1000) / 10;
+            const deltaPct = uAnt === 0 ? 0 : Math.round(((uAct - uAnt) / uAnt) * 1000) / 10;
             if (deltaPct > -umbral)
                 return null;
             return {
@@ -1248,7 +1243,14 @@ let AnaliticaService = class AnaliticaService {
             const ant = comp.anterior;
             const delta = comp.delta;
             bloque('Comparativa', [
-                ['desde', 'hasta', 'ventas_anterior', 'delta_ventas_pct', 'delta_pedidos_pct', 'tendencia'],
+                [
+                    'desde',
+                    'hasta',
+                    'ventas_anterior',
+                    'delta_ventas_pct',
+                    'delta_pedidos_pct',
+                    'tendencia',
+                ],
                 [
                     ant.desde,
                     ant.hasta,

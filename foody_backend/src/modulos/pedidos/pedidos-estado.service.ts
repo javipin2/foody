@@ -198,6 +198,10 @@ export class PedidosEstadoService {
           `UPDATE pedidos SET stock_descontado = true WHERE id = $1`,
           [pedidoId],
         );
+        await client.query(
+          `UPDATE pedido_items SET stock_snapshot_version = 1 WHERE pedido_id = $1`,
+          [pedidoId],
+        );
       }
 
       if (nuevoEstado === 'cancelado' && pedido.stock_descontado) {
@@ -625,6 +629,10 @@ export class PedidosEstadoService {
         catalogoCambios.push(...stock.catalogo);
         await client.query(
           `UPDATE pedidos SET stock_descontado = true WHERE id = $1`,
+          [pedidoId],
+        );
+        await client.query(
+          `UPDATE pedido_items SET stock_snapshot_version = 1 WHERE pedido_id = $1`,
           [pedidoId],
         );
       }

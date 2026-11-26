@@ -63,7 +63,7 @@ export declare class PedidosInventarioService {
         incluirEmpaques?: boolean;
     }): Promise<ResultadoDescontarStock>;
     restaurarStockPedido(client: PoolClient, sucursalId: string, pedidoId: string): Promise<CambioDisponibilidadProducto[]>;
-    registrarMermaLineaProducto(client: PoolClient, sucursalId: string, pedidoId: string, productoId: string, cantidad: number, motivo: string): Promise<void>;
+    registrarMermaLineaProducto(client: PoolClient, sucursalId: string, pedidoId: string, productoId: string, cantidad: number, motivo: string, pedidoItemId?: string): Promise<void>;
     pedidoRequiereMermaAlCancelar(client: PoolClient, pedidoId: string, estadoAnterior: string): Promise<boolean>;
     registrarMermaPedidoCompleto(client: PoolClient, sucursalId: string, pedidoId: string, motivo: string): Promise<void>;
     restaurarStockLineaProducto(client: PoolClient, sucursalId: string, pedidoId: string, productoId: string, cantidad: number, opciones?: {

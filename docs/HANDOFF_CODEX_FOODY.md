@@ -1,5 +1,46 @@
 # Empalme de trabajo Codex — Foody
 
+> **CORTE AUTORITATIVO — 2026-11-26.** Este bloque sustituye cifras, procesos y pendientes de los cortes antiguos que siguen abajo. Los detalles históricos se conservan como registro, no como estado actual.
+
+## Objetivo íntegro de la continuidad
+
+Auditar y mejorar Foody en el mismo repositorio, cubriendo los flujos de extremo a extremo de pedidos (cliente, sesión, QR, mesero y administrador), cocina, domiciliarios, finanzas/contabilidad y análisis; verificar datos/estados/permisos/consecuencias entre módulos; corregir fallos comprobados; mejorar el panel administrativo premium, claro e intuitivo para escritorio/tablet/móvil; y documentar decisiones, pruebas y pendientes. Extender a módulos dependientes cuando afecten estos procesos. Mantener Cloudflare Tunnel para las pruebas remotas y preservar OAuth, credenciales y datos comerciales. No considerar una auditoría parcial o una sola suite como cierre del objetivo.
+
+## Trabajo más reciente y pruebas verificadas
+
+- E2E integral mediante `scripts/verificar-e2e-jest.ps1`: **12 suites / 54 pruebas aprobadas** contra Nest QA `127.0.0.1:3001` y clon `foody_diseno_qa_codex_ledgerfull_20261126` con migraciones 095/096 y fixture restaurado. Cubrió pedidos staff/POS y cotizaciones, Caja/propinas, mesas/meseros, KDS, domicilio, ledger/cancelación y permisos. El helper de creación staff en `foody_backend/test/helpers/foody-e2e.ts` obtiene `total_esperado` por `POST /pedidos/estimar`, usando device/capability de QA.
+- Se corrigió un 500 al eliminar una línea con merma: migración 096 define FK `ON DELETE SET NULL`; conserva movimiento por pedido/ingrediente y suelta solamente el vínculo a la fila borrada. El clon QA se mantuvo; se detuvo el servicio :3001 y el contenedor `foody-diseno-qa-db`. No se tocó la base diaria.
+- Pruebas unitarias posteriores: **3 suites / 12 pruebas**, `npm run build`, Prettier y formato Dart pasaron. Pruebas previas relacionadas: backend analítica/pedidos/inventario 23 suites/85; Flutter Análisis 8/8 y analyzer limpio.
+- Confirmados HTTP 200 para API local `127.0.0.1:3000`, API pública `api.foodyy.store` y login del panel `equipo.foodyy.store`. La API :3000 no se reinició; Tunnel siguió operativo. Sin cambios de OAuth, credenciales o datos comerciales.
+- Hay **30 entradas** reportadas en `git status --short` en este corte. No ejecutar `reset`, `clean`, checkout masivo ni borrar `dist`; inspeccionar cada cambio porque contiene trabajo de continuidad previo y nuevo sin commit.
+
+## Revisión cerrada en el punto de pausa: combos multi-cocina
+
+Inspección read-only de `CatalogoService.crearCombo`, `PedidosCrearService`, `CocinasService.listarTickets`, `PedidosItemsService` y migrations 095/096. El bloqueo multiestación es intencional. Cada combo queda en una sola línea cobrable de `pedido_items`, con un `cocina_id` y un `estado_cocina`; KDS filtra esa fila por estación. `componentes_snapshot` guarda tipo/ID/nombre/cantidad/costo, pero no estación; no existe tabla de tareas de preparación por estación. Catálogo rechaza nuevos combos con productos de cocinas distintas; la API también rechaza cotizar/vender combos incompatibles o sin cocina. Así se evita perder comandas, asignar una cocina arbitraria o duplicar el cobro.
+
+Dirección técnica recomendada para el próximo ciclo: conservar la línea financiera única y crear tareas por estación/componente con snapshots inmutables, endpoints KDS con permiso/sucursal/cocina, estados separados y agregación del estado padre solo cuando todas las tareas requeridas estén resueltas. Enlazar consumo/merma a componentes y tareas sin reexpandir recetas actuales. **Decisión funcional pendiente antes del desarrollo:** qué hacer cuando una cocina declara un componente no disponible: sustitución, combo completo no disponible/cancelación, devolución/ajuste de cobro y mensajes a cliente/mesero. No implementar por suposición. El E2E 54/54 no cubre el caso multiestación porque la guardia lo bloquea.
+
+## Pendientes para continuar el objetivo completo
+
+1. Resolver con Javier la política para componentes no disponibles en combos multi-cocina y luego diseñar/migrar tareas por estación; E2E completo de ventas desde QR, POS/mesero, preparación paralela, stock/COGS, cobro, impresión, cancelación y devolución.
+2. Completar snapshot y conciliación por línea para cambiar/eliminar ingredientes, toppings y cantidades después del descuento de stock; no retirar los guards actuales hasta poder compensar el ledger exactamente.
+3. Completar pruebas de cotización obsoleta/`total_esperado`, edición de línea con pago asociado y casos concurrentes; no repetir la suite 54/54 salvo cambios que la afecten.
+4. Resolver decisiones abiertas de finanzas: separar pago de cliente y rendición del domiciliario; destinatario/reparto/medio de propina; cargo del domicilio, comisión de ventas y suscripciones Foody son conceptos distintos. No alterar movimientos/saldos comerciales antes de decidir y modelar.
+5. Verificar despacho/estados de domiciliario, Caja/CxC/Analítica, conciliación y reportes; prueba real de impresora/agente requiere el hardware/entorno correspondiente.
+6. Seguir la matriz del rediseño vista por vista; aún no declarar completo el diseño de todas las pestañas. Hacer pruebas de roles, estados vacíos/error/loading y responsive 320/390/820/1440.
+7. Rendimiento: medir local vs Tunnel con p50/p95, carga representativa y recursos; distinguir PC/Tunnel de API/SQL. No introducir Redis/microservicios sin evidencia.
+8. Wompi: auditar las llamadas externas sin poner timeout/reintentos ciegos en la creación de cobro; diseñar reconciliación/idempotencia para no duplicar pagos si la respuesta se pierde.
+
+## Reglas de seguridad y continuidad
+
+- Usar el mismo workspace/repo `C:\Users\javier\Videos\usb\FOODY APP`, leer `AGENTS.md`, `MEMORIA.md`, `MASTER_STATUS.md`, `PRIORIDADES_FOODY.md`, `INFORME_MAESTRO_FOODY.md`, `ROADMAP_TERMINAR_FOODY.md`, `AVANCE_PROYECTO.md` y `docs/README.md`. Trabajo Flutter también requiere los dos documentos de `docs/frontend/`.
+- Flutter solo interfaz; NestJS/PostgreSQL validan negocio. No hacer deploy ni reiniciar API :3000 sin coordinar. QA E2E solo con el clon desechable y el script oficial; el contenedor QA quedó detenido. API :3000 y Tunnel son para el uso vigente de Javier.
+- Al implementar, ejecutar pruebas pertinentes, verificar conexiones/UX/estados y actualizar `MASTER_STATUS.md`, `AVANCE_PROYECTO.md` y prioridades conforme a las reglas Foody. No usar cifras viejas de este archivo como resultados actuales.
+
+## Texto listo para iniciar con la otra cuenta
+
+> Continúa el objetivo integral de Foody en `C:\Users\javier\Videos\usb\FOODY APP`. Primero lee `docs/HANDOFF_CODEX_FOODY.md` (bloque CORTE AUTORITATIVO), `AGENTS.md`, `MEMORIA.md`, `docs/MASTER_STATUS.md`, `docs/PRIORIDADES_FOODY.md`, `docs/INFORME_MAESTRO_FOODY.md`, `docs/ROADMAP_TERMINAR_FOODY.md`, `docs/AVANCE_PROYECTO.md` y `docs/README.md`; para Flutter, lee también `docs/frontend/FRONTEND_ROADMAP.md` y `docs/frontend/FRONTEND_INSTRUCCIONES.md`. Integra el trabajo local existente; no hagas reset/clean ni repitas la suite E2E 12/54 aprobada sin cambios que la justifiquen. Retoma por PED-COMBO-KDS-STOCK-01: el análisis está documentado y la guardia actual bloquea combos de varias cocinas; antes de implementar pregunta solo la política pendiente de componente no disponible. Después diseña tareas por estación manteniendo una única línea cobrable, implementa progresivamente en el mismo repo, verifica pedidos/stock/COGS/KDS/impresión/cobro/cancelación y documenta cada resultado. Continúa luego con los pendientes ordenados en el handoff hasta cubrir el objetivo completo. Conserva Cloudflare Tunnel operativo; no modifiques OAuth, credenciales ni datos de negocio; no reinicies API :3000 ni apliques migraciones a la DB diaria sin coordinación. Flutter es solo UI; la lógica pertenece a NestJS/PostgreSQL.
+
 **Continuidad 26-nov-2026:** POS-TOTAL-DRIFT-01 ahora exige la cotización de servidor en cobros staff para llevar y pide confirmación renovada ante cambio de total; POS+repositorio 27/27, backend 15 pruebas focales + build. `PED-ITEM-PAY-ALLOC-01` protege líneas cobradas/asignadas de modificación monetaria o borrado; todo el módulo Nest Pedidos 21 suites/76 pruebas y build OK. Ambos están solo en fuente/dist; :3000 no se reinició. En investigación de finanzas se reafirma que `monto_pagado` mezcla pago de cliente con liquidación de domiciliario; la decisión sigue abierta, no tocar saldos hasta separar conceptos. Riesgo nuevo pendiente: modificar toppings después de descontar inventario no reconcilia stock por componente. No hacer despliegue integrado con bundle Flutter desactualizado; Tunnel/OAuth/datos de negocio sin cambios.
 
 **Continuación 25-nov-2026:** DOMI-MANUAL-PAY-LEDGER-01 fue corregido en fuente y el E2E de domicilio exige que `pagos_resumen` coincida con la venta de Caja al entregar manualmente. Build OK; unitarias cercanas 2 suites/6 pruebas y E2E domicilio 7/7 en Nest QA `:3001` + clon desechable. API QA y clon retirados; `:3000` PID 7584 intacto. DOMI-OFF-CAJA-TRACKING-01 sigue como decisión independiente sobre el cargo que recibe el domiciliario y su medio de pago. No reiniciar el runtime ni modificar Tunnel hasta coordinar activación.
@@ -71,7 +112,7 @@ Al comenzar, confirmar `git status --short` y revisar los archivos afectados ant
 - En revisiones previas, `cloudflared` y webs locales 8080/8081 estaban activos. Volver a comprobar antes de diagnosticar; el estado cambia con el tiempo.
 - No se modificaron OAuth ni la configuración del túnel en el trabajo técnico descrito aquí.
 
-## Pendientes ordenados para la reanudación
+## Corte histórico de pendientes 25/11 (supersedido por el estado autoritativo)
 
 1. **Confirmar cambios locales** y leer los documentos de prioridad. No reabrir toda la auditoría desde cero.
 2. **Validar el cambio de liquidación de domiciliarios en QA aislado** (transferencia parcial + saldo en efectivo) y luego actualizar las filas pertinentes de `MASTER_STATUS`, `AVANCE_PROYECTO`, `INFORME_MAESTRO` y prioridades.
@@ -80,9 +121,7 @@ Al comenzar, confirmar `git status --short` y revisar los archivos afectados ant
 5. **Rendimiento:** faltan mediciones representativas y límites/observabilidad de consultas; el timeout del pool no es timeout SQL. Ver auditoría de rendimiento y scripts en `scripts/perf/`; los scripts ligeros actuales no son prueba de capacidad.
 6. **Diseño:** continuar por la matriz de vistas y prioridades; terminar QA autenticada de ADM-12 y seguir con las vistas pendientes. No afirmar que todas las ventanas estén terminadas hasta completar recorrido y QA por rol/tamaño.
 
-## Texto para iniciar el nuevo chat
-
-> Continúa Foody en `C:\Users\javier\Videos\usb\FOODY APP`. Lee primero `docs/HANDOFF_CODEX_FOODY.md` y los documentos iniciales enumerados allí, además de `AGENTS.md`. Integra el estado existente; no repitas auditorías ni suites ya aprobadas sin motivo. Conserva los cambios locales y las reglas de negocio, no toques OAuth/túnel/credenciales/datos reales y no reinicies servicios activos. Javier reanudó el rediseño: continúa por los pendientes priorizados, empezando por QA autenticada de ADM-12, y actualiza los documentos oficiales exigidos por AGENTS.md.
+## Prompt histórico 25/11 (usar el texto actualizado de arriba)
 
 **Continuidad 2026-11-25 — conciliación de pago/devoluciones:** FIN-PAY-RECONCILIATION-01 parcial. Contrato del detalle agrega `devoluciones_caja_vinculadas` y `recaudo_neto_caja_vinculado`; neto calculado como ventas Caja menos devoluciones enlazadas, filtrando `pedido_id` + `sucursal_id`, sin mezclar `pagos_pedido` de otros canales. Flutter los muestra aparte de pagos brutos y propina, con nota de cobertura. Pruebas: Jest `pedidos.service.pagos-resumen.spec.ts` (1/1), Nest build OK, `flutter test test/pedido_detalle_sheet_test.dart` (5/5) y analyzer focalizado limpio. API local no reiniciada; fuente/build no significa runtime activo. Pendiente: estados/canales y políticas contables de abonos/devoluciones; no confundir el neto de Caja enlazado con ingreso contable completo.
 

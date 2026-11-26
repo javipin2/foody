@@ -165,7 +165,7 @@ describe('E2E casos límite Prompts 28-30', () => {
       .send({ cantidad: 1 });
     expect(editar.status).toBe(409);
     expect(editar.body.mensaje).toMatch(
-      /Registra la devolución antes de reducir/i,
+      /Registra la devolución antes de reducir|consumo histórico no puede identificarse por línea/i,
     );
 
     const posterior = await detallePedido(cajero.auth, id);
@@ -235,7 +235,7 @@ describe('E2E casos límite Prompts 28-30', () => {
       });
     expect(reemplazar.status).toBe(409);
     expect(reemplazar.body.message || reemplazar.body.mensaje).toMatch(
-      /reembolso antes de reemplazar/i,
+      /reembolso antes de reemplazar|consumo no está ligado a la línea/i,
     );
 
     const despues = await detallePedido(cajero.auth, id);
@@ -296,7 +296,7 @@ describe('E2E casos límite Prompts 28-30', () => {
       .send({ motivo: 'QA conserva saldo recibido' });
     expect(eliminar.status).toBe(409);
     expect(eliminar.body.message || eliminar.body.mensaje).toMatch(
-      /Registra la devolución antes de reducir/i,
+      /Registra la devolución antes de reducir|consumo no está ligado a la línea/i,
     );
 
     const despues = await detallePedido(cajero.auth, id);
